@@ -8,7 +8,7 @@ const NAV = {
   INITIAL_AGENT: [{ v: 'dashboard', ico: 'dashboard', lbl: 'Dashboard' }, { v: 'leads', ico: 'list', lbl: 'My Leads' }],
   MEETING_AGENT: [{ v: 'dashboard', ico: 'dashboard', lbl: 'Dashboard' }, { v: 'leads', ico: 'list', lbl: 'My Leads' }],
   TEAM_LEAD: [{ v: 'dashboard', ico: 'dashboard', lbl: 'Dashboard' }, { v: 'team', ico: 'groups', lbl: 'My Team' }, { v: 'leads', ico: 'list', lbl: 'All Leads' }],
-  MANAGEMENT: [{ v: 'dashboard', ico: 'dashboard', lbl: 'Dashboard' }, { v: 'leads', ico: 'list', lbl: 'All Leads' }, { v: 'users', ico: 'manage_accounts', lbl: 'Users' }],
+  MANAGEMENT: [{ v: 'dashboard', ico: 'dashboard', lbl: 'Dashboard' }, { v: 'users', ico: 'manage_accounts', lbl: 'Users' }],
 };
 
 export default function Sidebar() {

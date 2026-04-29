@@ -22,13 +22,7 @@ export default function LeadTable({ leads }) {
   useEffect(() => { setPage(0); setSelected(new Set()); }, [leads.length, leads.map(l => l.id).join()]);
 
   const slice = sorted.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
-  const sliceIds = slice.map(l => l.id);
-  const allChecked = sliceIds.length > 0 && sliceIds.every(id => selected.has(id));
 
-  function toggleAll() {
-    if (allChecked) setSelected(s => { const n = new Set(s); sliceIds.forEach(id => n.delete(id)); return n; });
-    else setSelected(s => { const n = new Set(s); sliceIds.forEach(id => n.add(id)); return n; });
-  }
   function toggleOne(id, e) {
     e.stopPropagation();
     setSelected(s => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
@@ -48,7 +42,7 @@ export default function LeadTable({ leads }) {
     return (
       <div className="lt">
         <div className="lt-hdr">
-          {canSelect && <div style={{ width: '32px' }} />}
+          {canSelect && <div className="lt-cb-col" />}
           <div>Lead</div><div>Property / Budget</div><div>Source</div><div>Status</div><div>Updated</div><div></div>
         </div>
         <div className="empty"><Mi>inbox</Mi><p>No leads here</p></div>
@@ -69,18 +63,15 @@ export default function LeadTable({ leads }) {
       )}
       <div className="lt">
         <div className="lt-hdr">
-          {canSelect && (
-            <div style={{ width: '32px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <input type="checkbox" checked={allChecked} onChange={toggleAll} onClick={e => e.stopPropagation()} style={{ cursor: 'pointer' }} />
-            </div>
-          )}
+          {canSelect && <div className="lt-cb-col" />}
           <div>Lead</div><div>Property / Budget</div><div>Source</div><div>Status</div><div>Updated</div><div></div>
         </div>
         {slice.map(l => (
-          <div key={l.id} className={`lt-row${selected.has(l.id) ? ' lt-sel' : ''}`} onClick={() => !canSelect || !selected.size ? setPanLead(l.id) : toggleOne(l.id, { stopPropagation: () => {} })}>
+          <div key={l.id} className={`lt-row${selected.has(l.id) ? ' lt-sel' : ''}`}
+            onClick={() => selected.size > 0 && canSelect ? toggleOne(l.id, { stopPropagation: () => {} }) : setPanLead(l.id)}>
             {canSelect && (
-              <div style={{ width: '32px', display: 'flex', alignItems: 'center', justifyContent: 'center' }} onClick={e => toggleOne(l.id, e)}>
-                <input type="checkbox" checked={selected.has(l.id)} onChange={() => {}} onClick={e => toggleOne(l.id, e)} style={{ cursor: 'pointer' }} />
+              <div className="lt-cb-col" onClick={e => toggleOne(l.id, e)}>
+                <input type="checkbox" checked={selected.has(l.id)} onChange={() => {}} onClick={e => toggleOne(l.id, e)} />
               </div>
             )}
             <div className="lt-cell">

@@ -19,32 +19,28 @@ export default function TeamView() {
     .slice(0, 30);
 
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: '1fr 340px', gap: '20px' }}>
-      <div>
-        <div className="sec-hd"><div className="sec-t"><Mi>record_voice_over</Mi>Initial Agents</div></div>
-        <div className="grid-2" style={{ marginBottom: '20px' }}>
-          {iAgents.map(a => <AgentCard key={a.id} agent={a} />)}
-        </div>
-        <div className="sec-hd"><div className="sec-t"><Mi>handshake</Mi>Meeting Agents</div></div>
-        <div className="grid-2">
-          {mAgents.map(a => <AgentCard key={a.id} agent={a} />)}
-        </div>
+    <div>
+      <div className="sec-hd"><div className="sec-t"><Mi>record_voice_over</Mi>Initial Agents</div></div>
+      <div className="grid-2" style={{ marginBottom: '20px' }}>
+        {iAgents.map(a => <AgentCard key={a.id} agent={a} />)}
       </div>
-      <div>
-        <div className="sec-hd"><div className="sec-t"><Mi>history</Mi>Team Activity</div></div>
-        <div className="tl">
-          <div className="tl-ttl">Recent Actions</div>
-          {actFeed.map(a => (
-            <div key={a.id} className="tl-item">
-              <div className="tl-dot" style={{ background: actClr(a.type) }}><Mi>{actIcon(a.type)}</Mi></div>
-              <div className="tl-bd">
-                {a.userName && <div className="tl-actor" style={{ color: actClr(a.type) }}>{a.userName}</div>}
-                <div className="tl-desc">{a.description}</div>
-                <div className="tl-time">{a.leadName} · {fmtAgo(a.timestamp)}</div>
-              </div>
+      <div className="sec-hd"><div className="sec-t"><Mi>handshake</Mi>Meeting Agents</div></div>
+      <div className="grid-2" style={{ marginBottom: '20px' }}>
+        {mAgents.map(a => <AgentCard key={a.id} agent={a} />)}
+      </div>
+      <div className="sec-hd"><div className="sec-t"><Mi>history</Mi>Team Activity</div></div>
+      <div className="tl">
+        <div className="tl-ttl">Recent Actions</div>
+        {actFeed.map(a => (
+          <div key={a.id} className="tl-item">
+            <div className="tl-dot" style={{ background: actClr(a.type) }}><Mi>{actIcon(a.type)}</Mi></div>
+            <div className="tl-bd">
+              {a.userName && <div className="tl-actor" style={{ color: actClr(a.type) }}>{a.userName}</div>}
+              <div className="tl-desc">{a.description}</div>
+              <div className="tl-time">{a.leadName} · {fmtAgo(a.timestamp)}</div>
             </div>
-          ))}
-        </div>
+          </div>
+        ))}
       </div>
     </div>
   );

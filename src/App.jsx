@@ -53,6 +53,7 @@ function LoginPage({ onLogin }) {
   const [showPw, setShowPw] = useState(false);
   const [err, setErr] = useState('');
   const [loading, setLoading] = useState(false);
+  const [demoOpen, setDemoOpen] = useState(false);
   const db = getDB();
 
   const order = { MANAGEMENT: 0, TEAM_LEAD: 1, MEETING_AGENT: 2, INITIAL_AGENT: 3 };
@@ -78,9 +79,11 @@ function LoginPage({ onLogin }) {
       <div className="ln-left">
         <div className="ln-brand">
           <span className="wlogo wlogo-white">WECON</span>
-          <span className="ln-brand-sub">PropCRM</span>
         </div>
-        <div className="ln-tagline">Real Estate CRM<br />built for your team.</div>
+        <div className="ln-hero-center">
+          <div className="ln-hero-label">Real Estate</div>
+          <div className="ln-hero-title">Sales engine</div>
+        </div>
       </div>
       <div className="ln-right">
         <div className="ln-card">
@@ -88,12 +91,16 @@ function LoginPage({ onLogin }) {
           <div className="lnc-s">Welcome back to WECON PropCRM</div>
           <div className="fl">
             <label>Email address</label>
-            <input className="finp" type="email" placeholder="you@company.com" value={email} onChange={e => setEmail(e.target.value)} onKeyDown={handleKey} autoComplete="email" />
+            <div className="finp-wrap">
+              <Mi>mail_outline</Mi>
+              <input className="finp finp-ico" type="email" placeholder="you@company.com" value={email} onChange={e => setEmail(e.target.value)} onKeyDown={handleKey} autoComplete="email" />
+            </div>
           </div>
           <div className="fl">
             <label>Password</label>
-            <div className="pw-w">
-              <input className="finp" type={showPw ? 'text' : 'password'} placeholder="••••••••" value={pw} onChange={e => setPw(e.target.value)} onKeyDown={handleKey} autoComplete="current-password" />
+            <div className="pw-w finp-wrap">
+              <Mi>lock_outline</Mi>
+              <input className="finp finp-ico" type={showPw ? 'text' : 'password'} placeholder="••••••••" value={pw} onChange={e => setPw(e.target.value)} onKeyDown={handleKey} autoComplete="current-password" />
               <button className="pw-e" onClick={() => setShowPw(v => !v)}><Mi>{showPw ? 'visibility_off' : 'visibility'}</Mi></button>
             </div>
           </div>
@@ -101,15 +108,24 @@ function LoginPage({ onLogin }) {
           <button className="btn-ln" onClick={doLogin} disabled={loading}>
             {loading ? 'Signing in…' : 'Continue'}
           </button>
-          <div className="div-or">Demo accounts</div>
-          <div className="demo-grid">
-            {users.map(u => (
-              <button key={u.id} className="dg-btn" onClick={() => { setEmail(u.email); setPw('1234'); setErr(''); }}>
-                <div className="dg-name">{u.name}</div>
-                <div className="dg-role">{rlabel(u.role)}</div>
-              </button>
-            ))}
-          </div>
+          <button className="demo-toggle" onClick={() => setDemoOpen(v => !v)}>
+            <Mi>people_alt</Mi>
+            Demo accounts
+            <Mi style={{ marginLeft: 'auto', transition: 'transform .2s', transform: demoOpen ? 'rotate(180deg)' : 'none' }}>expand_more</Mi>
+          </button>
+          {demoOpen && (
+            <div className="demo-grid">
+              {users.map(u => (
+                <button key={u.id} className="dg-btn" onClick={() => { setEmail(u.email); setPw('1234'); setErr(''); setDemoOpen(false); }}>
+                  <div className="dg-av" style={{ background: `hsl(${u.name.charCodeAt(0) * 13 % 360},55%,45%)` }}>{u.name[0]}</div>
+                  <div>
+                    <div className="dg-name">{u.name}</div>
+                    <div className="dg-role">{rlabel(u.role)}</div>
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       </div>
     </div>
