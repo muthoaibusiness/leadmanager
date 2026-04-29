@@ -19,7 +19,7 @@ export default function ForwardModal() {
   }, [isOpen]);
 
   const db = getDB();
-  const targets = db.users.filter(u => u.role === targetRole);
+  const targets = db.users.filter(u => u.role === targetRole && u.teamId === user?.teamId);
 
   const submit = () => {
     if (!selected || !panLead) return;

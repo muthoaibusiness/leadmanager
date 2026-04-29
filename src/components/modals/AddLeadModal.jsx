@@ -177,7 +177,7 @@ export default function AddLeadModal() {
             <div className="fg"><label>Customer Location</label><input className="fi" ref={cityRef} type="text" placeholder="e.g. Dubai, Sharjah" /></div>
           </div>
           <div className="fg"><label>Property Interest</label><input className="fi" ref={propRef} type="text" placeholder="e.g. 3BHK Apartment" /></div>
-          <div className="fg"><label>Budget (AED)</label><input className="fi" ref={budgetRef} type="number" min="0" placeholder="e.g. 850000" /></div>
+          <div className="fg"><label>Budget (BDT)</label><input className="fi" ref={budgetRef} type="number" min="0" placeholder="e.g. 850000" /></div>
         </div>
         <div className="m-ft">
           <button className="btn btn-g" onClick={closeModal}>Cancel</button>

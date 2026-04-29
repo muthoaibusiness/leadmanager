@@ -132,7 +132,7 @@ function PageHeader() {
   const title = agentFilter && agentName ? agentName + "'s Leads" : titles[view] || '';
 
   let actions = [];
-  if (user && [ROLES.IA, ROLES.TL, ROLES.MGMT].includes(user.role) && (view === 'dashboard' || view === 'leads')) {
+  if (user && [ROLES.IA, ROLES.TL].includes(user.role) && (view === 'dashboard' || view === 'leads')) {
     actions.push(
       <button key="add-lead" className="btn btn-p btn-sm" onClick={() => openModal('add-lead')}>
         <Mi>person_add</Mi>Add Lead

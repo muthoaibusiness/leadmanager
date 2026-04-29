@@ -2,8 +2,9 @@ import { useState, useEffect } from 'react';
 import Mi from './Mi.jsx';
 import Pagination from './Pagination.jsx';
 import { avc, ini, fmtAgo, fmtBDT } from '../lib/helpers.js';
-import { SRC_LABELS, STATUS_LABELS } from '../lib/constants.js';
+import { SRC_LABELS, STATUS_LABELS, ROLES } from '../lib/constants.js';
 import { useApp } from '../context/AppContext.jsx';
+import { bulkDeleteLeads } from '../lib/db.js';
 
 const PAGE_SIZE = 15;
 
@@ -11,21 +12,43 @@ function sclass(s) { return 's-' + (s || '').toLowerCase(); }
 function srcclass(s) { return 'src-' + (s || '').toLowerCase(); }
 
 export default function LeadTable({ leads }) {
-  const { setPanLead } = useApp();
+  const { setPanLead, user, refreshDB, showToast } = useApp();
   const [page, setPage] = useState(0);
+  const [selected, setSelected] = useState(new Set());
+  const canSelect = user?.role === ROLES.IA;
 
-  // sort newest first
   const sorted = [...leads].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
 
-  // reset to page 0 when leads list changes (tab/search/filter)
-  useEffect(() => { setPage(0); }, [leads.length, leads.map(l => l.id).join()]);
+  useEffect(() => { setPage(0); setSelected(new Set()); }, [leads.length, leads.map(l => l.id).join()]);
 
   const slice = sorted.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
+  const sliceIds = slice.map(l => l.id);
+  const allChecked = sliceIds.length > 0 && sliceIds.every(id => selected.has(id));
+
+  function toggleAll() {
+    if (allChecked) setSelected(s => { const n = new Set(s); sliceIds.forEach(id => n.delete(id)); return n; });
+    else setSelected(s => { const n = new Set(s); sliceIds.forEach(id => n.add(id)); return n; });
+  }
+  function toggleOne(id, e) {
+    e.stopPropagation();
+    setSelected(s => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  }
+
+  function handleBulkDelete() {
+    const ids = [...selected];
+    if (!ids.length) return;
+    if (!window.confirm(`Delete ${ids.length} lead${ids.length > 1 ? 's' : ''}? This cannot be undone.`)) return;
+    bulkDeleteLeads(ids, user);
+    setSelected(new Set());
+    refreshDB();
+    showToast(`${ids.length} lead${ids.length > 1 ? 's' : ''} deleted`, 'ok');
+  }
 
   if (!leads.length) {
     return (
       <div className="lt">
         <div className="lt-hdr">
+          {canSelect && <div style={{ width: '32px' }} />}
           <div>Lead</div><div>Property / Budget</div><div>Source</div><div>Status</div><div>Updated</div><div></div>
         </div>
         <div className="empty"><Mi>inbox</Mi><p>No leads here</p></div>
@@ -35,12 +58,31 @@ export default function LeadTable({ leads }) {
 
   return (
     <div>
+      {canSelect && selected.size > 0 && (
+        <div className="bulk-bar">
+          <span className="bulk-ct">{selected.size} selected</span>
+          <button className="btn btn-sm" style={{ background: 'var(--red-l)', color: 'var(--red)' }} onClick={handleBulkDelete}>
+            <Mi>delete</Mi>Delete Selected
+          </button>
+          <button className="btn btn-g btn-sm" onClick={() => setSelected(new Set())}>Clear</button>
+        </div>
+      )}
       <div className="lt">
         <div className="lt-hdr">
+          {canSelect && (
+            <div style={{ width: '32px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <input type="checkbox" checked={allChecked} onChange={toggleAll} onClick={e => e.stopPropagation()} style={{ cursor: 'pointer' }} />
+            </div>
+          )}
           <div>Lead</div><div>Property / Budget</div><div>Source</div><div>Status</div><div>Updated</div><div></div>
         </div>
         {slice.map(l => (
-          <div key={l.id} className="lt-row" onClick={() => setPanLead(l.id)}>
+          <div key={l.id} className={`lt-row${selected.has(l.id) ? ' lt-sel' : ''}`} onClick={() => !canSelect || !selected.size ? setPanLead(l.id) : toggleOne(l.id, { stopPropagation: () => {} })}>
+            {canSelect && (
+              <div style={{ width: '32px', display: 'flex', alignItems: 'center', justifyContent: 'center' }} onClick={e => toggleOne(l.id, e)}>
+                <input type="checkbox" checked={selected.has(l.id)} onChange={() => {}} onClick={e => toggleOne(l.id, e)} style={{ cursor: 'pointer' }} />
+              </div>
+            )}
             <div className="lt-cell">
               <div className="lt-av" style={{ background: avc(l.name), borderRadius: '8px' }}>{ini(l.name)}</div>
               <div>

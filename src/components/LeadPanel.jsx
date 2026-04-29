@@ -192,7 +192,7 @@ export default function LeadPanel() {
   function handleDelete() {
     if (!l) return;
     if (!window.confirm(`Delete "${l.name}"? This cannot be undone.`)) return;
-    deleteLead(panLead);
+    deleteLead(panLead, user);
     refreshDB();
     setPanLead(null);
     showToast('Lead deleted', 'ok');

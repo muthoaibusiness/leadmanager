@@ -97,11 +97,34 @@ export function updLead(id, upd) {
   });
 }
 
-export function deleteLead(leadId) {
+export function deleteLead(leadId, user) {
   mutate(db => {
+    const l = db.leads.find(x => x.id === leadId);
+    if (l) {
+      if (!db.deletionLog) db.deletionLog = [];
+      db.deletionLog.push({ id: leadId, name: l.name, phone: l.phone, status: l.status, deletedBy: user?.name || 'Unknown', deletedById: user?.id, deletedAt: now_() });
+    }
     db.leads = db.leads.filter(l => l.id !== leadId);
     delete db.activities[leadId];
   });
+}
+
+export function bulkDeleteLeads(leadIds, user) {
+  mutate(db => {
+    if (!db.deletionLog) db.deletionLog = [];
+    leadIds.forEach(id => {
+      const l = db.leads.find(x => x.id === id);
+      if (l) db.deletionLog.push({ id, name: l.name, phone: l.phone, status: l.status, deletedBy: user?.name || 'Unknown', deletedById: user?.id, deletedAt: now_() });
+    });
+    const idSet = new Set(leadIds);
+    db.leads = db.leads.filter(l => !idSet.has(l.id));
+    leadIds.forEach(id => delete db.activities[id]);
+  });
+}
+
+export function getDeletionLog() {
+  const db = getDB();
+  return (db.deletionLog || []).slice().sort((a, b) => new Date(b.deletedAt) - new Date(a.deletedAt));
 }
 
 export function changeStatus(leadId, status, user) {
@@ -219,30 +242,32 @@ export function addLeadFn(name, phone, phones, email, emails, company, source, p
 }
 
 // ── CSV Import ──
-function parseCSVLine(line) {
-  const r = []; let cur = ''; let inQ = false;
-  for (let i = 0; i < line.length; i++) {
-    const c = line[i];
-    if (c === '"') inQ = !inQ;
-    else if (c === ',' && !inQ) { r.push(cur); cur = ''; }
-    else cur += c;
-  }
-  r.push(cur); return r;
-}
-
 function parseCSV(text) {
-  text = text.replace(/^\uFEFF/, '');
-  const lines = text.split(/\r?\n/);
-  if (!lines.length) return [];
-  const headers = parseCSVLine(lines[0]).map(h => h.trim());
-  const rows = [];
-  for (let i = 1; i < lines.length; i++) {
-    const line = lines[i].trim(); if (!line) continue;
-    const vals = parseCSVLine(line);
-    const obj = {}; headers.forEach((h, idx) => { obj[h] = (vals[idx] || '').trim(); });
-    rows.push(obj);
+  text = text.replace(/^\uFEFF/, '').replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  const fields = []; const rows = []; let cur = ''; let inQ = false; let row = [];
+  for (let i = 0; i <= text.length; i++) {
+    const c = i < text.length ? text[i] : null;
+    if (inQ) {
+      if (c === '"' && text[i + 1] === '"') { cur += '"'; i++; }
+      else if (c === '"') inQ = false;
+      else if (c === null) row.push(cur);
+      else cur += c;
+    } else {
+      if (c === '"') { inQ = true; }
+      else if (c === ',') { row.push(cur.trim()); cur = ''; }
+      else if (c === '\n' || c === null) {
+        row.push(cur.trim()); cur = '';
+        if (row.some(f => f)) rows.push(row);
+        row = [];
+      } else cur += c;
+    }
   }
-  return rows;
+  if (!rows.length) return [];
+  const headers = rows[0].map(h => h.replace(/^"|"$/g, '').trim());
+  return rows.slice(1).map(vals => {
+    const obj = {}; headers.forEach((h, idx) => { obj[h] = (vals[idx] || '').trim(); });
+    return obj;
+  });
 }
 
 function parseImportDate(s) {
@@ -257,43 +282,47 @@ function parseImportDate(s) {
 }
 
 export function mapCSVToLead(row, user) {
-  const srcMap = { meta: 'META_ADS', whatsapp: 'WHATSAPP_ADS', linkedin: 'LINKEDIN', website: 'WEBSITE' };
-  const src = srcMap[(row['Lead Source'] || '').toLowerCase().trim().replace(/\s+/g, '')] || 'META_ADS';
-  const stageMap = { contacted: 'CONTACTED', 'not fit': 'NOT_INTERESTED', 'not received': 'CONTACTED', qualified: 'INTERESTED', 'not fit ': 'NOT_INTERESTED' };
-  const status = stageMap[(row['Stage'] || '').toLowerCase().trim()] || 'NEW';
-  const name = (row['Full Name'] || '').trim();
-  const rawPhone = (row['Phone Number'] || '').trim();
+  // case-insensitive column lookup
+  const col = (names) => { for (const n of (Array.isArray(names)?names:[names])) { for (const k of Object.keys(row)) { if (k.toLowerCase().trim() === n.toLowerCase().trim()) return row[k] || ''; } } return ''; };
+  const srcMap = { meta: 'META_ADS', metaads: 'META_ADS', whatsapp: 'WHATSAPP_ADS', whatsappads: 'WHATSAPP_ADS', linkedin: 'LINKEDIN', website: 'WEBSITE', hotline: 'HOTLINE', personal: 'PERSONAL' };
+  const src = srcMap[(col(['Lead Source','Source','LeadSource'])).toLowerCase().trim().replace(/[\s_-]/g, '')] || 'META_ADS';
+  const stageMap = { contacted: 'CONTACTED', 'not fit': 'NOT_INTERESTED', 'not received': 'CONTACTED', qualified: 'INTERESTED', interested: 'INTERESTED', new: 'NEW', 'not interested': 'NOT_INTERESTED', negotiating: 'NEGOTIATING' };
+  const status = stageMap[(col(['Stage','Status','Lead Stage'])).toLowerCase().trim()] || 'NEW';
+  const name = col(['Full Name','Name','Customer Name','Lead Name']).trim();
+  const rawPhone = col(['Phone Number','Phone','Mobile','Contact']).trim();
   const phone = rawPhone.replace(/[\s\n]/g, '').split(',')[0].trim();
   if (!name && !phone) return null;
-  const sqft = parseInt(row['Square Feet Requirement']) || 0;
-  const propParts = [(row['Interested For'] || '').trim(), sqft ? sqft + ' sqft' : ''].filter(Boolean);
-  const createdAt = parseImportDate(row['Lead Created Date']) || now_();
-  const updatedAt = parseImportDate(row['Last Communication Date']) || createdAt;
-  const priority = (row['Priority Label'] || '').replace(/priority\s*/i, '').trim() || null;
+  const sqft = parseInt(col(['Square Feet Requirement','Sqft','Area'])) || 0;
+  const propParts = [col(['Interested For','Property','Property Interest']).trim(), sqft ? sqft + ' sqft' : ''].filter(Boolean);
+  const createdAt = parseImportDate(col(['Lead Created Date','Created Date','Created At','Date'])) || now_();
+  const updatedAt = parseImportDate(col(['Last Communication Date','Last Updated','Updated At'])) || createdAt;
+  const priority = col(['Priority Label','Priority']).replace(/priority\s*/i, '').trim() || null;
   return {
     id: 'l' + uid(),
     name: name || 'Unknown', phone,
-    email: (row['Email'] || '').split(',')[0].trim(),
-    company: (row['Company Name'] || '').trim() || '—',
+    email: col(['Email','Email Address']).split(',')[0].trim(),
+    company: col(['Company Name','Company']).trim() || '—',
     source: src, status,
     assignedTo: user.id, assignedToName: user.name, assignedRole: user.role,
     teamId: user.teamId || 't1', previousAssignees: [],
     propertyInterest: propParts.join(' · '),
-    budget: 0, dealValue: 0, dealStatus: null,
+    budget: parseFloat(col(['Budget','Budget (BDT)','Budget (AED)'])) || 0,
+    dealValue: 0, dealStatus: null,
     meetingSetBy: null, meetingSetDate: null,
     siteVisitDoneBy: null, siteVisitDoneDate: null,
     notes: '', createdAt, updatedAt,
-    callCount: 0, smsCount: 0, whatsappCount: 0, visitCount: 0,
+    callCount: parseInt(col(['Call Count','Calls'])) || 0,
+    smsCount: 0, whatsappCount: 0, visitCount: 0,
     meetingDate: null, meetingLocation: '',
-    externalId: row['Lead ID'] || '',
+    externalId: col(['Lead ID','ID','External ID']) || '',
     priority,
-    city: (row['City'] || '').trim(),
-    profession: (row['Profession'] || '').trim(),
-    preferredTime: (row['Prefered Time'] || '').trim().replace(/_/g, ' '),
+    city: col(['City','Location']).trim(),
+    profession: col(['Profession','Job','Occupation']).trim(),
+    preferredTime: col(['Prefered Time','Preferred Time']).trim().replace(/_/g, ' '),
     sqft,
-    nextFollowup: parseImportDate(row['Next Follwup Date']) || null,
-    materialSent: (row['Marketing Material Sent'] || '').trim(),
-    _log: (row['Communication Log'] || '').trim(),
+    nextFollowup: parseImportDate(col(['Next Follwup Date','Next Followup Date','Follow-up Date'])) || null,
+    materialSent: col(['Marketing Material Sent','Material Sent']).trim(),
+    _log: col(['Communication Log','Notes','Log']).trim(),
   };
 }
 
