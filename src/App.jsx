@@ -108,24 +108,29 @@ function LoginPage({ onLogin }) {
           <button className="btn-ln" onClick={doLogin} disabled={loading}>
             {loading ? 'Signing in…' : 'Continue'}
           </button>
-          <button className="demo-toggle" onClick={() => setDemoOpen(v => !v)}>
-            <Mi>people_alt</Mi>
-            Demo accounts
-            <Mi style={{ marginLeft: 'auto', transition: 'transform .2s', transform: demoOpen ? 'rotate(180deg)' : 'none' }}>expand_more</Mi>
-          </button>
-          {demoOpen && (
-            <div className="demo-grid">
-              {users.map(u => (
-                <button key={u.id} className="dg-btn" onClick={() => { setEmail(u.email); setPw('1234'); setErr(''); setDemoOpen(false); }}>
-                  <div className="dg-av" style={{ background: `hsl(${u.name.charCodeAt(0) * 13 % 360},55%,45%)` }}>{u.name[0]}</div>
-                  <div>
-                    <div className="dg-name">{u.name}</div>
-                    <div className="dg-role">{rlabel(u.role)}</div>
-                  </div>
-                </button>
-              ))}
-            </div>
-          )}
+          <div className="demo-wrap">
+            <button className="demo-toggle" onClick={() => setDemoOpen(v => !v)}>
+              <Mi>people_alt</Mi>
+              Demo accounts
+              <Mi style={{ marginLeft: 'auto', transition: 'transform .2s', transform: demoOpen ? 'rotate(180deg)' : 'none' }}>expand_more</Mi>
+            </button>
+            {demoOpen && (
+              <div className="demo-popup">
+                <div className="demo-popup-hd">Quick access</div>
+                <div className="demo-popup-list">
+                  {users.map(u => (
+                    <button key={u.id} className="dg-btn" onClick={() => { setEmail(u.email); setPw('1234'); setErr(''); setDemoOpen(false); }}>
+                      <div className="dg-av" style={{ background: `hsl(${u.name.charCodeAt(0) * 13 % 360},55%,45%)` }}>{u.name[0]}</div>
+                      <div>
+                        <div className="dg-name">{u.name}</div>
+                        <div className="dg-role">{rlabel(u.role)}</div>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </div>
