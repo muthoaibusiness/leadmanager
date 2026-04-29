@@ -76,22 +76,16 @@ function LoginPage({ onLogin }) {
   return (
     <div id="login">
       <div className="ln-left">
-        <div className="ln-hero">
-          <span className="wlogo wlogo-white" style={{ fontSize: '52px', marginBottom: '4px' }}>WECON</span>
-          <h1>Real Estate CRM<br />Built for Your Team</h1>
-          <p>Track leads from Meta, WhatsApp &amp; LinkedIn. Monitor agent performance. Close more deals.</p>
-          <div className="ln-features">
-            <div className="ln-feat"><Mi>track_changes</Mi> Real-time lead pipeline tracking</div>
-            <div className="ln-feat"><Mi>target</Mi> Monthly target vs achievement</div>
-            <div className="ln-feat"><Mi>groups</Mi> Full team activity monitoring</div>
-          </div>
+        <div className="ln-brand">
+          <span className="wlogo wlogo-white">WECON</span>
+          <span className="ln-brand-sub">PropCRM</span>
         </div>
+        <div className="ln-tagline">Real Estate CRM<br />built for your team.</div>
       </div>
       <div className="ln-right">
         <div className="ln-card">
-          <div className="lnc-logo"><span className="wlogo wlogo-dark">WECON</span></div>
-          <div className="lnc-h">Welcome back</div>
-          <div className="lnc-s">Sign in to your workspace</div>
+          <div className="lnc-h">Sign in</div>
+          <div className="lnc-s">Welcome back to WECON PropCRM</div>
           <div className="fl">
             <label>Email address</label>
             <input className="finp" type="email" placeholder="you@company.com" value={email} onChange={e => setEmail(e.target.value)} onKeyDown={handleKey} autoComplete="email" />
@@ -103,11 +97,11 @@ function LoginPage({ onLogin }) {
               <button className="pw-e" onClick={() => setShowPw(v => !v)}><Mi>{showPw ? 'visibility_off' : 'visibility'}</Mi></button>
             </div>
           </div>
-          {err && <div className="err-msg" style={{ display: 'block' }}>{err}</div>}
+          {err && <div className="err-msg">{err}</div>}
           <button className="btn-ln" onClick={doLogin} disabled={loading}>
-            <Mi>login</Mi>{loading ? 'Signing in...' : 'Sign In'}
+            {loading ? 'Signing in…' : 'Continue'}
           </button>
-          <div className="div-or">Quick Access</div>
+          <div className="div-or">Demo accounts</div>
           <div className="demo-grid">
             {users.map(u => (
               <button key={u.id} className="dg-btn" onClick={() => { setEmail(u.email); setPw('1234'); setErr(''); }}>
