@@ -126,7 +126,7 @@ function Actions({ l }) {
   if (r === ROLES.TL || r === ROLES.MGMT) {
     if (['SITE_VISIT_DONE', 'NEGOTIATING'].includes(l.status)) btns.push(
       <button key="deal" className="btn btn-success btn-full" onClick={() => openModal('deal')}>
-        <Mi>handshake</Mi>Close Deal
+        <Mi>emoji_events</Mi>Close as Won
       </button>
     );
     if (l.status === 'SITE_VISIT_DONE') btns.push(
@@ -134,6 +134,18 @@ function Actions({ l }) {
         <Mi>balance</Mi>Mark as Negotiating
       </button>
     );
+    if (['SITE_VISIT_DONE', 'NEGOTIATING'].includes(l.status)) {
+      btns.push(
+        <button key="follow-up" className="btn btn-full" style={{ background: '#fef3c7', color: '#92400e' }} onClick={() => openModal('follow-up')}>
+          <Mi>alarm</Mi>Take Time
+        </button>
+      );
+      btns.push(
+        <button key="lost" className="btn btn-full" style={{ background: 'var(--red-l)', color: 'var(--red)' }} onClick={() => openModal('lost')}>
+          <Mi>thumb_down</Mi>Mark as Lost
+        </button>
+      );
+    }
   }
 
   btns.push(

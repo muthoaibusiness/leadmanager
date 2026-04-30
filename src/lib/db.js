@@ -190,6 +190,50 @@ export function closeDealFn(leadId, won, val, user) {
   addNotifs(involved.map(userId => ({ userId, type, message: msg, leadId })), user);
 }
 
+export function setFollowUpFn(leadId, days, user) {
+  const date = new Date();
+  date.setDate(date.getDate() + parseInt(days));
+  const iso = date.toISOString();
+  updLead(leadId, { nextFollowup: iso });
+  addAct(leadId, { type: 'FOLLOW_UP', description: 'Follow-up reminder set for ' + days + ' day' + (days == 1 ? '' : 's') + ' — ' + new Date(iso).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }), userId: user.id, userName: user.name, durationSeconds: 0 });
+}
+
+export function markLostFn(leadId, reason, user) {
+  updLead(leadId, { status: 'DEAL_CLOSED_LOST', dealStatus: 'LOST' });
+  addAct(leadId, { type: 'DEAL', description: 'Deal LOST', userId: user.id, userName: user.name, durationSeconds: 0 });
+  if (reason) addAct(leadId, { type: 'LOST_REASON', description: reason, userId: user.id, userName: user.name, durationSeconds: 0 });
+  const l = getLead(leadId);
+  const db = getDB();
+  const mgmtIds = db.users.filter(u => u.role === ROLES.MGMT).map(u => u.id);
+  const involved = [...new Set([...l.previousAssignees, ...mgmtIds])];
+  addNotifs(involved.map(userId => ({ userId, type: 'DEAL_LOST', message: 'Deal lost: ' + l.name, leadId })), user);
+}
+
+export function checkFollowUpReminders(db) {
+  const now = new Date();
+  const notifList = [];
+  db.leads.forEach(lead => {
+    if (!lead.nextFollowup) return;
+    if (new Date(lead.nextFollowup) > now) return;
+    const tl = db.users.find(u => u.id === lead.assignedTo);
+    if (!tl) return;
+    notifList.push({ userId: tl.id, type: 'FOLLOW_UP', message: 'Follow-up reminder: ' + lead.name, leadId: lead.id });
+    lead.nextFollowup = null;
+  });
+  if (notifList.length) {
+    if (!db.notifications) db.notifications = {};
+    const ts = now_();
+    notifList.forEach(({ userId, type, message, leadId }) => {
+      if (!db.notifications[userId]) db.notifications[userId] = [];
+      const n = { id: 'n' + uid(), type, message, leadId, timestamp: ts, read: false, userId };
+      db.notifications[userId].unshift(n);
+    });
+    sbUpsertNotifs(notifList.map(({ userId, type, message, leadId }) => ({
+      id: 'n' + uid(), userId, type, message, leadId, timestamp: ts, read: false,
+    })));
+  }
+}
+
 export function addNote(leadId, txt, user) {
   addAct(leadId, { type: 'NOTE', description: txt, userId: user.id, userName: user.name, durationSeconds: 0 });
 }

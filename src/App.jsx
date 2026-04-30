@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useApp } from './context/AppContext.jsx';
-import { getDB, getSession, setSession, tryLogin, saveDB } from './lib/db.js';
+import { getDB, getSession, setSession, tryLogin, saveDB, checkFollowUpReminders } from './lib/db.js';
 import { sbLoad, sbSubscribeNotifs } from './lib/supabase.js';
 import { avc, ini, rlabel } from './lib/helpers.js';
 import { ROLES } from './lib/constants.js';
@@ -31,6 +31,8 @@ import ImportModal from './components/modals/ImportModal.jsx';
 import TargetModal from './components/modals/TargetModal.jsx';
 import DeleteUserModal from './components/modals/DeleteUserModal.jsx';
 import CredsModal from './components/modals/CredsModal.jsx';
+import FollowUpModal from './components/modals/FollowUpModal.jsx';
+import LostModal from './components/modals/LostModal.jsx';
 
 // ── Loading screen ──────────────────────────────────────────────────────────
 function LoadingScreen({ visible }) {
@@ -273,6 +275,7 @@ export default function App() {
       const sbData = await sbLoad();
       const freshDB = sbData || { users: [], teams: [], leads: [], targets: [], activities: {}, notifications: {} };
       if (!freshDB.notifications) freshDB.notifications = {};
+      checkFollowUpReminders(freshDB);
       saveDB(freshDB);
       refreshDB();
 
@@ -303,6 +306,8 @@ export default function App() {
       <TargetModal />
       <DeleteUserModal />
       <CredsModal />
+      <FollowUpModal />
+      <LostModal />
       <Toast />
     </>
   );

@@ -70,6 +70,7 @@ export function actIcon(t) {
     CALL: 'call', MISSED_CALL: 'call_missed', SMS: 'sms', WHATSAPP: 'chat_bubble',
     VISIT: 'location_on', NOTE: 'sticky_note_2', STATUS_CHANGE: 'swap_horiz',
     FORWARDED: 'forward_to_inbox', CREATED: 'person_add', DEAL: 'handshake', OFFER: 'price_check',
+    FOLLOW_UP: 'alarm', LOST_REASON: 'sentiment_dissatisfied',
   };
   return m[t] || 'radio_button_checked';
 }
@@ -79,6 +80,7 @@ export function actClr(t) {
     CALL: '#2563EB', MISSED_CALL: '#DC2626', SMS: '#2563EB', WHATSAPP: '#2563EB',
     VISIT: '#16A34A', NOTE: '#64748B', STATUS_CHANGE: '#64748B',
     FORWARDED: '#2563EB', CREATED: '#2563EB', DEAL: '#16A34A', OFFER: '#7C3AED',
+    FOLLOW_UP: '#D97706', LOST_REASON: '#DC2626',
   };
   return m[t] || '#64748B';
 }
