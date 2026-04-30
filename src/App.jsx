@@ -1,8 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useApp } from './context/AppContext.jsx';
-import { getDB, getSession, setSession, tryLogin, saveDB, genSeedNotifs } from './lib/db.js';
-import { sbLoad } from './lib/supabase.js';
-import { TEAMS } from './lib/data.js';
+import { getDB, getSession, setSession, tryLogin, saveDB } from './lib/db.js';
+import { sbLoad, sbSubscribeNotifs } from './lib/supabase.js';
 import { avc, ini, rlabel } from './lib/helpers.js';
 import { ROLES } from './lib/constants.js';
 
@@ -222,6 +221,22 @@ export default function App() {
   const [loadVisible, setLoadVisible] = useState(true);
   const initialized = useRef(false);
 
+  // Real-time notification subscription
+  useEffect(() => {
+    if (!user) return;
+    const unsub = sbSubscribeNotifs(user.id, (newNotif) => {
+      const db = getDB();
+      if (!db.notifications) db.notifications = {};
+      if (!db.notifications[user.id]) db.notifications[user.id] = [];
+      // avoid duplicates
+      if (!db.notifications[user.id].find(n => n.id === newNotif.id)) {
+        db.notifications[user.id].unshift(newNotif);
+        refreshDB();
+      }
+    });
+    return unsub;
+  }, [user?.id]);
+
   useEffect(() => {
     function onKey(e) {
       const tag = document.activeElement?.tagName;
@@ -245,17 +260,12 @@ export default function App() {
     initialized.current = true;
 
     (async () => {
-      // Try to load from Supabase
+      // Load from Supabase
       const sbData = await sbLoad();
       if (sbData) {
-        let loadedDB = sbData;
-        if (!loadedDB.teams) loadedDB.teams = TEAMS;
-        if (!loadedDB.notifications) {
-          loadedDB.notifications = genSeedNotifs(loadedDB);
-        }
-        saveDB(loadedDB);
+        if (!sbData.notifications) sbData.notifications = {};
+        saveDB(sbData);
       } else {
-        // Use localStorage / default seed
         const db = getDB();
         saveDB(db);
       }

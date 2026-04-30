@@ -1,7 +1,6 @@
 import { ROLES, STATUS_LABELS, SRC_LABELS } from './constants.js';
 import { uid, now_, fmtBDT, fmtDT, curMonth, startOfMonth, rlabel } from './helpers.js';
-import { USERS, TEAMS, DEF_LEADS, DEF_TARGETS, genActs } from './data.js';
-import { sbSave } from './supabase.js';
+import { sbSave, sbUpsertNotifs } from './supabase.js';
 
 export const KEY = 'propcrm_v1';
 export let _DB = null;
@@ -11,12 +10,10 @@ export function getDB() {
     try { _DB = JSON.parse(localStorage.getItem(KEY)) || null; } catch { }
   }
   if (!_DB) {
-    const acts = {};
-    DEF_LEADS.forEach(l => { acts[l.id] = genActs(l); });
-    _DB = { users: USERS, teams: TEAMS, leads: DEF_LEADS, targets: DEF_TARGETS, activities: acts };
+    _DB = { users: [], teams: [], leads: [], targets: [], activities: {}, notifications: {} };
   }
-  if (!_DB.teams) _DB.teams = TEAMS;
-  if (!_DB.notifications) { _DB.notifications = genSeedNotifs(_DB); }
+  if (!_DB.teams) _DB.teams = [];
+  if (!_DB.notifications) _DB.notifications = {};
   return _DB;
 }
 
@@ -407,15 +404,19 @@ export function getUnreadCount(userId) { return getNotifs(userId).filter(n => !n
 export function addNotifs(list, currentUser) {
   if (!list || !list.length) return;
   const ts = now_();
+  const toInsert = [];
   mutate(db => {
     if (!db.notifications) db.notifications = {};
     list.forEach(({ userId, type, message, leadId }) => {
       if (!userId || (currentUser && userId === currentUser.id)) return;
+      const n = { id: 'n' + uid(), type, message, leadId, timestamp: ts, read: false, userId };
       if (!db.notifications[userId]) db.notifications[userId] = [];
-      db.notifications[userId].unshift({ id: 'n' + uid(), type, message, leadId, timestamp: ts, read: false });
+      db.notifications[userId].unshift(n);
       if (db.notifications[userId].length > 60) db.notifications[userId].length = 60;
+      toInsert.push(n);
     });
   });
+  if (toInsert.length) sbUpsertNotifs(toInsert);
 }
 
 export function markAllRead(userId) {

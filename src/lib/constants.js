@@ -6,8 +6,8 @@ export const ROLES = {
 };
 
 export const SRC_LABELS = {
-  META_ADS: 'Meta Ads',
-  WHATSAPP_ADS: 'WhatsApp Ads',
+  META_ADS: 'Meta',
+  WHATSAPP_ADS: 'WhatsApp',
   LINKEDIN: 'LinkedIn',
   WEBSITE: 'Website',
   HOTLINE: 'Hotline',

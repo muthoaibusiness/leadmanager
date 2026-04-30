@@ -76,11 +76,54 @@ export function tToR(t) { return { id: t.id, name: t.name, lead_id: t.leadId }; 
 export function rToT(r) { return { id: r.id, name: r.name, leadId: r.lead_id }; }
 
 export function nToR(n) {
-  return { id: n.id, user_id: n.userId, type: n.type, message: n.message, lead_id: n.leadId || null, is_read: n.isRead || false, created_at: n.createdAt || new Date().toISOString() };
+  return { id: n.id, user_id: n.userId, type: n.type, message: n.message, lead_id: n.leadId || null, is_read: n.read || false, created_at: n.timestamp || new Date().toISOString() };
 }
 
 export function rToN(r) {
-  return { id: r.id, userId: r.user_id, type: r.type, message: r.message, leadId: r.lead_id, isRead: r.is_read, createdAt: r.created_at };
+  return { id: r.id, userId: r.user_id, type: r.type, message: r.message, leadId: r.lead_id, read: r.is_read, timestamp: r.created_at };
+}
+
+export async function sbUpsertNotifs(notifs) {
+  if (!notifs || !notifs.length) return;
+  await sbUpsert('notifications', notifs.map(nToR));
+}
+
+export function sbSubscribeNotifs(userId, onNew) {
+  const wsUrl = `${SB_URL.replace('https://', 'wss://')}/realtime/v1/websocket?apikey=${SB_KEY}&vsn=1.0.0`;
+  let ws, hbTimer, reconnTimer;
+  let dead = false;
+
+  function connect() {
+    try { ws = new WebSocket(wsUrl); } catch { return; }
+    ws.onopen = () => {
+      ws.send(JSON.stringify({
+        topic: `realtime:public:notifications`,
+        event: 'phx_join',
+        payload: { config: { postgres_changes: [{ event: 'INSERT', schema: 'public', table: 'notifications', filter: `user_id=eq.${userId}` }] } },
+        ref: '1',
+      }));
+      hbTimer = setInterval(() => {
+        if (ws.readyState === 1) ws.send(JSON.stringify({ topic: 'phoenix', event: 'heartbeat', payload: {}, ref: String(Date.now()) }));
+      }, 25000);
+    };
+    ws.onmessage = (e) => {
+      try {
+        const msg = JSON.parse(e.data);
+        if (msg.event === 'postgres_changes') {
+          const rec = msg.payload?.data?.record;
+          if (rec && rec.user_id === userId) onNew(rToN(rec));
+        }
+      } catch {}
+    };
+    ws.onclose = () => {
+      clearInterval(hbTimer);
+      if (!dead) reconnTimer = setTimeout(connect, 5000);
+    };
+    ws.onerror = () => ws.close();
+  }
+
+  connect();
+  return () => { dead = true; clearInterval(hbTimer); clearTimeout(reconnTimer); try { ws?.close(); } catch {} };
 }
 
 export function tgToR(t) { return { id: t.id, user_id: t.userId, month: t.month, type: t.type, value: t.value }; }
@@ -94,7 +137,7 @@ export async function sbLoad() {
       sbGet('notifications?order=created_at.desc'),
       sbGet('targets'),
     ]);
-    if (!leads || !leads.length) return null;
+    if (!users || !users.length) return null;
     const actsMap = {};
     (acts || []).forEach(r => { if (!actsMap[r.lead_id]) actsMap[r.lead_id] = []; actsMap[r.lead_id].push(rToA(r)); });
     return {
