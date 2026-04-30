@@ -15,22 +15,31 @@ export default function ForwardModal() {
   const [selected, setSelected] = useState(null);
   const [ourOffer, setOurOffer] = useState('');
   const [clientOffer, setClientOffer] = useState('');
+  const [totalSft, setTotalSft] = useState('');
   const [offerNotes, setOfferNotes] = useState('');
 
   const targetRole = isMA ? ROLES.MA : ROLES.TL;
 
   useEffect(() => {
-    if (isOpen) { setSelected(null); setStep(1); setOurOffer(''); setClientOffer(''); setOfferNotes(''); }
+    if (isOpen) { setSelected(null); setStep(1); setOurOffer(''); setClientOffer(''); setTotalSft(''); setOfferNotes(''); }
   }, [isOpen]);
 
   const db = getDB();
   const targets = db.users.filter(u => u.role === targetRole && u.teamId === user?.teamId);
 
+  const pipelineValue = totalSft && clientOffer ? parseFloat(totalSft) * parseFloat(clientOffer) : 0;
+
   const submit = () => {
     if (!selected || !panLead) return;
     const toUser = db.users.find(u => u.id === selected);
     if (!toUser) return;
-    const offerData = isTL ? { ourOffer: parseFloat(ourOffer) || 0, clientOffer: parseFloat(clientOffer) || 0, notes: offerNotes.trim() } : null;
+    const offerData = isTL ? {
+      ourOffer: parseFloat(ourOffer) || 0,
+      clientOffer: parseFloat(clientOffer) || 0,
+      totalSft: parseFloat(totalSft) || 0,
+      pipelineValue,
+      notes: offerNotes.trim(),
+    } : null;
     fwdLead(panLead, toUser, user, offerData);
     closeModal();
     refreshDB();
@@ -72,7 +81,7 @@ export default function ForwardModal() {
           </>
         )}
 
-        {/* Step 2 — offer prices (TL only) */}
+        {/* Step 2 — offer details (TL only) */}
         {step === 2 && isTL && (
           <>
             <div className="m-body">
@@ -89,6 +98,20 @@ export default function ForwardModal() {
                 <input className="finp" type="number" placeholder="e.g. 4500000" value={clientOffer} onChange={e => setClientOffer(e.target.value)} />
                 {clientOffer && <div className="fi-hint">{fmtBDT(parseFloat(clientOffer))}</div>}
               </div>
+              <div className="fl">
+                <label>Total SFT</label>
+                <input className="finp" type="number" placeholder="e.g. 1200" value={totalSft} onChange={e => setTotalSft(e.target.value)} />
+              </div>
+              {pipelineValue > 0 && (
+                <div className="pipeline-val">
+                  <Mi>trending_up</Mi>
+                  <div>
+                    <div className="pipeline-val-label">Pipeline Value</div>
+                    <div className="pipeline-val-num">{fmtBDT(pipelineValue)}</div>
+                    <div className="pipeline-val-sub">{totalSft} SFT × {fmtBDT(parseFloat(clientOffer))}</div>
+                  </div>
+                </div>
+              )}
               <div className="fl">
                 <label>Negotiation Notes (optional)</label>
                 <textarea className="finp" rows={3} placeholder="Any context for the Team Lead…" value={offerNotes} onChange={e => setOfferNotes(e.target.value)} />

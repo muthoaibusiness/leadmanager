@@ -144,6 +144,8 @@ export function fwdLead(leadId, toUser, currentUser, offerData) {
     const parts = [];
     if (offerData.ourOffer) parts.push('Our offer: ' + fmtBDT(offerData.ourOffer));
     if (offerData.clientOffer) parts.push('Client offer: ' + fmtBDT(offerData.clientOffer));
+    if (offerData.totalSft) parts.push('Total SFT: ' + offerData.totalSft);
+    if (offerData.pipelineValue) parts.push('Pipeline value: ' + fmtBDT(offerData.pipelineValue));
     if (offerData.notes) parts.push('Note: ' + offerData.notes);
     if (parts.length) addAct(leadId, { type: 'OFFER', description: parts.join(' · '), userId: currentUser.id, userName: currentUser.name, durationSeconds: 0 });
   }
@@ -286,6 +288,7 @@ export function addLeadFn(name, phone, phones, email, emails, company, source, p
     db.leads.push(lead);
     db.activities[id] = [{ id: 'a' + uid(), type: 'CREATED', description: 'Lead created from ' + SRC_LABELS[source], userId: user.id, userName: user.name, timestamp: now_(), durationSeconds: 0 }];
   });
+  addNotifs([{ userId: user.id, type: 'ASSIGNED', message: 'New lead added to your list: ' + name, leadId: id }], null);
   return id;
 }
 
