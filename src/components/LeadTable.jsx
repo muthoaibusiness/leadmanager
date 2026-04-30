@@ -43,7 +43,7 @@ export default function LeadTable({ leads }) {
       <div className={`lt${canSelect ? ' lt-with-cb' : ''}`}>
         <div className="lt-hdr">
           {canSelect && <div className="lt-cb-col" />}
-          <div>Lead</div><div>Property / Budget</div><div>Source</div><div>Status</div><div>Updated</div><div></div>
+          <div>Lead</div><div>Interested For</div><div>Source</div><div>Status</div><div>Updated</div><div></div>
         </div>
         <div className="empty"><Mi>inbox</Mi><p>No leads here</p></div>
       </div>
@@ -64,7 +64,7 @@ export default function LeadTable({ leads }) {
       <div className={`lt${canSelect ? ' lt-with-cb' : ''}`}>
         <div className="lt-hdr">
           {canSelect && <div className="lt-cb-col" />}
-          <div>Lead</div><div>Property / Budget</div><div>Source</div><div>Status</div><div>Updated</div><div></div>
+          <div>Lead</div><div>Interested For</div><div>Source</div><div>Status</div><div>Updated</div><div></div>
         </div>
         {slice.map(l => (
           <div key={l.id} className={`lt-row${selected.has(l.id) ? ' lt-sel' : ''}`}

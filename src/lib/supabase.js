@@ -80,12 +80,24 @@ export function nToR(n) {
 }
 
 export function rToN(r) {
-  return { id: r.id, userId: r.user_id, type: r.type, message: r.message, leadId: r.lead_id, read: r.is_read, timestamp: r.created_at };
+  return { id: r.id, userId: r.user_id, type: r.type, message: r.message, leadId: r.lead_id, read: r.is_read || false, timestamp: r.created_at };
 }
 
+// Flat array of notification objects (each has userId) → upsert to Supabase
 export async function sbUpsertNotifs(notifs) {
   if (!notifs || !notifs.length) return;
   await sbUpsert('notifications', notifs.map(nToR));
+}
+
+// Mark specific notification ids as read in Supabase
+export async function sbMarkRead(ids) {
+  if (!ids || !ids.length) return;
+  const filter = ids.map(id => `id.eq.${id}`).join(',');
+  await fetch(`${SB_URL}/rest/v1/notifications?or=(${filter})`, {
+    method: 'PATCH',
+    headers: { ...SB_H, Prefer: 'return=minimal' },
+    body: JSON.stringify({ is_read: true }),
+  }).catch(e => console.warn('markRead', e));
 }
 
 export function sbSubscribeNotifs(userId, onNew) {
@@ -140,12 +152,19 @@ export async function sbLoad() {
     if (!users || !users.length) return null;
     const actsMap = {};
     (acts || []).forEach(r => { if (!actsMap[r.lead_id]) actsMap[r.lead_id] = []; actsMap[r.lead_id].push(rToA(r)); });
+    // Convert flat notifications array → map keyed by userId
+    const notifsMap = {};
+    (notifs || []).forEach(r => {
+      const n = rToN(r);
+      if (!notifsMap[n.userId]) notifsMap[n.userId] = [];
+      notifsMap[n.userId].push(n);
+    });
     return {
       users: (users || []).map(rToU),
       teams: (teams || []).map(rToT),
       leads: (leads || []).map(rToL),
       activities: actsMap,
-      notifications: (notifs || []).map(rToN),
+      notifications: notifsMap,
       targets: (targets || []).map(rToTg),
     };
   } catch (e) { console.warn('Supabase load failed:', e); return null; }
@@ -163,7 +182,7 @@ export function sbSave(db) {
         sbUpsert('teams', (db.teams || []).map(tToR)),
         sbUpsert('leads', db.leads.map(lToR)),
         sbUpsert('activities', acts),
-        sbUpsert('notifications', (db.notifications || []).map(nToR)),
+        sbUpsert('notifications', Object.values(db.notifications || {}).flat().map(nToR)),
         sbUpsert('targets', (db.targets || []).map(tgToR)),
       ]);
     } catch (e) { console.warn('Supabase save failed:', e); }

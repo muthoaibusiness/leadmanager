@@ -1,6 +1,6 @@
 import { ROLES, STATUS_LABELS, SRC_LABELS } from './constants.js';
 import { uid, now_, fmtBDT, fmtDT, curMonth, startOfMonth, rlabel } from './helpers.js';
-import { sbSave, sbUpsertNotifs } from './supabase.js';
+import { sbSave, sbUpsertNotifs, sbMarkRead } from './supabase.js';
 
 export const KEY = 'propcrm_v1';
 export let _DB = null;
@@ -367,7 +367,7 @@ export function genSeedNotifs(db) {
     if (!toId || toId === 'system') return;
     if (!notifs[toId]) notifs[toId] = [];
     const read = (Date.now() - new Date(ts)) / 86400000 > 5;
-    notifs[toId].push({ id: nid(), type, message: msg, leadId, timestamp: ts, read });
+    notifs[toId].push({ id: nid(), userId: toId, type, message: msg, leadId, timestamp: ts, read });
   };
   const mgmtIds = db.users.filter(u => u.role === ROLES.MGMT).map(u => u.id);
   db.leads.forEach(lead => {
@@ -420,9 +420,16 @@ export function addNotifs(list, currentUser) {
 }
 
 export function markAllRead(userId) {
-  mutate(db => { if (db.notifications && db.notifications[userId]) db.notifications[userId].forEach(n => n.read = true); });
+  let ids = [];
+  mutate(db => {
+    const arr = db.notifications?.[userId] || [];
+    ids = arr.filter(n => !n.read).map(n => n.id);
+    arr.forEach(n => { n.read = true; });
+  });
+  if (ids.length) sbMarkRead(ids);
 }
 
 export function markOneRead(notifId, userId) {
   mutate(db => { const n = (db.notifications[userId] || []).find(x => x.id === notifId); if (n) n.read = true; });
+  sbMarkRead([notifId]);
 }
