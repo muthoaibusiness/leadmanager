@@ -56,7 +56,10 @@ function LoginPage({ onLogin }) {
   const db = getDB();
 
   const order = { MANAGEMENT: 0, TEAM_LEAD: 1, MEETING_AGENT: 2, INITIAL_AGENT: 3 };
-  const users = [...db.users].sort((a, b) => (order[a.role] ?? 9) - (order[b.role] ?? 9));
+  const dhakaTeam = db.teams?.find(t => t.name?.toLowerCase().includes('dhaka'));
+  const users = [...db.users]
+    .filter(u => !dhakaTeam || u.teamId === dhakaTeam.id || u.role === 'MANAGEMENT')
+    .sort((a, b) => (order[a.role] ?? 9) - (order[b.role] ?? 9));
 
   const doLogin = () => {
     if (!email || !pw) { setErr('Enter email and password.'); return; }
