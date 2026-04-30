@@ -167,11 +167,18 @@ function Actions({ l }) {
 function OfferCard({ acts }) {
   const offer = acts.find(a => a.type === 'OFFER');
   if (!offer) return null;
-  const parts = offer.description.split(' · ');
+  let data = null;
+  try { data = JSON.parse(offer.description); } catch { return null; }
   return (
     <div className="offer-card">
       <div className="offer-ttl"><Mi>price_check</Mi>Offer Summary</div>
-      {parts.map((p, i) => <div key={i} className="offer-row">{p}</div>)}
+      {data.ourOffer > 0 && <div className="offer-row"><span className="offer-lbl">Our Offer</span>{fmtBDT(data.ourOffer)}</div>}
+      {data.clientOffer > 0 && <div className="offer-row"><span className="offer-lbl">Client Offer</span>{fmtBDT(data.clientOffer)}</div>}
+      {data.totalSft > 0 && <div className="offer-row"><span className="offer-lbl">Total SFT</span>{data.totalSft} sqft</div>}
+      {data.pipelineValue > 0 && (
+        <div className="offer-row offer-pipeline"><span className="offer-lbl">Pipeline Value</span><strong>{fmtBDT(data.pipelineValue)}</strong></div>
+      )}
+      {data.notes && <div className="offer-notes">{data.notes}</div>}
       <div className="offer-by">Submitted by {offer.userName}</div>
     </div>
   );

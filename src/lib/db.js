@@ -141,13 +141,7 @@ export function fwdLead(leadId, toUser, currentUser, offerData) {
   });
   addAct(leadId, { type: 'FORWARDED', description: 'Forwarded to ' + toUser.name + ' (' + rlabel(toUser.role) + ')', userId: currentUser.id, userName: currentUser.name, durationSeconds: 0 });
   if (offerData && toUser.role === ROLES.TL) {
-    const parts = [];
-    if (offerData.ourOffer) parts.push('Our offer: ' + fmtBDT(offerData.ourOffer));
-    if (offerData.clientOffer) parts.push('Client offer: ' + fmtBDT(offerData.clientOffer));
-    if (offerData.totalSft) parts.push('Total SFT: ' + offerData.totalSft);
-    if (offerData.pipelineValue) parts.push('Pipeline value: ' + fmtBDT(offerData.pipelineValue));
-    if (offerData.notes) parts.push('Note: ' + offerData.notes);
-    if (parts.length) addAct(leadId, { type: 'OFFER', description: parts.join(' · '), userId: currentUser.id, userName: currentUser.name, durationSeconds: 0 });
+    addAct(leadId, { type: 'OFFER', description: JSON.stringify({ ourOffer: offerData.ourOffer || 0, clientOffer: offerData.clientOffer || 0, totalSft: offerData.totalSft || 0, pipelineValue: offerData.pipelineValue || 0, notes: offerData.notes || '' }), userId: currentUser.id, userName: currentUser.name, durationSeconds: 0 });
   }
   const notifList = [{ userId: toUser.id, type: 'ASSIGNED', message: 'New lead assigned: ' + l.name + ' (from ' + currentUser.name + ')', leadId }];
   if (toUser.role === ROLES.TL) {
@@ -414,6 +408,13 @@ export function submitImport(importData, user) {
 }
 
 // ── Notifications ──
+export function calcPipelineValue(leadId, db) {
+  const acts = db.activities?.[leadId] || [];
+  const offerAct = acts.find(a => a.type === 'OFFER');
+  if (!offerAct) return 0;
+  try { return JSON.parse(offerAct.description).pipelineValue || 0; } catch { return 0; }
+}
+
 export function getNotifs(userId) { return ((getDB().notifications) || {})[userId] || []; }
 export function getUnreadCount(userId) { return getNotifs(userId).filter(n => !n.read).length; }
 

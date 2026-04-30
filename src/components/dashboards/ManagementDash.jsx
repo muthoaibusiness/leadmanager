@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useApp } from '../../context/AppContext.jsx';
-import { getDB, getDeletionLog } from '../../lib/db.js';
+import { getDB, getDeletionLog, calcPipelineValue } from '../../lib/db.js';
 import StatCard from '../StatCard.jsx';
 import Mi from '../Mi.jsx';
 import { fmtBDT, avc, ini, fmtAgo, fmtDT, startOfMonth, rlabel } from '../../lib/helpers.js';
@@ -69,7 +69,7 @@ export default function ManagementDash() {
   const lost = allLeads.filter(l => l.status === 'DEAL_CLOSED_LOST');
   const active = allLeads.filter(l => !['DEAL_CLOSED_WON', 'DEAL_CLOSED_LOST', 'NOT_INTERESTED'].includes(l.status));
   const rev = won.reduce((s, l) => s + (l.dealValue || 0), 0);
-  const pipe = active.reduce((s, l) => s + (l.dealValue || 0), 0);
+  const pipe = allLeads.filter(l => ['NEGOTIATING', 'SITE_VISIT_DONE'].includes(l.status)).reduce((s, l) => s + calcPipelineValue(l.id, db), 0);
   const wr = won.length + lost.length > 0 ? Math.round(won.length / (won.length + lost.length) * 100) : 0;
   const newThisMonth = allLeads.filter(l => new Date(l.createdAt) >= sm).length;
 

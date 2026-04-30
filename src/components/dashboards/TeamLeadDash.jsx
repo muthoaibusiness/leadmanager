@@ -1,5 +1,5 @@
 import { useApp } from '../../context/AppContext.jsx';
-import { getLeads, getDB } from '../../lib/db.js';
+import { getLeads, getDB, calcPipelineValue } from '../../lib/db.js';
 import StatCard from '../StatCard.jsx';
 import LeadTable from '../LeadTable.jsx';
 import AgentCard from './AgentCard.jsx';
@@ -17,7 +17,7 @@ export default function TeamLeadDash() {
   const neg = leads.filter(l => l.status === 'NEGOTIATING');
   const toClose = leads.filter(l => l.status === 'SITE_VISIT_DONE');
   const rev = won.reduce((s, l) => s + (l.dealValue || 0), 0);
-  const pipe = neg.reduce((s, l) => s + (l.dealValue || 0), 0);
+  const pipe = leads.filter(l => ['NEGOTIATING', 'SITE_VISIT_DONE'].includes(l.status)).reduce((s, l) => s + calcPipelineValue(l.id, db), 0);
   const wr = won.length + lost.length > 0 ? Math.round(won.length / (won.length + lost.length) * 100) : 0;
 
   const tabs = ['To Close', 'Negotiating', 'Won'];
