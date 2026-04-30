@@ -40,7 +40,7 @@ export default function LeadTable({ leads }) {
 
   if (!leads.length) {
     return (
-      <div className="lt">
+      <div className={`lt${canSelect ? ' lt-with-cb' : ''}`}>
         <div className="lt-hdr">
           {canSelect && <div className="lt-cb-col" />}
           <div>Lead</div><div>Property / Budget</div><div>Source</div><div>Status</div><div>Updated</div><div></div>
@@ -61,7 +61,7 @@ export default function LeadTable({ leads }) {
           <button className="btn btn-g btn-sm" onClick={() => setSelected(new Set())}>Clear</button>
         </div>
       )}
-      <div className="lt">
+      <div className={`lt${canSelect ? ' lt-with-cb' : ''}`}>
         <div className="lt-hdr">
           {canSelect && <div className="lt-cb-col" />}
           <div>Lead</div><div>Property / Budget</div><div>Source</div><div>Status</div><div>Updated</div><div></div>
