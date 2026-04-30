@@ -360,44 +360,6 @@ export function submitImport(importData, user) {
 }
 
 // ── Notifications ──
-export function genSeedNotifs(db) {
-  const notifs = {};
-  const nid = () => 'n' + Math.random().toString(36).slice(2, 9);
-  const add = (toId, type, msg, leadId, ts) => {
-    if (!toId || toId === 'system') return;
-    if (!notifs[toId]) notifs[toId] = [];
-    const read = (Date.now() - new Date(ts)) / 86400000 > 5;
-    notifs[toId].push({ id: nid(), userId: toId, type, message: msg, leadId, timestamp: ts, read });
-  };
-  const mgmtIds = db.users.filter(u => u.role === ROLES.MGMT).map(u => u.id);
-  db.leads.forEach(lead => {
-    const iaId = lead.previousAssignees[0] || (lead.assignedRole === ROLES.IA ? lead.assignedTo : null);
-    const maId = lead.siteVisitDoneBy || lead.previousAssignees[1] || (lead.assignedRole === ROLES.MA ? lead.assignedTo : null);
-    if (lead.meetingSetDate) {
-      if (lead.assignedRole === ROLES.MA || lead.assignedRole === ROLES.TL)
-        add(lead.assignedTo, 'ASSIGNED', 'New lead assigned: ' + lead.name, lead.id, lead.meetingSetDate);
-      if (iaId) add(iaId, 'VISIT_SCHED', 'Site visit scheduled for your lead: ' + lead.name, lead.id, lead.meetingSetDate);
-    }
-    if (lead.siteVisitDoneDate) {
-      if (iaId) add(iaId, 'VISIT_DONE', 'Site visit completed: ' + lead.name, lead.id, lead.siteVisitDoneDate);
-      if (['NEGOTIATING', 'DEAL_CLOSED_WON', 'DEAL_CLOSED_LOST'].includes(lead.status) && lead.assignedRole === ROLES.TL)
-        add(lead.assignedTo, 'FORWARDED', 'Lead ready for negotiation: ' + lead.name, lead.id, lead.siteVisitDoneDate);
-    }
-    if (lead.status === 'DEAL_CLOSED_WON') {
-      const msg = 'Deal WON: ' + lead.name + (lead.dealValue ? ' — ' + fmtBDT(lead.dealValue) : '');
-      if (iaId) add(iaId, 'DEAL_WON', msg, lead.id, lead.updatedAt);
-      if (maId && maId !== iaId) add(maId, 'DEAL_WON', msg, lead.id, lead.updatedAt);
-      mgmtIds.forEach(uid2 => add(uid2, 'DEAL_WON', msg, lead.id, lead.updatedAt));
-    }
-    if (lead.status === 'DEAL_CLOSED_LOST') {
-      if (iaId) add(iaId, 'DEAL_LOST', 'Deal lost on: ' + lead.name, lead.id, lead.updatedAt);
-      if (maId && maId !== iaId) add(maId, 'DEAL_LOST', 'Deal lost on: ' + lead.name, lead.id, lead.updatedAt);
-    }
-  });
-  Object.keys(notifs).forEach(uid2 => notifs[uid2].sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp)));
-  return notifs;
-}
-
 export function getNotifs(userId) { return ((getDB().notifications) || {})[userId] || []; }
 export function getUnreadCount(userId) { return getNotifs(userId).filter(n => !n.read).length; }
 

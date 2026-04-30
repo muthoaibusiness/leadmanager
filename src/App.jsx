@@ -269,15 +269,11 @@ export default function App() {
     initialized.current = true;
 
     (async () => {
-      // Load from Supabase
+      // Load from Supabase only — never fall back to localStorage demo data
       const sbData = await sbLoad();
-      if (sbData) {
-        if (!sbData.notifications) sbData.notifications = {};
-        saveDB(sbData);
-      } else {
-        const db = getDB();
-        saveDB(db);
-      }
+      const freshDB = sbData || { users: [], teams: [], leads: [], targets: [], activities: {}, notifications: {} };
+      if (!freshDB.notifications) freshDB.notifications = {};
+      saveDB(freshDB);
       refreshDB();
 
       // Fade out loading screen
