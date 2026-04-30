@@ -57,9 +57,15 @@ function LoginPage({ onLogin }) {
 
   const order = { MANAGEMENT: 0, TEAM_LEAD: 1, MEETING_AGENT: 2, INITIAL_AGENT: 3 };
   const dhakaTeam = db.teams?.find(t => t.name?.toLowerCase().includes('dhaka'));
+  const isMahzabin = u => u.name?.toLowerCase().includes('mahzabin');
+  let seenMgmt = false;
   const users = [...db.users]
-    .filter(u => !dhakaTeam || u.teamId === dhakaTeam.id || u.role === 'MANAGEMENT')
-    .sort((a, b) => (order[a.role] ?? 9) - (order[b.role] ?? 9));
+    .sort((a, b) => (order[a.role] ?? 9) - (order[b.role] ?? 9))
+    .filter(u => {
+      if (u.role === 'MANAGEMENT') { if (seenMgmt) return false; seenMgmt = true; return true; }
+      if (isMahzabin(u)) return true;
+      return !dhakaTeam || u.teamId === dhakaTeam.id;
+    });
 
   const doLogin = () => {
     if (!email || !pw) { setErr('Enter email and password.'); return; }
