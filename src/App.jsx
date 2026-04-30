@@ -87,7 +87,7 @@ function LoginPage({ onLogin }) {
       <div className="ln-right">
         <div className="ln-card">
           <div className="lnc-h">Sign in</div>
-          <div className="lnc-s">Welcome back to WECON PropCRM</div>
+          <div className="lnc-s">Welcome back</div>
           <div className="fl">
             <label>Email address</label>
             <div className="finp-wrap">
