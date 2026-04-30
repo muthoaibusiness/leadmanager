@@ -129,7 +129,7 @@ export function changeStatus(leadId, status, user) {
   addAct(leadId, { type: 'STATUS_CHANGE', description: 'Status → ' + (STATUS_LABELS[status] || status), userId: user.id, userName: user.name, durationSeconds: 0 });
 }
 
-export function fwdLead(leadId, toUser, currentUser) {
+export function fwdLead(leadId, toUser, currentUser, offerData) {
   const l = getLead(leadId);
   const isMeetingSet = toUser.role === ROLES.MA;
   updLead(leadId, {
@@ -140,6 +140,13 @@ export function fwdLead(leadId, toUser, currentUser) {
     meetingSetDate: isMeetingSet ? now_() : l.meetingSetDate,
   });
   addAct(leadId, { type: 'FORWARDED', description: 'Forwarded to ' + toUser.name + ' (' + rlabel(toUser.role) + ')', userId: currentUser.id, userName: currentUser.name, durationSeconds: 0 });
+  if (offerData && toUser.role === ROLES.TL) {
+    const parts = [];
+    if (offerData.ourOffer) parts.push('Our offer: ' + fmtBDT(offerData.ourOffer));
+    if (offerData.clientOffer) parts.push('Client offer: ' + fmtBDT(offerData.clientOffer));
+    if (offerData.notes) parts.push('Note: ' + offerData.notes);
+    if (parts.length) addAct(leadId, { type: 'OFFER', description: parts.join(' · '), userId: currentUser.id, userName: currentUser.name, durationSeconds: 0 });
+  }
   const notifList = [{ userId: toUser.id, type: 'ASSIGNED', message: 'New lead assigned: ' + l.name + ' (from ' + currentUser.name + ')', leadId }];
   if (toUser.role === ROLES.TL) {
     const iaId = l.previousAssignees[0];

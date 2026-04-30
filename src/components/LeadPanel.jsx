@@ -152,6 +152,19 @@ function Actions({ l }) {
   );
 }
 
+function OfferCard({ acts }) {
+  const offer = acts.find(a => a.type === 'OFFER');
+  if (!offer) return null;
+  const parts = offer.description.split(' · ');
+  return (
+    <div className="offer-card">
+      <div className="offer-ttl"><Mi>price_check</Mi>Offer Summary</div>
+      {parts.map((p, i) => <div key={i} className="offer-row">{p}</div>)}
+      <div className="offer-by">Submitted by {offer.userName}</div>
+    </div>
+  );
+}
+
 function Timeline({ acts }) {
   if (!acts.length) {
     return (
@@ -235,6 +248,7 @@ export default function LeadPanel() {
             <>
               <LeadInfo l={l} />
               <Actions l={l} />
+              <OfferCard acts={acts} />
               <Timeline acts={acts} />
             </>
           )}
