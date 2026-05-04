@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import Mi from './Mi.jsx';
 import { useApp } from '../context/AppContext.jsx';
+import { useState } from 'react';
 import { getLead, getActs, changeStatus, doneVisit, deleteLead, updLead, addAct } from '../lib/db.js';
 import { avc, ini, fmtD, fmtDT, fmtBDT, fmtAgo, rlabel, actIcon, actClr } from '../lib/helpers.js';
 import { ROLES, STATUS_LABELS, SRC_LABELS } from '../lib/constants.js';
@@ -63,7 +64,20 @@ function LeadInfo({ l }) {
 
 function Actions({ l }) {
   const { user, openModal, setFwdTarget, setPanLead, refreshDB, showToast } = useApp();
+  const [logCallOpen, setLogCallOpen] = useState(false);
+  const [callMins, setCallMins] = useState('');
   const r = user?.role;
+
+  const submitCall = () => {
+    const mins = parseFloat(callMins) || 0;
+    const secs = Math.round(mins * 60);
+    updLead(l.id, { callCount: (l.callCount || 0) + 1 });
+    addAct(l.id, { type: 'CALL', description: 'Call logged' + (mins > 0 ? ' · ' + mins + ' min' : '') + ' (total: ' + ((l.callCount || 0) + 1) + ')', userId: user.id, userName: user.name, durationSeconds: secs });
+    refreshDB();
+    showToast('Call logged' + (mins > 0 ? ' (' + mins + ' min)' : ''), 'ok');
+    setLogCallOpen(false);
+    setCallMins('');
+  };
 
   const doStatus = (s) => {
     changeStatus(l.id, s, user);
@@ -152,14 +166,37 @@ function Actions({ l }) {
   }
 
   btns.push(
-    <button key="log-call" className="btn btn-full" style={{ background: '#eff6ff', color: '#1d4ed8' }} onClick={() => {
-      updLead(l.id, { callCount: (l.callCount || 0) + 1 });
-      addAct(l.id, { type: 'CALL', description: 'Call logged (total: ' + ((l.callCount || 0) + 1) + ')', userId: user.id, userName: user.name, durationSeconds: 0 });
-      refreshDB();
-      showToast('Call logged', 'ok');
-    }}>
-      <Mi>call</Mi>Log Call
-    </button>
+    <div key="log-call" className="log-call-wrap">
+      {!logCallOpen ? (
+        <button className="btn btn-full" style={{ background: '#eff6ff', color: '#1d4ed8' }} onClick={() => setLogCallOpen(true)}>
+          <Mi>call</Mi>Log Call
+        </button>
+      ) : (
+        <div className="log-call-box">
+          <div className="log-call-label"><Mi>schedule</Mi>How long was the call?</div>
+          <div className="log-call-row">
+            <input
+              className="finp log-call-inp"
+              type="number"
+              min="0"
+              step="0.5"
+              placeholder="min"
+              value={callMins}
+              onChange={e => setCallMins(e.target.value)}
+              autoFocus
+              onKeyDown={e => { if (e.key === 'Enter') submitCall(); if (e.key === 'Escape') { setLogCallOpen(false); setCallMins(''); } }}
+            />
+            <button className="btn btn-p btn-sm" onClick={submitCall}><Mi>check</Mi></button>
+            <button className="btn btn-g btn-sm" onClick={() => { setLogCallOpen(false); setCallMins(''); }}><Mi>close</Mi></button>
+          </div>
+          <div className="log-call-chips">
+            {[1, 2, 5, 10, 15, 30].map(m => (
+              <button key={m} className={`fu-chip${callMins == m ? ' active' : ''}`} onClick={() => setCallMins(String(m))}>{m}m</button>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
   );
   btns.push(
     <button key="note" className="btn btn-g btn-full" onClick={() => openModal('note')}>
