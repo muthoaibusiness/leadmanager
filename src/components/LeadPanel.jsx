@@ -235,20 +235,20 @@ function ScoreCard({ l, acts }) {
   if (l.propertyInterest) factors.push('Property interest');
   if (l.nextFollowup) factors.push('Follow-up scheduled');
   return (
-    <div className="score-card" style={{ borderColor: color + '44', background: bg }}>
-      <div className="score-left">
+    <div className="score-card" style={{ borderColor: color + '55', background: bg }}>
+      <div className="score-top-row">
         <div className="score-badge" style={{ background: color }}>
           <Mi>psychology</Mi>AI Score
         </div>
-        <div className="score-factors">{factors.length ? factors.join(' · ') : 'Limited data'}</div>
-      </div>
-      <div className="score-right">
-        <div className="score-num" style={{ color }}>{score}</div>
-        <div className="score-label" style={{ color }}>{label}</div>
+        <div className="score-num-wrap">
+          <span className="score-num" style={{ color }}>{score}</span>
+          <span className="score-label" style={{ color }}>{label}</span>
+        </div>
       </div>
       <div className="score-bar-track">
         <div className="score-bar-fill" style={{ width: score + '%', background: color }} />
       </div>
+      <div className="score-factors">{factors.length ? factors.join(' · ') : 'Limited data'}</div>
     </div>
   );
 }
