@@ -86,7 +86,6 @@ export default function TeamLeadDash() {
         <StatCard val={talkMins + ' min'} label="Team Talk Time" ico="schedule" bg="#D97706" />
       </div>
       <div className="pipeline-banner">
-        <div className="pipeline-banner-icon"><Mi>psychology</Mi></div>
         <div className="pipeline-banner-body">
           <div className="pipeline-banner-msg">
             <strong>{user?.name?.split(' ')[0]}</strong>, some amazing deals are waiting to close. Best of luck! 🎯
