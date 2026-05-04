@@ -173,27 +173,38 @@ function Actions({ l }) {
         </button>
       ) : (
         <div className="log-call-box">
-          <div className="log-call-label"><Mi>schedule</Mi>How long was the call?</div>
-          <div className="log-call-row">
-            <input
-              className="finp log-call-inp"
-              type="number"
-              min="0"
-              step="0.5"
-              placeholder="min"
-              value={callMins}
-              onChange={e => setCallMins(e.target.value)}
-              autoFocus
-              onKeyDown={e => { if (e.key === 'Enter') submitCall(); if (e.key === 'Escape') { setLogCallOpen(false); setCallMins(''); } }}
-            />
-            <button className="btn btn-p btn-sm" onClick={submitCall}><Mi>check</Mi></button>
-            <button className="btn btn-g btn-sm" onClick={() => { setLogCallOpen(false); setCallMins(''); }}><Mi>close</Mi></button>
+          <div className="log-call-header">
+            <div className="log-call-icon"><Mi>call</Mi></div>
+            <div>
+              <div className="log-call-title">Call Duration</div>
+              <div className="log-call-sub">How long was the call?</div>
+            </div>
+            <button className="log-call-close" onClick={() => { setLogCallOpen(false); setCallMins(''); }}><Mi>close</Mi></button>
           </div>
           <div className="log-call-chips">
             {[1, 2, 5, 10, 15, 30].map(m => (
-              <button key={m} className={`fu-chip${callMins == m ? ' active' : ''}`} onClick={() => setCallMins(String(m))}>{m}m</button>
+              <button key={m} className={`lc-chip${callMins == m ? ' active' : ''}`} onClick={() => setCallMins(String(m))}>
+                <span className="lc-chip-val">{m}</span>
+                <span className="lc-chip-unit">min</span>
+              </button>
             ))}
           </div>
+          <div className="log-call-custom">
+            <input
+              className="log-call-inp"
+              type="number"
+              min="0"
+              step="0.5"
+              placeholder="Custom minutes..."
+              value={callMins}
+              onChange={e => setCallMins(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') submitCall(); if (e.key === 'Escape') { setLogCallOpen(false); setCallMins(''); } }}
+            />
+          </div>
+          <button className="log-call-save" onClick={submitCall}>
+            <Mi>check_circle</Mi>
+            Save Call{callMins > 0 ? ` · ${callMins} min` : ''}
+          </button>
         </div>
       )}
     </div>
