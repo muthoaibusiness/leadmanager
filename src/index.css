@@ -282,7 +282,19 @@ a{color:inherit;text-decoration:none}
 .lt-date{font-size:12px;color:var(--t3)}
 .lt-arr{width:26px;height:26px;border-radius:var(--r-sm);display:flex;align-items:center;justify-content:center;color:var(--t3);transition:all var(--tr)}
 .lt-row:hover .lt-arr{background:var(--blue-l);color:var(--blue)}
-@media(max-width:700px){.lt-hdr{display:none}.lt-row{grid-template-columns:1fr auto;row-gap:5px}.lt-cell:nth-child(2),.lt-cell:nth-child(3),.lt-cell:nth-child(5){display:none}}
+@media(max-width:700px){
+  .lt-hdr{display:none}
+  .lt-row{display:flex;flex-wrap:nowrap;align-items:center;gap:8px;padding:10px 12px}
+  .lt-cell:nth-child(2),.lt-cell:nth-child(3),.lt-cell:nth-child(5){display:none}
+  .lt-cell:nth-child(1){flex:1;min-width:0}
+  .lt-cell:nth-child(4){flex:0 0 auto}
+  .lt-cell:nth-child(6){flex:0 0 auto}
+  .lt-with-cb .lt-cb-col{flex:0 0 22px}
+  .lt-with-cb .lt-cell:nth-child(2){flex:1;min-width:0;display:flex}
+  .lt-with-cb .lt-cell:nth-child(3),.lt-with-cb .lt-cell:nth-child(4),.lt-with-cb .lt-cell:nth-child(6){display:none}
+  .lt-with-cb .lt-cell:nth-child(5){flex:0 0 auto;display:flex}
+  .lt-with-cb .lt-cell:nth-child(7){flex:0 0 auto}
+}
 
 /* Filter bar */
 .fbar{display:flex;align-items:center;gap:8px;margin-bottom:14px;flex-wrap:wrap}
@@ -348,6 +360,25 @@ a{color:inherit;text-decoration:none}
 .offer-pipeline strong{color:#15803d;font-size:14px}
 .offer-notes{font-size:12px;color:var(--t2);background:#faf5ff;border-radius:6px;padding:7px 9px;margin-top:8px;border:1px solid #e9d5ff}
 .offer-by{font-size:11px;color:var(--t3);margin-top:8px}
+/* WhatsApp button */
+.wa-btn{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:50%;background:#dcfce7;color:#16a34a;margin-left:4px;text-decoration:none;flex-shrink:0;transition:background .15s}
+.wa-btn:hover{background:#16a34a;color:#fff}
+.wa-btn .mi{font-size:14px}
+/* Agent select preview */
+.ap-preview{display:flex;align-items:center;gap:10px;background:var(--surf2);border-radius:10px;padding:10px 12px;margin-top:8px}
+/* Follow-up queue */
+.fuq-card{background:#fffbeb;border:1px solid #fde68a;border-radius:var(--r-lg);padding:14px 16px;margin-bottom:18px;box-shadow:var(--sh)}
+.fuq-hd{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:700;color:#92400e;margin-bottom:10px}
+.fuq-hd .mi{font-size:18px;color:#d97706}
+.fuq-ct{background:#d97706;color:#fff;border-radius:20px;font-size:11px;font-weight:700;padding:1px 8px;margin-left:auto}
+.fuq-row{display:flex;align-items:center;gap:10px;padding:9px 10px;background:#fff;border-radius:8px;margin-bottom:6px;cursor:pointer;border:1px solid #fde68a;transition:background .15s}
+.fuq-row:last-child{margin-bottom:0}
+.fuq-row:hover{background:#fef3c7}
+.fuq-name{font-size:13px;font-weight:600;color:var(--t1);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.fuq-phone{font-size:12px;color:var(--t2);flex-shrink:0}
+.fuq-date{display:flex;align-items:center;gap:4px;font-size:11px;color:#92400e;flex-shrink:0}
+.fuq-date .mi{font-size:14px}
+.fuq-date.overdue{color:var(--red);font-weight:600}
 .fi-hint{font-size:12px;color:var(--t3);margin-top:3px}
 .pipeline-val{display:flex;align-items:center;gap:12px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;padding:12px 14px;margin:4px 0 8px}
 .pipeline-val .mi{font-size:22px;color:#16A34A}

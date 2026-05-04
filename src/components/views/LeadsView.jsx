@@ -12,8 +12,8 @@ export default function LeadsView() {
   if (agentFilter) leads = leads.filter(l => l.assignedTo === agentFilter || l.previousAssignees.includes(agentFilter));
   else if (teamFilter) leads = leads.filter(l => l.teamId === teamFilter);
 
-  const src = ['ALL', 'META_ADS', 'WHATSAPP_ADS', 'LINKEDIN'];
-  const srcL = ['All Sources', 'Meta Ads', 'WhatsApp Ads', 'LinkedIn'];
+  const src = ['ALL', 'META_ADS', 'WHATSAPP_ADS', 'LINKEDIN', 'WEBSITE', 'HOTLINE', 'PERSONAL'];
+  const srcL = ['All', 'Meta', 'WhatsApp', 'LinkedIn', 'Website', 'Hotline', 'Personal'];
   let disp = tab > 0 ? leads.filter(l => l.source === src[tab]) : leads;
   if (search) { const q = search.toLowerCase(); disp = disp.filter(l => l.name.toLowerCase().includes(q) || l.phone.includes(q) || (l.propertyInterest || '').toLowerCase().includes(q)); }
   if (dateRange?.range) { const { start, end } = dateRange.range; disp = disp.filter(l => { const d = new Date(l.createdAt); return d >= start && d <= end; }); }

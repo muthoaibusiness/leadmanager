@@ -60,15 +60,21 @@ export default function ForwardModal() {
         {step === 1 && (
           <>
             <div className="m-body">
-              <div className="m-hint"><Mi>info</Mi>Select a {rlabel(targetRole)} to assign this lead.</div>
-              <div className="ap-list">
-                {targets.map(u => (
-                  <div key={u.id} className={`ap-item${selected === u.id ? ' sel' : ''}`} onClick={() => setSelected(u.id)}>
-                    <div className="ap-av" style={{ background: avc(u.name) }}>{ini(u.name)}</div>
-                    <div><div className="ap-n">{u.name}</div><div className="ap-r">{u.email}</div></div>
-                  </div>
-                ))}
+              <div className="fl">
+                <label>Select {rlabel(targetRole)}</label>
+                <select className="finp" value={selected || ''} onChange={e => setSelected(e.target.value)}>
+                  <option value="">— Choose an agent —</option>
+                  {targets.map(u => (
+                    <option key={u.id} value={u.id}>{u.name} ({u.email})</option>
+                  ))}
+                </select>
               </div>
+              {selected && (() => { const u = targets.find(x => x.id === selected); return u ? (
+                <div className="ap-preview">
+                  <div className="ap-av" style={{ background: avc(u.name) }}>{ini(u.name)}</div>
+                  <div><div className="ap-n">{u.name}</div><div className="ap-r">{rlabel(u.role)} · {u.email}</div></div>
+                </div>
+              ) : null; })()}
             </div>
             <div className="m-ft">
               <button className="btn btn-g" onClick={closeModal}>Cancel</button>

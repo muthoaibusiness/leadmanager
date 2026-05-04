@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import Mi from './Mi.jsx';
 import { useApp } from '../context/AppContext.jsx';
-import { getLead, getActs, changeStatus, doneVisit, deleteLead } from '../lib/db.js';
+import { getLead, getActs, changeStatus, doneVisit, deleteLead, updLead, addAct } from '../lib/db.js';
 import { avc, ini, fmtD, fmtDT, fmtBDT, fmtAgo, rlabel, actIcon, actClr } from '../lib/helpers.js';
 import { ROLES, STATUS_LABELS, SRC_LABELS } from '../lib/constants.js';
 
@@ -19,7 +19,10 @@ function LeadInfo({ l }) {
           {l.company && l.company !== '—' && <div className="li-co">{l.company}</div>}
           <div className="li-ct">
             {(l.phones?.length ? l.phones : [l.phone]).filter(Boolean).map((p, i) => (
-              <div key={i} className="li-cr"><Mi>call</Mi><a href={`tel:${p}`}>{p}{i === 0 && l.phones?.length > 1 ? ' (primary)' : ''}</a></div>
+              <div key={i} className="li-cr">
+                <Mi>call</Mi><a href={`tel:${p}`}>{p}{i === 0 && l.phones?.length > 1 ? ' (primary)' : ''}</a>
+                <a className="wa-btn" href={`https://wa.me/${p.replace(/[^0-9]/g, '')}`} target="_blank" rel="noreferrer" title="WhatsApp"><Mi>chat</Mi></a>
+              </div>
             ))}
             {(l.emails?.length ? l.emails : l.email ? [l.email] : []).filter(Boolean).map((e, i) => (
               <div key={i} className="li-cr"><Mi>mail</Mi><a href={`mailto:${e}`}>{e}</a></div>
@@ -148,6 +151,16 @@ function Actions({ l }) {
     }
   }
 
+  btns.push(
+    <button key="log-call" className="btn btn-full" style={{ background: '#eff6ff', color: '#1d4ed8' }} onClick={() => {
+      updLead(l.id, { callCount: (l.callCount || 0) + 1 });
+      addAct(l.id, { type: 'CALL', description: 'Call logged (total: ' + ((l.callCount || 0) + 1) + ')', userId: user.id, userName: user.name, durationSeconds: 0 });
+      refreshDB();
+      showToast('Call logged', 'ok');
+    }}>
+      <Mi>call</Mi>Log Call
+    </button>
+  );
   btns.push(
     <button key="note" className="btn btn-g btn-full" onClick={() => openModal('note')}>
       <Mi>edit_note</Mi>Add Note
