@@ -416,6 +416,17 @@ a{color:inherit;text-decoration:none}
 .score-bar-track{height:6px;border-radius:3px;background:rgba(0,0,0,.08);overflow:hidden;margin-bottom:8px}
 .score-bar-fill{height:100%;border-radius:3px;transition:width .5s ease}
 .score-factors{font-size:11px;color:var(--t3)}
+/* Pipeline motivational banner */
+.pipeline-banner{display:flex;align-items:center;gap:14px;background:linear-gradient(135deg,#1e3a8a 0%,#2563EB 100%);border-radius:var(--r-lg);padding:16px 18px;margin-bottom:14px;box-shadow:0 4px 14px rgba(37,99,235,.25)}
+.pipeline-banner-icon{width:40px;height:40px;border-radius:50%;background:rgba(255,255,255,.15);display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.pipeline-banner-icon .mi{font-size:22px;color:#fff}
+.pipeline-banner-body{flex:1;min-width:0}
+.pipeline-banner-title{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:rgba(255,255,255,.65);margin-bottom:3px}
+.pipeline-banner-msg{font-size:13px;color:#fff;line-height:1.4}
+.pipeline-banner .ftabs{background:rgba(255,255,255,.12);border-color:rgba(255,255,255,.2)}
+.pipeline-banner .ftab{color:rgba(255,255,255,.7)}
+.pipeline-banner .ftab.on{background:#fff;color:#1e3a8a}
+@media(max-width:600px){.pipeline-banner{flex-wrap:wrap}.pipeline-banner .ftabs{width:100%}}
 /* Scored pipeline (TL dash) */
 .sp-list{background:#fff;border-radius:var(--r-lg);border:1px solid var(--bd);overflow:hidden;box-shadow:var(--sh)}
 .sp-row{display:flex;align-items:center;gap:12px;padding:13px 16px;border-bottom:1px solid var(--bd);cursor:pointer;transition:background .15s}

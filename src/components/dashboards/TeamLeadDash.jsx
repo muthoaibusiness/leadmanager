@@ -85,9 +85,15 @@ export default function TeamLeadDash() {
         <StatCard val={offersSent} label="Proposals Sent" ico="price_check" bg="#7C3AED" />
         <StatCard val={talkMins + ' min'} label="Team Talk Time" ico="schedule" bg="#D97706" />
       </div>
-      <div className="sec-hd">
-        <div className="sec-t"><Mi>psychology</Mi>Pipeline · AI Score</div>
-        <div className="ftabs">
+      <div className="pipeline-banner">
+        <div className="pipeline-banner-icon"><Mi>psychology</Mi></div>
+        <div className="pipeline-banner-body">
+          <div className="pipeline-banner-title">Pipeline · AI Score</div>
+          <div className="pipeline-banner-msg">
+            <strong>{user?.name?.split(' ')[0]}</strong>, some amazing deals are waiting to close. Best of luck! 🎯
+          </div>
+        </div>
+        <div className="ftabs" style={{ flexShrink: 0 }}>
           {tabs.map((t, i) => (
             <div key={i} className={`ftab${tab === i ? ' on' : ''}`} onClick={() => setTab(i)}>{t}</div>
           ))}
