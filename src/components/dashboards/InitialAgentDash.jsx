@@ -55,8 +55,14 @@ export default function InitialAgentDash() {
   const calls = leads.reduce((s, l) => s + (l.callCount || 0), 0);
   const todayStart = new Date(); todayStart.setHours(0,0,0,0);
   const allActs = Object.values(db.activities || {}).flat();
-  const talkSecsToday = allActs.filter(a => a.type === 'CALL' && a.userId === user.id && new Date(a.timestamp) >= todayStart).reduce((s, a) => s + (a.durationSeconds || 0), 0);
-  const talkMinsToday = Math.round(talkSecsToday / 60);
+  const rangeStart = dateRange?.range?.start || todayStart;
+  const rangeEnd = dateRange?.range?.end || new Date();
+  const talkSecs = allActs.filter(a => {
+    const t = new Date(a.timestamp);
+    return a.type === 'CALL' && a.userId === user.id && t >= rangeStart && t <= rangeEnd;
+  }).reduce((s, a) => s + (a.durationSeconds || 0), 0);
+  const talkMins = Math.round(talkSecs / 60);
+  const talkLabel = dateRange?.range ? 'Talk Time' : 'Talk Time Today';
 
   const tabs = ['All', 'New', 'Contacted', 'Interested', `Meeting Set (${meetingSetLeads.length})`];
   const tFilter = ['ALL', 'NEW', 'CONTACTED', 'INTERESTED', 'MEETING_SET'];
@@ -75,7 +81,7 @@ export default function InitialAgentDash() {
         <StatCard val={active.length} label="Active Leads" ico="person" bg="#2563EB" />
         <StatCard val={newL.length} label="New Today" ico="fiber_new" bg="#7C3AED" sub="uncontacted" />
         <StatCard val={calls} label="Total Calls" ico="call" bg="#0891B2" />
-        <StatCard val={talkMinsToday + ' min'} label="Talk Time Today" ico="schedule" bg="#7C3AED" sub="call minutes" />
+        <StatCard val={talkMins + ' min'} label={talkLabel} ico="schedule" bg="#7C3AED" sub="call minutes" />
         <StatCard val={msThis} label="Meetings Set" ico="check_circle" bg="#16A34A" sub="this month" />
       </div>
       <div className="sec-hd"><div className="sec-t"><Mi>list</Mi>My Leads</div></div>
