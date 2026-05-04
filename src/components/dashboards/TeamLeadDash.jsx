@@ -88,7 +88,6 @@ export default function TeamLeadDash() {
       <div className="pipeline-banner">
         <div className="pipeline-banner-icon"><Mi>psychology</Mi></div>
         <div className="pipeline-banner-body">
-          <div className="pipeline-banner-title">Pipeline · AI Score</div>
           <div className="pipeline-banner-msg">
             <strong>{user?.name?.split(' ')[0]}</strong>, some amazing deals are waiting to close. Best of luck! 🎯
           </div>
