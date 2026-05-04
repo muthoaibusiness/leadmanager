@@ -2,46 +2,57 @@ import { useApp } from '../../context/AppContext.jsx';
 import { getLeads, getDB, calcPipelineValue } from '../../lib/db.js';
 import StatCard from '../StatCard.jsx';
 import LeadTable from '../LeadTable.jsx';
-import AgentCard from './AgentCard.jsx';
 import Mi from '../Mi.jsx';
 import { fmtBDT } from '../../lib/helpers.js';
-import { ROLES } from '../../lib/constants.js';
 
 export default function TeamLeadDash() {
-  const { user, tab, setTab, dbVersion, dateRange } = useApp();
+  const { user, tab, setTab, dateRange } = useApp();
   const db = getDB();
   const leads = getLeads(user);
-  const agents = db.users.filter(u => (u.role === ROLES.IA || u.role === ROLES.MA) && u.teamId === user.teamId);
-  const won = leads.filter(l => l.status === 'DEAL_CLOSED_WON');
-  const lost = leads.filter(l => l.status === 'DEAL_CLOSED_LOST');
+
+  const hasRange = !!dateRange?.range;
+  const rangeStart = dateRange?.range?.start || (() => { const d = new Date(); d.setDate(1); d.setHours(0,0,0,0); return d; })();
+  const rangeEnd = dateRange?.range?.end || new Date();
+  const inRange = iso => { const d = new Date(iso); return d >= rangeStart && d <= rangeEnd; };
+
+  const allActs = Object.values(db.activities || {}).flat();
+  const teamUserIds = db.users.filter(u => u.teamId === user.teamId).map(u => u.id);
+
+  const won = leads.filter(l => l.status === 'DEAL_CLOSED_WON' && inRange(l.updatedAt));
+  const lost = leads.filter(l => l.status === 'DEAL_CLOSED_LOST' && inRange(l.updatedAt));
   const neg = leads.filter(l => l.status === 'NEGOTIATING');
   const toClose = leads.filter(l => l.status === 'SITE_VISIT_DONE');
   const rev = won.reduce((s, l) => s + (l.dealValue || 0), 0);
   const pipe = leads.filter(l => ['NEGOTIATING', 'SITE_VISIT_DONE'].includes(l.status)).reduce((s, l) => s + calcPipelineValue(l.id, db), 0);
   const wr = won.length + lost.length > 0 ? Math.round(won.length / (won.length + lost.length) * 100) : 0;
 
+  // Activity-based stats within range
+  const teamActs = allActs.filter(a => teamUserIds.includes(a.userId) && inRange(a.timestamp));
+  const siteVisits = leads.filter(l => l.siteVisitDoneDate && inRange(l.siteVisitDoneDate)).length;
+  const talkSecs = teamActs.filter(a => a.type === 'CALL').reduce((s, a) => s + (a.durationSeconds || 0), 0);
+  const talkMins = Math.round(talkSecs / 60);
+  const offersSent = allActs.filter(a => a.type === 'OFFER' && inRange(a.timestamp)).length;
+  const newLeads = leads.filter(l => inRange(l.createdAt)).length;
+
   const tabs = ['To Close', 'Negotiating', 'Won'];
   let disp = tab === 1 ? neg : tab === 2 ? won : toClose;
   if (dateRange?.range) { const { start, end } = dateRange.range; disp = disp.filter(l => { const d = new Date(l.createdAt); return d >= start && d <= end; }); }
 
-  const iaCards = agents.filter(u => u.role === ROLES.IA);
-  const maCards = agents.filter(u => u.role === ROLES.MA);
-
   return (
     <>
-      <div className="grid-4" style={{ marginBottom: '20px' }}>
-        <StatCard val={fmtBDT(rev)} label="Revenue This Month" ico="payments" bg="#16A34A" />
+      {/* Row 1 — financials */}
+      <div className="grid-4" style={{ marginBottom: '14px' }}>
+        <StatCard val={fmtBDT(rev)} label={hasRange ? 'Revenue' : 'Revenue This Month'} ico="payments" bg="#16A34A" />
         <StatCard val={fmtBDT(pipe)} label="Pipeline Value" ico="trending_up" bg="#2563EB" />
-        <StatCard val={won.length + '/' + (won.length + lost.length)} label="Deals (Won/Closed)" ico="emoji_events" bg="#D97706" />
+        <StatCard val={won.length + '/' + (won.length + lost.length)} label="Deals Won/Closed" ico="emoji_events" bg="#D97706" />
         <StatCard val={wr + '%'} label="Win Rate" ico="percent" bg="#7C3AED" />
       </div>
-      <div className="sec-hd"><div className="sec-t"><Mi>groups</Mi>Initial Agents</div></div>
-      <div className="grid-2" style={{ marginBottom: '20px' }}>
-        {iaCards.length ? iaCards.map(a => <AgentCard key={a.id} agent={a} />) : <p style={{ color: 'var(--t3)' }}>No initial agents</p>}
-      </div>
-      <div className="sec-hd"><div className="sec-t"><Mi>handshake</Mi>Meeting Agents</div></div>
-      <div className="grid-2" style={{ marginBottom: '20px' }}>
-        {maCards.length ? maCards.map(a => <AgentCard key={a.id} agent={a} />) : <p style={{ color: 'var(--t3)' }}>No meeting agents</p>}
+      {/* Row 2 — activity */}
+      <div className="grid-4" style={{ marginBottom: '20px' }}>
+        <StatCard val={newLeads} label={hasRange ? 'New Leads' : 'New Leads This Month'} ico="person_add" bg="#0891B2" />
+        <StatCard val={siteVisits} label="Site Visits Done" ico="location_on" bg="#16A34A" />
+        <StatCard val={offersSent} label="Proposals Sent" ico="price_check" bg="#7C3AED" />
+        <StatCard val={talkMins + ' min'} label="Team Talk Time" ico="schedule" bg="#D97706" />
       </div>
       <div className="sec-hd">
         <div className="sec-t"><Mi>manage_accounts</Mi>My Pipeline</div>
