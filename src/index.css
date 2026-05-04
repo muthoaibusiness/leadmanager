@@ -405,6 +405,33 @@ a{color:inherit;text-decoration:none}
 .fuq-date{display:flex;align-items:center;gap:4px;font-size:11px;color:#92400e;flex-shrink:0}
 .fuq-date .mi{font-size:14px}
 .fuq-date.overdue{color:var(--red);font-weight:600}
+/* AI Score card (LeadPanel) */
+.score-card{border-radius:var(--r-lg);border:1.5px solid;padding:14px 16px;position:relative;overflow:hidden}
+.score-left{flex:1}
+.score-badge{display:inline-flex;align-items:center;gap:5px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:#fff;background:gray;border-radius:20px;padding:3px 9px;margin-bottom:6px}
+.score-badge .mi{font-size:13px}
+.score-factors{font-size:11px;color:var(--t3)}
+.score-right{position:absolute;right:16px;top:14px;text-align:right}
+.score-num{font-size:28px;font-weight:900;line-height:1}
+.score-label{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin-top:2px}
+.score-bar-track{position:absolute;bottom:0;left:0;right:0;height:3px;background:var(--bd)}
+.score-bar-fill{height:100%;border-radius:0 2px 2px 0;transition:width .4s}
+/* Scored pipeline (TL dash) */
+.sp-list{background:#fff;border-radius:var(--r-lg);border:1px solid var(--bd);overflow:hidden;box-shadow:var(--sh)}
+.sp-row{display:flex;align-items:center;gap:10px;padding:12px 14px;border-bottom:1px solid var(--bd);cursor:pointer;transition:background .15s}
+.sp-row:last-child{border-bottom:none}
+.sp-row:hover{background:var(--surf2)}
+.sp-av{width:32px;height:32px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#fff;flex-shrink:0}
+.sp-info{flex:1;min-width:0}
+.sp-name{font-size:13px;font-weight:600;color:var(--t1);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sp-meta{font-size:11px;color:var(--t3)}
+.sp-score-wrap{display:flex;flex-direction:column;align-items:flex-end;gap:4px;min-width:120px}
+.sp-score-bar-track{width:100px;height:5px;background:var(--bd);border-radius:3px;overflow:hidden}
+.sp-score-bar-fill{height:100%;border-radius:3px;transition:width .4s}
+.sp-score-badge{display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:700;padding:2px 8px;border-radius:20px}
+.sp-score-badge .mi{font-size:13px}
+.sp-ago{font-size:11px;color:var(--t3);white-space:nowrap}
+@media(max-width:600px){.sp-score-wrap{display:none}.sp-ago{display:none}}
 .fi-hint{font-size:12px;color:var(--t3);margin-top:3px}
 .pipeline-val{display:flex;align-items:center;gap:12px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;padding:12px 14px;margin:4px 0 8px}
 .pipeline-val .mi{font-size:22px;color:#16A34A}

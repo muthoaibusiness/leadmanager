@@ -116,3 +116,43 @@ export function slabel(s) { return STATUS_LABELS[s] || s; }
 export function sclass(s) { return 's-' + (s || '').toLowerCase(); }
 export function srclabel(s) { return SRC_LABELS[s] || s; }
 export function srcclass(s) { return 'src-' + (s || '').toLowerCase(); }
+
+export function scoreLead(lead, acts) {
+  if (!lead) return 0;
+  let score = 0;
+  // Status progression (0–45)
+  const statusPts = { NEW: 5, CONTACTED: 12, INTERESTED: 22, MEETING_SET: 32, SITE_VISIT_SCHEDULED: 38, SITE_VISIT_DONE: 45, NEGOTIATING: 45 };
+  score += statusPts[lead.status] || 0;
+  // Budget (0–12)
+  if (lead.budget >= 10000000) score += 12;
+  else if (lead.budget >= 5000000) score += 8;
+  else if (lead.budget >= 1000000) score += 5;
+  else if (lead.budget > 0) score += 2;
+  // Call activity (0–10)
+  score += Math.min(lead.callCount || 0, 5) * 2;
+  // Visit done (+8)
+  if (lead.visitCount > 0) score += 8;
+  // Has property interest (+5)
+  if (lead.propertyInterest) score += 5;
+  // Priority (+6/+3)
+  if ((lead.priority || '').toLowerCase().includes('high')) score += 6;
+  else if ((lead.priority || '').toLowerCase().includes('med')) score += 3;
+  // Follow-up set (+4)
+  if (lead.nextFollowup) score += 4;
+  // Recent activity within 5 days (+6)
+  const lastAct = (acts || []).reduce((latest, a) => !latest || new Date(a.timestamp) > new Date(latest.timestamp) ? a : latest, null);
+  if (lastAct && (Date.now() - new Date(lastAct.timestamp)) < 5 * 86400000) score += 6;
+  // Has email (+2)
+  if (lead.email) score += 2;
+  // Lost/not interested = 0
+  if (['DEAL_CLOSED_LOST', 'NOT_INTERESTED'].includes(lead.status)) return 0;
+
+  return Math.min(Math.round(score), 99);
+}
+
+export function scoreLabel(s) {
+  if (s >= 80) return { label: 'Hot', color: '#DC2626', bg: '#fef2f2' };
+  if (s >= 60) return { label: 'Warm', color: '#D97706', bg: '#fffbeb' };
+  if (s >= 35) return { label: 'Lukewarm', color: '#0891B2', bg: '#f0f9ff' };
+  return { label: 'Cold', color: '#64748B', bg: '#f8fafc' };
+}

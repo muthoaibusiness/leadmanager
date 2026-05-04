@@ -3,7 +3,7 @@ import Mi from './Mi.jsx';
 import { useApp } from '../context/AppContext.jsx';
 import { useState } from 'react';
 import { getLead, getActs, changeStatus, doneVisit, deleteLead, updLead, addAct } from '../lib/db.js';
-import { avc, ini, fmtD, fmtDT, fmtBDT, fmtAgo, rlabel, actIcon, actClr } from '../lib/helpers.js';
+import { avc, ini, fmtD, fmtDT, fmtBDT, fmtAgo, rlabel, actIcon, actClr, scoreLead, scoreLabel } from '../lib/helpers.js';
 import { ROLES, STATUS_LABELS, SRC_LABELS } from '../lib/constants.js';
 
 function sclass(s) { return 's-' + (s || '').toLowerCase(); }
@@ -225,6 +225,34 @@ function Actions({ l }) {
   );
 }
 
+function ScoreCard({ l, acts }) {
+  const score = scoreLead(l, acts);
+  const { label, color, bg } = scoreLabel(score);
+  const factors = [];
+  if (l.callCount > 0) factors.push(l.callCount + ' call' + (l.callCount > 1 ? 's' : ''));
+  if (l.visitCount > 0) factors.push(l.visitCount + ' visit' + (l.visitCount > 1 ? 's' : ''));
+  if (l.budget > 0) factors.push('Budget set');
+  if (l.propertyInterest) factors.push('Property interest');
+  if (l.nextFollowup) factors.push('Follow-up scheduled');
+  return (
+    <div className="score-card" style={{ borderColor: color + '44', background: bg }}>
+      <div className="score-left">
+        <div className="score-badge" style={{ background: color }}>
+          <Mi>psychology</Mi>AI Score
+        </div>
+        <div className="score-factors">{factors.length ? factors.join(' · ') : 'Limited data'}</div>
+      </div>
+      <div className="score-right">
+        <div className="score-num" style={{ color }}>{score}</div>
+        <div className="score-label" style={{ color }}>{label}</div>
+      </div>
+      <div className="score-bar-track">
+        <div className="score-bar-fill" style={{ width: score + '%', background: color }} />
+      </div>
+    </div>
+  );
+}
+
 function OfferCard({ acts }) {
   const offer = acts.find(a => a.type === 'OFFER');
   if (!offer) return null;
@@ -327,6 +355,7 @@ export default function LeadPanel() {
           {l && (
             <>
               <LeadInfo l={l} />
+              <ScoreCard l={l} acts={acts} />
               <Actions l={l} />
               <OfferCard acts={acts} />
               <Timeline acts={acts} />
