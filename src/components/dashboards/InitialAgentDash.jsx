@@ -53,6 +53,10 @@ export default function InitialAgentDash() {
   const active = leads.filter(l => !['DEAL_CLOSED_WON', 'DEAL_CLOSED_LOST', 'NOT_INTERESTED'].includes(l.status));
   const msThis = achievement(user.id, ROLES.IA);
   const calls = leads.reduce((s, l) => s + (l.callCount || 0), 0);
+  const todayStart = new Date(); todayStart.setHours(0,0,0,0);
+  const allActs = Object.values(db.activities || {}).flat();
+  const talkSecsToday = allActs.filter(a => a.type === 'CALL' && a.userId === user.id && new Date(a.timestamp) >= todayStart).reduce((s, a) => s + (a.durationSeconds || 0), 0);
+  const talkMinsToday = Math.round(talkSecsToday / 60);
 
   const tabs = ['All', 'New', 'Contacted', 'Interested', `Meeting Set (${meetingSetLeads.length})`];
   const tFilter = ['ALL', 'NEW', 'CONTACTED', 'INTERESTED', 'MEETING_SET'];
@@ -67,10 +71,11 @@ export default function InitialAgentDash() {
     <>
       <TargetCard user={user} />
       <FollowUpQueue leads={leads} onOpen={setPanLead} />
-      <div className="grid-4">
+      <div className="grid-5">
         <StatCard val={active.length} label="Active Leads" ico="person" bg="#2563EB" />
         <StatCard val={newL.length} label="New Today" ico="fiber_new" bg="#7C3AED" sub="uncontacted" />
         <StatCard val={calls} label="Total Calls" ico="call" bg="#0891B2" />
+        <StatCard val={talkMinsToday + ' min'} label="Talk Time Today" ico="schedule" bg="#7C3AED" sub="call minutes" />
         <StatCard val={msThis} label="Meetings Set" ico="check_circle" bg="#16A34A" sub="this month" />
       </div>
       <div className="sec-hd"><div className="sec-t"><Mi>list</Mi>My Leads</div></div>
