@@ -21,6 +21,7 @@ function ScoredPipeline({ leads, db, onOpen }) {
             <div className="sp-info">
               <div className="sp-name">{l.name}</div>
               <div className="sp-meta">{STATUS_LABELS[l.status] || l.status}{pipe > 0 ? ' · ' + fmtBDT(pipe) : ''}</div>
+              {l.propertyInterest && <div className="sp-prop">{l.propertyInterest}</div>}
             </div>
             <div className="sp-score-wrap">
               <div className="sp-score-bar-track">

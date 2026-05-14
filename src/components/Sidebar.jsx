@@ -5,10 +5,10 @@ import { avc, ini, rlabel } from '../lib/helpers.js';
 import { ROLES } from '../lib/constants.js';
 
 const NAV = {
-  INITIAL_AGENT: [{ v: 'dashboard', ico: 'dashboard', lbl: 'Dashboard' }, { v: 'leads', ico: 'list', lbl: 'My Leads' }],
-  MEETING_AGENT: [{ v: 'dashboard', ico: 'dashboard', lbl: 'Dashboard' }, { v: 'leads', ico: 'list', lbl: 'My Leads' }],
-  TEAM_LEAD: [{ v: 'dashboard', ico: 'dashboard', lbl: 'Dashboard' }, { v: 'team', ico: 'groups', lbl: 'My Team' }, { v: 'leads', ico: 'list', lbl: 'All Leads' }],
-  MANAGEMENT: [{ v: 'dashboard', ico: 'dashboard', lbl: 'Dashboard' }, { v: 'users', ico: 'manage_accounts', lbl: 'Users' }],
+  INITIAL_AGENT: [{ v: 'dashboard', ico: 'dashboard', lbl: 'Dashboard' }, { v: 'leads', ico: 'list', lbl: 'My Leads' }, { v: 'profile', ico: 'person', lbl: 'Profile' }],
+  MEETING_AGENT: [{ v: 'dashboard', ico: 'dashboard', lbl: 'Dashboard' }, { v: 'leads', ico: 'list', lbl: 'My Leads' }, { v: 'profile', ico: 'person', lbl: 'Profile' }],
+  TEAM_LEAD: [{ v: 'dashboard', ico: 'dashboard', lbl: 'Dashboard' }, { v: 'team', ico: 'groups', lbl: 'My Team' }, { v: 'leads', ico: 'list', lbl: 'All Leads' }, { v: 'profile', ico: 'person', lbl: 'Profile' }],
+  MANAGEMENT: [{ v: 'dashboard', ico: 'dashboard', lbl: 'Dashboard' }, { v: 'users', ico: 'manage_accounts', lbl: 'Users' }, { v: 'profile', ico: 'person', lbl: 'Profile' }],
 };
 
 export default function Sidebar() {
@@ -42,7 +42,9 @@ export default function Sidebar() {
         </nav>
         <div className="sb-foot">
           <div className="sb-user">
-            <div className="sb-av" style={{ background: avc(user.name) }}>{ini(user.name)}</div>
+            {user.avatar
+              ? <img src={user.avatar} alt={user.name} className="sb-av sb-av-img" />
+              : <div className="sb-av" style={{ background: avc(user.name) }}>{ini(user.name)}</div>}
             <div style={{ flex: 1, minWidth: 0 }}>
               <div className="sb-un">{user.name}</div>
               <div className="sb-ur">{rlabel(user.role)}</div>

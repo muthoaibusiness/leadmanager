@@ -20,6 +20,7 @@ import ManagementDash from './components/dashboards/ManagementDash.jsx';
 import LeadsView from './components/views/LeadsView.jsx';
 import TeamView from './components/views/TeamView.jsx';
 import UsersView from './components/views/UsersView.jsx';
+import ProfileView from './components/views/ProfileView.jsx';
 
 import AddLeadModal from './components/modals/AddLeadModal.jsx';
 import ForwardModal from './components/modals/ForwardModal.jsx';
@@ -153,7 +154,7 @@ function PageHeader() {
   const db = getDB();
 
   const agentName = agentFilter ? db.users.find(u => u.id === agentFilter)?.name : '';
-  const titles = { dashboard: 'Dashboard', leads: 'Leads', team: 'My Team', users: 'Users' };
+  const titles = { dashboard: 'Dashboard', leads: 'Leads', team: 'My Team', users: 'Users', profile: 'My Profile' };
   const title = agentFilter && agentName ? agentName + "'s Leads" : titles[view] || '';
 
   let actions = [];
@@ -209,6 +210,7 @@ function PageBody() {
   if (view === 'leads') return <LeadsView />;
   if (view === 'team') return <TeamView />;
   if (view === 'users') return <UsersView />;
+  if (view === 'profile') return <ProfileView />;
   return null;
 }
 

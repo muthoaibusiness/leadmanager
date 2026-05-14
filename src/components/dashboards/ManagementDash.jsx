@@ -49,12 +49,11 @@ function SourceBar({ label, count, total, color }) {
 }
 
 export default function ManagementDash() {
-  const { dbVersion, setView, setTeamFilter, setAgentFilter, setTab, setSearch, dateRange } = useApp();
+  const { setView, setTeamFilter, setAgentFilter, setTab, setSearch, dateRange } = useApp();
   const [activeTab, setActiveTab] = useState(0);
   const db = getDB();
   const sm = startOfMonth();
 
-  // Apply date range filter to all leads
   const filterByDate = (arr) => {
     if (!dateRange?.range) return arr;
     const { start, end } = dateRange.range;
@@ -88,7 +87,6 @@ export default function ManagementDash() {
 
   return (
     <>
-      {/* Revenue stats row */}
       <div className="grid-4" style={{ marginBottom: '16px' }}>
         <StatCard val={fmtBDT(rev)} label="Total Revenue" ico="payments" bg="#16A34A" />
         <StatCard val={fmtBDT(pipe)} label="Pipeline Value" ico="trending_up" bg="#2563EB" />
@@ -96,7 +94,6 @@ export default function ManagementDash() {
         <StatCard val={wr + '%'} label="Win Rate" ico="percent" bg="#7C3AED" />
       </div>
 
-      {/* Lead stats row — below revenue */}
       <div className="grid-4" style={{ marginBottom: '20px' }}>
         <StatCard val={allLeads.length} label="Total Leads" ico="group" bg="#0891B2" />
         <StatCard val={active.length} label="Active Leads" ico="person" bg="#2563EB" />
