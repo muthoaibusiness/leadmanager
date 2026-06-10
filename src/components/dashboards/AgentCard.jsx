@@ -1,7 +1,8 @@
 import Mi from '../Mi.jsx';
+import Avatar from '../Avatar.jsx';
 import { useApp } from '../../context/AppContext.jsx';
 import { getLeads, getTarget, achievement } from '../../lib/db.js';
-import { avc, ini, rlabel, progColor } from '../../lib/helpers.js';
+import { rlabel, progColor } from '../../lib/helpers.js';
 
 export default function AgentCard({ agent }) {
   const { setView, setAgentFilter, setTab, setSearch, openModal, setTgtUser, setEditUser } = useApp();
@@ -13,7 +14,6 @@ export default function AgentCard({ agent }) {
   const col = progColor(pct);
   const kn = agent.role === 'INITIAL_AGENT' ? 'Meetings Set' : 'Site Visits Done';
   const calls = leads.reduce((s, l) => s + (l.callCount || 0), 0);
-  const c = avc(agent.name);
   const projLabel = agent.projects === 'ALL'
     ? 'All projects'
     : (Array.isArray(agent.projects) && agent.projects.length
@@ -38,7 +38,7 @@ export default function AgentCard({ agent }) {
   return (
     <div className="agc">
       <div className="agc-hd">
-        <div className="agc-av" style={{ background: c }}>{ini(agent.name)}</div>
+        <Avatar name={agent.name} avatar={agent.avatar} className="agc-av" />
         <div>
           <div className="agc-n">{agent.name}</div>
           <div className="agc-r">{rlabel(agent.role)}</div>

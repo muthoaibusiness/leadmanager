@@ -1,12 +1,12 @@
 import { useApp } from '../../context/AppContext.jsx';
 import { getDB } from '../../lib/db.js';
 import Mi from '../Mi.jsx';
-import { avc, ini, rlabel } from '../../lib/helpers.js';
+import Avatar from '../Avatar.jsx';
+import { rlabel } from '../../lib/helpers.js';
 import { ROLES } from '../../lib/constants.js';
 
 function UserRow({ u, showDelete }) {
   const { setDeleteUserId, openModal } = useApp();
-  const c = avc(u.name);
   const roleTag = u.role === ROLES.IA
     ? <span className="bdg s-new">Initial Agent</span>
     : u.role === ROLES.MA
@@ -15,7 +15,7 @@ function UserRow({ u, showDelete }) {
 
   return (
     <div className="ui-row">
-      <div className="ui-av ui-sm" style={{ background: c }}>{ini(u.name)}</div>
+      <Avatar name={u.name} avatar={u.avatar} className="ui-av ui-sm" />
       <div className="ui-info">
         <div className="ui-n">{u.name}</div>
         <div className="ui-e">{u.email}</div>
@@ -47,7 +47,6 @@ export default function UsersView() {
       {teams.map(team => {
         const tl = db.users.find(u => u.id === team.leadId);
         if (!tl) return null;
-        const c = avc(tl.name);
         const agents = db.users.filter(u => (u.role === ROLES.IA || u.role === ROLES.MA) && u.teamId === team.id);
         const ia = agents.filter(u => u.role === ROLES.IA);
         const ma = agents.filter(u => u.role === ROLES.MA);
@@ -57,7 +56,7 @@ export default function UsersView() {
         return (
           <div key={team.id} className="tg">
             <div className="tg-hd">
-              <div className="ui-av" style={{ background: c }}>{ini(tl.name)}</div>
+              <Avatar name={tl.name} avatar={tl.avatar} className="ui-av" />
               <div className="ui-info">
                 <div className="ui-n" style={{ fontSize: '15px' }}>
                   {tl.name}

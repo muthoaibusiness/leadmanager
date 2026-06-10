@@ -3,7 +3,8 @@ import { useApp } from '../../context/AppContext.jsx';
 import { getDB, getDeletionLog, calcPipelineValue, getBookings, bookingPaid, bookingDue, bookingNextDue } from '../../lib/db.js';
 import StatCard from '../StatCard.jsx';
 import Mi from '../Mi.jsx';
-import { fmtBDT, avc, ini, fmtAgo, fmtDT, startOfMonth, rlabel } from '../../lib/helpers.js';
+import Avatar from '../Avatar.jsx';
+import { fmtBDT, fmtAgo, fmtDT, startOfMonth, rlabel } from '../../lib/helpers.js';
 import { ROLES, STATUS_LABELS, SRC_LABELS } from '../../lib/constants.js';
 import { Funnel } from '../charts/Charts.jsx';
 import StatTrend from '../StatTrend.jsx';
@@ -19,7 +20,7 @@ function AgentActivityRow({ agent, leads, acts }) {
   const calls = myLeads.reduce((s, l) => s + (l.callCount || 0), 0);
   return (
     <div className="aa-row">
-      <div className="aa-av" style={{ background: avc(agent.name) }}>{ini(agent.name)}</div>
+      <Avatar name={agent.name} avatar={agent.avatar} className="aa-av" />
       <div className="aa-info">
         <div className="aa-name">{agent.name}</div>
         <div className="aa-role">{rlabel(agent.role)}</div>

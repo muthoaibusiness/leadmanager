@@ -34,7 +34,7 @@ function LeadInfo({ l }) {
     <div className="ld-card">
       <div className="ld-hero">
         <div className="ld-eyebrow">{eyebrow}</div>
-        <h2 className="ld-name">{l.name}</h2>
+        <h2 className="ld-name">{l.name || 'Unnamed customer'}</h2>
         <div className="ld-tags">
           <span className={`bdg ${sclass(l.status)}`}>{STATUS_LABELS[l.status] || l.status}</span>
         </div>
@@ -283,7 +283,7 @@ export default function LeadPanel() {
       <div id="pan" className={isOpen ? 'on' : ''}>
         <div className="p-hd">
           <button className="p-back" onClick={() => setPanLead(null)}><Mi>arrow_back</Mi></button>
-          <div className="p-ttl">{l ? l.name : 'Customer Details'}</div>
+          <div className="p-ttl">{l ? (l.name || 'Unnamed customer') : 'Customer Details'}</div>
           <div style={{ display: 'flex', gap: '7px' }}>
             {l && (
               <>

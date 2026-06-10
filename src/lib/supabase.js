@@ -65,11 +65,11 @@ export function rToA(r) {
 }
 
 export function uToR(u) {
-  return { id: u.id, name: u.name, email: u.email, password: u.password, phone: u.phone || '', role: u.role, team_id: u.teamId || null, is_active: u.isActive !== false, avatar: u.avatar || null };
+  return { id: u.id, name: u.name, email: u.email, password: u.password, phone: u.phone || '', role: u.role, team_id: u.teamId || null, is_active: u.isActive !== false, avatar: u.avatar || null, projects: u.projects ?? null };
 }
 
 export function rToU(r) {
-  return { id: r.id, name: r.name, email: r.email, password: r.password, phone: r.phone || '', role: r.role, teamId: r.team_id, isActive: r.is_active, avatar: r.avatar || '' };
+  return { id: r.id, name: r.name, email: r.email, password: r.password, phone: r.phone || '', role: r.role, teamId: r.team_id, isActive: r.is_active, avatar: r.avatar || '', projects: r.projects ?? undefined };
 }
 
 export function tToR(t) { return { id: t.id, name: t.name, lead_id: t.leadId }; }
