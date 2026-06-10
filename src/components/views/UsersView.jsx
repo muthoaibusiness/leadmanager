@@ -68,7 +68,7 @@ export default function UsersView() {
               <div className="tg-stats">
                 <div className="tg-stat"><div className="tg-sv">{ia.length}</div><div className="tg-sl">Initial</div></div>
                 <div className="tg-stat"><div className="tg-sv">{ma.length}</div><div className="tg-sl">Meeting</div></div>
-                <div className="tg-stat"><div className="tg-sv">{active}</div><div className="tg-sl">Active Leads</div></div>
+                <div className="tg-stat"><div className="tg-sv">{active}</div><div className="tg-sl">Active Customers</div></div>
                 <div className="tg-stat"><div className="tg-sv" style={{ color: 'var(--green)' }}>{won}</div><div className="tg-sl">Won</div></div>
               </div>
               <DeleteTLBtn tl={tl} />

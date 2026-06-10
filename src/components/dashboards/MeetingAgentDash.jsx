@@ -27,12 +27,12 @@ export default function MeetingAgentDash() {
     <>
       <TargetCard user={user} />
       <div className="grid-4">
-        <StatCard val={meetingSet.length} label="Meeting Set" ico="event" bg="#2563EB" />
-        <StatCard val={sched.length} label="Visits Scheduled" ico="calendar_month" bg="#D97706" />
-        <StatCard val={done.length} label="Visits Done" ico="location_on" bg="#16A34A" />
-        <StatCard val={fwdTL.length} label="Sent to Team Lead" ico="forward_to_inbox" bg="#7C3AED" sub="all time" />
+        <StatCard val={meetingSet.length} label="Meeting Set" ico="event" bg="#C8FF00" />
+        <StatCard val={sched.length} label="Visits Scheduled" ico="calendar_month" bg="#F0A92B" />
+        <StatCard val={done.length} label="Visits Done" ico="location_on" bg="#34D399" />
+        <StatCard val={fwdTL.length} label="Sent to Team Lead" ico="forward_to_inbox" bg="#DDB948" sub="all time" />
       </div>
-      <div className="sec-hd"><div className="sec-t"><Mi>list</Mi>My Leads</div></div>
+      <div className="sec-hd"><div className="sec-t"><Mi>list</Mi>My Customers</div></div>
       <div className="fbar">
         <div className="ftabs">
           {tabs.map((t, i) => (

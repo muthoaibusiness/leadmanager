@@ -34,7 +34,7 @@ export function lToR(l) {
     whatsapp_count: l.whatsappCount || 0, visit_count: l.visitCount || 0,
     notes: l.notes || '', external_id: l.externalId || null, priority: l.priority || null,
     preferred_time: l.preferredTime || null, next_followup: l.nextFollowup || null,
-    material_sent: l.materialSent || null, created_at: l.createdAt, updated_at: l.updatedAt,
+    material_sent: l.materialSent || null, cart: l.cart || null, created_at: l.createdAt, updated_at: l.updatedAt,
   };
 }
 
@@ -52,7 +52,7 @@ export function rToL(r) {
     whatsappCount: r.whatsapp_count || 0, visitCount: r.visit_count || 0,
     notes: r.notes || '', externalId: r.external_id || null, priority: r.priority || null,
     preferredTime: r.preferred_time || null, nextFollowup: r.next_followup || null,
-    materialSent: r.material_sent || null, createdAt: r.created_at, updatedAt: r.updated_at,
+    materialSent: r.material_sent || null, cart: r.cart || null, createdAt: r.created_at, updatedAt: r.updated_at,
   };
 }
 
@@ -138,16 +138,64 @@ export function sbSubscribeNotifs(userId, onNew) {
   return () => { dead = true; clearInterval(hbTimer); clearTimeout(reconnTimer); try { ws?.close(); } catch {} };
 }
 
+export function bkToR(b) {
+  return {
+    id: b.id, lead_id: b.leadId, lead_name: b.leadName, property_id: b.propertyId, property_name: b.propertyName,
+    unit_no: b.unitNo || null, agent_id: b.agentId, agent_name: b.agentName, total: b.total || 0,
+    status: b.status || 'ACTIVE', schedule: b.schedule || [], payments: b.payments || [],
+    created_at: b.createdAt, updated_at: b.updatedAt,
+  };
+}
+export function rToBk(r) {
+  return {
+    id: r.id, leadId: r.lead_id, leadName: r.lead_name, propertyId: r.property_id, propertyName: r.property_name,
+    unitNo: r.unit_no || null, agentId: r.agent_id, agentName: r.agent_name, total: r.total || 0,
+    status: r.status || 'ACTIVE', schedule: r.schedule || [], payments: r.payments || [],
+    createdAt: r.created_at, updatedAt: r.updated_at,
+  };
+}
+
 export function tgToR(t) { return { id: t.id, user_id: t.userId, month: t.month, type: t.type, value: t.value }; }
 export function rToTg(r) { return { id: r.id, userId: r.user_id, month: r.month, type: r.type, value: r.value }; }
 
+export function pToR(p) {
+  return {
+    id: p.id, name: p.name, developer: p.developer || '', type: p.type || '', district: p.district || '',
+    address: p.address || '', status: p.status || 'AVAILABLE', units_available: p.unitsAvailable || 0,
+    total_units: p.totalUnits || 0, asking_price: p.askingPrice || 0, price_per_sqft: p.pricePerSqft || 0,
+    size_min: p.sizeMin || 0, size_max: p.sizeMax || 0, images: p.images || [], loan: p.loan || {},
+    construction: p.construction || 0, handover: p.handover || '', amenities: p.amenities || [],
+    documents: p.documents || [], units: p.units || [],
+    area: p.area || '', land_area: p.landArea || '', storeys: p.storeys || '', facing: p.facing || '',
+    total_sft: p.totalSft || 0, unsold_sft: p.unsoldSft || 0, saleable_units: p.saleableUnits || '',
+    drive_link: p.driveLink || '', purpose: p.purpose || '', size_text: p.sizeText || '',
+    details: p.details || '', created_at: p.createdAt, updated_at: p.updatedAt,
+  };
+}
+export function rToP(r) {
+  return {
+    id: r.id, name: r.name, developer: r.developer || '', type: r.type || '', district: r.district || '',
+    address: r.address || '', status: r.status || 'AVAILABLE', unitsAvailable: r.units_available || 0,
+    totalUnits: r.total_units || 0, askingPrice: r.asking_price || 0, pricePerSqft: r.price_per_sqft || 0,
+    sizeMin: r.size_min || 0, sizeMax: r.size_max || 0, images: r.images || [], loan: r.loan || {},
+    construction: r.construction || 0, handover: r.handover || '', amenities: r.amenities || [],
+    documents: r.documents || [], units: r.units || [],
+    area: r.area || '', landArea: r.land_area || '', storeys: r.storeys || '', facing: r.facing || '',
+    totalSft: r.total_sft || 0, unsoldSft: r.unsold_sft || 0, saleableUnits: r.saleable_units || '',
+    driveLink: r.drive_link || '', purpose: r.purpose || '', sizeText: r.size_text || '',
+    details: r.details || '', createdAt: r.created_at, updatedAt: r.updated_at,
+  };
+}
+
 export async function sbLoad() {
   try {
-    const [users, teams, leads, acts, notifs, targets] = await Promise.all([
+    const [users, teams, leads, acts, notifs, targets, properties, bookings] = await Promise.all([
       sbGet('users'), sbGet('teams'), sbGet('leads'),
       sbGet('activities?order=timestamp.asc'),
       sbGet('notifications?order=created_at.desc'),
       sbGet('targets'),
+      sbGet('properties?order=created_at.desc'),
+      sbGet('bookings?order=created_at.desc'),
     ]);
     if (!users || !users.length) return null;
     const actsMap = {};
@@ -166,6 +214,8 @@ export async function sbLoad() {
       activities: actsMap,
       notifications: notifsMap,
       targets: (targets || []).map(rToTg),
+      properties: (properties || []).map(rToP),
+      bookings: (bookings || []).map(rToBk),
     };
   } catch (e) { console.warn('Supabase load failed:', e); return null; }
 }
@@ -184,6 +234,8 @@ export function sbSave(db) {
         sbUpsert('activities', acts),
         sbUpsert('notifications', Object.values(db.notifications || {}).flat().map(nToR)),
         sbUpsert('targets', (db.targets || []).map(tgToR)),
+        sbUpsert('properties', (db.properties || []).map(pToR)),
+        sbUpsert('bookings', (db.bookings || []).map(bkToR)),
       ]);
     } catch (e) { console.warn('Supabase save failed:', e); }
   }, 400);

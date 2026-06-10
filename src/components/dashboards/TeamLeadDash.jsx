@@ -3,10 +3,11 @@ import { getLeads, getDB, calcPipelineValue } from '../../lib/db.js';
 import StatCard from '../StatCard.jsx';
 import Mi from '../Mi.jsx';
 import { fmtBDT, scoreLead, scoreLabel, avc, ini, fmtAgo } from '../../lib/helpers.js';
-import { STATUS_LABELS } from '../../lib/constants.js';
+import { STATUS_LABELS, SRC_LABELS } from '../../lib/constants.js';
+import { Donut, Funnel, Ring } from '../charts/Charts.jsx';
 
 function ScoredPipeline({ leads, db, onOpen }) {
-  if (!leads.length) return <div className="empty"><Mi>inbox</Mi><p>No leads here</p></div>;
+  if (!leads.length) return <div className="empty"><Mi>inbox</Mi><p>No customers here</p></div>;
   const scored = leads
     .map(l => ({ l, score: scoreLead(l, db.activities?.[l.id] || []) }))
     .sort((a, b) => b.score - a.score);
@@ -68,6 +69,18 @@ export default function TeamLeadDash() {
   const offersSent = allActs.filter(a => a.type === 'OFFER' && inRange(a.timestamp)).length;
   const newLeads = leads.filter(l => inRange(l.createdAt)).length;
 
+  // Chart data (team)
+  const sc = {}; leads.forEach(l => { sc[l.status] = (sc[l.status] || 0) + 1; });
+  const FUN = [
+    ['NEW', 'New', '#C8FF00'], ['CONTACTED', 'Contacted', '#A6D400'], ['INTERESTED', 'Interested', '#DDB948'],
+    ['MEETING_SET', 'Meeting Set', '#F0A92B'], ['SITE_VISIT_DONE', 'Visit Done', '#2DD4BF'],
+    ['NEGOTIATING', 'Negotiating', '#34D399'], ['DEAL_CLOSED_WON', 'Won', '#34D399'],
+  ];
+  const funnelData = FUN.map(([k, l, c]) => ({ label: l, value: sc[k] || 0, color: c }));
+  const srcC = {}; leads.forEach(l => { srcC[l.source] = (srcC[l.source] || 0) + 1; });
+  const srcColors = { META_ADS: '#C8FF00', WHATSAPP_ADS: '#34D399', LINKEDIN: '#DDB948', HOTLINE: '#F0A92B', PERSONAL: '#2DD4BF', WEBSITE: '#F87171' };
+  const srcData = Object.entries(srcC).sort((a, b) => b[1] - a[1]).map(([s, c]) => ({ label: SRC_LABELS[s] || s, value: c, color: srcColors[s] || '#9CA3AF' }));
+
   const tabs = ['To Close', 'Negotiating', 'Won'];
   let disp = tab === 1 ? neg : tab === 2 ? won : toClose;
   if (dateRange?.range) { const { start, end } = dateRange.range; disp = disp.filter(l => { const d = new Date(l.createdAt); return d >= start && d <= end; }); }
@@ -75,16 +88,32 @@ export default function TeamLeadDash() {
   return (
     <>
       <div className="grid-4" style={{ marginBottom: '14px' }}>
-        <StatCard val={fmtBDT(rev)} label={hasRange ? 'Revenue' : 'Revenue This Month'} ico="payments" bg="#16A34A" />
-        <StatCard val={fmtBDT(pipe)} label="Pipeline Value" ico="trending_up" bg="#2563EB" />
-        <StatCard val={won.length + '/' + (won.length + lost.length)} label="Deals Won/Closed" ico="emoji_events" bg="#D97706" />
-        <StatCard val={wr + '%'} label="Win Rate" ico="percent" bg="#7C3AED" />
+        <StatCard val={fmtBDT(rev)} label={hasRange ? 'Revenue' : 'Revenue This Month'} ico="payments" bg="#34D399" />
+        <StatCard val={fmtBDT(pipe)} label="Pipeline Value" ico="trending_up" bg="#C8FF00" />
+        <StatCard val={won.length + '/' + (won.length + lost.length)} label="Deals Won/Closed" ico="emoji_events" bg="#F0A92B" />
+        <StatCard val={wr + '%'} label="Win Rate" ico="percent" bg="#DDB948" />
       </div>
       <div className="grid-4" style={{ marginBottom: '20px' }}>
-        <StatCard val={newLeads} label={hasRange ? 'New Leads' : 'New Leads This Month'} ico="person_add" bg="#0891B2" />
-        <StatCard val={siteVisits} label="Site Visits Done" ico="location_on" bg="#16A34A" />
-        <StatCard val={offersSent} label="Proposals Sent" ico="price_check" bg="#7C3AED" />
-        <StatCard val={talkMins + ' min'} label="Team Talk Time" ico="schedule" bg="#D97706" />
+        <StatCard val={newLeads} label={hasRange ? 'New Customers' : 'New Customers This Month'} ico="person_add" bg="#2DD4BF" />
+        <StatCard val={siteVisits} label="Site Visits Done" ico="location_on" bg="#34D399" />
+        <StatCard val={offersSent} label="Proposals Sent" ico="price_check" bg="#DDB948" />
+        <StatCard val={talkMins + ' min'} label="Team Talk Time" ico="schedule" bg="#F0A92B" />
+      </div>
+      <div className="grid-3" style={{ marginBottom: '20px' }}>
+        <div className="analytics-card">
+          <div className="ac-hd"><Mi>filter_alt</Mi>Team Funnel</div>
+          <div className="ac-body"><Funnel stages={funnelData} /></div>
+        </div>
+        <div className="analytics-card">
+          <div className="ac-hd"><Mi>donut_large</Mi>Leads by Source</div>
+          <div className="ac-body"><Donut data={srcData} centerVal={leads.length} centerSub="leads" /></div>
+        </div>
+        <div className="analytics-card">
+          <div className="ac-hd"><Mi>military_tech</Mi>Win Rate</div>
+          <div className="ac-body" style={{ display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+            <Ring pct={wr} size={120} thickness={12} label="closed won" />
+          </div>
+        </div>
       </div>
       <div className="pipeline-banner">
         <div className="pipeline-banner-body">

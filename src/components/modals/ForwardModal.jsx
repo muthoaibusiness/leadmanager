@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import Mi from '../Mi.jsx';
 import { useApp } from '../../context/AppContext.jsx';
-import { getDB, fwdLead } from '../../lib/db.js';
+import { getDB, fwdLead, getProperties, updLead } from '../../lib/db.js';
 import { avc, ini, rlabel, fmtBDT } from '../../lib/helpers.js';
 import { ROLES } from '../../lib/constants.js';
 
@@ -13,6 +13,7 @@ export default function ForwardModal() {
 
   const [step, setStep] = useState(1);
   const [selected, setSelected] = useState(null);
+  const [projectId, setProjectId] = useState('');
   const [ourOffer, setOurOffer] = useState('');
   const [clientOffer, setClientOffer] = useState('');
   const [totalSft, setTotalSft] = useState('');
@@ -21,11 +22,17 @@ export default function ForwardModal() {
   const targetRole = isMA ? ROLES.MA : ROLES.TL;
 
   useEffect(() => {
-    if (isOpen) { setSelected(null); setStep(1); setOurOffer(''); setClientOffer(''); setTotalSft(''); setOfferNotes(''); }
+    if (isOpen) { setSelected(null); setStep(1); setProjectId(''); setOurOffer(''); setClientOffer(''); setTotalSft(''); setOfferNotes(''); }
   }, [isOpen]);
 
   const db = getDB();
   const targets = db.users.filter(u => u.role === targetRole && u.teamId === user?.teamId);
+
+  // Project catalog + live demand (how many leads already interested in each project)
+  const projects = [...getProperties()].sort((a, b) => a.name.localeCompare(b.name));
+  const demand = {};
+  db.leads.forEach(l => { const k = l.dealProjectName || l.propertyInterest; if (k) demand[k] = (demand[k] || 0) + 1; });
+  const project = projects.find(p => p.id === projectId) || null;
 
   const pipelineValue = totalSft && clientOffer ? parseFloat(totalSft) * parseFloat(clientOffer) : 0;
 
@@ -38,9 +45,12 @@ export default function ForwardModal() {
       clientOffer: parseFloat(clientOffer) || 0,
       totalSft: parseFloat(totalSft) || 0,
       pipelineValue,
+      projectId: project?.id || '',
+      projectName: project?.name || '',
       notes: offerNotes.trim(),
     } : null;
     fwdLead(panLead, toUser, user, offerData);
+    if (isTL && project) updLead(panLead, { dealProjectId: project.id, dealProjectName: project.name, propertyInterest: project.name });
     closeModal();
     refreshDB();
     showToast('Lead forwarded to ' + toUser.name, 'ok');
@@ -93,6 +103,22 @@ export default function ForwardModal() {
             <div className="m-body">
               <div className="m-hint" style={{ marginBottom: '14px' }}>
                 <Mi>price_check</Mi>Enter offer details before forwarding to <strong>{selectedUser?.name}</strong>.
+              </div>
+              <div className="fl">
+                <label>Project</label>
+                <select className="finp" value={projectId} onChange={e => setProjectId(e.target.value)}>
+                  <option value="">— Select project —</option>
+                  {projects.map(p => (
+                    <option key={p.id} value={p.id}>
+                      {p.name}{p.area ? ' · ' + p.area : ''}{demand[p.name] ? ' · ' + demand[p.name] + ' interested' : ''}
+                    </option>
+                  ))}
+                </select>
+                {project && (
+                  <div className="fi-hint">
+                    {(demand[project.name] || 0)} lead{(demand[project.name] || 0) === 1 ? '' : 's'} already interested in {project.name}
+                  </div>
+                )}
               </div>
               <div className="fl">
                 <label>Our Offer Price (BDT)</label>

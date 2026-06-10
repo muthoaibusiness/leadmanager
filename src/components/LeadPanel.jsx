@@ -1,62 +1,76 @@
 import { useEffect } from 'react';
 import Mi from './Mi.jsx';
 import { useApp } from '../context/AppContext.jsx';
-import { useState } from 'react';
+import LogCall from './LogCall.jsx';
 import { getLead, getActs, changeStatus, doneVisit, deleteLead, updLead, addAct } from '../lib/db.js';
-import { avc, ini, fmtD, fmtDT, fmtBDT, fmtAgo, rlabel, actIcon, actClr, scoreLead, scoreLabel } from '../lib/helpers.js';
+import { fmtD, fmtDT, fmtBDT, rlabel, scoreLead, scoreLabel } from '../lib/helpers.js';
+import ActivityTimeline from './ActivityTimeline.jsx';
 import { ROLES, STATUS_LABELS, SRC_LABELS } from '../lib/constants.js';
 
 function sclass(s) { return 's-' + (s || '').toLowerCase(); }
-function srcclass(s) { return 'src-' + (s || '').toLowerCase(); }
 
 function LeadInfo({ l }) {
-  const c = avc(l.name);
+  const phones = (l.phones?.length ? l.phones : [l.phone]).filter(Boolean);
+  const emails = (l.emails?.length ? l.emails : l.email ? [l.email] : []).filter(Boolean);
+
+  // Eyebrow = source • company (the small kicker line above the big name).
+  const eyebrow = [SRC_LABELS[l.source] || l.source || 'Lead',
+    (l.company && l.company !== '—') ? l.company : null].filter(Boolean).join('  •  ');
+
+  // Spec sheet — label/value rows, shown only when there's a value.
+  const specs = [];
+  specs.push(['Assigned', `${l.assignedToName || '—'}${l.assignedRole ? ' · ' + rlabel(l.assignedRole) : ''}`]);
+  if (l.propertyInterest) specs.push(['Property', l.propertyInterest + (l.budget ? ' · ' + fmtBDT(l.budget) : '')]);
+  if (l.dealValue > 0) specs.push(['Deal value', fmtBDT(l.dealValue)]);
+  if (l.meetingDate) specs.push(['Site visit', fmtDT(l.meetingDate) + (l.meetingLocation ? ' · ' + l.meetingLocation : '')]);
+  if (l.city || l.profession) specs.push(['Location', [l.city, l.profession].filter(Boolean).join(' · ')]);
+  if (l.priority) specs.push(['Priority', l.priority + (l.preferredTime ? ' · ' + l.preferredTime : '')]);
+  if (l.nextFollowup) specs.push(['Follow-up', fmtD(l.nextFollowup)]);
+  if (l.externalId) specs.push(['Lead ID', l.externalId + (l.materialSent ? ' · Material: ' + l.materialSent : '')]);
+
+  const stats = [['Calls', l.callCount], ['SMS', l.smsCount], ['WhatsApp', l.whatsappCount], ['Visits', l.visitCount]];
+
   return (
-    <div className="li-card">
-      <div className="li-top">
-        <div className="li-av" style={{ background: c, borderRadius: '14px' }}>{ini(l.name)}</div>
-        <div className="li-info" style={{ flex: 1 }}>
-          <div className="li-n">{l.name}</div>
-          {l.company && l.company !== '—' && <div className="li-co">{l.company}</div>}
-          <div className="li-ct">
-            {(l.phones?.length ? l.phones : [l.phone]).filter(Boolean).map((p, i) => (
-              <div key={i} className="li-cr">
-                <Mi>call</Mi><a href={`tel:${p}`}>{p}{i === 0 && l.phones?.length > 1 ? ' (primary)' : ''}</a>
-                <a className="wa-btn" href={`https://wa.me/${p.replace(/[^0-9]/g, '')}`} target="_blank" rel="noreferrer" title="WhatsApp"><Mi>chat</Mi></a>
-              </div>
-            ))}
-            {(l.emails?.length ? l.emails : l.email ? [l.email] : []).filter(Boolean).map((e, i) => (
-              <div key={i} className="li-cr"><Mi>mail</Mi><a href={`mailto:${e}`}>{e}</a></div>
-            ))}
+    <div className="ld-card">
+      <div className="ld-hero">
+        <div className="ld-eyebrow">{eyebrow}</div>
+        <h2 className="ld-name">{l.name}</h2>
+        <div className="ld-tags">
+          <span className={`bdg ${sclass(l.status)}`}>{STATUS_LABELS[l.status] || l.status}</span>
+        </div>
+      </div>
+
+      {(phones.length || emails.length) > 0 && (
+        <div className="ld-contacts">
+          {phones.map((p, i) => (
+            <div key={'p' + i} className="ld-crow">
+              <Mi>call</Mi>
+              <a href={`tel:${p}`}>{p}{i === 0 && phones.length > 1 ? ' · primary' : ''}</a>
+              <a className="ld-wa" href={`https://wa.me/${p.replace(/[^0-9]/g, '')}`} target="_blank" rel="noreferrer" title="WhatsApp"><Mi>chat</Mi></a>
+            </div>
+          ))}
+          {emails.map((e, i) => (
+            <div key={'e' + i} className="ld-crow"><Mi>mail</Mi><a href={`mailto:${e}`}>{e}</a></div>
+          ))}
+        </div>
+      )}
+
+      <div className="ld-specs">
+        {specs.map(([k, v]) => (
+          <div key={k} className="ld-spec">
+            <span className="ld-spec-k">{k}</span>
+            <span className="ld-spec-v">{v}</span>
           </div>
-        </div>
+        ))}
       </div>
-      <div className="li-bdg">
-        <span className={`bdg ${sclass(l.status)}`}>{STATUS_LABELS[l.status] || l.status}</span>
-        <span className={`bdg ${srcclass(l.source)}`}>{SRC_LABELS[l.source] || l.source}</span>
-      </div>
-      {l.propertyInterest && (
-        <div className="li-prop">
-          <Mi>apartment</Mi>{l.propertyInterest}{l.budget ? ' · ' + fmtBDT(l.budget) : ''}
-        </div>
-      )}
-      {l.dealValue > 0 && (
-        <div className="li-deal-row"><Mi>payments</Mi><strong>{fmtBDT(l.dealValue)}</strong></div>
-      )}
-      <div className="info-row"><Mi>person</Mi>Assigned to <strong>{l.assignedToName}</strong> · {rlabel(l.assignedRole)}</div>
-      {l.meetingDate && (
-        <div className="info-row"><Mi>calendar_month</Mi>Visit: {fmtDT(l.meetingDate)}{l.meetingLocation ? ' at ' + l.meetingLocation : ''}</div>
-      )}
-      {l.profession && !l.city && <div className="info-row"><Mi>work</Mi>{l.profession}</div>}
-      {l.city && <div className="info-row"><Mi>location_city</Mi>{l.city}{l.profession ? ' · ' + l.profession : ''}</div>}
-      {l.priority && <div className="info-row"><Mi>flag</Mi>Priority {l.priority}{l.preferredTime ? ' · Preferred: ' + l.preferredTime : ''}</div>}
-      {l.nextFollowup && <div className="info-row"><Mi>event</Mi>Follow-up: {fmtD(l.nextFollowup)}</div>}
-      {l.externalId && <div className="info-row"><Mi>tag</Mi>ID: {l.externalId}{l.materialSent ? ' · Material sent: ' + l.materialSent : ''}</div>}
-      <div className="li-mg">
-        <div className="li-ms"><div className="li-msv">{l.callCount || 0}</div><div className="li-msl">Calls</div></div>
-        <div className="li-ms"><div className="li-msv">{l.smsCount || 0}</div><div className="li-msl">SMS</div></div>
-        <div className="li-ms"><div className="li-msv">{l.whatsappCount || 0}</div><div className="li-msl">WhatsApp</div></div>
-        <div className="li-ms"><div className="li-msv">{l.visitCount || 0}</div><div className="li-msl">Visits</div></div>
+
+      <div className="ld-stats">
+        {stats.map(([lbl, n]) => (
+          <div key={lbl} className="ld-stat">
+            <div className="ld-stat-v">{n || 0}</div>
+            <div className="ld-stat-l">{lbl}</div>
+          </div>
+        ))}
       </div>
     </div>
   );
@@ -64,20 +78,7 @@ function LeadInfo({ l }) {
 
 function Actions({ l }) {
   const { user, openModal, setFwdTarget, setPanLead, refreshDB, showToast } = useApp();
-  const [logCallOpen, setLogCallOpen] = useState(false);
-  const [callMins, setCallMins] = useState('');
   const r = user?.role;
-
-  const submitCall = () => {
-    const mins = parseFloat(callMins) || 0;
-    const secs = Math.round(mins * 60);
-    updLead(l.id, { callCount: (l.callCount || 0) + 1 });
-    addAct(l.id, { type: 'CALL', description: 'Call logged' + (mins > 0 ? ' · ' + mins + ' min' : '') + ' (total: ' + ((l.callCount || 0) + 1) + ')', userId: user.id, userName: user.name, durationSeconds: secs });
-    refreshDB();
-    showToast('Call logged' + (mins > 0 ? ' (' + mins + ' min)' : ''), 'ok');
-    setLogCallOpen(false);
-    setCallMins('');
-  };
 
   const doStatus = (s) => {
     changeStatus(l.id, s, user);
@@ -153,7 +154,7 @@ function Actions({ l }) {
     );
     if (['SITE_VISIT_DONE', 'NEGOTIATING'].includes(l.status)) {
       btns.push(
-        <button key="follow-up" className="btn btn-full" style={{ background: '#fef3c7', color: '#92400e' }} onClick={() => openModal('follow-up')}>
+        <button key="follow-up" className="btn btn-full" style={{ background: 'var(--orange-l)', color: 'var(--orange)' }} onClick={() => openModal('follow-up')}>
           <Mi>alarm</Mi>Take Time
         </button>
       );
@@ -167,46 +168,7 @@ function Actions({ l }) {
 
   btns.push(
     <div key="log-call" className="log-call-wrap">
-      {!logCallOpen ? (
-        <button className="btn btn-full" style={{ background: '#eff6ff', color: '#1d4ed8' }} onClick={() => setLogCallOpen(true)}>
-          <Mi>call</Mi>Log Call
-        </button>
-      ) : (
-        <div className="log-call-box">
-          <div className="log-call-header">
-            <div className="log-call-icon"><Mi>call</Mi></div>
-            <div>
-              <div className="log-call-title">Call Duration</div>
-              <div className="log-call-sub">How long was the call?</div>
-            </div>
-            <button className="log-call-close" onClick={() => { setLogCallOpen(false); setCallMins(''); }}><Mi>close</Mi></button>
-          </div>
-          <div className="log-call-chips">
-            {[1, 2, 5, 10, 15, 30].map(m => (
-              <button key={m} className={`lc-chip${callMins == m ? ' active' : ''}`} onClick={() => setCallMins(String(m))}>
-                <span className="lc-chip-val">{m}</span>
-                <span className="lc-chip-unit">min</span>
-              </button>
-            ))}
-          </div>
-          <div className="log-call-custom">
-            <input
-              className="log-call-inp"
-              type="number"
-              min="0"
-              step="0.5"
-              placeholder="Custom minutes..."
-              value={callMins}
-              onChange={e => setCallMins(e.target.value)}
-              onKeyDown={e => { if (e.key === 'Enter') submitCall(); if (e.key === 'Escape') { setLogCallOpen(false); setCallMins(''); } }}
-            />
-          </div>
-          <button className="log-call-save" onClick={submitCall}>
-            <Mi>check_circle</Mi>
-            Save Call{callMins > 0 ? ` · ${callMins} min` : ''}
-          </button>
-        </div>
-      )}
+      <LogCall leadId={l.id} triggerClassName="btn btn-full" triggerStyle={{ background: 'var(--blue-l)', color: 'var(--accent)' }} />
     </div>
   );
   btns.push(
@@ -274,34 +236,17 @@ function OfferCard({ acts }) {
 }
 
 function Timeline({ acts }) {
-  if (!acts.length) {
-    return (
-      <div className="tl">
-        <div className="tl-ttl">Activity Timeline</div>
-        <div className="empty"><Mi>history</Mi><p>No activity yet</p></div>
-      </div>
-    );
-  }
+  const items = acts.map(a => ({
+    id: a.id,
+    type: a.type,
+    actor: (a.userName && a.userName !== 'system') ? a.userName : null,
+    description: a.description,
+    sub: a.durationSeconds > 0 ? `${Math.floor(a.durationSeconds / 60)}m ${a.durationSeconds % 60}s · ${fmtDT(a.timestamp)}` : fmtDT(a.timestamp),
+  }));
   return (
     <div className="tl">
       <div className="tl-ttl">Activity Timeline</div>
-      {acts.map(a => (
-        <div key={a.id} className="tl-item">
-          <div className="tl-dot" style={{ background: actClr(a.type) }}>
-            <Mi>{actIcon(a.type)}</Mi>
-          </div>
-          <div className="tl-bd">
-            {a.userName && a.userName !== 'system' && (
-              <div className="tl-actor" style={{ color: actClr(a.type) }}>{a.userName}</div>
-            )}
-            <div className="tl-desc">{a.description}</div>
-            {a.durationSeconds > 0 && (
-              <div className="tl-dur">{Math.floor(a.durationSeconds / 60)}m {a.durationSeconds % 60}s</div>
-            )}
-            <div className="tl-time">{fmtDT(a.timestamp)}</div>
-          </div>
-        </div>
-      ))}
+      <ActivityTimeline items={items} empty="No activity yet" />
     </div>
   );
 }
@@ -316,7 +261,7 @@ export default function LeadPanel() {
     deleteLead(panLead, user);
     refreshDB();
     setPanLead(null);
-    showToast('Lead deleted', 'ok');
+    showToast('Customer deleted', 'ok');
   }
 
   const isOpen = !!panLead;
@@ -338,7 +283,7 @@ export default function LeadPanel() {
       <div id="pan" className={isOpen ? 'on' : ''}>
         <div className="p-hd">
           <button className="p-back" onClick={() => setPanLead(null)}><Mi>arrow_back</Mi></button>
-          <div className="p-ttl">{l ? l.name : 'Lead Details'}</div>
+          <div className="p-ttl">{l ? l.name : 'Customer Details'}</div>
           <div style={{ display: 'flex', gap: '7px' }}>
             {l && (
               <>

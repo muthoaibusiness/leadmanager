@@ -26,7 +26,7 @@ export default function LostModal() {
           <button className="m-x" onClick={closeModal}><Mi>close</Mi></button>
         </div>
         <div className="m-body">
-          <div className="m-hint" style={{ borderColor: 'var(--red)', background: '#fef2f2', color: 'var(--red)' }}>
+          <div className="m-hint" style={{ borderColor: 'var(--red)', background: 'var(--red-l)', color: 'var(--red)' }}>
             <Mi>warning</Mi>This will close the lead as lost. Please provide a reason so the team can learn and improve.
           </div>
           <div className="fl" style={{ marginTop: '14px' }}>

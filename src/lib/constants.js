@@ -5,6 +5,31 @@ export const ROLES = {
   MGMT: 'MANAGEMENT',
 };
 
+// Role-scoped navigation (mirrors Muthoclo admin can(role, scope)).
+const ALL_ROLES = ['INITIAL_AGENT', 'MEETING_AGENT', 'TEAM_LEAD', 'MANAGEMENT'];
+export const NAV_SCOPES = {
+  dashboard: ALL_ROLES,
+  leads: ALL_ROLES,
+  pipeline: ALL_ROLES,
+  clients: ALL_ROLES,
+  properties: ALL_ROLES,
+  bookings: ALL_ROLES,
+  reports: ['MANAGEMENT', 'TEAM_LEAD'],
+  team: ['TEAM_LEAD'],
+  users: ['MANAGEMENT'],
+  profile: ALL_ROLES,
+};
+export const canSee = (role, key) => (NAV_SCOPES[key] || []).includes(role);
+
+// Properties catalog
+export const PROPERTY_TYPES = ['Apartment', 'Duplex', 'Penthouse', 'Plot', 'Commercial', 'Villa'];
+export const PROPERTY_STATUS = {
+  AVAILABLE: 'Available',
+  FEW_LEFT: 'Few Left',
+  SOLD_OUT: 'Sold Out',
+  UPCOMING: 'Upcoming',
+};
+
 export const SRC_LABELS = {
   META_ADS: 'Meta',
   WHATSAPP_ADS: 'WhatsApp',

@@ -60,9 +60,9 @@ export function esc(s) {
 }
 
 export function progColor(pct) {
-  if (pct >= 80) return '#16A34A';
-  if (pct >= 50) return '#D97706';
-  return '#DC2626';
+  if (pct >= 80) return '#34D399';
+  if (pct >= 50) return '#F0A92B';
+  return '#F87171';
 }
 
 export function actIcon(t) {
@@ -70,19 +70,19 @@ export function actIcon(t) {
     CALL: 'call', MISSED_CALL: 'call_missed', SMS: 'sms', WHATSAPP: 'chat_bubble',
     VISIT: 'location_on', NOTE: 'sticky_note_2', STATUS_CHANGE: 'swap_horiz',
     FORWARDED: 'forward_to_inbox', CREATED: 'person_add', DEAL: 'handshake', OFFER: 'price_check',
-    FOLLOW_UP: 'alarm', LOST_REASON: 'sentiment_dissatisfied',
+    FOLLOW_UP: 'alarm', LOST_REASON: 'sentiment_dissatisfied', CART: 'shopping_cart', BOOKING: 'event_seat',
   };
   return m[t] || 'radio_button_checked';
 }
 
 export function actClr(t) {
   const m = {
-    CALL: '#2563EB', MISSED_CALL: '#DC2626', SMS: '#2563EB', WHATSAPP: '#2563EB',
-    VISIT: '#16A34A', NOTE: '#64748B', STATUS_CHANGE: '#64748B',
-    FORWARDED: '#2563EB', CREATED: '#2563EB', DEAL: '#16A34A', OFFER: '#7C3AED',
-    FOLLOW_UP: '#D97706', LOST_REASON: '#DC2626',
+    CALL: '#C8FF00', MISSED_CALL: '#F87171', SMS: '#C8FF00', WHATSAPP: '#C8FF00',
+    VISIT: '#34D399', NOTE: '#9CA3AF', STATUS_CHANGE: '#9CA3AF',
+    FORWARDED: '#C8FF00', CREATED: '#C8FF00', DEAL: '#34D399', OFFER: '#DDB948',
+    FOLLOW_UP: '#F0A92B', LOST_REASON: '#F87171', CART: '#C8FF00', BOOKING: '#2DD4BF',
   };
-  return m[t] || '#64748B';
+  return m[t] || '#9CA3AF';
 }
 
 export function daysLeftInMonth() {
@@ -151,8 +151,8 @@ export function scoreLead(lead, acts) {
 }
 
 export function scoreLabel(s) {
-  if (s >= 80) return { label: 'Hot', color: '#DC2626', bg: '#fef2f2' };
-  if (s >= 60) return { label: 'Warm', color: '#D97706', bg: '#fffbeb' };
-  if (s >= 35) return { label: 'Lukewarm', color: '#0891B2', bg: '#f0f9ff' };
-  return { label: 'Cold', color: '#64748B', bg: '#f8fafc' };
+  if (s >= 80) return { label: 'Hot', color: '#F87171', bg: 'rgba(248,113,113,.14)' };
+  if (s >= 60) return { label: 'Warm', color: '#F0A92B', bg: 'rgba(240,169,43,.14)' };
+  if (s >= 35) return { label: 'Lukewarm', color: '#2DD4BF', bg: 'rgba(45,212,191,.14)' };
+  return { label: 'Cold', color: '#9CA3AF', bg: 'rgba(255,255,255,.06)' };
 }

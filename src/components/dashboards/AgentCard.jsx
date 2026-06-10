@@ -4,7 +4,7 @@ import { getLeads, getTarget, achievement } from '../../lib/db.js';
 import { avc, ini, rlabel, progColor } from '../../lib/helpers.js';
 
 export default function AgentCard({ agent }) {
-  const { setView, setAgentFilter, setTab, setSearch, openModal, setTgtUser } = useApp();
+  const { setView, setAgentFilter, setTab, setSearch, openModal, setTgtUser, setEditUser } = useApp();
   const leads = getLeads(agent);
   const tgt = getTarget(agent.id);
   const ach = achievement(agent.id, agent.role);
@@ -14,6 +14,14 @@ export default function AgentCard({ agent }) {
   const kn = agent.role === 'INITIAL_AGENT' ? 'Meetings Set' : 'Site Visits Done';
   const calls = leads.reduce((s, l) => s + (l.callCount || 0), 0);
   const c = avc(agent.name);
+  const projLabel = agent.projects === 'ALL'
+    ? 'All projects'
+    : (Array.isArray(agent.projects) && agent.projects.length
+      ? `${agent.projects.length} project${agent.projects.length > 1 ? 's' : ''}`
+      : 'No projects');
+  const projNone = projLabel === 'No projects';
+
+  const editAgent = () => { setEditUser(agent); openModal('edit-agent'); };
 
   const viewAgentLeads = () => {
     setView('leads');
@@ -49,13 +57,18 @@ export default function AgentCard({ agent }) {
         <div className="prog-fill" style={{ width: pct + '%', background: col }} />
       </div>
       <div className="agc-stats">
-        <div className="agc-s"><div className="agc-sv">{leads.length}</div><div className="agc-sl">Leads</div></div>
+        <div className="agc-s"><div className="agc-sv">{leads.length}</div><div className="agc-sl">Customers</div></div>
         <div className="agc-s"><div className="agc-sv">{calls}</div><div className="agc-sl">Calls</div></div>
         <div className="agc-s"><div className="agc-sv">{leads.filter(l => l.status === 'SITE_VISIT_DONE' || l.status === 'DEAL_CLOSED_WON').length}</div><div className="agc-sl">Converted</div></div>
       </div>
+      <div className={`agc-proj${projNone ? ' none' : ''}`}>
+        <Mi>apartment</Mi>
+        <span>{projLabel}</span>
+      </div>
       <div className="agc-act">
-        <button className="btn btn-g btn-sm" onClick={openTgt}><Mi>target</Mi>Set Target</button>
-        <button className="btn btn-p btn-sm" onClick={viewAgentLeads}><Mi>list</Mi>Leads</button>
+        <button className="btn btn-g btn-sm" onClick={openTgt}><Mi>target</Mi>Target</button>
+        <button className="btn btn-g btn-sm" onClick={editAgent}><Mi>edit</Mi>Edit</button>
+        <button className="btn btn-p btn-sm" onClick={viewAgentLeads}><Mi>list</Mi>Customers</button>
       </div>
     </div>
   );

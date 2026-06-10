@@ -96,7 +96,7 @@ export default function AddLeadModal() {
     <div className={`mov${isOpen ? ' on' : ''}`} onClick={e => { if (e.target === e.currentTarget) closeModal(); }}>
       <div className="modal">
         <div className="m-hd">
-          <div className="m-ttl">{isEdit ? 'Edit Lead' : 'Add New Lead'}</div>
+          <div className="m-ttl">{isEdit ? 'Edit Customer' : 'Add New Lead'}</div>
           <button className="m-x" onClick={closeModal}><Mi>close</Mi></button>
         </div>
         <div className="m-body">

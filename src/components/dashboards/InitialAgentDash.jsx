@@ -1,5 +1,5 @@
 import { useApp } from '../../context/AppContext.jsx';
-import { getLeads, getDB } from '../../lib/db.js';
+import { getLeads, getDB, achievement } from '../../lib/db.js';
 import StatCard from '../StatCard.jsx';
 import LeadTable from '../LeadTable.jsx';
 import TargetCard from './TargetCard.jsx';
@@ -27,7 +27,7 @@ function FollowUpQueue({ leads, onOpen }) {
         <span className="fuq-ct">{due.length}</span>
       </div>
       {due.map(l => {
-        const overdue = new Date(l.nextFollowup) < new Date(new Date().setHours(0,0,0,0));
+        const overdue = new Date(l.nextFollowup) < new Date(new Date().setHours(0, 0, 0, 0));
         return (
           <div key={l.id} className="fuq-row" onClick={() => onOpen(l.id)}>
             <div className="fuq-name">{l.name}</div>
@@ -45,37 +45,34 @@ function FollowUpQueue({ leads, onOpen }) {
 }
 
 export default function InitialAgentDash() {
-  const { user, tab, setTab, search, setSearch, dbVersion, dateRange, setPanLead } = useApp();
+  const { user, tab, setTab, search, dbVersion, dateRange, setPanLead } = useApp();
+  void dbVersion; // re-render when DB changes
   const db = getDB();
   const leads = getLeads(user);
-  const todayStart = new Date(); todayStart.setHours(0,0,0,0);
-  const hasRange = !!dateRange?.range;
-  const rangeStart = dateRange?.range?.start || todayStart;
-  const rangeEnd = dateRange?.range?.end || new Date();
+  const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
 
-  const inRange = (iso) => { const d = new Date(iso); return d >= rangeStart && d <= rangeEnd; };
-
-  // All leads ever assigned (for call/meeting stats across range)
-  const allMyLeads = db.leads.filter(l => l.assignedTo === user.id || l.previousAssignees.includes(user.id));
-  const allActs = Object.values(db.activities || {}).flat();
-  const myActs = allActs.filter(a => a.userId === user.id && inRange(a.timestamp));
-
-  const meetingSetLeads = db.leads.filter(l => l.previousAssignees.includes(user.id) && l.status === 'MEETING_SET');
+  // ── IA-focused metrics (point-in-time, daily-work oriented) ──
   const active = leads.filter(l => !['DEAL_CLOSED_WON', 'DEAL_CLOSED_LOST', 'NOT_INTERESTED'].includes(l.status));
 
-  // Stats filtered by date range
-  const newL = leads.filter(l => l.status === 'NEW' && inRange(l.createdAt));
-  const calls = myActs.filter(a => a.type === 'CALL').length;
-  const msCount = allMyLeads.filter(l => l.meetingSetBy === user.id && l.meetingSetDate && inRange(l.meetingSetDate)).length;
+  const actsByLead = db.activities || {};
+  const isTouched = (l) =>
+    (l.callCount || 0) > 0 || (l.smsCount || 0) > 0 || (l.whatsappCount || 0) > 0 ||
+    (actsByLead[l.id] || []).some(a => ['CALL', 'SMS', 'WHATSAPP', 'VISIT'].includes(a.type));
+  const untouched = active.filter(l => !isTouched(l)); // open leads never contacted
 
-  const talkSecs = myActs.filter(a => a.type === 'CALL').reduce((s, a) => s + (a.durationSeconds || 0), 0);
-  const talkMins = Math.round(talkSecs / 60);
+  const nowD = new Date();
+  const overdue = active.filter(l => l.nextFollowup && new Date(l.nextFollowup) < nowD); // follow-up gone late
 
-  const newLabel = hasRange ? 'New Leads' : 'New Today';
-  const callLabel = hasRange ? 'Calls' : 'Total Calls';
-  const msLabel = hasRange ? 'Meetings Set' : 'Meetings Set';
-  const talkLabel = hasRange ? 'Talk Time' : 'Talk Time Today';
+  const allActs = Object.values(db.activities || {}).flat();
+  const myCallsToday = allActs.filter(a => a.userId === user.id && a.type === 'CALL' && new Date(a.timestamp) >= todayStart);
+  const callsToday = myCallsToday.length;
+  const talkMinsToday = Math.round(myCallsToday.reduce((s, a) => s + (a.durationSeconds || 0), 0) / 60);
 
+  const meetingsMonth = achievement(user.id, ROLES.IA); // meetings set this month
+
+  const meetingSetLeads = db.leads.filter(l => l.previousAssignees.includes(user.id) && l.status === 'MEETING_SET');
+
+  // ── My customers table ──
   const tabs = ['All', 'New', 'Contacted', 'Interested', `Meeting Set (${meetingSetLeads.length})`];
   const tFilter = ['ALL', 'NEW', 'CONTACTED', 'INTERESTED', 'MEETING_SET'];
 
@@ -89,21 +86,22 @@ export default function InitialAgentDash() {
     <>
       <TargetCard user={user} />
       <FollowUpQueue leads={leads} onOpen={setPanLead} />
-      <div className="grid-5">
-        <StatCard val={active.length} label="Active Leads" ico="person" bg="#2563EB" />
-        <StatCard val={newL.length} label={newLabel} ico="fiber_new" bg="#7C3AED" sub="uncontacted" />
-        <StatCard val={calls} label={callLabel} ico="call" bg="#0891B2" />
-        <StatCard val={talkMins + ' min'} label={talkLabel} ico="schedule" bg="#6D28D9" sub="call minutes" />
-        <StatCard val={msCount} label={msLabel} ico="check_circle" bg="#16A34A" sub={hasRange ? '' : 'this month'} />
+      <div className="grid-6">
+        <StatCard val={leads.length} label="My Leads" ico="contacts" tone="accent" sub="total assigned" />
+        <StatCard val={active.length} label="Open Deals" ico="trending_up" sub="in progress" />
+        <StatCard val={untouched.length} label="Untouched" ico="fiber_new" tone={untouched.length ? 'warn' : ''} sub="need first call" />
+        <StatCard val={overdue.length} label="Overdue Follow-ups" ico="alarm" tone={overdue.length ? 'danger' : ''} sub="late · call now" />
+        <StatCard val={callsToday} label="My Calls Today" ico="call" sub={talkMinsToday + ' min talk'} />
+        <StatCard val={meetingsMonth} label="Meetings Set" ico="event_available" tone="good" sub="this month" />
       </div>
-      <div className="sec-hd"><div className="sec-t"><Mi>list</Mi>My Leads</div></div>
+      <div className="sec-hd"><div className="sec-t"><Mi>list</Mi>My Customers</div></div>
       <div className="fbar">
+        <SearchBox placeholder="Search name, phone, property..." />
         <div className="ftabs">
           {tabs.map((t, i) => (
             <div key={i} className={`ftab${tab === i ? ' on' : ''}`} onClick={() => setTab(i)}>{t}</div>
           ))}
         </div>
-        <SearchBox placeholder="Search name, phone, property..." />
       </div>
       <LeadTable leads={disp} />
     </>

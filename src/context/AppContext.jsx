@@ -7,6 +7,8 @@ export function AppProvider({ children }) {
   const [user, setUser] = useState(null);
   const [view, setView] = useState('dashboard');
   const [tab, setTab] = useState(0);
+  const [statusFilter, setStatusFilter] = useState('ALL');
+  const [sortBy, setSortBy] = useState('newest');
   const [search, setSearch] = useState('');
   const [panLead, setPanLead] = useState(null);
   const [modal, setModal] = useState(null);
@@ -14,7 +16,11 @@ export function AppProvider({ children }) {
   const [tgtUser, setTgtUser] = useState(null);
   const [agentFilter, setAgentFilter] = useState(null);
   const [teamFilter, setTeamFilter] = useState(null);
+  const [propSel, setPropSel] = useState(null);   // property id for detail view
+  const [propEdit, setPropEdit] = useState(null);  // property obj for edit, {} for new
+  const [bookSel, setBookSel] = useState(null);    // booking id for detail modal
   const [createUserRoles, setCreateUserRoles] = useState([]);
+  const [editUser, setEditUser] = useState(null);   // agent obj for edit-agent modal
   const [deleteUserId, setDeleteUserId] = useState(null);
   const [importData, setImportData] = useState(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -39,6 +45,7 @@ export function AppProvider({ children }) {
   const nav = useCallback((v) => {
     setView(v);
     setTab(0);
+    setStatusFilter('ALL');
     setSearch('');
     setAgentFilter(null);
     setTeamFilter(null);
@@ -51,6 +58,8 @@ export function AppProvider({ children }) {
     user, setUser,
     view, setView,
     tab, setTab,
+    statusFilter, setStatusFilter,
+    sortBy, setSortBy,
     search, setSearch,
     panLead, setPanLead,
     modal, openModal, closeModal,
@@ -58,7 +67,11 @@ export function AppProvider({ children }) {
     tgtUser, setTgtUser,
     agentFilter, setAgentFilter,
     teamFilter, setTeamFilter,
+    propSel, setPropSel,
+    propEdit, setPropEdit,
+    bookSel, setBookSel,
     createUserRoles, setCreateUserRoles,
+    editUser, setEditUser,
     deleteUserId, setDeleteUserId,
     importData, setImportData,
     sidebarOpen, setSidebarOpen,

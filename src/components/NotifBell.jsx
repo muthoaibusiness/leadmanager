@@ -51,7 +51,7 @@ export default function NotifBell() {
             <div className="np-empty"><Mi>notifications_none</Mi><p>No notifications yet</p></div>
           ) : (
             notifs.map(n => {
-              const clr = NOTIF_CLR[n.type] || '#64748B';
+              const clr = NOTIF_CLR[n.type] || '#9CA3AF';
               const ico = NOTIF_ICO[n.type] || 'circle';
               return (
                 <div key={n.id} className={`ni${n.read ? '' : ' unread'}`} onClick={() => handleNotifClick(n)}>

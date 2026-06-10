@@ -1,55 +1,57 @@
 import { useApp } from '../../context/AppContext.jsx';
-import { getLeads, getDB } from '../../lib/db.js';
+import { getLeads } from '../../lib/db.js';
+import { STATUS_LABELS, ROLES } from '../../lib/constants.js';
 import LeadTable from '../LeadTable.jsx';
-import Mi from '../Mi.jsx';
 import SearchBox from '../SearchBox.jsx';
 
 export default function LeadsView() {
-  const { user, tab, setTab, search, setSearch, agentFilter, setAgentFilter, teamFilter, setTeamFilter, dbVersion, dateRange } = useApp();
-  const db = getDB();
-  let leads = getLeads(user);
+  const {
+    user, search, statusFilter, setStatusFilter,
+    agentFilter, setAgentFilter, teamFilter, dbVersion, dateRange, db,
+  } = useApp();
 
+  let leads = getLeads(user);
   if (agentFilter) leads = leads.filter(l => l.assignedTo === agentFilter || l.previousAssignees.includes(agentFilter));
   else if (teamFilter) leads = leads.filter(l => l.teamId === teamFilter);
 
-  const src = ['ALL', 'META_ADS', 'WHATSAPP_ADS', 'LINKEDIN', 'WEBSITE', 'HOTLINE', 'PERSONAL'];
-  const srcL = ['All', 'Meta', 'WhatsApp', 'LinkedIn', 'Website', 'Hotline', 'Personal'];
-  let disp = tab > 0 ? leads.filter(l => l.source === src[tab]) : leads;
+  let disp = leads;
+  if (statusFilter !== 'ALL') disp = disp.filter(l => l.status === statusFilter);
   if (search) { const q = search.toLowerCase(); disp = disp.filter(l => l.name.toLowerCase().includes(q) || l.phone.includes(q) || (l.propertyInterest || '').toLowerCase().includes(q)); }
   if (dateRange?.range) { const { start, end } = dateRange.range; disp = disp.filter(l => { const d = new Date(l.createdAt); return d >= start && d <= end; }); }
 
-  const agentName = agentFilter ? db.users.find(u => u.id === agentFilter)?.name : '';
-  const tlUser = teamFilter ? db.users.find(u => u.role === 'TEAM_LEAD' && u.teamId === teamFilter) : null;
-  const teamName = tlUser?.name || '';
-
-  const clearFilter = () => {
-    setAgentFilter(null);
-    setTeamFilter(null);
-    setTab(0);
-    setSearch('');
-  };
+  // Agent filter is an admin-only control. Regular agents (IA/MA) only ever see
+  // their own leads (enforced in getLeads), so the picker is hidden for them.
+  // MGMT can pick any agent; a Team Lead is scoped to their own team's agents.
+  const isMgmt = user.role === ROLES.MGMT;
+  const canFilterAgents = isMgmt || user.role === ROLES.TL;
+  const agentOptions = canFilterAgents
+    ? (db.users || [])
+        .filter(u => isMgmt
+          ? [ROLES.IA, ROLES.MA, ROLES.TL].includes(u.role)
+          : (u.teamId === user.teamId && [ROLES.IA, ROLES.MA].includes(u.role)))
+        .sort((a, b) => (a.name || '').localeCompare(b.name || ''))
+    : [];
 
   return (
     <>
-      {agentFilter && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '14px' }}>
-          <button className="btn btn-g btn-sm" onClick={clearFilter}><Mi>arrow_back</Mi>All Leads</button>
-          <span style={{ fontSize: '13px', color: 'var(--t2)' }}>Leads for <strong>{agentName}</strong></span>
-        </div>
-      )}
-      {teamFilter && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '14px' }}>
-          <button className="btn btn-g btn-sm" onClick={clearFilter}><Mi>arrow_back</Mi>All Leads</button>
-          <span style={{ fontSize: '13px', color: 'var(--t2)' }}>{teamName}'s Team</span>
-        </div>
-      )}
+      {/* Compact pill filter bar — everything applies live, no apply button. */}
       <div className="fbar">
-        <div className="ftabs">
-          {srcL.map((t, i) => (
-            <div key={i} className={`ftab${tab === i ? ' on' : ''}`} onClick={() => setTab(i)}>{t}</div>
-          ))}
-        </div>
-        <SearchBox placeholder="Search leads..." />
+        <SearchBox placeholder="Name, phone or property..." style={{ flex: '0 1 300px', minWidth: '180px' }} />
+        <select className="fsel" value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
+          <option value="ALL">All status</option>
+          {Object.entries(STATUS_LABELS).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+        </select>
+        {canFilterAgents && (
+          <select
+            className="fsel fsel-agent"
+            value={agentFilter || ''}
+            onChange={e => setAgentFilter(e.target.value || null)}
+            title="Show leads for a specific agent"
+          >
+            <option value="">All leads</option>
+            {agentOptions.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+          </select>
+        )}
       </div>
       <LeadTable leads={disp} />
     </>

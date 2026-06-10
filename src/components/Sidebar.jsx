@@ -2,24 +2,61 @@ import Mi from './Mi.jsx';
 import { useApp } from '../context/AppContext.jsx';
 import { clearSession } from '../lib/db.js';
 import { avc, ini, rlabel } from '../lib/helpers.js';
-import { ROLES } from '../lib/constants.js';
+import { canSee } from '../lib/constants.js';
 
-const NAV = {
-  INITIAL_AGENT: [{ v: 'dashboard', ico: 'dashboard', lbl: 'Dashboard' }, { v: 'leads', ico: 'list', lbl: 'My Leads' }, { v: 'profile', ico: 'person', lbl: 'Profile' }],
-  MEETING_AGENT: [{ v: 'dashboard', ico: 'dashboard', lbl: 'Dashboard' }, { v: 'leads', ico: 'list', lbl: 'My Leads' }, { v: 'profile', ico: 'person', lbl: 'Profile' }],
-  TEAM_LEAD: [{ v: 'dashboard', ico: 'dashboard', lbl: 'Dashboard' }, { v: 'team', ico: 'groups', lbl: 'My Team' }, { v: 'leads', ico: 'list', lbl: 'All Leads' }, { v: 'profile', ico: 'person', lbl: 'Profile' }],
-  MANAGEMENT: [{ v: 'dashboard', ico: 'dashboard', lbl: 'Dashboard' }, { v: 'users', ico: 'manage_accounts', lbl: 'Users' }, { v: 'profile', ico: 'person', lbl: 'Profile' }],
-};
+// Grouped, role-scoped navigation (Muthoclo admin pattern).
+// Sections render a label + their visible items; items may expand children
+// when active. Visibility is driven by canSee(role, key).
+const SECTIONS = [
+  { label: null, keys: ['dashboard', 'reports'] },
+  { label: 'Sales Team', keys: ['leads', 'clients', 'pipeline', 'properties', 'bookings'] },
+  { label: 'Admin', keys: ['team', 'users'] },
+];
 
 export default function Sidebar() {
   const { user, setUser, view, nav, sidebarOpen, setSidebarOpen } = useApp();
 
   if (!user) return null;
-  const items = NAV[user.role] || [];
+  const role = user.role;
 
-  const handleLogout = () => {
-    clearSession();
-    setUser(null);
+  const META = {
+    dashboard: { ico: 'home', lbl: 'Home' },
+    leads: { ico: 'person_search', lbl: 'Leads' },
+    pipeline: { ico: 'view_kanban', lbl: 'Pipeline' },
+    clients: { ico: 'account_circle', lbl: 'Contacts' },
+    bookings: { ico: 'event_note', lbl: 'Sales Activity' },
+    reports: { ico: 'bar_chart', lbl: 'Reports' },
+    properties: { ico: 'folder', lbl: 'Projects' },
+    team: { ico: 'groups', lbl: 'Team' },
+    users: { ico: 'manage_accounts', lbl: 'Users' },
+    profile: { ico: 'account_circle', lbl: 'Profile' },
+  };
+
+  const handleLogout = () => { clearSession(); setUser(null); };
+
+  const NavItem = ({ k }) => {
+    const m = META[k];
+    const active = view === k;
+    return (
+      <div>
+        <div className={`sb-it${active ? ' on' : ''}`} onClick={() => nav(k)}>
+          <Mi>{m.ico}</Mi>{m.lbl}
+        </div>
+        {active && m.children && (
+          <div className="sb-sub">
+            {m.children.map((c, i) => (
+              <div
+                key={i}
+                className={`sb-subit${c.on ? ' on' : ''}`}
+                onClick={(e) => { e.stopPropagation(); c.onClick(); }}
+              >
+                {c.lbl}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    );
   };
 
   return (
@@ -27,20 +64,32 @@ export default function Sidebar() {
       <div className={`sb-ov${sidebarOpen ? ' on' : ''}`} onClick={() => setSidebarOpen(false)} />
       <aside className={`sidebar${sidebarOpen ? ' open' : ''}`}>
         <div className="sb-brand">
-          <span className="wlogo wlogo-sm">WECON</span>
+          <span className="sb-logo">W</span>
+          <span className="wlogo wlogo-sm">WEPRO<span className="wlogo-accent"> CRM</span></span>
+          <button className="sb-close" onClick={() => setSidebarOpen(false)} title="Close">
+            <Mi>close</Mi>
+          </button>
         </div>
+
         <nav className="sb-nav">
-          {items.map(it => (
-            <div
-              key={it.v}
-              className={`sb-it${view === it.v ? ' on' : ''}`}
-              onClick={() => nav(it.v)}
-            >
-              <Mi>{it.ico}</Mi>{it.lbl}
-            </div>
-          ))}
+          {SECTIONS.map((sec, si) => {
+            const keys = sec.keys.filter(k => canSee(role, k));
+            if (!keys.length) return null;
+            return (
+              <div className="sb-sec" key={si}>
+                {sec.label && <div className="sb-sec-lbl">{sec.label}</div>}
+                {keys.map(k => <NavItem key={k} k={k} />)}
+              </div>
+            );
+          })}
         </nav>
+
         <div className="sb-foot">
+          {canSee(role, 'profile') && (
+            <div className={`sb-it${view === 'profile' ? ' on' : ''}`} onClick={() => nav('profile')}>
+              <Mi>person</Mi>Profile
+            </div>
+          )}
           <div className="sb-user">
             {user.avatar
               ? <img src={user.avatar} alt={user.name} className="sb-av sb-av-img" />

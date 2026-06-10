@@ -75,34 +75,34 @@ export default function ProfileView() {
   let kpis = [];
   if (fresh.role === ROLES.IA) {
     kpis = [
-      { ico: 'call', val: calls, label: 'Calls This Month', color: '#0891B2' },
-      { ico: 'schedule', val: talkMins + ' min', label: 'Talk Time', color: '#7C3AED' },
-      { ico: 'check_circle', val: meetingsSet, label: 'Meetings Set', color: '#16A34A', sub: tgt ? `Target: ${tgt.value}` : '' },
-      { ico: 'person', val: active, label: 'Active Leads', color: '#2563EB' },
+      { ico: 'call', val: calls, label: 'Calls This Month', color: '#2DD4BF' },
+      { ico: 'schedule', val: talkMins + ' min', label: 'Talk Time', color: '#DDB948' },
+      { ico: 'check_circle', val: meetingsSet, label: 'Meetings Set', color: '#34D399', sub: tgt ? `Target: ${tgt.value}` : '' },
+      { ico: 'person', val: active, label: 'Active Customers', color: '#C8FF00' },
     ];
   } else if (fresh.role === ROLES.MA) {
     kpis = [
-      { ico: 'location_on', val: visitsDone, label: 'Site Visits Done', color: '#16A34A', sub: tgt ? `Target: ${tgt.value}` : '' },
-      { ico: 'handshake', val: won.length, label: 'Deals Won', color: '#D97706' },
-      { ico: 'payments', val: fmtBDT(rev), label: 'Revenue', color: '#16A34A' },
-      { ico: 'percent', val: wr + '%', label: 'Win Rate', color: '#7C3AED' },
+      { ico: 'location_on', val: visitsDone, label: 'Site Visits Done', color: '#34D399', sub: tgt ? `Target: ${tgt.value}` : '' },
+      { ico: 'handshake', val: won.length, label: 'Deals Won', color: '#F0A92B' },
+      { ico: 'payments', val: fmtBDT(rev), label: 'Revenue', color: '#34D399' },
+      { ico: 'percent', val: wr + '%', label: 'Win Rate', color: '#DDB948' },
     ];
   } else if (fresh.role === ROLES.TL) {
     kpis = [
-      { ico: 'groups', val: teamUsers.length, label: 'Team Members', color: '#2563EB' },
-      { ico: 'group', val: teamLeads.length, label: 'Team Leads', color: '#0891B2' },
-      { ico: 'payments', val: fmtBDT(teamRev), label: 'Team Revenue', color: '#16A34A' },
-      { ico: 'emoji_events', val: teamWon.length, label: 'Team Deals Won', color: '#D97706' },
+      { ico: 'groups', val: teamUsers.length, label: 'Team Members', color: '#C8FF00' },
+      { ico: 'group', val: teamLeads.length, label: 'Team Leads', color: '#2DD4BF' },
+      { ico: 'payments', val: fmtBDT(teamRev), label: 'Team Revenue', color: '#34D399' },
+      { ico: 'emoji_events', val: teamWon.length, label: 'Team Deals Won', color: '#F0A92B' },
     ];
   } else {
     const allLeads = db.leads;
     const allWon = allLeads.filter(l => l.status === 'DEAL_CLOSED_WON' && l.updatedAt && new Date(l.updatedAt) >= sm);
     const allRev = allWon.reduce((s, l) => s + (l.dealValue || 0), 0);
     kpis = [
-      { ico: 'group', val: db.users.length, label: 'Total Users', color: '#2563EB' },
-      { ico: 'groups', val: db.teams?.length || 0, label: 'Teams', color: '#0891B2' },
-      { ico: 'payments', val: fmtBDT(allRev), label: 'Monthly Revenue', color: '#16A34A' },
-      { ico: 'emoji_events', val: allWon.length, label: 'Deals Won', color: '#D97706' },
+      { ico: 'group', val: db.users.length, label: 'Total Users', color: '#C8FF00' },
+      { ico: 'groups', val: db.teams?.length || 0, label: 'Teams', color: '#2DD4BF' },
+      { ico: 'payments', val: fmtBDT(allRev), label: 'Monthly Revenue', color: '#34D399' },
+      { ico: 'emoji_events', val: allWon.length, label: 'Deals Won', color: '#F0A92B' },
     ];
   }
 

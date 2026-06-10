@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import Mi from './Mi.jsx';
 import Pagination from './Pagination.jsx';
-import { avc, ini, fmtAgo, fmtBDT } from '../lib/helpers.js';
+import { fmtD, fmtBDT } from '../lib/helpers.js';
 import { SRC_LABELS, STATUS_LABELS, ROLES } from '../lib/constants.js';
 import { useApp } from '../context/AppContext.jsx';
 import { bulkDeleteLeads } from '../lib/db.js';
@@ -10,14 +10,21 @@ const PAGE_SIZE = 15;
 
 function sclass(s) { return 's-' + (s || '').toLowerCase(); }
 function srcclass(s) { return 'src-' + (s || '').toLowerCase(); }
+function leadCode(l) { return l.externalId || ('#' + String(l.id || '').slice(-6).toUpperCase()); }
 
 export default function LeadTable({ leads }) {
-  const { setPanLead, user, refreshDB, showToast } = useApp();
+  const { setPanLead, user, refreshDB, showToast, sortBy } = useApp();
   const [page, setPage] = useState(0);
   const [selected, setSelected] = useState(new Set());
   const canSelect = user?.role === ROLES.IA;
 
-  const sorted = [...leads].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+  const CMP = {
+    newest: (a, b) => new Date(b.createdAt) - new Date(a.createdAt),
+    oldest: (a, b) => new Date(a.createdAt) - new Date(b.createdAt),
+    updated: (a, b) => new Date(b.updatedAt || b.createdAt) - new Date(a.updatedAt || a.createdAt),
+    name: (a, b) => (a.name || '').localeCompare(b.name || ''),
+  };
+  const sorted = [...leads].sort(CMP[sortBy] || CMP.newest);
 
   useEffect(() => { setPage(0); setSelected(new Set()); }, [leads.length, leads.map(l => l.id).join()]);
 
@@ -31,11 +38,11 @@ export default function LeadTable({ leads }) {
   function handleBulkDelete() {
     const ids = [...selected];
     if (!ids.length) return;
-    if (!window.confirm(`Delete ${ids.length} lead${ids.length > 1 ? 's' : ''}? This cannot be undone.`)) return;
+    if (!window.confirm(`Delete ${ids.length} customer${ids.length > 1 ? "s" : ""}? This cannot be undone.`)) return;
     bulkDeleteLeads(ids, user);
     setSelected(new Set());
     refreshDB();
-    showToast(`${ids.length} lead${ids.length > 1 ? 's' : ''} deleted`, 'ok');
+    showToast(`${ids.length} customer${ids.length > 1 ? "s" : ""} deleted`, 'ok');
   }
 
   if (!leads.length) {
@@ -43,9 +50,9 @@ export default function LeadTable({ leads }) {
       <div className={`lt${canSelect ? ' lt-with-cb' : ''}`}>
         <div className="lt-hdr">
           {canSelect && <div className="lt-cb-col" />}
-          <div>Lead</div><div>Interested For</div><div>Source</div><div>Status</div><div>Updated</div><div></div>
+          <div>Lead ID</div><div>Customer Name</div><div>Source</div><div>Property</div><div>Status</div><div>Create date</div>
         </div>
-        <div className="empty"><Mi>inbox</Mi><p>No leads here</p></div>
+        <div className="empty"><Mi>inbox</Mi><p>No customers here</p></div>
       </div>
     );
   }
@@ -64,7 +71,7 @@ export default function LeadTable({ leads }) {
       <div className={`lt${canSelect ? ' lt-with-cb' : ''}`}>
         <div className="lt-hdr">
           {canSelect && <div className="lt-cb-col" />}
-          <div>Lead</div><div>Interested For</div><div>Source</div><div>Status</div><div>Updated</div><div></div>
+          <div>Lead ID</div><div>Customer Name</div><div>Source</div><div>Property</div><div>Status</div><div>Create date</div>
         </div>
         {slice.map(l => (
           <div key={l.id} className={`lt-row${selected.has(l.id) ? ' lt-sel' : ''}`}
@@ -75,29 +82,28 @@ export default function LeadTable({ leads }) {
               </div>
             )}
             <div className="lt-cell">
-              <div className="lt-av" style={{ background: avc(l.name), borderRadius: '8px' }}>{ini(l.name)}</div>
-              <div>
+              <span className="lt-id">{leadCode(l)}</span>
+            </div>
+            <div className="lt-cell">
+              <div style={{ minWidth: 0 }}>
                 <div className="lt-n">{l.name}</div>
                 <div className="lt-sub">{l.phone}</div>
               </div>
             </div>
             <div className="lt-cell">
-              <div>
-                <div className="lt-n" style={{ fontSize: '12px' }}>{l.propertyInterest || '—'}</div>
-                <div className="lt-sub">{l.budget ? fmtBDT(l.budget) : ''}</div>
-              </div>
+              <span className="lt-src">{SRC_LABELS[l.source] || l.source || '—'}</span>
             </div>
             <div className="lt-cell">
-              <span className={`bdg ${srcclass(l.source)}`}>{SRC_LABELS[l.source] || l.source}</span>
+              <div style={{ minWidth: 0 }}>
+                <div className="lt-prop">{l.propertyInterest || '—'}</div>
+                <div className="lt-sub">{l.budget ? fmtBDT(l.budget) : ''}</div>
+              </div>
             </div>
             <div className="lt-cell">
               <span className={`bdg ${sclass(l.status)}`}>{STATUS_LABELS[l.status] || l.status}</span>
             </div>
             <div className="lt-cell">
-              <span className="lt-date">{fmtAgo(l.updatedAt)}</span>
-            </div>
-            <div className="lt-cell">
-              <div className="lt-arr"><Mi>chevron_right</Mi></div>
+              <span className="lt-date">{fmtD(l.createdAt)}</span>
             </div>
           </div>
         ))}

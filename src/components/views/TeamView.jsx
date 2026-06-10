@@ -1,8 +1,9 @@
 import { useApp } from '../../context/AppContext.jsx';
 import { getLeads, getDB } from '../../lib/db.js';
 import AgentCard from '../dashboards/AgentCard.jsx';
+import ActivityTimeline from '../ActivityTimeline.jsx';
 import Mi from '../Mi.jsx';
-import { actIcon, actClr, fmtAgo } from '../../lib/helpers.js';
+import { fmtAgo } from '../../lib/helpers.js';
 import { ROLES } from '../../lib/constants.js';
 
 export default function TeamView() {
@@ -31,16 +32,7 @@ export default function TeamView() {
       <div className="sec-hd"><div className="sec-t"><Mi>history</Mi>Team Activity</div></div>
       <div className="tl">
         <div className="tl-ttl">Recent Actions</div>
-        {actFeed.map(a => (
-          <div key={a.id} className="tl-item">
-            <div className="tl-dot" style={{ background: actClr(a.type) }}><Mi>{actIcon(a.type)}</Mi></div>
-            <div className="tl-bd">
-              {a.userName && <div className="tl-actor" style={{ color: actClr(a.type) }}>{a.userName}</div>}
-              <div className="tl-desc">{a.description}</div>
-              <div className="tl-time">{a.leadName} · {fmtAgo(a.timestamp)}</div>
-            </div>
-          </div>
-        ))}
+        <ActivityTimeline items={actFeed.map(a => ({ id: a.id, type: a.type, actor: a.userName, description: a.description, sub: `${a.leadName} · ${fmtAgo(a.timestamp)}` }))} />
       </div>
     </div>
   );

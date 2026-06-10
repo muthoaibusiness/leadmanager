@@ -90,7 +90,7 @@ export default function ImportModal() {
         <div className="m-ft">
           <button className="btn btn-g" onClick={handleClose}>Cancel</button>
           {importData && importData.leads.length > 0 && (
-            <button className="btn btn-p" onClick={submitImport}><Mi>upload</Mi>Import {importData.leads.length} Leads</button>
+            <button className="btn btn-p" onClick={submitImport}><Mi>upload</Mi>Import {importData.leads.length} Customers</button>
           )}
         </div>
       </div>
