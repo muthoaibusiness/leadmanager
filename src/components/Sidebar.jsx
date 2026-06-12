@@ -10,7 +10,7 @@ import { canSee } from '../lib/constants.js';
 const SECTIONS = [
   { label: null, keys: ['dashboard', 'reports'] },
   { label: 'Sales Team', keys: ['leads', 'clients', 'pipeline', 'properties', 'bookings'] },
-  { label: 'Admin', keys: ['team', 'users'] },
+  { label: 'Admin', keys: ['team', 'users', 'accounts'] },
 ];
 
 export default function Sidebar() {
@@ -29,6 +29,7 @@ export default function Sidebar() {
     properties: { ico: 'folder', lbl: 'Projects' },
     team: { ico: 'groups', lbl: 'Team' },
     users: { ico: 'manage_accounts', lbl: 'Users' },
+    accounts: { ico: 'group_add', lbl: 'Accounts' },
     profile: { ico: 'account_circle', lbl: 'Profile' },
   };
 

@@ -615,6 +615,52 @@ export function createUserFn(name, email, password, phone, role, currentUser) {
   return id;
 }
 
+// Provision many accounts in one pass. `rows`: [{name,email,phone,role,password,teamId}].
+// Validates each row (name+email required, valid+unique email incl. within the batch),
+// creates Team Leads with their own team, and agents under the chosen/owner team.
+// Returns { created:[{name,email,pass,roleLabel,role}], errors:[{line,name,reason}] }.
+export function bulkCreateUsers(rows, currentUser) {
+  const created = [];
+  const errors = [];
+  const seen = new Set(getDB().users.map(u => (u.email || '').toLowerCase()));
+  const emailRe = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
+
+  rows.forEach((r, i) => {
+    const line = i + 1;
+    const name = (r.name || '').trim();
+    const email = (r.email || '').trim();
+    const role = r.role || ROLES.IA;
+    const pass = (r.password || '').trim() || '1234';
+    const phone = (r.phone || '').trim();
+
+    if (!name && !email) return; // skip blank rows silently
+    if (!name) { errors.push({ line, name: email || '(row ' + line + ')', reason: 'Name required' }); return; }
+    if (!email) { errors.push({ line, name, reason: 'Email required' }); return; }
+    if (!emailRe.test(email)) { errors.push({ line, name, reason: 'Invalid email' }); return; }
+    if (seen.has(email.toLowerCase())) { errors.push({ line, name, reason: 'Email already in use' }); return; }
+
+    const id = 'u' + uid();
+    seen.add(email.toLowerCase());
+
+    if (role === ROLES.TL) {
+      const tid = 't' + uid();
+      mutate(db => {
+        db.teams = db.teams || [];
+        db.teams.push({ id: tid, name: name + "'s Team", leadId: id });
+        db.users.push({ id, name, email, password: pass, phone, role, teamId: tid });
+      });
+    } else if (role === ROLES.MGMT) {
+      mutate(db => { db.users.push({ id, name, email, password: pass, phone, role }); });
+    } else {
+      const teamId = r.teamId || currentUser.teamId;
+      mutate(db => { db.users.push({ id, name, email, password: pass, phone, role, teamId }); });
+    }
+    created.push({ id, name, email, pass, role, roleLabel: rlabel(role) });
+  });
+
+  return { created, errors };
+}
+
 export function addLeadFn(name, phone, phones, email, emails, company, source, prop, budget, profession, city, user) {
   const id = 'l' + uid();
   const lead = {

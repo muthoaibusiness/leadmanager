@@ -13,7 +13,9 @@ export default function MeetingAgentDash() {
   const meetingSet = leads.filter(l => l.status === 'MEETING_SET');
   const sched = leads.filter(l => l.status === 'SITE_VISIT_SCHEDULED');
   const done = leads.filter(l => l.status === 'SITE_VISIT_DONE');
-  const fwdTL = db.leads.filter(l => l.previousAssignees.includes(user.id) && ['NEGOTIATING', 'DEAL_CLOSED_WON', 'DEAL_CLOSED_LOST'].includes(l.status));
+  // Leads this MA forwarded to a Team Lead = MA handled it earlier and it now sits with a TL
+  // (regardless of whether the TL has started negotiating / closed yet).
+  const fwdTL = db.leads.filter(l => l.previousAssignees.includes(user.id) && l.assignedRole === ROLES.TL);
 
   const tabs = [`Meeting Set (${meetingSet.length})`, 'Visit Scheduled', 'Visits Done', 'Forwarded to TL', 'All'];
   let disp = meetingSet;

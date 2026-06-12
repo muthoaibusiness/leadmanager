@@ -7,6 +7,7 @@ import { avc, ini, rlabel } from './lib/helpers.js';
 import { ROLES } from './lib/constants.js';
 
 import Mi from './components/Mi.jsx';
+import LandingPage from './components/LandingPage.jsx';
 import Sidebar from './components/Sidebar.jsx';
 import NotifBell from './components/NotifBell.jsx';
 import LeadPanel from './components/LeadPanel.jsx';
@@ -21,6 +22,7 @@ import ManagementDash from './components/dashboards/ManagementDash.jsx';
 import LeadsView from './components/views/LeadsView.jsx';
 import TeamView from './components/views/TeamView.jsx';
 import UsersView from './components/views/UsersView.jsx';
+import AccountsView from './components/views/AccountsView.jsx';
 import ProfileView from './components/views/ProfileView.jsx';
 import PropertiesView from './components/views/PropertiesView.jsx';
 import BookingsView from './components/views/BookingsView.jsx';
@@ -60,7 +62,7 @@ function LoadingScreen({ visible }) {
 }
 
 // ── Login page ─────────────────────────────────────────────────────────────
-function LoginPage({ onLogin }) {
+function LoginPage({ onLogin, onBack }) {
   const [email, setEmail] = useState('');
   const [pw, setPw] = useState('');
   const [showPw, setShowPw] = useState(false);
@@ -90,21 +92,26 @@ function LoginPage({ onLogin }) {
 
   return (
     <div id="login">
+      <svg className="login-bg-svg" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1440 900" preserveAspectRatio="none">
+        <polyline points="400,0 200,450 0,450" fill="none" stroke="#5EC564" strokeWidth="1.5" opacity="0.6" />
+        <polygon points="1440,700 1300,900 1440,900" fill="#142B1B" opacity="0.8" />
+      </svg>
       <div className="ln-left">
         <div className="ln-brand">
-          <span className="wlogo wlogo-white">WEPRO<span className="wlogo-accent"> CRM</span></span>
+          <span className="brand-green">WEPRO</span><span className="brand-white">CRM</span>
         </div>
-        <div className="ln-hero-center">
-          <div className="ln-hero-label">Real Estate</div>
-          <div className="ln-hero-title">Sales engine</div>
+        {onBack && <button className="ln-back" onClick={onBack}><Mi>arrow_back</Mi>Back to home</button>}
+        <div className="ln-tagline">
+          <div className="ln-tagline-sub">REAL ESTATE</div>
+          <div className="ln-tagline-main">SALES ENGINE</div>
         </div>
       </div>
       <div className="ln-right">
         <div className="ln-card">
-          <div className="lnc-h">Sign in</div>
-          <div className="lnc-s">Welcome back</div>
+          <div className="lnc-h">SIGN IN</div>
+          <div className="lnc-s">WELCOME BACK</div>
           <div className="fl">
-            <label>Email address</label>
+            <label>Email Address</label>
             <div className="finp-wrap">
               <Mi>mail_outline</Mi>
               <input className="finp finp-ico" type="email" placeholder="you@company.com" value={email} onChange={e => setEmail(e.target.value)} onKeyDown={handleKey} autoComplete="email" />
@@ -120,13 +127,13 @@ function LoginPage({ onLogin }) {
           </div>
           {err && <div className="err-msg">{err}</div>}
           <button className="btn-ln" onClick={doLogin} disabled={loading}>
-            {loading ? 'Signing in…' : 'Continue'}
+            {loading ? 'Signing in…' : 'CONTINUE'}
           </button>
           <div className="demo-wrap">
             <button className="demo-toggle" onClick={() => setDemoOpen(v => !v)}>
-              <Mi>people_alt</Mi>
-              Demo accounts
-              <Mi style={{ marginLeft: 'auto', transition: 'transform .2s', transform: demoOpen ? 'rotate(180deg)' : 'none' }}>expand_more</Mi>
+              <Mi className="mi-left">person</Mi>
+              Demo Account
+              <Mi className="mi-right" style={{ transform: demoOpen ? 'rotate(180deg)' : 'none' }}>expand_more</Mi>
             </button>
             {demoOpen && (
               <div className="demo-popup">
@@ -193,6 +200,7 @@ function PageHero() {
     bookings: { eyebrow: 'Sales', title: 'Sales Activity', sub: 'Payments, instalments & dues' },
     team: { eyebrow: 'Team', title: 'My Team', sub: `${teamAgents} agents` },
     users: { eyebrow: 'Administration', title: 'Users', sub: `${db.users.length} accounts` },
+    accounts: { eyebrow: 'Administration', title: 'Account Management', sub: 'Create & manage multiple accounts' },
     profile: { eyebrow: 'Account', title: 'My Profile', sub: 'Manage your details & avatar' },
   };
   let { eyebrow, title, sub } = META[view] || { eyebrow: '', title: view, sub: '' };
@@ -244,6 +252,7 @@ function PageBody() {
   if (view === 'reports') return <ReportsView />;
   if (view === 'team') return <TeamView />;
   if (view === 'users') return <UsersView />;
+  if (view === 'accounts') return <AccountsView />;
   if (view === 'profile') return <ProfileView />;
   return null;
 }
@@ -268,6 +277,7 @@ export default function App() {
   const { user, setUser, refreshDB, searchRef, panLead, setPanLead, closeModal, modal, setSearch } = useApp();
   const [loading, setLoading] = useState(true);
   const [loadVisible, setLoadVisible] = useState(true);
+  const [showLogin, setShowLogin] = useState(false); // landing → login gate
   const initialized = useRef(false);
 
   // Real-time notification subscription
@@ -353,7 +363,8 @@ export default function App() {
   return (
     <>
       {loadVisible && <LoadingScreen visible={loading} />}
-      {!user && !loading && <LoginPage onLogin={(u) => { setUser(u); refreshDB(); }} />}
+      {!user && !loading && !showLogin && <LandingPage onEnter={() => setShowLogin(true)} />}
+      {!user && !loading && showLogin && <LoginPage onLogin={(u) => { setUser(u); refreshDB(); }} onBack={() => setShowLogin(false)} />}
       {user && <AppShell />}
       <LeadPanel />
       {/* Modals */}

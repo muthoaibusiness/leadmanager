@@ -17,6 +17,7 @@ export const NAV_SCOPES = {
   reports: ['MANAGEMENT', 'TEAM_LEAD'],
   team: ['TEAM_LEAD'],
   users: ['MANAGEMENT'],
+  accounts: ['MANAGEMENT'],
   profile: ALL_ROLES,
 };
 export const canSee = (role, key) => (NAV_SCOPES[key] || []).includes(role);

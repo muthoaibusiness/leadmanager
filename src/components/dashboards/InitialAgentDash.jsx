@@ -70,7 +70,9 @@ export default function InitialAgentDash() {
 
   const meetingsMonth = achievement(user.id, ROLES.IA); // meetings set this month
 
-  const meetingSetLeads = db.leads.filter(l => l.previousAssignees.includes(user.id) && l.status === 'MEETING_SET');
+  // Meetings this IA set — tracked by meetingSetBy so they persist even after the
+  // Meeting Agent progresses the lead (visit scheduled/done, etc.).
+  const meetingSetLeads = db.leads.filter(l => l.meetingSetBy === user.id);
 
   // ── My customers table ──
   const tabs = ['All', 'New', 'Contacted', 'Interested', `Meeting Set (${meetingSetLeads.length})`];
