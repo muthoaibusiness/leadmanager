@@ -1,6 +1,6 @@
 import { ROLES, STATUS_LABELS, SRC_LABELS } from './constants.js';
 import { uid, now_, fmtBDT, fmtDT, curMonth, startOfMonth, rlabel } from './helpers.js';
-import { sbSave, sbUpsertNotifs, sbMarkRead } from './supabase.js';
+import { sbSave, sbUpsertNotifs, sbMarkRead, sbDelete } from './supabase.js';
 
 export const KEY = 'propcrm_v1';
 export let _DB = null;
@@ -64,12 +64,16 @@ export function mergeDB(remote, local) {
     });
     return out;
   };
+  // tombstones: ids deleted locally must never be resurrected from the cloud
+  const deleted = new Set((l.deletionLog || []).map(d => d.id));
+  const leads = mergeArr(r.leads, l.leads).filter(x => !deleted.has(x.id));
   return {
     companies: mergeArr(r.companies, l.companies),
     users: mergeArr(r.users, l.users),
     teams: mergeArr(r.teams, l.teams),
-    leads: mergeArr(r.leads, l.leads),
+    leads,
     targets: mergeArr(r.targets, l.targets),
+    deletionLog: l.deletionLog || [],
     properties: mergeArr(r.properties, l.properties),
     bookings: mergeArr(r.bookings, l.bookings),
     activities: mergeActs(r.activities, l.activities),
@@ -561,6 +565,7 @@ export function deleteLead(leadId, user) {
     db.leads = db.leads.filter(l => l.id !== leadId);
     delete db.activities[leadId];
   });
+  sbDelete('leads', [leadId]); // remove from cloud so it doesn't return on reload
 }
 
 export function bulkDeleteLeads(leadIds, user) {
@@ -574,6 +579,7 @@ export function bulkDeleteLeads(leadIds, user) {
     db.leads = db.leads.filter(l => !idSet.has(l.id));
     leadIds.forEach(id => delete db.activities[id]);
   });
+  sbDelete('leads', leadIds); // remove from cloud so they don't return on reload
 }
 
 export function getDeletionLog() {

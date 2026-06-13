@@ -77,6 +77,26 @@ export async function sbUpsert(table, rows) {
   return { ok: false };
 }
 
+// Hard-delete rows by id from a Supabase table (REST DELETE). Without this,
+// sbSave only upserts, so deleted rows linger in the cloud and reappear on the
+// next merge-on-load. Fire-and-forget with error logging.
+export async function sbDelete(table, ids) {
+  if (!ids || !ids.length) return;
+  const list = ids.map(id => `"${id}"`).join(',');
+  try {
+    const r = await fetch(`${SB_URL}/rest/v1/${table}?id=in.(${encodeURIComponent(list)})`, {
+      method: 'DELETE',
+      headers: { ...SB_H, Prefer: 'return=minimal' },
+    });
+    if (!r.ok) {
+      let body = ''; try { body = await r.text(); } catch {}
+      console.error(`Supabase Delete Error [${table}] HTTP ${r.status}:`, body, 'ids:', ids);
+    }
+  } catch (e) {
+    console.error(`Supabase Delete network error [${table}]:`, e, 'ids:', ids);
+  }
+}
+
 // ── row converters ──
 export function lToR(l) {
   return {

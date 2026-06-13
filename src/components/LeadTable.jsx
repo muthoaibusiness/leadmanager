@@ -31,9 +31,15 @@ export default function LeadTable({ leads }) {
 
   const slice = sorted.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
 
-  const allSelected = sorted.length > 0 && sorted.every(l => selected.has(l.id));
+  // select-all applies to the CURRENT page only
+  const allSelected = slice.length > 0 && slice.every(l => selected.has(l.id));
   function toggleAll() {
-    setSelected(allSelected ? new Set() : new Set(sorted.map(l => l.id)));
+    setSelected(s => {
+      const n = new Set(s);
+      if (allSelected) slice.forEach(l => n.delete(l.id));
+      else slice.forEach(l => n.add(l.id));
+      return n;
+    });
   }
 
   function toggleOne(id, e) {
