@@ -1,12 +1,16 @@
 import { useState, useEffect, useRef } from 'react';
 import { useApp } from './context/AppContext.jsx';
-import { getDB, getSession, setSession, tryLogin, saveDB, checkFollowUpReminders, getLeads, getProperties, expireHolds } from './lib/db.js';
+import { getDB, getSession, setSession, tryLogin, saveDB, checkFollowUpReminders, getLeads, getProperties, expireHolds, migrateTenancy } from './lib/db.js';
 import { seedDB, SEED_PROPERTIES, DEMO_PROPERTIES } from './lib/seed.js';
 import { sbLoad, sbSubscribeNotifs } from './lib/supabase.js';
 import { avc, ini, rlabel } from './lib/helpers.js';
 import { ROLES } from './lib/constants.js';
 
 import Mi from './components/Mi.jsx';
+import InteractiveShader from './components/ui/aurora-shader.jsx';
+import ShaderDemo from './components/ui/hive.jsx';
+import { SignIn1 } from './components/ui/modern-stunning-sign-in.jsx';
+import { ProgressCircle } from './components/ui/progress.jsx';
 import LandingPage from './components/LandingPage.jsx';
 import Sidebar from './components/Sidebar.jsx';
 import NotifBell from './components/NotifBell.jsx';
@@ -18,6 +22,7 @@ import InitialAgentDash from './components/dashboards/InitialAgentDash.jsx';
 import MeetingAgentDash from './components/dashboards/MeetingAgentDash.jsx';
 import TeamLeadDash from './components/dashboards/TeamLeadDash.jsx';
 import ManagementDash from './components/dashboards/ManagementDash.jsx';
+import MasterDash from './components/dashboards/MasterDash.jsx';
 
 import LeadsView from './components/views/LeadsView.jsx';
 import TeamView from './components/views/TeamView.jsx';
@@ -57,6 +62,17 @@ function LoadingScreen({ visible }) {
         <div className="ld-sub">Real Estate CRM</div>
       </div>
       <div className="ld-spin" />
+    </div>
+  );
+}
+
+// ── Post-login loader (shadcn ProgressCircle spinner, adapted) ───────────────
+function PostLoginLoader() {
+  return (
+    <div className="pl-overlay">
+      <span className="wlogo wlogo-white">WEPRO<span className="wlogo-accent"> CRM</span></span>
+      <ProgressCircle value={25} size={40} strokeWidth={4} className="prog-spin" indicatorClassName="prog-volt" />
+      <div className="pl-text">Loading your workspace…</div>
     </div>
   );
 }
@@ -107,52 +123,37 @@ function LoginPage({ onLogin, onBack }) {
         </div>
       </div>
       <div className="ln-right">
-        <div className="ln-card">
-          <div className="lnc-h">SIGN IN</div>
-          <div className="lnc-s">WELCOME BACK</div>
-          <div className="fl">
-            <label>Email Address</label>
-            <div className="finp-wrap">
-              <Mi>mail_outline</Mi>
-              <input className="finp finp-ico" type="email" placeholder="you@company.com" value={email} onChange={e => setEmail(e.target.value)} onKeyDown={handleKey} autoComplete="email" />
-            </div>
-          </div>
-          <div className="fl">
-            <label>Password</label>
-            <div className="pw-w finp-wrap">
-              <Mi>lock_outline</Mi>
-              <input className="finp finp-ico" type={showPw ? 'text' : 'password'} placeholder="••••••••" value={pw} onChange={e => setPw(e.target.value)} onKeyDown={handleKey} autoComplete="current-password" />
-              <button className="pw-e" onClick={() => setShowPw(v => !v)}><Mi>{showPw ? 'visibility_off' : 'visibility'}</Mi></button>
-            </div>
-          </div>
-          {err && <div className="err-msg">{err}</div>}
-          <button className="btn-ln" onClick={doLogin} disabled={loading}>
-            {loading ? 'Signing in…' : 'CONTINUE'}
-          </button>
-          <div className="demo-wrap">
-            <button className="demo-toggle" onClick={() => setDemoOpen(v => !v)}>
-              <Mi className="mi-left">person</Mi>
-              Demo Account
-              <Mi className="mi-right" style={{ transform: demoOpen ? 'rotate(180deg)' : 'none' }}>expand_more</Mi>
-            </button>
-            {demoOpen && (
-              <div className="demo-popup">
-                <div className="demo-popup-hd">Quick access</div>
-                <div className="demo-popup-list">
-                  {users.map(u => (
-                    <button key={u.id} className="dg-btn" onClick={() => { setEmail(u.email); setPw('1234'); setErr(''); setDemoOpen(false); }}>
-                      <div className="dg-av" style={{ background: `hsl(${u.name.charCodeAt(0) * 13 % 360},55%,45%)` }}>{u.name[0]}</div>
-                      <div>
-                        <div className="dg-name">{u.name}</div>
-                        <div className="dg-role">{rlabel(u.role)}</div>
-                      </div>
-                    </button>
-                  ))}
+        <SignIn1
+          email={email} setEmail={setEmail}
+          password={pw} setPassword={setPw}
+          error={err} loading={loading}
+          onSignIn={doLogin} onKeyDown={handleKey} onBack={onBack}
+          footer={
+            <div className="demo-wrap">
+              <button className="demo-toggle" onClick={() => setDemoOpen(v => !v)}>
+                <Mi className="mi-left">person</Mi>
+                Demo Account
+                <Mi className="mi-right" style={{ transform: demoOpen ? 'rotate(180deg)' : 'none' }}>expand_more</Mi>
+              </button>
+              {demoOpen && (
+                <div className="demo-popup">
+                  <div className="demo-popup-hd">Quick access</div>
+                  <div className="demo-popup-list">
+                    {users.map(u => (
+                      <button key={u.id} className="dg-btn" onClick={() => { setEmail(u.email); setPw('1234'); setErr(''); setDemoOpen(false); }}>
+                        <div className="dg-av" style={{ background: `hsl(${u.name.charCodeAt(0) * 13 % 360},55%,45%)` }}>{u.name[0]}</div>
+                        <div>
+                          <div className="dg-name">{u.name}</div>
+                          <div className="dg-role">{rlabel(u.role)}</div>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
                 </div>
-              </div>
-            )}
-          </div>
-        </div>
+              )}
+            </div>
+          }
+        />
       </div>
     </div>
   );
@@ -202,8 +203,10 @@ function PageHero() {
     users: { eyebrow: 'Administration', title: 'Users', sub: `${db.users.length} accounts` },
     accounts: { eyebrow: 'Administration', title: 'Account Management', sub: 'Create & manage multiple accounts' },
     profile: { eyebrow: 'Account', title: 'My Profile', sub: 'Manage your details & avatar' },
+    companies: { eyebrow: 'Master Admin', title: 'Companies', sub: 'Company-wise overview' },
   };
   let { eyebrow, title, sub } = META[view] || { eyebrow: '', title: view, sub: '' };
+  if (user.role === ROLES.MASTER) ({ eyebrow, title, sub } = META.companies); // master only ever sees the company overview
   if (drilled) {
     title = agentFilter && agentName ? agentName : (tlUser?.name || 'Team') + "'s Team";
     sub = 'Filtered customers';
@@ -238,6 +241,7 @@ function PageBody() {
   const { user, view, dbVersion } = useApp();
   if (!user) return null;
 
+  if (user.role === ROLES.MASTER && view !== 'profile') return <MasterDash />; // master sees the company-wise overview
   if (view === 'dashboard') {
     if (user.role === ROLES.IA) return <InitialAgentDash />;
     if (user.role === ROLES.MA) return <MeetingAgentDash />;
@@ -263,6 +267,11 @@ function AppShell() {
   const wide = view === 'pipeline'; // kanban needs the full canvas
   return (
     <div id="app">
+      {/* Animated WebGL2 "hive" shader behind all admin pages (tinted under a coal wash for legibility) */}
+      <div className="app-aurora">
+        <ShaderDemo />
+        <div className="app-aurora-wash" />
+      </div>
       <Sidebar />
       <div className="page">
         <PageHeader />
@@ -274,11 +283,21 @@ function AppShell() {
 
 // ── Root App ─────────────────────────────────────────────────────────────────
 export default function App() {
-  const { user, setUser, refreshDB, searchRef, panLead, setPanLead, closeModal, modal, setSearch } = useApp();
+  const { user, setUser, setView, refreshDB, searchRef, panLead, setPanLead, closeModal, modal, setSearch } = useApp();
   const [loading, setLoading] = useState(true);
   const [loadVisible, setLoadVisible] = useState(true);
   const [showLogin, setShowLogin] = useState(false); // landing → login gate
+  const [entering, setEntering] = useState(false);    // brief loader after login
   const initialized = useRef(false);
+
+  // Show the post-login loader for a beat, then reveal the app
+  const enterApp = (u) => {
+    setUser(u);
+    if (u.role === ROLES.MASTER) setView('companies');
+    refreshDB();
+    setEntering(true);
+    setTimeout(() => setEntering(false), 1100);
+  };
 
   // Real-time notification subscription
   useEffect(() => {
@@ -345,6 +364,8 @@ export default function App() {
       if (!freshDB.properties.length) {
         freshDB.properties = DEMO_PROPERTIES.map(p => ({ ...p, units: p.units.map(u => ({ ...u })) }));
       }
+      // Multi-tenant backfill: ensure companies + companyId on existing data, and a master account
+      migrateTenancy(freshDB);
       checkFollowUpReminders(freshDB);
       saveDB(freshDB);
       expireHolds(); // auto-release expired holds (saves internally if any)
@@ -356,7 +377,7 @@ export default function App() {
 
       // Try to restore session
       const u = getSession();
-      if (u) setUser(u);
+      if (u) { setUser(u); if (u.role === ROLES.MASTER) setView('companies'); }
     })();
   }, []);
 
@@ -364,8 +385,9 @@ export default function App() {
     <>
       {loadVisible && <LoadingScreen visible={loading} />}
       {!user && !loading && !showLogin && <LandingPage onEnter={() => setShowLogin(true)} />}
-      {!user && !loading && showLogin && <LoginPage onLogin={(u) => { setUser(u); refreshDB(); }} onBack={() => setShowLogin(false)} />}
+      {!user && !loading && showLogin && <LoginPage onLogin={enterApp} onBack={() => setShowLogin(false)} />}
       {user && <AppShell />}
+      {entering && <PostLoginLoader />}
       <LeadPanel />
       {/* Modals */}
       <AddLeadModal />

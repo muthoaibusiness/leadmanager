@@ -21,7 +21,9 @@ const roleBadge = (role) => {
 export default function AccountsView() {
   const { user, dbVersion, refreshDB, showToast, setDeleteUserId, openModal } = useApp();
   const db = getDB();
-  const teams = db.teams || [];
+  // company sandbox: a Management admin only ever sees/manages their own company
+  const coUsers = db.users.filter(u => u.companyId === user.companyId && u.role !== ROLES.MASTER);
+  const teams = (db.teams || []).filter(t => t.companyId === user.companyId);
 
   const [rows, setRows] = useState(() => [blankRow(), blankRow(), blankRow()]);
   const [result, setResult] = useState(null);     // { created, errors }
@@ -34,8 +36,8 @@ export default function AccountsView() {
 
   // ── KPI counts ──
   const counts = useMemo(() => {
-    const c = { total: db.users.length, [ROLES.TL]: 0, [ROLES.MA]: 0, [ROLES.IA]: 0, [ROLES.MGMT]: 0 };
-    db.users.forEach(u => { c[u.role] = (c[u.role] || 0) + 1; });
+    const c = { total: coUsers.length, [ROLES.TL]: 0, [ROLES.MA]: 0, [ROLES.IA]: 0, [ROLES.MGMT]: 0 };
+    coUsers.forEach(u => { c[u.role] = (c[u.role] || 0) + 1; });
     return c;
   }, [dbVersion]);
 
@@ -90,7 +92,7 @@ export default function AccountsView() {
   // ── account list ──
   const list = useMemo(() => {
     const term = q.trim().toLowerCase();
-    return db.users
+    return coUsers
       .filter(u => roleFilter === 'ALL' ? true : u.role === roleFilter)
       .filter(u => !term || u.name.toLowerCase().includes(term) || (u.email || '').toLowerCase().includes(term))
       .sort((a, b) => a.name.localeCompare(b.name));

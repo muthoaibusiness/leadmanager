@@ -108,6 +108,7 @@ export function rlabel(r) {
     MEETING_AGENT: 'Meeting Agent',
     TEAM_LEAD: 'Team Lead',
     MANAGEMENT: 'Management',
+    MASTER: 'Master Admin',
   };
   return m[r] || r;
 }

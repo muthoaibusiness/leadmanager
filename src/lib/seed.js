@@ -2,17 +2,31 @@ import { ROLES } from './constants.js';
 
 // Default accounts — seeded only when Supabase returns no users (first run / empty DB).
 // All passwords: 1234
+// Multi-tenant: every team/user/lead/property carries a companyId. The MASTER admin
+// (u0) belongs to no company and oversees them all.
+export const SEED_COMPANIES = [
+  { id: 'c1', name: 'WECON Properties', plan: 'Growth', createdAt: '2026-01-10', isActive: true },
+  { id: 'c2', name: 'Navana Realty',    plan: 'Starter', createdAt: '2026-03-22', isActive: true },
+];
+
 export const SEED_TEAMS = [
-  { id: 't1', name: "Masud's Team", leadId: 'u5' },
+  { id: 't1', name: "Masud's Team", leadId: 'u5', companyId: 'c1' },
+  { id: 't2', name: "Karim's Team", leadId: 'u9', companyId: 'c2' },
 ];
 
 export const SEED_USERS = [
-  { id: 'u1', name: 'Rahim Ahmed',  email: 'rahim@crm.com',  password: '1234', role: ROLES.IA,   teamId: 't1',  phone: '+880 1711 100001', isActive: true },
-  { id: 'u2', name: 'Nusrat Jahan', email: 'nusrat@crm.com', password: '1234', role: ROLES.IA,   teamId: 't1',  phone: '+880 1711 100002', isActive: true },
-  { id: 'u3', name: 'Fatima Begum', email: 'fatima@crm.com', password: '1234', role: ROLES.MA,   teamId: 't1',  phone: '+880 1711 100003', isActive: true },
-  { id: 'u4', name: 'Tariq Islam',  email: 'tariq@crm.com',  password: '1234', role: ROLES.MA,   teamId: 't1',  phone: '+880 1711 100004', isActive: true },
-  { id: 'u5', name: 'Masud Rahman', email: 'masud@crm.com',  password: '1234', role: ROLES.TL,   teamId: 't1',  phone: '+880 1711 100005', isActive: true },
-  { id: 'u6', name: 'Admin',        email: 'admin@crm.com',  password: '1234', role: ROLES.MGMT, teamId: null,  phone: '+880 1711 100006', isActive: true },
+  { id: 'u0', name: 'Master Admin',  email: 'master@wepro.com', password: '1234', role: ROLES.MASTER, teamId: null, companyId: null, phone: '+880 1700 000000', isActive: true },
+  // Company c1 — WECON Properties
+  { id: 'u1', name: 'Rahim Ahmed',  email: 'rahim@crm.com',  password: '1234', role: ROLES.IA,   teamId: 't1',  companyId: 'c1', phone: '+880 1711 100001', isActive: true },
+  { id: 'u2', name: 'Nusrat Jahan', email: 'nusrat@crm.com', password: '1234', role: ROLES.IA,   teamId: 't1',  companyId: 'c1', phone: '+880 1711 100002', isActive: true },
+  { id: 'u3', name: 'Fatima Begum', email: 'fatima@crm.com', password: '1234', role: ROLES.MA,   teamId: 't1',  companyId: 'c1', phone: '+880 1711 100003', isActive: true },
+  { id: 'u4', name: 'Tariq Islam',  email: 'tariq@crm.com',  password: '1234', role: ROLES.MA,   teamId: 't1',  companyId: 'c1', phone: '+880 1711 100004', isActive: true },
+  { id: 'u5', name: 'Masud Rahman', email: 'masud@crm.com',  password: '1234', role: ROLES.TL,   teamId: 't1',  companyId: 'c1', phone: '+880 1711 100005', isActive: true },
+  { id: 'u6', name: 'Admin',        email: 'admin@crm.com',  password: '1234', role: ROLES.MGMT, teamId: null,  companyId: 'c1', phone: '+880 1711 100006', isActive: true },
+  // Company c2 — Navana Realty
+  { id: 'u7', name: 'Sadia Noor',   email: 'sadia@navana.com', password: '1234', role: ROLES.MGMT, teamId: null, companyId: 'c2', phone: '+880 1711 200001', isActive: true },
+  { id: 'u8', name: 'Imran Hossain',email: 'imran@navana.com', password: '1234', role: ROLES.MA,   teamId: 't2', companyId: 'c2', phone: '+880 1711 200002', isActive: true },
+  { id: 'u9', name: 'Karim Uddin',  email: 'karim@navana.com', password: '1234', role: ROLES.TL,   teamId: 't2', companyId: 'c2', phone: '+880 1711 200003', isActive: true },
 ];
 
 // Real WECON inventory (from project sheet). Cols:
@@ -66,7 +80,7 @@ function mkProp([name, district, area, type, size, psf, ho, tot, uns, land, st, 
   const construction = /handed over/i.test(ho) ? 100 : yr === '2026' ? 80 : yr === '2027' ? 60 : yr === '2028' ? 40 : yr === '2029' ? 20 : 10;
   const slug = pslug(name);
   return {
-    id: 'p-' + slug, name, developer: 'WECON Properties', type, district, area,
+    id: 'p-' + slug, name, developer: 'WECON Properties', companyId: 'c1', type, district, area,
     address: [area, district].filter(Boolean).join(', '), status,
     unitsAvailable: uns || 0, totalUnits: tot || 0,
     askingPrice: asking, pricePerSqft: psf || 0, sizeText: size, sizeMin: firstSize, sizeMax: 0,
@@ -121,7 +135,7 @@ function mkDemo([name, district, area, type, psf, sft, ho, tot, sold, locked, fa
   const yr = (String(ho).match(/20\d\d/) || [])[0];
   const construction = yr === '2026' ? 80 : yr === '2027' ? 60 : yr === '2028' ? 40 : yr === '2029' ? 20 : 10;
   return {
-    id: 'p-' + slug, name, developer: 'WECON Properties', type, district, area,
+    id: 'p-' + slug, name, developer: 'WECON Properties', companyId: 'c1', type, district, area,
     address: [area, district].filter(Boolean).join(', '), status,
     unitsAvailable: uns, totalUnits: tot,
     askingPrice: asking, pricePerSqft: psf, sizeText: sft + ' sft', sizeMin: sft, sizeMax: 0,
@@ -138,6 +152,7 @@ export const DEMO_PROPERTIES = DEMO_RAW.map(mkDemo);
 
 export function seedDB() {
   return {
+    companies: SEED_COMPANIES.map(c => ({ ...c })),
     users: SEED_USERS.map(u => ({ ...u })),
     teams: SEED_TEAMS.map(t => ({ ...t })),
     leads: [],

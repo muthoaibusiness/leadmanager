@@ -10,13 +10,39 @@ export function getDB() {
     try { _DB = JSON.parse(localStorage.getItem(KEY)) || null; } catch { }
   }
   if (!_DB) {
-    _DB = { users: [], teams: [], leads: [], targets: [], activities: {}, notifications: {}, properties: [], bookings: [] };
+    _DB = { companies: [], users: [], teams: [], leads: [], targets: [], activities: {}, notifications: {}, properties: [], bookings: [] };
   }
+  if (!_DB.companies) _DB.companies = [];
   if (!_DB.teams) _DB.teams = [];
   if (!_DB.notifications) _DB.notifications = {};
   if (!_DB.properties) _DB.properties = [];
   if (!_DB.bookings) _DB.bookings = [];
   return _DB;
+}
+
+// Backfill multi-tenant fields on a pre-tenancy DB (existing localStorage data):
+// guarantee at least one company and tag every team/user/agent-lead/property with a
+// companyId so the master overview and per-company scoping work. Idempotent.
+export function migrateTenancy(db) {
+  if (!db.companies) db.companies = [];
+  let changed = false;
+  if (!db.companies.length) {
+    const name = (db.users.find(u => u.role === ROLES.MGMT)?.name) ? 'My Company' : 'My Company';
+    db.companies.push({ id: 'c1', name, plan: 'Growth', createdAt: now_(), isActive: true });
+    changed = true;
+  }
+  const defCid = db.companies[0].id;
+  (db.users || []).forEach(u => { if (u.role !== ROLES.MASTER && !u.companyId) { u.companyId = defCid; changed = true; } });
+  (db.teams || []).forEach(t => { if (!t.companyId) { t.companyId = defCid; changed = true; } });
+  (db.leads || []).forEach(l => { if (!l.companyId) { l.companyId = defCid; changed = true; } });
+  (db.properties || []).forEach(p => { if (!p.companyId) { p.companyId = defCid; changed = true; } });
+  (db.bookings || []).forEach(b => { if (!b.companyId) { b.companyId = defCid; changed = true; } });
+  // ensure a master account exists so the company-wise view is reachable
+  if (!db.users.some(u => u.role === ROLES.MASTER)) {
+    db.users.push({ id: 'u0', name: 'Master Admin', email: 'master@wepro.com', password: '1234', role: ROLES.MASTER, teamId: null, companyId: null, phone: '', isActive: true });
+    changed = true;
+  }
+  return changed;
 }
 
 export function saveDB(db) {
@@ -51,9 +77,12 @@ export function clearSession() { localStorage.removeItem('pcrm_sess'); }
 // ── Queries ──
 export function getLeads(user) {
   const db = getDB();
-  if (user.role === ROLES.MGMT) return db.leads;
-  if (user.role === ROLES.TL) return db.leads.filter(l => l.teamId === user.teamId);
-  return db.leads.filter(l => l.assignedTo === user.id);
+  if (user.role === ROLES.MASTER) return db.leads; // master sees everything
+  // company sandbox: a tenant never sees another company's leads
+  const inCo = user.companyId ? db.leads.filter(l => l.companyId === user.companyId) : db.leads;
+  if (user.role === ROLES.MGMT) return inCo;
+  if (user.role === ROLES.TL) return inCo.filter(l => l.teamId === user.teamId);
+  return inCo.filter(l => l.assignedTo === user.id);
 }
 
 export function getLead(id) { return getDB().leads.find(l => l.id === id); }
@@ -208,14 +237,24 @@ export function agentProjects(user) {
 }
 
 // ── Properties (catalog) ──
-export function getProperties() { return getDB().properties || []; }
+// Current logged-in tenant (null for master / no session) — used to sandbox list queries.
+function currentCompanyId() {
+  const s = getSession();
+  return s && s.role !== ROLES.MASTER ? s.companyId : null;
+}
+export function getProperties() {
+  const cid = currentCompanyId();
+  const all = getDB().properties || [];
+  return cid ? all.filter(p => p.companyId === cid) : all;
+}
 export function getProperty(id) { return (getDB().properties || []).find(p => p.id === id); }
 
 export function addPropertyFn(p) {
   const id = 'p' + uid();
+  const companyId = p.companyId || currentCompanyId(); // belongs to the creating tenant
   mutate(db => {
     if (!db.properties) db.properties = [];
-    db.properties.unshift({ id, ...p, createdAt: now_(), updatedAt: now_() });
+    db.properties.unshift({ id, companyId, ...p, createdAt: now_(), updatedAt: now_() });
   });
   return id;
 }
@@ -327,7 +366,11 @@ export function expireHolds() {
 }
 
 // ── Bookings & Payments ──
-export function getBookings() { return getDB().bookings || []; }
+export function getBookings() {
+  const cid = currentCompanyId();
+  const all = getDB().bookings || [];
+  return cid ? all.filter(b => b.companyId === cid) : all;
+}
 export function getBooking(id) { return (getDB().bookings || []).find(b => b.id === id); }
 export function getBookingByLead(leadId) { return (getDB().bookings || []).find(b => b.leadId === leadId); }
 
@@ -360,7 +403,7 @@ export function createBookingFromCart(leadId, user) {
   mutate(d => {
     if (!d.bookings) d.bookings = [];
     d.bookings.unshift({
-      id, leadId, leadName: l.name, propertyId: c.propertyId, propertyName: c.propertyName,
+      id, leadId, leadName: l.name, companyId: l.companyId || user.companyId, propertyId: c.propertyId, propertyName: c.propertyName,
       unitNo: c.unitNo || null, agentId: user.id, agentName: user.name,
       total, status: 'ACTIVE', schedule: defaultSchedule(total), payments: [],
       createdAt: now_(), updatedAt: now_(),
@@ -602,17 +645,71 @@ export function setTargetFn(userId, val) {
 
 export function createUserFn(name, email, password, phone, role, currentUser) {
   const id = 'u' + uid();
+  const companyId = currentUser.companyId; // inherit the admin's company
   if (role === ROLES.TL) {
     const tid = 't' + uid();
     mutate(db => {
       db.teams = db.teams || [];
-      db.teams.push({ id: tid, name: name + "'s Team", leadId: id });
-      db.users.push({ id, name, email, password: password || '1234', phone: phone || '', role, teamId: tid });
+      db.teams.push({ id: tid, name: name + "'s Team", leadId: id, companyId });
+      db.users.push({ id, name, email, password: password || '1234', phone: phone || '', role, teamId: tid, companyId });
     });
   } else {
-    mutate(db => { db.users.push({ id, name, email, password: password || '1234', phone: phone || '', role, teamId: currentUser.teamId }); });
+    mutate(db => { db.users.push({ id, name, email, password: password || '1234', phone: phone || '', role, teamId: currentUser.teamId, companyId }); });
   }
   return id;
+}
+
+// ── Companies (multi-tenant) ──
+export function getCompanies() { return getDB().companies || []; }
+export function getCompany(id) { return (getDB().companies || []).find(c => c.id === id); }
+
+// Company-wise rollup for the master overview (data company-wise, not people-wise).
+export function companyStats(cid) {
+  const db = getDB();
+  const users = db.users.filter(u => u.companyId === cid && u.role !== ROLES.MASTER);
+  const teams = db.teams.filter(t => t.companyId === cid);
+  const leads = db.leads.filter(l => l.companyId === cid);
+  const props = (db.properties || []).filter(p => p.companyId === cid);
+  const closedSet = ['DEAL_CLOSED_WON', 'DEAL_CLOSED_LOST', 'NOT_INTERESTED'];
+  const won = leads.filter(l => l.status === 'DEAL_CLOSED_WON');
+  const active = leads.filter(l => !closedSet.includes(l.status));
+  const leadIds = new Set(leads.map(l => l.id));
+  let collected = 0;
+  (db.bookings || []).forEach(b => {
+    if (b.companyId === cid || leadIds.has(b.leadId)) {
+      (b.payments || []).forEach(p => { collected += (p.amount || 0); });
+    }
+  });
+  return {
+    accounts: users.length,
+    managers: users.filter(u => u.role === ROLES.MGMT).length,
+    teamLeads: users.filter(u => u.role === ROLES.TL).length,
+    agents: users.filter(u => u.role === ROLES.IA || u.role === ROLES.MA).length,
+    teams: teams.length,
+    leads: leads.length,
+    active: active.length,
+    won: won.length,
+    projects: props.length,
+    collected,
+  };
+}
+
+// Create a new company + its first Management (admin) account. Master-only.
+export function createCompany({ name, plan, adminName, adminEmail, password, phone }) {
+  const cid = 'c' + uid();
+  const aid = 'u' + uid();
+  const exists = getDB().users.some(u => (u.email || '').toLowerCase() === (adminEmail || '').toLowerCase());
+  if (exists) return { error: 'Admin email already in use' };
+  mutate(db => {
+    db.companies = db.companies || [];
+    db.companies.push({ id: cid, name: name.trim(), plan: plan || 'Starter', createdAt: now_(), isActive: true });
+    db.users.push({ id: aid, name: (adminName || 'Admin').trim(), email: (adminEmail || '').trim(), password: password || '1234', phone: phone || '', role: ROLES.MGMT, teamId: null, companyId: cid, isActive: true });
+  });
+  return { companyId: cid, adminId: aid, adminEmail: (adminEmail || '').trim(), password: password || '1234' };
+}
+
+export function setCompanyActive(cid, active) {
+  mutate(db => { const c = (db.companies || []).find(x => x.id === cid); if (c) c.isActive = active; });
 }
 
 // Provision many accounts in one pass. `rows`: [{name,email,phone,role,password,teamId}].
@@ -642,18 +739,19 @@ export function bulkCreateUsers(rows, currentUser) {
     const id = 'u' + uid();
     seen.add(email.toLowerCase());
 
+    const companyId = r.companyId || currentUser.companyId; // new accounts join the admin's company
     if (role === ROLES.TL) {
       const tid = 't' + uid();
       mutate(db => {
         db.teams = db.teams || [];
-        db.teams.push({ id: tid, name: name + "'s Team", leadId: id });
-        db.users.push({ id, name, email, password: pass, phone, role, teamId: tid });
+        db.teams.push({ id: tid, name: name + "'s Team", leadId: id, companyId });
+        db.users.push({ id, name, email, password: pass, phone, role, teamId: tid, companyId });
       });
     } else if (role === ROLES.MGMT) {
-      mutate(db => { db.users.push({ id, name, email, password: pass, phone, role }); });
+      mutate(db => { db.users.push({ id, name, email, password: pass, phone, role, companyId }); });
     } else {
       const teamId = r.teamId || currentUser.teamId;
-      mutate(db => { db.users.push({ id, name, email, password: pass, phone, role, teamId }); });
+      mutate(db => { db.users.push({ id, name, email, password: pass, phone, role, teamId, companyId }); });
     }
     created.push({ id, name, email, pass, role, roleLabel: rlabel(role) });
   });
@@ -668,6 +766,7 @@ export function addLeadFn(name, phone, phones, email, emails, company, source, p
     phone, phones: phones || [phone],
     email: email || '', emails: emails || (email ? [email] : []),
     company: company || '—', source, status: 'NEW',
+    companyId: user.companyId, // tenant the lead belongs to
     assignedTo: user.id, assignedToName: user.name, assignedRole: user.role,
     teamId: user.teamId || 't1', previousAssignees: [],
     propertyInterest: prop || '', budget: parseFloat(budget) || 0,
@@ -748,6 +847,7 @@ export function mapCSVToLead(row, user) {
     email: col(['Email','Email Address']).split(',')[0].trim(),
     company: col(['Company Name','Company']).trim() || '—',
     source: src, status,
+    companyId: user.companyId, // tenant the imported lead belongs to
     assignedTo: user.id, assignedToName: user.name, assignedRole: user.role,
     teamId: user.teamId || 't1', previousAssignees: [],
     propertyInterest: propParts.join(' · '),

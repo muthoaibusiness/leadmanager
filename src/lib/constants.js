@@ -3,6 +3,7 @@ export const ROLES = {
   MA: 'MEETING_AGENT',
   TL: 'TEAM_LEAD',
   MGMT: 'MANAGEMENT',
+  MASTER: 'MASTER',        // super-admin above Management — oversees all companies
 };
 
 // Role-scoped navigation (mirrors Muthoclo admin can(role, scope)).
@@ -18,7 +19,8 @@ export const NAV_SCOPES = {
   team: ['TEAM_LEAD'],
   users: ['MANAGEMENT'],
   accounts: ['MANAGEMENT'],
-  profile: ALL_ROLES,
+  companies: ['MASTER'],   // master-admin company-wise overview
+  profile: [...ALL_ROLES, 'MASTER'],
 };
 export const canSee = (role, key) => (NAV_SCOPES[key] || []).includes(role);
 

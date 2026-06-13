@@ -37,7 +37,7 @@ export default function UsersView() {
 
   if (user.role !== ROLES.MGMT) return null;
 
-  const teams = db.teams || [];
+  const teams = (db.teams || []).filter(t => t.companyId === user.companyId);
   if (!teams.length) {
     return <div className="empty"><Mi>manage_accounts</Mi><p>No teams yet. Add a Team Lead to start.</p></div>;
   }

@@ -2,9 +2,11 @@ import { useState } from 'react';
 import { useApp } from '../../context/AppContext.jsx';
 import { getDB, getDeletionLog, calcPipelineValue, getBookings, bookingPaid, bookingDue, bookingNextDue } from '../../lib/db.js';
 import StatCard from '../StatCard.jsx';
+import StatsCards from '../ui/stats-cards.jsx';
+import CustomersTable from '../ui/customers-table.jsx';
 import Mi from '../Mi.jsx';
 import Avatar from '../Avatar.jsx';
-import { fmtBDT, fmtAgo, fmtDT, startOfMonth, rlabel } from '../../lib/helpers.js';
+import { fmtBDT, fmtAgo, fmtDT, startOfMonth, rlabel, slabel } from '../../lib/helpers.js';
 import { ROLES, STATUS_LABELS, SRC_LABELS } from '../../lib/constants.js';
 import { Funnel } from '../charts/Charts.jsx';
 import StatTrend from '../StatTrend.jsx';
@@ -41,10 +43,16 @@ function AgentActivityRow({ agent, leads, acts }) {
 }
 
 export default function ManagementDash() {
-  const { setView, setTeamFilter, setAgentFilter, setTab, setSearch, setPropSel, openModal, dateRange } = useApp();
+  const { user, setView, setTeamFilter, setAgentFilter, setTab, setSearch, setPropSel, openModal, dateRange } = useApp();
   const [activeTab, setActiveTab] = useState(0);
   const db = getDB();
   const sm = startOfMonth();
+  // company sandbox — management only sees their own tenant
+  const cid = user.companyId;
+  const coLeads = cid ? db.leads.filter(l => l.companyId === cid) : db.leads;
+  const coUsers = db.users.filter(u => u.companyId === cid && u.role !== ROLES.MASTER);
+  const coLeadIds = new Set(coLeads.map(l => l.id));
+  const coProps = cid ? (db.properties || []).filter(p => p.companyId === cid) : (db.properties || []);
 
   const filterByDate = (arr) => {
     if (!dateRange?.range) return arr;
@@ -52,9 +60,9 @@ export default function ManagementDash() {
     return arr.filter(l => { const d = new Date(l.createdAt); return d >= start && d <= end; });
   };
 
-  const allLeads = filterByDate(db.leads);
-  const allAgents = db.users.filter(u => u.role === ROLES.IA || u.role === ROLES.MA || u.role === ROLES.TL);
-  const allActs = Object.values(db.activities || {}).flat();
+  const allLeads = filterByDate(coLeads);
+  const allAgents = coUsers.filter(u => u.role === ROLES.IA || u.role === ROLES.MA || u.role === ROLES.TL);
+  const allActs = Object.entries(db.activities || {}).filter(([lid]) => coLeadIds.has(lid)).flatMap(([, v]) => v);
 
   const won = allLeads.filter(l => l.status === 'DEAL_CLOSED_WON');
   const lost = allLeads.filter(l => l.status === 'DEAL_CLOSED_LOST');
@@ -88,7 +96,7 @@ export default function ManagementDash() {
   for (let i = 13; i >= 0; i--) {
     const d = new Date(today0); d.setDate(d.getDate() - i);
     const nx = new Date(d); nx.setDate(nx.getDate() + 1);
-    const cnt = db.leads.filter(l => { const c = new Date(l.createdAt); return c >= d && c < nx; }).length;
+    const cnt = coLeads.filter(l => { const c = new Date(l.createdAt); return c >= d && c < nx; }).length;
     trend.push({ label: String(d.getDate()), value: cnt });
   }
   const trendTotal = trend.reduce((s, t) => s + t.value, 0);
@@ -98,7 +106,7 @@ export default function ManagementDash() {
 
   // Commerce pipeline (cart → checkout → payment → purchased)
   const carts = allLeads.map(l => l.cart).filter(Boolean);
-  const propPrice = id => (db.properties || []).find(p => p.id === id)?.askingPrice || 0;
+  const propPrice = id => coProps.find(p => p.id === id)?.askingPrice || 0;
   const cartVal = c => c.value || propPrice(c.propertyId);
   const inStage = (...ss) => carts.filter(c => ss.includes(c.stage));
   const commerceFunnel = [
@@ -112,22 +120,37 @@ export default function ManagementDash() {
   const cartConv = carts.length ? Math.round(inStage('PURCHASED').length / carts.length * 100) : 0;
 
   // Bookings & collections
-  const bookings = getBookings();
+  const bookings = getBookings().filter(b => !cid || b.companyId === cid || coLeadIds.has(b.leadId));
   const collected = bookings.reduce((s, b) => s + bookingPaid(b), 0);
   const outstanding = bookings.reduce((s, b) => s + bookingDue(b), 0);
-  const unitsSold = (db.properties || []).reduce((s, p) => s + (p.units || []).filter(u => u.status === 'sold').length, 0);
+  const unitsSold = coProps.reduce((s, p) => s + (p.units || []).filter(u => u.status === 'sold').length, 0);
 
   // Agent leaderboard
   const agentStats = allAgents.map(a => {
-    const aLeads = db.leads.filter(l => l.assignedTo === a.id || (l.previousAssignees || []).includes(a.id));
+    const aLeads = coLeads.filter(l => l.assignedTo === a.id || (l.previousAssignees || []).includes(a.id));
     const aWon = aLeads.filter(l => l.status === 'DEAL_CLOSED_WON');
     const aClosed = aLeads.filter(l => ['DEAL_CLOSED_WON', 'DEAL_CLOSED_LOST'].includes(l.status)).length;
     return { a, leads: aLeads.length, won: aWon.length, rev: aWon.reduce((s, l) => s + (l.dealValue || 0), 0), conv: aClosed ? Math.round(aWon.length / aClosed * 100) : 0 };
   }).sort((x, y) => y.rev - x.rev || y.won - x.won);
   const maxAgentRev = Math.max(...agentStats.map(s => s.rev), 1);
 
+  // Customers table rows (real recent leads) for the clean dark table
+  const statusTone = (s) => s === 'DEAL_CLOSED_WON' ? 'won' : (s === 'DEAL_CLOSED_LOST' || s === 'NOT_INTERESTED') ? 'lost' : 'open';
+  const customerRows = [...coLeads]
+    .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+    .slice(0, 8)
+    .map(l => ({
+      id: l.id,
+      name: l.name,
+      phone: l.phone,
+      project: l.dealProjectName || l.propertyInterest || '—',
+      status: slabel(l.status),
+      tone: statusTone(l.status),
+      value: fmtBDT(l.dealValue || l.budget || 0),
+    }));
+
   // Top projects
-  const projStats = (db.properties || []).map(p => {
+  const projStats = coProps.map(p => {
     const u = p.units || [];
     const pb = bookings.filter(b => b.propertyId === p.id);
     return {
@@ -148,7 +171,7 @@ export default function ManagementDash() {
 
   // 14-day daily series for trend cards
   const days14 = Array.from({ length: 14 }, (_, i) => { const d = new Date(today0); d.setDate(d.getDate() - (13 - i)); const nx = new Date(d); nx.setDate(nx.getDate() + 1); return [d, nx]; });
-  const revSeries = days14.map(([d, nx]) => db.leads.filter(l => l.status === 'DEAL_CLOSED_WON' && l.updatedAt && new Date(l.updatedAt) >= d && new Date(l.updatedAt) < nx).reduce((s, l) => s + (l.dealValue || 0), 0));
+  const revSeries = days14.map(([d, nx]) => coLeads.filter(l => l.status === 'DEAL_CLOSED_WON' && l.updatedAt && new Date(l.updatedAt) >= d && new Date(l.updatedAt) < nx).reduce((s, l) => s + (l.dealValue || 0), 0));
   const leadSeries = trend.map(t => t.value);
   const allPays = bookings.flatMap(b => b.payments || []);
   const collSeries = days14.map(([d, nx]) => allPays.filter(p => new Date(p.date) >= d && new Date(p.date) < nx).reduce((s, p) => s + (p.amount || 0), 0));
@@ -165,9 +188,9 @@ export default function ManagementDash() {
   const isStale = (iso, days) => iso && (Date.now() - new Date(iso)) > days * 86400000;
   const overdueBk = bookings.filter(b => { const nd = bookingNextDue(b); return nd && new Date(nd.dueDate) < new Date() && bookingDue(b) > 0; });
   const overdueAmt = overdueBk.reduce((s, b) => s + bookingDue(b), 0);
-  const staleNeg = db.leads.filter(l => l.status === 'NEGOTIATING' && isStale(l.updatedAt || l.createdAt, 14)).length;
-  const newUncontacted = db.leads.filter(l => l.status === 'NEW').length;
-  const lowStock = (db.properties || []).filter(p => p.status !== 'SOLD_OUT' && (p.unitsAvailable || 0) > 0 && (p.unitsAvailable || 0) <= 3).length;
+  const staleNeg = coLeads.filter(l => l.status === 'NEGOTIATING' && isStale(l.updatedAt || l.createdAt, 14)).length;
+  const newUncontacted = coLeads.filter(l => l.status === 'NEW').length;
+  const lowStock = coProps.filter(p => p.status !== 'SOLD_OUT' && (p.unitsAvailable || 0) > 0 && (p.unitsAvailable || 0) <= 3).length;
   const goLeads = () => { setView('leads'); setTab(0); setSearch(''); setAgentFilter(null); setTeamFilter(null); };
   const alerts = [
     { ico: 'hourglass_bottom', n: overdueBk.length, label: 'Overdue dues', sub: fmtBDT(overdueAmt), tone: 'red', onClick: () => setView('bookings') },
@@ -177,12 +200,12 @@ export default function ManagementDash() {
   ];
 
   // Team performance comparison
-  const teamStats = db.users.filter(u => u.role === ROLES.TL).map(tl => {
-    const tLeads = filterByDate(db.leads.filter(l => l.teamId === tl.teamId));
+  const teamStats = coUsers.filter(u => u.role === ROLES.TL).map(tl => {
+    const tLeads = filterByDate(coLeads.filter(l => l.teamId === tl.teamId));
     const tWon = tLeads.filter(l => l.status === 'DEAL_CLOSED_WON');
     const tLost = tLeads.filter(l => l.status === 'DEAL_CLOSED_LOST');
     const tActive = tLeads.filter(l => !['DEAL_CLOSED_WON', 'DEAL_CLOSED_LOST', 'NOT_INTERESTED'].includes(l.status));
-    const tAgents = db.users.filter(u => (u.role === ROLES.IA || u.role === ROLES.MA) && u.teamId === tl.teamId);
+    const tAgents = coUsers.filter(u => (u.role === ROLES.IA || u.role === ROLES.MA) && u.teamId === tl.teamId);
     return {
       tl, leads: tLeads.length, active: tActive.length, won: tWon.length,
       rev: tWon.reduce((s, l) => s + (l.dealValue || 0), 0), agents: tAgents.length,
@@ -199,6 +222,14 @@ export default function ManagementDash() {
 
   return (
     <>
+      {/* Full-width KPI band (shadcn stats-cards, adapted) — real company metrics */}
+      <StatsCards items={[
+        { title: 'Total Revenue', value: fmtBDT(rev), sub: `${won.length} deals won`, icon: 'money' },
+        { title: 'Collections', value: fmtBDT(collected), sub: 'Received to date', icon: 'card' },
+        { title: 'Active Customers', value: active.length, delta: `${trendDelta >= 0 ? '+' : ''}${trendDelta}% vs last week`, deltaDir: trendDelta < 0 ? 'down' : 'up', icon: 'users' },
+        { title: 'Win Rate', value: `${wr}%`, sub: `${won.length}/${won.length + lost.length} closed`, icon: 'up' },
+      ]} />
+
       <div className="grid-4" style={{ marginBottom: '22px' }}>
         {trendCards.map((c, i) => <StatTrend key={i} {...c} />)}
       </div>
@@ -250,7 +281,7 @@ export default function ManagementDash() {
           <div className="analytics-card" style={{ marginBottom: '16px', overflowX: 'auto' }}>
             {allAgents.length === 0 && <div className="empty"><Mi>person_off</Mi><p>No agents</p></div>}
             {allAgents.map(agent => (
-              <AgentActivityRow key={agent.id} agent={agent} leads={db.leads} acts={allActs} />
+              <AgentActivityRow key={agent.id} agent={agent} leads={coLeads} acts={allActs} />
             ))}
           </div>
         </>
@@ -277,6 +308,15 @@ export default function ManagementDash() {
           </div>
         </>
       )}
+
+      {/* Clean dark customers table — real recent leads */}
+      <div style={{ marginTop: 20 }}>
+        <CustomersTable
+          title="Customers"
+          subtitle="Latest customers in your pipeline"
+          rows={customerRows}
+        />
+      </div>
     </>
   );
 }

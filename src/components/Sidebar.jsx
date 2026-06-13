@@ -8,7 +8,7 @@ import { canSee } from '../lib/constants.js';
 // Sections render a label + their visible items; items may expand children
 // when active. Visibility is driven by canSee(role, key).
 const SECTIONS = [
-  { label: null, keys: ['dashboard', 'reports'] },
+  { label: null, keys: ['dashboard', 'companies', 'reports'] },
   { label: 'Sales Team', keys: ['leads', 'clients', 'pipeline', 'properties', 'bookings'] },
   { label: 'Admin', keys: ['team', 'users', 'accounts'] },
 ];
@@ -30,6 +30,7 @@ export default function Sidebar() {
     team: { ico: 'groups', lbl: 'Team' },
     users: { ico: 'manage_accounts', lbl: 'Users' },
     accounts: { ico: 'group_add', lbl: 'Accounts' },
+    companies: { ico: 'corporate_fare', lbl: 'Companies' },
     profile: { ico: 'account_circle', lbl: 'Profile' },
   };
 

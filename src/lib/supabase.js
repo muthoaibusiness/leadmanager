@@ -12,11 +12,26 @@ export async function sbGet(path) {
 
 export async function sbUpsert(table, rows) {
   if (!rows || !rows.length) return;
-  await fetch(`${SB_URL}/rest/v1/${table}`, {
-    method: 'POST',
-    headers: { ...SB_H, Prefer: 'resolution=merge-duplicates' },
-    body: JSON.stringify(rows),
-  }).catch(e => console.warn('upsert', table, e));
+  try {
+    const r = await fetch(`${SB_URL}/rest/v1/${table}`, {
+      method: 'POST',
+      headers: { ...SB_H, Prefer: 'resolution=merge-duplicates' },
+      body: JSON.stringify(rows),
+    });
+    // REST returns 4xx WITHOUT rejecting the promise — must inspect r.ok explicitly.
+    if (!r.ok) {
+      let body = '';
+      try { body = await r.text(); } catch {}
+      console.error(`Supabase ${table === 'leads' ? 'Lead Insert' : 'Upsert'} Error [${table}] HTTP ${r.status}:`, body);
+      console.error('Payload:', rows);
+      return { ok: false, status: r.status, body };
+    }
+    return { ok: true };
+  } catch (e) {
+    console.error(`Supabase Upsert network error [${table}]:`, e);
+    console.error('Payload:', rows);
+    return { ok: false, error: e };
+  }
 }
 
 // ── row converters ──
@@ -34,7 +49,8 @@ export function lToR(l) {
     whatsapp_count: l.whatsappCount || 0, visit_count: l.visitCount || 0,
     notes: l.notes || '', external_id: l.externalId || null, priority: l.priority || null,
     preferred_time: l.preferredTime || null, next_followup: l.nextFollowup || null,
-    material_sent: l.materialSent || null, cart: l.cart || null, created_at: l.createdAt, updated_at: l.updatedAt,
+    material_sent: l.materialSent || null, cart: l.cart || null, company_id: l.companyId || null,
+    created_at: l.createdAt, updated_at: l.updatedAt,
   };
 }
 
@@ -52,7 +68,8 @@ export function rToL(r) {
     whatsappCount: r.whatsapp_count || 0, visitCount: r.visit_count || 0,
     notes: r.notes || '', externalId: r.external_id || null, priority: r.priority || null,
     preferredTime: r.preferred_time || null, nextFollowup: r.next_followup || null,
-    materialSent: r.material_sent || null, cart: r.cart || null, createdAt: r.created_at, updatedAt: r.updated_at,
+    materialSent: r.material_sent || null, cart: r.cart || null, companyId: r.company_id || null,
+    createdAt: r.created_at, updatedAt: r.updated_at,
   };
 }
 
@@ -65,15 +82,19 @@ export function rToA(r) {
 }
 
 export function uToR(u) {
-  return { id: u.id, name: u.name, email: u.email, password: u.password, phone: u.phone || '', role: u.role, team_id: u.teamId || null, is_active: u.isActive !== false, avatar: u.avatar || null, projects: u.projects ?? null };
+  return { id: u.id, name: u.name, email: u.email, password: u.password, phone: u.phone || '', role: u.role, team_id: u.teamId || null, company_id: u.companyId ?? null, is_active: u.isActive !== false, avatar: u.avatar || null, projects: u.projects ?? null };
 }
 
 export function rToU(r) {
-  return { id: r.id, name: r.name, email: r.email, password: r.password, phone: r.phone || '', role: r.role, teamId: r.team_id, isActive: r.is_active, avatar: r.avatar || '', projects: r.projects ?? undefined };
+  return { id: r.id, name: r.name, email: r.email, password: r.password, phone: r.phone || '', role: r.role, teamId: r.team_id, companyId: r.company_id ?? null, isActive: r.is_active, avatar: r.avatar || '', projects: r.projects ?? undefined };
 }
 
-export function tToR(t) { return { id: t.id, name: t.name, lead_id: t.leadId }; }
-export function rToT(r) { return { id: r.id, name: r.name, leadId: r.lead_id }; }
+export function tToR(t) { return { id: t.id, name: t.name, lead_id: t.leadId, company_id: t.companyId || null }; }
+export function rToT(r) { return { id: r.id, name: r.name, leadId: r.lead_id, companyId: r.company_id || null }; }
+
+// Companies (multi-tenant)
+export function cToR(c) { return { id: c.id, name: c.name, plan: c.plan || 'Starter', is_active: c.isActive !== false, created_at: c.createdAt || new Date().toISOString() }; }
+export function rToC(r) { return { id: r.id, name: r.name, plan: r.plan || 'Starter', isActive: r.is_active !== false, createdAt: r.created_at }; }
 
 export function nToR(n) {
   return { id: n.id, user_id: n.userId, type: n.type, message: n.message, lead_id: n.leadId || null, is_read: n.read || false, created_at: n.timestamp || new Date().toISOString() };
@@ -143,7 +164,7 @@ export function bkToR(b) {
     id: b.id, lead_id: b.leadId, lead_name: b.leadName, property_id: b.propertyId, property_name: b.propertyName,
     unit_no: b.unitNo || null, agent_id: b.agentId, agent_name: b.agentName, total: b.total || 0,
     status: b.status || 'ACTIVE', schedule: b.schedule || [], payments: b.payments || [],
-    created_at: b.createdAt, updated_at: b.updatedAt,
+    company_id: b.companyId || null, created_at: b.createdAt, updated_at: b.updatedAt,
   };
 }
 export function rToBk(r) {
@@ -151,7 +172,7 @@ export function rToBk(r) {
     id: r.id, leadId: r.lead_id, leadName: r.lead_name, propertyId: r.property_id, propertyName: r.property_name,
     unitNo: r.unit_no || null, agentId: r.agent_id, agentName: r.agent_name, total: r.total || 0,
     status: r.status || 'ACTIVE', schedule: r.schedule || [], payments: r.payments || [],
-    createdAt: r.created_at, updatedAt: r.updated_at,
+    companyId: r.company_id || null, createdAt: r.created_at, updatedAt: r.updated_at,
   };
 }
 
@@ -169,7 +190,7 @@ export function pToR(p) {
     area: p.area || '', land_area: p.landArea || '', storeys: p.storeys || '', facing: p.facing || '',
     total_sft: p.totalSft || 0, unsold_sft: p.unsoldSft || 0, saleable_units: p.saleableUnits || '',
     drive_link: p.driveLink || '', purpose: p.purpose || '', size_text: p.sizeText || '',
-    details: p.details || '', created_at: p.createdAt, updated_at: p.updatedAt,
+    details: p.details || '', company_id: p.companyId || null, created_at: p.createdAt, updated_at: p.updatedAt,
   };
 }
 export function rToP(r) {
@@ -183,19 +204,20 @@ export function rToP(r) {
     area: r.area || '', landArea: r.land_area || '', storeys: r.storeys || '', facing: r.facing || '',
     totalSft: r.total_sft || 0, unsoldSft: r.unsold_sft || 0, saleableUnits: r.saleable_units || '',
     driveLink: r.drive_link || '', purpose: r.purpose || '', sizeText: r.size_text || '',
-    details: r.details || '', createdAt: r.created_at, updatedAt: r.updated_at,
+    details: r.details || '', companyId: r.company_id || null, createdAt: r.created_at, updatedAt: r.updated_at,
   };
 }
 
 export async function sbLoad() {
   try {
-    const [users, teams, leads, acts, notifs, targets, properties, bookings] = await Promise.all([
+    const [users, teams, leads, acts, notifs, targets, properties, bookings, companies] = await Promise.all([
       sbGet('users'), sbGet('teams'), sbGet('leads'),
       sbGet('activities?order=timestamp.asc'),
       sbGet('notifications?order=created_at.desc'),
       sbGet('targets'),
       sbGet('properties?order=created_at.desc'),
       sbGet('bookings?order=created_at.desc'),
+      sbGet('companies'),
     ]);
     if (!users || !users.length) return null;
     const actsMap = {};
@@ -208,6 +230,7 @@ export async function sbLoad() {
       notifsMap[n.userId].push(n);
     });
     return {
+      companies: (companies || []).map(rToC),
       users: (users || []).map(rToU),
       teams: (teams || []).map(rToT),
       leads: (leads || []).map(rToL),
@@ -228,6 +251,7 @@ export function sbSave(db) {
       const acts = [];
       Object.entries(db.activities || {}).forEach(([lid, arr]) => (arr || []).forEach(a => acts.push(aToR(a, lid))));
       await Promise.all([
+        sbUpsert('companies', (db.companies || []).map(cToR)),
         sbUpsert('users', db.users.map(uToR)),
         sbUpsert('teams', (db.teams || []).map(tToR)),
         sbUpsert('leads', db.leads.map(lToR)),
