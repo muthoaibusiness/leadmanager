@@ -66,7 +66,6 @@ export default function Sidebar() {
       <div className={`sb-ov${sidebarOpen ? ' on' : ''}`} onClick={() => setSidebarOpen(false)} />
       <aside className={`sidebar${sidebarOpen ? ' open' : ''}`}>
         <div className="sb-brand">
-          <span className="sb-logo">W</span>
           <span className="wlogo wlogo-sm">WEPRO<span className="wlogo-accent"> CRM</span></span>
           <button className="sb-close" onClick={() => setSidebarOpen(false)} title="Close">
             <Mi>close</Mi>

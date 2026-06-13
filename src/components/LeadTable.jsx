@@ -16,7 +16,8 @@ export default function LeadTable({ leads }) {
   const { setPanLead, user, refreshDB, showToast, sortBy } = useApp();
   const [page, setPage] = useState(0);
   const [selected, setSelected] = useState(new Set());
-  const canSelect = user?.role === ROLES.IA;
+  // multi-select bulk delete available to every role that manages leads
+  const canSelect = !!user && user.role !== ROLES.MASTER;
 
   const CMP = {
     newest: (a, b) => new Date(b.createdAt) - new Date(a.createdAt),
@@ -29,6 +30,11 @@ export default function LeadTable({ leads }) {
   useEffect(() => { setPage(0); setSelected(new Set()); }, [leads.length, leads.map(l => l.id).join()]);
 
   const slice = sorted.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
+
+  const allSelected = sorted.length > 0 && sorted.every(l => selected.has(l.id));
+  function toggleAll() {
+    setSelected(allSelected ? new Set() : new Set(sorted.map(l => l.id)));
+  }
 
   function toggleOne(id, e) {
     e.stopPropagation();
@@ -70,7 +76,11 @@ export default function LeadTable({ leads }) {
       )}
       <div className={`lt${canSelect ? ' lt-with-cb' : ''}`}>
         <div className="lt-hdr">
-          {canSelect && <div className="lt-cb-col" />}
+          {canSelect && (
+            <div className="lt-cb-col" onClick={toggleAll} title={allSelected ? 'Clear all' : 'Select all'}>
+              <input type="checkbox" checked={allSelected} onChange={() => {}} onClick={(e) => { e.stopPropagation(); toggleAll(); }} />
+            </div>
+          )}
           <div>Lead ID</div><div>Customer Name</div><div>Source</div><div>Property</div><div>Status</div><div>Create date</div>
         </div>
         {slice.map(l => (

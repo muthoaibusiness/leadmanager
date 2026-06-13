@@ -23,6 +23,60 @@ export function getDB() {
 // Backfill multi-tenant fields on a pre-tenancy DB (existing localStorage data):
 // guarantee at least one company and tag every team/user/agent-lead/property with a
 // companyId so the master overview and per-company scoping work. Idempotent.
+// Merge a remote (Supabase) snapshot with the local (localStorage) DB so that
+// records created locally but not yet synced to the cloud are NOT lost when the
+// app reloads. Union by id; for record collections the newer updatedAt/createdAt
+// wins. Activities/notifications are unioned per key. This makes the app
+// offline-tolerant and prevents "new upload gone after refresh".
+export function mergeDB(remote, local) {
+  const r = remote || {};
+  const l = local || {};
+  const ts = (x) => new Date(x?.updatedAt || x?.createdAt || 0).getTime();
+  const mergeArr = (rem = [], loc = []) => {
+    const m = new Map();
+    rem.forEach(x => x && x.id != null && m.set(x.id, x));
+    loc.forEach(x => {
+      if (!x || x.id == null) return;
+      const ex = m.get(x.id);
+      if (!ex || ts(x) >= ts(ex)) m.set(x.id, x); // local edits / newer win
+    });
+    return [...m.values()];
+  };
+  // activities: keyed by leadId → union activity arrays by activity id
+  const mergeActs = (rem = {}, loc = {}) => {
+    const out = {};
+    new Set([...Object.keys(rem), ...Object.keys(loc)]).forEach(k => {
+      const m = new Map();
+      (rem[k] || []).forEach(a => a && m.set(a.id, a));
+      (loc[k] || []).forEach(a => a && m.set(a.id, a));
+      out[k] = [...m.values()];
+    });
+    return out;
+  };
+  // notifications: keyed by userId → union by notif id
+  const mergeNotifs = (rem = {}, loc = {}) => {
+    const out = {};
+    new Set([...Object.keys(rem), ...Object.keys(loc)]).forEach(k => {
+      const m = new Map();
+      (rem[k] || []).forEach(n => n && m.set(n.id, n));
+      (loc[k] || []).forEach(n => n && m.set(n.id, n));
+      out[k] = [...m.values()];
+    });
+    return out;
+  };
+  return {
+    companies: mergeArr(r.companies, l.companies),
+    users: mergeArr(r.users, l.users),
+    teams: mergeArr(r.teams, l.teams),
+    leads: mergeArr(r.leads, l.leads),
+    targets: mergeArr(r.targets, l.targets),
+    properties: mergeArr(r.properties, l.properties),
+    bookings: mergeArr(r.bookings, l.bookings),
+    activities: mergeActs(r.activities, l.activities),
+    notifications: mergeNotifs(r.notifications, l.notifications),
+  };
+}
+
 export function migrateTenancy(db) {
   if (!db.companies) db.companies = [];
   let changed = false;
@@ -765,7 +819,17 @@ export function bulkCreateUsers(rows, currentUser) {
   return { created, errors };
 }
 
+// Find an existing lead with the same phone (digits only). Used to prevent
+// duplicate leads on manual create and import.
+export function leadByPhone(phone) {
+  const d = (phone || '').replace(/[^\d]/g, '');
+  if (!d) return null;
+  return getDB().leads.find(l => (l.phone || '').replace(/[^\d]/g, '') === d) || null;
+}
+
 export function addLeadFn(name, phone, phones, email, emails, company, source, prop, budget, profession, city, user) {
+  const dup = leadByPhone(phone);
+  if (dup) return dup.id; // never create a duplicate-phone lead — return the existing one
   const id = 'l' + uid();
   const lead = {
     id, name,
@@ -832,32 +896,52 @@ function parseImportDate(s) {
 }
 
 export function mapCSVToLead(row, user) {
-  // case-insensitive column lookup
-  const col = (names) => { for (const n of (Array.isArray(names)?names:[names])) { for (const k of Object.keys(row)) { if (k.toLowerCase().trim() === n.toLowerCase().trim()) return row[k] || ''; } } return ''; };
-  const srcMap = { meta: 'META_ADS', metaads: 'META_ADS', whatsapp: 'WHATSAPP_ADS', whatsappads: 'WHATSAPP_ADS', linkedin: 'LINKEDIN', website: 'WEBSITE', hotline: 'HOTLINE', personal: 'PERSONAL' };
-  const src = srcMap[(col(['Lead Source','Source','LeadSource'])).toLowerCase().trim().replace(/[\s_-]/g, '')] || 'META_ADS';
-  const stageMap = { contacted: 'CONTACTED', 'not fit': 'NOT_INTERESTED', 'not received': 'CONTACTED', qualified: 'INTERESTED', interested: 'INTERESTED', new: 'NEW', 'not interested': 'NOT_INTERESTED', negotiating: 'NEGOTIATING' };
-  const status = stageMap[(col(['Stage','Status','Lead Stage'])).toLowerCase().trim()] || 'NEW';
-  const name = col(['Full Name','Name','Customer Name','Lead Name']).trim();
-  const rawPhone = col(['Phone Number','Phone','Mobile','Contact']).trim();
-  const phone = rawPhone.replace(/[\s\n]/g, '').split(',')[0].trim();
+  // Fuzzy header lookup: normalize headers (strip non-alphanumerics, lowercase)
+  // and match by exact-normalized first, then contains, so variants like
+  // "Mobile Number", "Contact No", "phone_number" all resolve to phone.
+  // Normalize headers (strip spaces/punctuation, lowercase) so "Mobile Number",
+  // "mobile_number", "Mobile  Number" all match the alias "Mobile Number".
+  // Exact-normalized match only (no substring matching) to avoid false hits like
+  // "Contact Name" being read as a phone.
+  const norm = (s) => (s || '').toString().toLowerCase().replace(/[^a-z0-9]/g, '');
+  const keys = Object.keys(row);
+  const normKeys = keys.map(k => [norm(k), k]);
+  const col = (names) => {
+    const wants = (Array.isArray(names) ? names : [names]).map(norm);
+    let fallback = '';
+    for (const w of wants) for (const [nk, k] of normKeys) {
+      if (nk === w) {
+        const v = (row[k] ?? '').toString();
+        if (v.trim() !== '') return v;   // prefer a populated column
+        if (!fallback) fallback = v;
+      }
+    }
+    return fallback;
+  };
+  const srcMap = { meta: 'META_ADS', metaads: 'META_ADS', facebook: 'META_ADS', fb: 'META_ADS', whatsapp: 'WHATSAPP_ADS', whatsappads: 'WHATSAPP_ADS', linkedin: 'LINKEDIN', website: 'WEBSITE', web: 'WEBSITE', hotline: 'HOTLINE', phone: 'HOTLINE', personal: 'PERSONAL', referral: 'PERSONAL' };
+  const src = srcMap[(col(['Lead Source','Source','LeadSource','Channel','Platform'])).toLowerCase().trim().replace(/[\s_-]/g, '')] || 'META_ADS';
+  const stageMap = { contacted: 'CONTACTED', 'not fit': 'NOT_INTERESTED', 'not received': 'CONTACTED', qualified: 'INTERESTED', interested: 'INTERESTED', new: 'NEW', 'not interested': 'NOT_INTERESTED', negotiating: 'NEGOTIATING', won: 'DEAL_CLOSED_WON', lost: 'DEAL_CLOSED_LOST' };
+  const status = stageMap[(col(['Stage','Status','Lead Stage','Lead Status'])).toLowerCase().trim()] || 'NEW';
+  const name = col(['Full Name','Customer Name','Client Name','Lead Name','Contact Name','Name']).trim();
+  const rawPhone = col(['Phone Number','Mobile Number','Contact Number','WhatsApp Number','Phone No','Mobile No','Cell Number','Phone','Mobile','Cell','Contact','WhatsApp','Msisdn']).toString().trim();
+  const phone = rawPhone.replace(/[\s\n]/g, '').split(/[,/]/)[0].trim();
   if (!name && !phone) return null;
-  const sqft = parseInt(col(['Square Feet Requirement','Sqft','Area'])) || 0;
-  const propParts = [col(['Interested For','Property','Property Interest']).trim(), sqft ? sqft + ' sqft' : ''].filter(Boolean);
+  const sqft = parseInt(col(['Square Feet Requirement','Sqft','Size','Area Required'])) || 0;
+  const propParts = [col(['Interested For','Property','Property Interest','Project','Interest']).trim(), sqft ? sqft + ' sqft' : ''].filter(Boolean);
   const createdAt = parseImportDate(col(['Lead Created Date','Created Date','Created At','Date'])) || now_();
-  const updatedAt = parseImportDate(col(['Last Communication Date','Last Updated','Updated At'])) || createdAt;
+  const updatedAt = now_(); // stamp import time so freshly-imported leads sort to the top
   const priority = col(['Priority Label','Priority']).replace(/priority\s*/i, '').trim() || null;
   return {
     id: 'l' + uid(),
     name: name || 'Unknown', phone,
-    email: col(['Email','Email Address']).split(',')[0].trim(),
-    company: col(['Company Name','Company']).trim() || '—',
+    email: (col(['Email','Email Address','E-mail','Mail']) || '').split(',')[0].trim(),
+    company: col(['Company Name','Company','Organization','Organisation']).trim() || '—',
     source: src, status,
     companyId: user.companyId, // tenant the imported lead belongs to
     assignedTo: user.id, assignedToName: user.name, assignedRole: user.role,
     teamId: user.teamId || 't1', previousAssignees: [],
     propertyInterest: propParts.join(' · '),
-    budget: parseFloat(col(['Budget','Budget (BDT)','Budget (AED)'])) || 0,
+    budget: parseFloat((col(['Budget','Budget (BDT)','Budget (AED)','Price','Amount']) || '').toString().replace(/[^\d.]/g, '')) || 0,
     dealValue: 0, dealStatus: null,
     meetingSetBy: null, meetingSetDate: null,
     siteVisitDoneBy: null, siteVisitDoneDate: null,
@@ -877,19 +961,50 @@ export function mapCSVToLead(row, user) {
   };
 }
 
+// Single dedup identity for a lead: phone digits if present, else name+email.
+export function leadDedupKey(l) {
+  const p = (l.phone || '').replace(/[^\d]/g, '');
+  if (p) return 'p:' + p;
+  const n = (l.name || '').toLowerCase().trim();
+  const e = (l.email || '').toLowerCase().trim();
+  return (n || e) ? 'ne:' + n + '|' + e : '';
+}
+
+// Scan the user's leads for duplicates (same phone, or same name+email when no
+// phone). Returns groups of >1, each sorted newest-first (keep[0], rest are dups).
+export function findDuplicateLeads(user) {
+  const leads = getLeads(user);
+  const map = new Map();
+  leads.forEach(l => {
+    const k = leadDedupKey(l);
+    if (!k) return;
+    if (!map.has(k)) map.set(k, []);
+    map.get(k).push(l);
+  });
+  const groups = [];
+  map.forEach((arr, key) => {
+    if (arr.length > 1) {
+      arr.sort((a, b) => new Date(b.updatedAt || b.createdAt) - new Date(a.updatedAt || a.createdAt));
+      groups.push({ key, leads: arr });
+    }
+  });
+  return groups;
+}
+
 export function processImportCSV(text, user) {
   const rows = parseCSV(text);
   const db = getDB();
-  const existingPhones = new Set(db.leads.map(l => l.phone.replace(/[^\d]/g, '')));
-  const leads = []; let skipped = 0;
+  const seen = new Set(db.leads.map(leadDedupKey).filter(Boolean)); // existing leads
+  const leads = []; let skipped = 0; let blank = 0;
   rows.forEach(row => {
     const lead = mapCSVToLead(row, user);
-    if (!lead) return;
-    const p = lead.phone.replace(/[^\d]/g, '');
-    if (p && existingPhones.has(p)) { skipped++; return; }
+    if (!lead) { blank++; return; }            // no name AND no phone — unusable row
+    const key = leadDedupKey(lead);
+    if (key && seen.has(key)) { skipped++; return; } // duplicate (file or existing)
+    if (key) seen.add(key);
     leads.push(lead);
   });
-  return { leads, skipped, total: rows.length };
+  return { leads, skipped, blank, total: rows.length };
 }
 
 export function submitImport(importData, user) {
@@ -897,11 +1012,11 @@ export function submitImport(importData, user) {
   const { leads } = importData;
   let count = 0;
   mutate(db => {
-    const ep = new Set(db.leads.map(l => l.phone.replace(/[^\d]/g, '')));
+    const seen = new Set(db.leads.map(leadDedupKey).filter(Boolean));
     leads.forEach(lead => {
-      const p = lead.phone.replace(/[^\d]/g, '');
-      if (p && ep.has(p)) return;
-      ep.add(p);
+      const key = leadDedupKey(lead);
+      if (key && seen.has(key)) return; // skip duplicates at insert time
+      if (key) seen.add(key);
       const log = lead._log; delete lead._log;
       db.leads.push(lead);
       const acts = [{ id: 'a' + uid(), type: 'CREATED', description: 'Lead imported' + (lead.externalId ? ' (' + lead.externalId + ')' : '') + ' from ' + (SRC_LABELS[lead.source] || lead.source), userId: user.id, userName: user.name, timestamp: lead.createdAt, durationSeconds: 0 }];

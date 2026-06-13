@@ -662,21 +662,16 @@ a {
   align-items: center;
   font-family: 'Montserrat', sans-serif;
 }
-.msi-logo {
-  width: 52px;
-  height: 52px;
-  border-radius: 50%;
-  background: rgba(94, 197, 100, 0.22);
-  border: 1px solid rgba(94, 197, 100, 0.4);
-  color: #5EC564;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+.msi-wordmark {
+  font-family: 'Montserrat', sans-serif;
   font-weight: 900;
-  font-size: 24px;
-  margin-bottom: 20px;
-  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.4);
+  font-size: 26px;
+  letter-spacing: -1px;
+  color: #fff;
+  margin-bottom: 22px;
+  line-height: 1;
 }
+.msi-wordmark span { color: #5EC564 }
 .msi-title { font-size: 24px; font-weight: 700; color: #fff; text-align: center; margin-bottom: 4px; letter-spacing: -.3px }
 .msi-sub { font-size: 13px; color: rgba(255, 255, 255, 0.5); text-align: center; margin-bottom: 26px }
 .msi-form { display: flex; flex-direction: column; width: 100%; gap: 16px }
@@ -717,6 +712,29 @@ a {
 .msi-altrow span { font-size: 12px; color: rgba(255, 255, 255, 0.45) }
 .msi-altrow a { color: rgba(255, 255, 255, 0.85); text-decoration: underline; cursor: pointer }
 .msi-altrow a:hover { color: #5EC564 }
+
+/* ── Duplicate checker ────────────────────────────────────────────── */
+.dup-count { margin-left: 6px; background: var(--red); color: #fff; font-size: 11px; font-weight: 700; border-radius: 999px; padding: 1px 7px }
+.dup-alert { display: flex; align-items: center; gap: 8px; background: var(--orange-l); border: 1px solid rgba(240,169,43,.35); color: var(--t1); border-radius: var(--r); padding: 11px 13px; font-size: 13px; margin-bottom: 14px }
+.dup-alert .mi { color: var(--orange) }
+.dup-clean { text-align: center; padding: 36px 16px; color: var(--t2) }
+.dup-clean .mi { font-size: 44px; color: var(--green) }
+.dup-clean-t { font-size: 16px; font-weight: 700; color: var(--t1); margin-top: 10px }
+.dup-clean-s { font-size: 13px; color: var(--t3); margin-top: 4px }
+.dup-list { display: flex; flex-direction: column; gap: 14px; max-height: 52vh; overflow-y: auto }
+.dup-group { border: 1px solid var(--bd); border-radius: var(--r); overflow: hidden }
+.dup-group-hd { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 9px 12px; background: var(--surf2); border-bottom: 1px solid var(--bd) }
+.dup-key { display: flex; align-items: center; gap: 6px; font-size: 12.5px; font-weight: 700; color: var(--t1) }
+.dup-key .mi { font-size: 16px; color: var(--t3) }
+.dup-row { display: flex; align-items: center; gap: 10px; padding: 9px 12px; cursor: pointer; border-bottom: 1px solid var(--bd) }
+.dup-row:last-child { border-bottom: none }
+.dup-row:hover { background: var(--surf2) }
+.dup-row.keep { background: rgba(52,211,153,.06) }
+.dup-badge { font-size: 10px; font-weight: 800; letter-spacing: .5px; padding: 2px 7px; border-radius: 5px; background: var(--surf2); color: var(--t3); flex-shrink: 0 }
+.dup-row.keep .dup-badge { background: var(--green-l); color: var(--green) }
+.dup-info { min-width: 0 }
+.dup-name { font-size: 13.5px; font-weight: 600; color: var(--t1) }
+.dup-sub { font-size: 11.5px; color: var(--t3); margin-top: 1px }
 
 /* ── Progress primitives (ui/progress) + post-login loader ────────── */
 .prog { position: relative; height: 6px; width: 100%; overflow: hidden; border-radius: 999px; background: var(--surf2) }

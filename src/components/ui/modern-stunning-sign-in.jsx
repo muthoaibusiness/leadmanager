@@ -16,7 +16,7 @@ export function SignIn1({
 }) {
   return (
     <div className="msi-card">
-      <div className="msi-logo">W</div>
+      <div className="msi-wordmark">WEPRO<span> CRM</span></div>
       <h2 className="msi-title">Sign in</h2>
       <p className="msi-sub">Welcome back to WEPRO CRM</p>
 

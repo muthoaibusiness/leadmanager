@@ -67,8 +67,15 @@ export default function ImportModal() {
               <div className="imp-stats">
                 <div className="imp-stat"><div className="imp-sv">{importData.total}</div><div className="imp-sl">Total rows</div></div>
                 <div className="imp-stat"><div className="imp-sv" style={{ color: 'var(--green)' }}>{importData.leads.length}</div><div className="imp-sl">Will import</div></div>
-                <div className="imp-stat"><div className="imp-sv" style={{ color: 'var(--t3)' }}>{importData.skipped}</div><div className="imp-sl">Duplicates skipped</div></div>
+                <div className="imp-stat"><div className="imp-sv" style={{ color: 'var(--orange)' }}>{importData.skipped}</div><div className="imp-sl">Duplicates skipped</div></div>
+                {importData.blank > 0 && <div className="imp-stat"><div className="imp-sv" style={{ color: 'var(--red)' }}>{importData.blank}</div><div className="imp-sl">No name/phone</div></div>}
               </div>
+              {importData.leads.filter(l => !l.phone).length > 0 && (
+                <div style={{ fontSize: '12px', color: 'var(--orange)', margin: '4px 0 10px', display: 'flex', gap: '6px', alignItems: 'center' }}>
+                  <Mi style={{ fontSize: '16px' }}>warning</Mi>
+                  {importData.leads.filter(l => !l.phone).length} row(s) have no phone — check your CSV's phone column header.
+                </div>
+              )}
               <div className="imp-prev-hd">Preview — first {Math.min(8, importData.leads.length)} of {importData.leads.length}</div>
               <div className="imp-table">
                 <div className="imp-hdr"><div>Name</div><div>Phone</div><div>Source</div><div>Status</div></div>

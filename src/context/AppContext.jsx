@@ -8,7 +8,7 @@ export function AppProvider({ children }) {
   const [view, setView] = useState('dashboard');
   const [tab, setTab] = useState(0);
   const [statusFilter, setStatusFilter] = useState('ALL');
-  const [sortBy, setSortBy] = useState('newest');
+  const [sortBy, setSortBy] = useState('updated');
   const [search, setSearch] = useState('');
   const [panLead, setPanLead] = useState(null);
   const [modal, setModal] = useState(null);

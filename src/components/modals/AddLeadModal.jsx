@@ -1,7 +1,7 @@
 import { useRef, useEffect, useState } from 'react';
 import Mi from '../Mi.jsx';
 import { useApp } from '../../context/AppContext.jsx';
-import { getLead, addLeadFn, updLead, addAct } from '../../lib/db.js';
+import { getLead, addLeadFn, updLead, addAct, leadByPhone } from '../../lib/db.js';
 import { SRC_LABELS } from '../../lib/constants.js';
 
 export default function AddLeadModal() {
@@ -86,6 +86,12 @@ export default function AddLeadModal() {
       if (changes.length > 0) addAct(panLead, { type: 'NOTE', description: 'Lead updated — ' + changes.join(', '), userId: user.id, userName: user.name, durationSeconds: 0 });
       closeModal(); refreshDB(); showToast('Lead updated', 'ok');
     } else {
+      const dup = leadByPhone(phone);
+      if (dup) {
+        closeModal(); showToast('A lead with this phone already exists — opening it.', 'warn');
+        setTimeout(() => setPanLead(dup.id), 150);
+        return;
+      }
       const id = addLeadFn(name, phone, cleanPhones, email, cleanEmails, company, source, prop, budget, profession, city, user);
       closeModal(); refreshDB(); showToast('Lead added', 'ok');
       setTimeout(() => setPanLead(id), 150);

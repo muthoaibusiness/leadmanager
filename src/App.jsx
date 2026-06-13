@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useApp } from './context/AppContext.jsx';
-import { getDB, getSession, setSession, tryLogin, saveDB, checkFollowUpReminders, getLeads, getProperties, expireHolds, migrateTenancy } from './lib/db.js';
+import { getDB, getSession, setSession, tryLogin, saveDB, checkFollowUpReminders, getLeads, getProperties, expireHolds, migrateTenancy, mergeDB, findDuplicateLeads } from './lib/db.js';
 import { seedDB, SEED_PROPERTIES, DEMO_PROPERTIES } from './lib/seed.js';
 import { sbLoad, sbSubscribeNotifs } from './lib/supabase.js';
 import { avc, ini, rlabel } from './lib/helpers.js';
@@ -43,6 +43,7 @@ import NoteModal from './components/modals/NoteModal.jsx';
 import CreateUserModal from './components/modals/CreateUserModal.jsx';
 import EditAgentModal from './components/modals/EditAgentModal.jsx';
 import ImportModal from './components/modals/ImportModal.jsx';
+import DuplicateModal from './components/modals/DuplicateModal.jsx';
 import TargetModal from './components/modals/TargetModal.jsx';
 import DeleteUserModal from './components/modals/DeleteUserModal.jsx';
 import CredsModal from './components/modals/CredsModal.jsx';
@@ -218,6 +219,15 @@ function PageHero() {
     actions.push(<button key="add-lead" className="btn btn-p" onClick={() => openModal('add-lead')}><Mi>add</Mi>Add Customer</button>);
     actions.push(<button key="import" className="btn btn-g" onClick={() => openModal('import')}><Mi>upload</Mi>Import</button>);
   }
+  if (view === 'leads' && [ROLES.IA, ROLES.MA, ROLES.TL, ROLES.MGMT].includes(user.role)) {
+    const dupes = findDuplicateLeads(user);
+    const dn = dupes.reduce((s, g) => s + (g.leads.length - 1), 0);
+    actions.push(
+      <button key="dupes" className="btn btn-g" onClick={() => openModal('duplicates')}>
+        <Mi>content_copy</Mi>Duplicates{dn > 0 && <span className="dup-count">{dn}</span>}
+      </button>
+    );
+  }
   if (view === 'team' && user.role === ROLES.TL) actions.push(<button key="add-agent" className="btn btn-p" onClick={() => { setCreateUserRoles([ROLES.IA, ROLES.MA]); openModal('create-user'); }}><Mi>person_add</Mi>Add Agent</button>);
   if (view === 'users' && user.role === ROLES.MGMT) actions.push(<button key="add-tl" className="btn btn-p" onClick={() => { setCreateUserRoles([ROLES.TL]); openModal('create-user'); }}><Mi>person_add</Mi>Add Team Lead</button>);
   if (view === 'properties' && user.role === ROLES.MGMT) actions.push(<button key="add-prop" className="btn btn-p" onClick={() => { setPropEdit({}); openModal('property-form'); }}><Mi>add</Mi>Add Property</button>);
@@ -345,12 +355,15 @@ export default function App() {
     initialized.current = true;
 
     (async () => {
-      // Load from Supabase. If it has no users (empty / unreachable), fall back to
-      // existing local data; if that's also empty, seed the default accounts so login works.
+      // Load from Supabase, then MERGE with local so records created locally but
+      // not yet synced (e.g. a fresh import) survive the reload instead of being
+      // clobbered by the cloud snapshot. Fall back to local/seed if cloud empty.
       const sbData = await sbLoad();
-      let freshDB = sbData;
-      if (!freshDB || !freshDB.users || !freshDB.users.length) {
-        const local = getDB();
+      const local = getDB();
+      let freshDB;
+      if (sbData && sbData.users && sbData.users.length) {
+        freshDB = (local && local.users && local.users.length) ? mergeDB(sbData, local) : sbData;
+      } else {
         freshDB = (local.users && local.users.length) ? local : seedDB();
       }
       if (!freshDB.notifications) freshDB.notifications = {};
@@ -398,6 +411,7 @@ export default function App() {
       <CreateUserModal />
       <EditAgentModal />
       <ImportModal />
+      <DuplicateModal />
       <TargetModal />
       <DeleteUserModal />
       <CredsModal />
