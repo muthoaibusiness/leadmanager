@@ -22,8 +22,10 @@ export default function AccountsView() {
   const { user, dbVersion, refreshDB, showToast, setDeleteUserId, openModal } = useApp();
   const db = getDB();
   // company sandbox: a Management admin only ever sees/manages their own company
-  const coUsers = db.users.filter(u => u.companyId === user.companyId && u.role !== ROLES.MASTER);
-  const teams = (db.teams || []).filter(t => t.companyId === user.companyId);
+  // (tolerate missing companyId so unsynced/legacy rows don't disappear)
+  const sameCo = (x) => !user.companyId || !x || x === user.companyId;
+  const coUsers = db.users.filter(u => sameCo(u.companyId) && u.role !== ROLES.MASTER);
+  const teams = (db.teams || []).filter(t => sameCo(t.companyId));
 
   const [rows, setRows] = useState(() => [blankRow(), blankRow(), blankRow()]);
   const [result, setResult] = useState(null);     // { created, errors }

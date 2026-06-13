@@ -75,11 +75,17 @@ export function setSession(u) { localStorage.setItem('pcrm_sess', JSON.stringify
 export function clearSession() { localStorage.removeItem('pcrm_sess'); }
 
 // ── Queries ──
+// A lead belongs to the user's company when its companyId matches OR is missing
+// (legacy rows, or rows whose company_id wasn't persisted to Supabase yet — the
+// column may not exist. Tolerating null prevents leads from vanishing on reload).
+function sameCompany(entityCid, userCid) {
+  return !userCid || !entityCid || entityCid === userCid;
+}
+
 export function getLeads(user) {
   const db = getDB();
   if (user.role === ROLES.MASTER) return db.leads; // master sees everything
-  // company sandbox: a tenant never sees another company's leads
-  const inCo = user.companyId ? db.leads.filter(l => l.companyId === user.companyId) : db.leads;
+  const inCo = db.leads.filter(l => sameCompany(l.companyId, user.companyId));
   if (user.role === ROLES.MGMT) return inCo;
   if (user.role === ROLES.TL) return inCo.filter(l => l.teamId === user.teamId);
   return inCo.filter(l => l.assignedTo === user.id);
@@ -245,7 +251,7 @@ function currentCompanyId() {
 export function getProperties() {
   const cid = currentCompanyId();
   const all = getDB().properties || [];
-  return cid ? all.filter(p => p.companyId === cid) : all;
+  return cid ? all.filter(p => sameCompany(p.companyId, cid)) : all;
 }
 export function getProperty(id) { return (getDB().properties || []).find(p => p.id === id); }
 
@@ -369,7 +375,7 @@ export function expireHolds() {
 export function getBookings() {
   const cid = currentCompanyId();
   const all = getDB().bookings || [];
-  return cid ? all.filter(b => b.companyId === cid) : all;
+  return cid ? all.filter(b => sameCompany(b.companyId, cid)) : all;
 }
 export function getBooking(id) { return (getDB().bookings || []).find(b => b.id === id); }
 export function getBookingByLead(leadId) { return (getDB().bookings || []).find(b => b.leadId === leadId); }

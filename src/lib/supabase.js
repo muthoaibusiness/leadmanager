@@ -10,28 +10,71 @@ export async function sbGet(path) {
   } catch { return []; }
 }
 
+// Tables whose absence (PGRST205) should be skipped silently rather than logged
+// as an error — they only exist after the schema migration is applied.
+const _missingTables = new Set();
+
+// Self-healing upsert: REST returns 4xx WITHOUT rejecting, so we inspect r.ok.
+// - PGRST204 (unknown column): strip that column from every row and retry, so
+//   inserts still succeed before the schema migration adds columns like `cart`.
+// - PGRST205 (missing table): skip quietly (remember it for the session).
 export async function sbUpsert(table, rows) {
-  if (!rows || !rows.length) return;
-  try {
-    const r = await fetch(`${SB_URL}/rest/v1/${table}`, {
-      method: 'POST',
-      headers: { ...SB_H, Prefer: 'resolution=merge-duplicates' },
-      body: JSON.stringify(rows),
-    });
-    // REST returns 4xx WITHOUT rejecting the promise — must inspect r.ok explicitly.
-    if (!r.ok) {
-      let body = '';
-      try { body = await r.text(); } catch {}
-      console.error(`Supabase ${table === 'leads' ? 'Lead Insert' : 'Upsert'} Error [${table}] HTTP ${r.status}:`, body);
-      console.error('Payload:', rows);
-      return { ok: false, status: r.status, body };
+  if (!rows || !rows.length) return { ok: false, skipped: true };
+  if (_missingTables.has(table)) return { ok: false, skipped: true };
+  let payload = rows;
+  const stripped = [];
+
+  for (let attempt = 0; attempt < 12; attempt++) {
+    let r;
+    try {
+      r = await fetch(`${SB_URL}/rest/v1/${table}`, {
+        method: 'POST',
+        headers: { ...SB_H, Prefer: 'resolution=merge-duplicates' },
+        body: JSON.stringify(payload),
+      });
+    } catch (e) {
+      console.error(`Supabase Upsert network error [${table}]:`, e);
+      return { ok: false, error: e };
     }
-    return { ok: true };
-  } catch (e) {
-    console.error(`Supabase Upsert network error [${table}]:`, e);
-    console.error('Payload:', rows);
-    return { ok: false, error: e };
+
+    if (r.ok) {
+      if (stripped.length) {
+        console.warn(`Supabase: synced '${table}' after dropping unknown column(s): ${stripped.join(', ')}. Run the schema migration to persist them.`);
+      }
+      return { ok: true, stripped };
+    }
+
+    let body = '';
+    try { body = await r.text(); } catch {}
+    let j = {};
+    try { j = JSON.parse(body); } catch {}
+
+    // Missing table → skip for the rest of the session
+    if (j.code === 'PGRST205') {
+      _missingTables.add(table);
+      console.warn(`Supabase: table '${table}' not found — skipping cloud sync until migration is applied.`);
+      return { ok: false, skipped: true };
+    }
+
+    // Unknown column → drop it from every row and retry
+    if (j.code === 'PGRST204') {
+      const m = /Could not find the '([^']+)' column/.exec(j.message || '');
+      const col = m && m[1];
+      if (col) {
+        stripped.push(col);
+        payload = payload.map((row) => { const c = { ...row }; delete c[col]; return c; });
+        continue;
+      }
+    }
+
+    // Anything else → log with the detail they asked for, and stop
+    console.error(`Supabase ${table === 'leads' ? 'Lead Insert' : 'Upsert'} Error [${table}] HTTP ${r.status}:`, body);
+    console.error('Payload:', payload);
+    return { ok: false, status: r.status, body };
   }
+
+  console.error(`Supabase Upsert [${table}]: gave up after stripping ${stripped.join(', ')}`);
+  return { ok: false };
 }
 
 // ── row converters ──

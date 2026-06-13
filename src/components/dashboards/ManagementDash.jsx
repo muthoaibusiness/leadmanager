@@ -49,10 +49,12 @@ export default function ManagementDash() {
   const sm = startOfMonth();
   // company sandbox — management only sees their own tenant
   const cid = user.companyId;
-  const coLeads = cid ? db.leads.filter(l => l.companyId === cid) : db.leads;
-  const coUsers = db.users.filter(u => u.companyId === cid && u.role !== ROLES.MASTER);
+  // tolerate missing companyId (unsynced/legacy rows) so data never disappears
+  const sameCo = (x) => !cid || !x || x === cid;
+  const coLeads = db.leads.filter(l => sameCo(l.companyId));
+  const coUsers = db.users.filter(u => sameCo(u.companyId) && u.role !== ROLES.MASTER);
   const coLeadIds = new Set(coLeads.map(l => l.id));
-  const coProps = cid ? (db.properties || []).filter(p => p.companyId === cid) : (db.properties || []);
+  const coProps = (db.properties || []).filter(p => sameCo(p.companyId));
 
   const filterByDate = (arr) => {
     if (!dateRange?.range) return arr;
