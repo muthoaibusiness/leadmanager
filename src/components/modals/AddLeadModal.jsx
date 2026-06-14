@@ -1,7 +1,7 @@
 import { useRef, useEffect, useState } from 'react';
 import Mi from '../Mi.jsx';
 import { useApp } from '../../context/AppContext.jsx';
-import { getLead, addLeadFn, updLead, addAct, leadByPhone } from '../../lib/db.js';
+import { getLead, addLeadFn, updLead, addAct, leadByPhone, normalizePhone, getProperties } from '../../lib/db.js';
 import { SRC_LABELS } from '../../lib/constants.js';
 
 export default function AddLeadModal() {
@@ -19,6 +19,11 @@ export default function AddLeadModal() {
 
   const [phones, setPhones] = useState(['']);
   const [emails, setEmails] = useState(['']);
+
+  const projects = getProperties(); // catalog for the Property Interest dropdown
+  const editLead = isEdit && panLead ? getLead(panLead) : null;
+  const curProp = editLead?.propertyInterest || '';
+  const projNames = new Set(projects.map(p => p.name));
 
   useEffect(() => {
     if (!isOpen) return;
@@ -57,9 +62,11 @@ export default function AddLeadModal() {
 
   const submit = () => {
     const name = nameRef.current.value.trim();
-    const cleanPhones = phones.map(p => p.trim()).filter(Boolean);
     const cleanEmails = emails.map(e => e.trim()).filter(Boolean);
-    if (!name || !cleanPhones.length) { showToast('Name and at least one phone required', 'err'); return; }
+    // require + normalize phone(s) to country-code form (+880…)
+    const cleanPhones = phones.map(p => normalizePhone(p)).filter(Boolean);
+    if (!name) { showToast('Name is required', 'err'); return; }
+    if (!cleanPhones.length) { showToast('A valid phone number is required (e.g. +8801XXXXXXXXX)', 'err'); return; }
 
     const phone = cleanPhones[0];
     const email = cleanEmails[0] || '';
@@ -88,7 +95,12 @@ export default function AddLeadModal() {
     } else {
       const dup = leadByPhone(phone);
       if (dup) {
-        closeModal(); showToast('A lead with this phone already exists — opening it.', 'warn');
+        // number already exists → update it, and alert which agent owns it
+        const owner = dup.assignedToName || '—';
+        updLead(dup.id, { name, phones: cleanPhones, email, emails: cleanEmails, company: company || '—', source, propertyInterest: prop, budget: parseFloat(budget) || 0, profession, city });
+        addAct(dup.id, { type: 'NOTE', description: `Re-submitted ${phone} — record updated (already handled by ${owner})`, userId: user.id, userName: user.name, durationSeconds: 0 });
+        closeModal(); refreshDB();
+        showToast(`Number ${phone} already exists — handled by ${owner}. Record updated.`, 'warn');
         setTimeout(() => setPanLead(dup.id), 150);
         return;
       }
@@ -182,7 +194,14 @@ export default function AddLeadModal() {
             </div>
             <div className="fg"><label>Customer Location</label><input className="fi" ref={cityRef} type="text" placeholder="e.g. Dubai, Sharjah" /></div>
           </div>
-          <div className="fg"><label>Property Interest</label><input className="fi" ref={propRef} type="text" placeholder="e.g. 3BHK Apartment" /></div>
+          <div className="fg">
+            <label>Property Interest (Project)</label>
+            <select className="fi" ref={propRef} defaultValue="">
+              <option value="">Select a project…</option>
+              {projects.map(p => <option key={p.id} value={p.name}>{p.name}</option>)}
+              {curProp && !projNames.has(curProp) && <option value={curProp}>{curProp}</option>}
+            </select>
+          </div>
           <div className="fg"><label>Budget (BDT)</label><input className="fi" ref={budgetRef} type="number" min="0" placeholder="e.g. 850000" /></div>
         </div>
         <div className="m-ft">

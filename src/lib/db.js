@@ -870,17 +870,54 @@ export function bulkCreateUsers(rows, currentUser) {
   return { created, errors };
 }
 
-// Find an existing lead with the same phone (digits only). Used to prevent
+// Normalize a phone to E.164-ish with country code. Bangladesh-aware:
+//   01XXXXXXXXX  -> +8801XXXXXXXXX
+//   8801XXXXXXXX -> +8801XXXXXXXX
+//   1XXXXXXXXX   -> +8801XXXXXXXXX
+//   +<cc>...      -> kept (any explicit country code)
+// Returns '' when there aren't enough digits to be a real number.
+export function normalizePhone(raw) {
+  if (!raw) return '';
+  let s = String(raw).trim();
+  const hadPlus = s.trim().startsWith('+');
+  let digits = s.replace(/\D/g, '');
+  if (!digits) return '';
+  if (hadPlus) {
+    // explicit country code already provided
+  } else if (digits.startsWith('880')) {
+    // already has BD country code without +
+  } else if (digits.startsWith('0')) {
+    digits = '880' + digits.replace(/^0+/, '');
+  } else if (digits.length === 10 && digits.startsWith('1')) {
+    digits = '880' + digits;
+  } else if (digits.length <= 11) {
+    // bare local-ish number, assume Bangladesh
+    digits = '880' + digits.replace(/^0+/, '');
+  }
+  if (digits.length < 10) return ''; // too short to be valid
+  return '+' + digits;
+}
+
+export function isValidPhone(raw) {
+  const n = normalizePhone(raw);
+  return /^\+\d{10,15}$/.test(n);
+}
+
+// Find an existing lead with the same (normalized) phone. Used to prevent
 // duplicate leads on manual create and import.
 export function leadByPhone(phone) {
-  const d = (phone || '').replace(/[^\d]/g, '');
-  if (!d) return null;
-  return getDB().leads.find(l => (l.phone || '').replace(/[^\d]/g, '') === d) || null;
+  const n = normalizePhone(phone);
+  if (!n) return null;
+  return getDB().leads.find(l => normalizePhone(l.phone) === n) || null;
 }
 
 export function addLeadFn(name, phone, phones, email, emails, company, source, prop, budget, profession, city, user) {
-  const dup = leadByPhone(phone);
-  if (dup) return dup.id; // never create a duplicate-phone lead — return the existing one
+  const norm = normalizePhone(phone);
+  if (!norm) return null;            // never create a lead without a valid phone
+  const dup = leadByPhone(norm);
+  if (dup) return dup.id;            // never create a duplicate-phone lead — return the existing one
+  phone = norm;
+  phones = [norm];
   const id = 'l' + uid();
   const lead = {
     id, name,
@@ -975,8 +1012,8 @@ export function mapCSVToLead(row, user) {
   const status = stageMap[(col(['Stage','Status','Lead Stage','Lead Status'])).toLowerCase().trim()] || 'NEW';
   const name = col(['Full Name','Customer Name','Client Name','Lead Name','Contact Name','Name']).trim();
   const rawPhone = col(['Phone Number','Mobile Number','Contact Number','WhatsApp Number','Phone No','Mobile No','Cell Number','Phone','Mobile','Cell','Contact','WhatsApp','Msisdn']).toString().trim();
-  const phone = rawPhone.replace(/[\s\n]/g, '').split(/[,/]/)[0].trim();
-  if (!name && !phone) return null;
+  const phone = normalizePhone(rawPhone.split(/[,/\n]/)[0]); // require + normalize to +<cc>
+  if (!phone) return null; // skip rows without a valid phone number
   const sqft = parseInt(col(['Square Feet Requirement','Sqft','Size','Area Required'])) || 0;
   const propParts = [col(['Interested For','Property','Property Interest','Project','Interest']).trim(), sqft ? sqft + ' sqft' : ''].filter(Boolean);
   const createdAt = parseImportDate(col(['Lead Created Date','Created Date','Created At','Date'])) || now_();
@@ -1012,9 +1049,9 @@ export function mapCSVToLead(row, user) {
   };
 }
 
-// Single dedup identity for a lead: phone digits if present, else name+email.
+// Single dedup identity for a lead: normalized phone if present, else name+email.
 export function leadDedupKey(l) {
-  const p = (l.phone || '').replace(/[^\d]/g, '');
+  const p = normalizePhone(l.phone);
   if (p) return 'p:' + p;
   const n = (l.name || '').toLowerCase().trim();
   const e = (l.email || '').toLowerCase().trim();
@@ -1045,34 +1082,54 @@ export function findDuplicateLeads(user) {
 export function processImportCSV(text, user) {
   const rows = parseCSV(text);
   const db = getDB();
-  const seen = new Set(db.leads.map(leadDedupKey).filter(Boolean)); // existing leads
-  const leads = []; let skipped = 0; let blank = 0;
+  const existing = new Map();
+  db.leads.forEach(l => { const k = leadDedupKey(l); if (k) existing.set(k, l); });
+  const batch = new Map(); // collapse same-number rows within the file (last wins)
+  let blank = 0;
   rows.forEach(row => {
     const lead = mapCSVToLead(row, user);
-    if (!lead) { blank++; return; }            // no name AND no phone — unusable row
+    if (!lead) { blank++; return; }            // no valid phone — unusable row
     const key = leadDedupKey(lead);
-    if (key && seen.has(key)) { skipped++; return; } // duplicate (file or existing)
-    if (key) seen.add(key);
-    leads.push(lead);
+    if (key) batch.set(key, lead);
   });
-  return { leads, skipped, blank, total: rows.length };
+  const leads = []; const updates = [];
+  batch.forEach((lead, key) => {
+    const ex = existing.get(key);
+    if (ex) updates.push({ id: ex.id, owner: ex.assignedToName || '—', lead });
+    else leads.push(lead);
+  });
+  return { leads, updates, skipped: updates.length, blank, total: rows.length };
 }
 
+// Fields an import is allowed to refresh on an existing (duplicate) lead.
+const IMPORT_MERGE_FIELDS = ['name', 'email', 'company', 'propertyInterest', 'budget', 'city', 'profession', 'source', 'status', 'priority', 'nextFollowup', 'materialSent'];
+
 export function submitImport(importData, user) {
-  if (!importData || !importData.leads.length) return 0;
-  const { leads } = importData;
+  const leads = importData?.leads || [];
+  const updates = importData?.updates || [];
+  if (!leads.length && !updates.length) return 0;
   let count = 0;
   mutate(db => {
-    const seen = new Set(db.leads.map(leadDedupKey).filter(Boolean));
+    // new leads
     leads.forEach(lead => {
-      const key = leadDedupKey(lead);
-      if (key && seen.has(key)) return; // skip duplicates at insert time
-      if (key) seen.add(key);
       const log = lead._log; delete lead._log;
       db.leads.push(lead);
       const acts = [{ id: 'a' + uid(), type: 'CREATED', description: 'Lead imported' + (lead.externalId ? ' (' + lead.externalId + ')' : '') + ' from ' + (SRC_LABELS[lead.source] || lead.source), userId: user.id, userName: user.name, timestamp: lead.createdAt, durationSeconds: 0 }];
       if (log) acts.push({ id: 'a' + uid(), type: 'NOTE', description: log, userId: user.id, userName: user.name, timestamp: lead.updatedAt, durationSeconds: 0 });
       db.activities[lead.id] = acts;
+      count++;
+    });
+    // duplicates → update the existing lead (keep its owner/assignment/createdAt)
+    updates.forEach(u => {
+      const ex = db.leads.find(x => x.id === u.id);
+      if (!ex) return;
+      const nl = u.lead;
+      IMPORT_MERGE_FIELDS.forEach(f => {
+        const v = nl[f];
+        if (v !== undefined && v !== '' && v !== null && v !== '—' && v !== 0) ex[f] = v;
+      });
+      ex.updatedAt = now_();
+      (db.activities[u.id] = db.activities[u.id] || []).push({ id: 'a' + uid(), type: 'NOTE', description: 'Updated via import — duplicate number (owner: ' + (u.owner || '—') + ')', userId: user.id, userName: user.name, timestamp: now_(), durationSeconds: 0 });
       count++;
     });
   });

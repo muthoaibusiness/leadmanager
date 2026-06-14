@@ -29,12 +29,13 @@ export default function ImportModal() {
   };
 
   const submitImport = () => {
-    if (!importData || !importData.leads.length) return;
+    if (!importData || (!importData.leads.length && !(importData.updates || []).length)) return;
     const count = doSubmitImport(importData, user);
+    const upd = (importData.updates || []).length;
     setImportData(null);
     closeModal();
     refreshDB();
-    showToast(count + ' leads imported', 'ok');
+    showToast(`${importData.leads ? importData.leads.length : 0} imported${upd ? `, ${upd} updated` : ''}`, 'ok');
   };
 
   const handleClose = () => {
@@ -59,7 +60,7 @@ export default function ImportModal() {
             >
               <Mi>upload_file</Mi>
               <div style={{ fontSize: '14px', fontWeight: 600 }}>Drop your CSV file here or click to browse</div>
-              <div style={{ fontSize: '12px', color: 'var(--t3)', marginTop: '5px' }}>Supports Google Sheets CSV export · Duplicates auto-skipped by phone number</div>
+              <div style={{ fontSize: '12px', color: 'var(--t3)', marginTop: '5px' }}>Supports Google Sheets CSV export · Phone required · existing numbers are updated</div>
               <input type="file" ref={fileRef} accept=".csv,.txt" style={{ display: 'none' }} onChange={e => handleFile(e.target.files[0])} />
             </div>
           ) : (
@@ -67,13 +68,13 @@ export default function ImportModal() {
               <div className="imp-stats">
                 <div className="imp-stat"><div className="imp-sv">{importData.total}</div><div className="imp-sl">Total rows</div></div>
                 <div className="imp-stat"><div className="imp-sv" style={{ color: 'var(--green)' }}>{importData.leads.length}</div><div className="imp-sl">Will import</div></div>
-                <div className="imp-stat"><div className="imp-sv" style={{ color: 'var(--orange)' }}>{importData.skipped}</div><div className="imp-sl">Duplicates skipped</div></div>
-                {importData.blank > 0 && <div className="imp-stat"><div className="imp-sv" style={{ color: 'var(--red)' }}>{importData.blank}</div><div className="imp-sl">No name/phone</div></div>}
+                <div className="imp-stat"><div className="imp-sv" style={{ color: 'var(--orange)' }}>{(importData.updates || []).length}</div><div className="imp-sl">Existing updated</div></div>
+                {importData.blank > 0 && <div className="imp-stat"><div className="imp-sv" style={{ color: 'var(--red)' }}>{importData.blank}</div><div className="imp-sl">No phone (skipped)</div></div>}
               </div>
-              {importData.leads.filter(l => !l.phone).length > 0 && (
+              {importData.blank > 0 && (
                 <div style={{ fontSize: '12px', color: 'var(--orange)', margin: '4px 0 10px', display: 'flex', gap: '6px', alignItems: 'center' }}>
                   <Mi style={{ fontSize: '16px' }}>warning</Mi>
-                  {importData.leads.filter(l => !l.phone).length} row(s) have no phone — check your CSV's phone column header.
+                  {importData.blank} row(s) skipped — no valid phone number (check your CSV's phone column header).
                 </div>
               )}
               <div className="imp-prev-hd">Preview — first {Math.min(8, importData.leads.length)} of {importData.leads.length}</div>
@@ -96,8 +97,8 @@ export default function ImportModal() {
         </div>
         <div className="m-ft">
           <button className="btn btn-g" onClick={handleClose}>Cancel</button>
-          {importData && importData.leads.length > 0 && (
-            <button className="btn btn-p" onClick={submitImport}><Mi>upload</Mi>Import {importData.leads.length} Customers</button>
+          {importData && (importData.leads.length > 0 || (importData.updates || []).length > 0) && (
+            <button className="btn btn-p" onClick={submitImport}><Mi>upload</Mi>Import {importData.leads.length}{(importData.updates || []).length ? ` · Update ${importData.updates.length}` : ''}</button>
           )}
         </div>
       </div>
