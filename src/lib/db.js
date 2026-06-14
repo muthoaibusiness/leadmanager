@@ -65,20 +65,43 @@ export function mergeDB(remote, local) {
     return out;
   };
   // tombstones: ids deleted locally must never be resurrected from the cloud
-  const deleted = new Set((l.deletionLog || []).map(d => d.id));
-  const leads = mergeArr(r.leads, l.leads).filter(x => !deleted.has(x.id));
+  const tomb = (l.deletionLog || []).slice(-8000); // cap growth
+  const deleted = new Set(tomb.map(d => d.id));
+  // Leads: the CLOUD is the source of truth (so every browser shows the same set).
+  // We only keep a local-only lead if it's genuinely fresh (created/updated very
+  // recently and not yet synced). Stale local-only leads = ones deleted on another
+  // browser, so they are dropped. This stops per-browser divergence (e.g. 36 vs 51).
+  const GRACE_MS = 6 * 60 * 60 * 1000;
+  const nowMs = Date.now();
+  const remoteIds = new Set((r.leads || []).map(x => x.id));
+  const cloudLeads = (r.leads || []).filter(x => !deleted.has(x.id));
+  const freshLocal = (l.leads || []).filter(x =>
+    !remoteIds.has(x.id) && !deleted.has(x.id) &&
+    (nowMs - new Date(x.updatedAt || x.createdAt || 0).getTime() < GRACE_MS)
+  );
+  const leads = [...cloudLeads, ...freshLocal];
   return {
     companies: mergeArr(r.companies, l.companies),
     users: mergeArr(r.users, l.users),
     teams: mergeArr(r.teams, l.teams),
     leads,
     targets: mergeArr(r.targets, l.targets),
-    deletionLog: l.deletionLog || [],
+    deletionLog: tomb,
     properties: mergeArr(r.properties, l.properties),
     bookings: mergeArr(r.bookings, l.bookings),
     activities: mergeActs(r.activities, l.activities),
     notifications: mergeNotifs(r.notifications, l.notifications),
   };
+}
+
+// Re-delete from the cloud any lead that was deleted locally (tombstoned) but is
+// still present in the remote snapshot — e.g. another tab/device re-uploaded it.
+// Run on every load so deletions stay deleted across clients.
+export function reconcileDeletions(db, remoteLeads) {
+  const tomb = new Set((db.deletionLog || []).map(d => d.id));
+  if (!tomb.size || !remoteLeads || !remoteLeads.length) return;
+  const ids = remoteLeads.filter(l => tomb.has(l.id)).map(l => l.id);
+  if (ids.length) sbDeleteLeads(ids);
 }
 
 // One-time purge of the old demo seed accounts/team from local data so they
