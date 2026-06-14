@@ -77,23 +77,33 @@ export async function sbUpsert(table, rows) {
   return { ok: false };
 }
 
-// Hard-delete rows by id from a Supabase table (REST DELETE). Without this,
-// sbSave only upserts, so deleted rows linger in the cloud and reappear on the
-// next merge-on-load. Fire-and-forget with error logging.
+// Raw REST DELETE with a filter (e.g. "leads?id=in.(...)"). Logs non-2xx.
+async function sbDeleteRaw(path) {
+  try {
+    const r = await fetch(`${SB_URL}/rest/v1/${path}`, { method: 'DELETE', headers: { ...SB_H, Prefer: 'return=minimal' } });
+    if (!r.ok) { let b = ''; try { b = await r.text(); } catch {} console.error(`Supabase Delete Error [${path}] HTTP ${r.status}:`, b); }
+    return r.ok;
+  } catch (e) { console.error(`Supabase Delete network error [${path}]:`, e); return false; }
+}
+
+// Hard-delete rows by id from a table. sbSave only upserts, so without this
+// deleted rows linger and reappear on the next merge-on-load.
 export async function sbDelete(table, ids) {
   if (!ids || !ids.length) return;
   const list = ids.map(id => `"${id}"`).join(',');
-  try {
-    const r = await fetch(`${SB_URL}/rest/v1/${table}?id=in.(${encodeURIComponent(list)})`, {
-      method: 'DELETE',
-      headers: { ...SB_H, Prefer: 'return=minimal' },
-    });
-    if (!r.ok) {
-      let body = ''; try { body = await r.text(); } catch {}
-      console.error(`Supabase Delete Error [${table}] HTTP ${r.status}:`, body, 'ids:', ids);
-    }
-  } catch (e) {
-    console.error(`Supabase Delete network error [${table}]:`, e, 'ids:', ids);
+  await sbDeleteRaw(`${table}?id=in.(${encodeURIComponent(list)})`);
+}
+
+// Deep-delete leads: remove child rows (activities/notifications/bookings) first
+// to avoid foreign-key 409s, then the leads. Chunked for URL length.
+export async function sbDeleteLeads(ids) {
+  if (!ids || !ids.length) return;
+  for (let i = 0; i < ids.length; i += 40) {
+    const enc = encodeURIComponent(ids.slice(i, i + 40).map(id => `"${id}"`).join(','));
+    await sbDeleteRaw(`activities?lead_id=in.(${enc})`);
+    await sbDeleteRaw(`notifications?lead_id=in.(${enc})`);
+    await sbDeleteRaw(`bookings?lead_id=in.(${enc})`);
+    await sbDeleteRaw(`leads?id=in.(${enc})`);
   }
 }
 

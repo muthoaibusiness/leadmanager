@@ -1,6 +1,6 @@
 import { ROLES, STATUS_LABELS, SRC_LABELS } from './constants.js';
 import { uid, now_, fmtBDT, fmtDT, curMonth, startOfMonth, rlabel } from './helpers.js';
-import { sbSave, sbUpsertNotifs, sbMarkRead, sbDelete } from './supabase.js';
+import { sbSave, sbUpsertNotifs, sbMarkRead, sbDelete, sbDeleteLeads } from './supabase.js';
 
 export const KEY = 'propcrm_v1';
 export let _DB = null;
@@ -79,6 +79,27 @@ export function mergeDB(remote, local) {
     activities: mergeActs(r.activities, l.activities),
     notifications: mergeNotifs(r.notifications, l.notifications),
   };
+}
+
+// One-time purge of the old demo seed accounts/team from local data so they
+// don't get re-uploaded to Supabase (cloud copies already removed). Also issues
+// a cloud delete for any that slipped through from another device.
+const DEMO_SEED_EMAILS = ['rahim@crm.com', 'nusrat@crm.com', 'fatima@crm.com', 'tariq@crm.com', 'masud@crm.com'];
+export function purgeDemoSeed(db) {
+  let changed = false;
+  const killUsers = (db.users || []).filter(u => DEMO_SEED_EMAILS.includes((u.email || '').toLowerCase())).map(u => u.id);
+  if (killUsers.length) {
+    const s = new Set(killUsers);
+    db.users = db.users.filter(u => !s.has(u.id));
+    sbDelete('users', killUsers);
+    changed = true;
+  }
+  if (db.teams && db.teams.some(t => t.id === 't1')) {
+    db.teams = db.teams.filter(t => t.id !== 't1');
+    sbDelete('teams', ['t1']);
+    changed = true;
+  }
+  return changed;
 }
 
 export function migrateTenancy(db) {
@@ -565,7 +586,7 @@ export function deleteLead(leadId, user) {
     db.leads = db.leads.filter(l => l.id !== leadId);
     delete db.activities[leadId];
   });
-  sbDelete('leads', [leadId]); // remove from cloud so it doesn't return on reload
+  sbDeleteLeads([leadId]); // deep cloud delete (children first) so it doesn't return on reload
 }
 
 export function bulkDeleteLeads(leadIds, user) {
@@ -579,7 +600,31 @@ export function bulkDeleteLeads(leadIds, user) {
     db.leads = db.leads.filter(l => !idSet.has(l.id));
     leadIds.forEach(id => delete db.activities[id]);
   });
-  sbDelete('leads', leadIds); // remove from cloud so they don't return on reload
+  sbDeleteLeads(leadIds); // deep cloud delete (children first) so they don't return on reload
+}
+
+// Remove duplicate leads from the DB (keep newest per phone / name+email). Used
+// as a one-shot cleanup on load so the app stops re-uploading dupes to the cloud.
+export function dedupeLeads(db) {
+  const seen = new Set();
+  const removed = [];
+  const keep = [];
+  [...(db.leads || [])]
+    .sort((a, b) => new Date(b.updatedAt || b.createdAt) - new Date(a.updatedAt || a.createdAt))
+    .forEach(l => {
+      const k = leadDedupKey(l);
+      if (k && seen.has(k)) { removed.push(l.id); return; }
+      if (k) seen.add(k);
+      keep.push(l);
+    });
+  if (removed.length) {
+    db.leads = keep;
+    removed.forEach(id => { if (db.activities) delete db.activities[id]; });
+    if (!db.deletionLog) db.deletionLog = [];
+    removed.forEach(id => db.deletionLog.push({ id, name: 'duplicate', deletedBy: 'system', deletedAt: now_() }));
+    sbDeleteLeads(removed); // purge from cloud too (deep)
+  }
+  return removed.length;
 }
 
 export function getDeletionLog() {

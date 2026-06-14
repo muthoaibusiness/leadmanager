@@ -5201,6 +5201,49 @@ textarea.fi {
   padding: 0 4px
 }
 
+/* ── Ark UI numbered pagination (ui/pagination) ───────────────────── */
+.pg-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 12px 16px;
+  border-top: 1px solid var(--bd);
+  background: var(--surf);
+  border-radius: 0 0 var(--r) var(--r);
+}
+.pg-info { font-size: 12px; color: var(--t3) }
+.pg { display: flex; align-items: center; gap: 4px }
+.pg-btn,
+.pg-item {
+  min-width: 32px;
+  height: 32px;
+  padding: 0 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--r-sm);
+  border: 1px solid transparent;
+  background: none;
+  color: var(--t2);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all var(--tr);
+}
+.pg-btn:hover:not(:disabled),
+.pg-item:hover { background: var(--surf2); border-color: var(--bd); color: var(--t1) }
+.pg-btn:disabled,
+.pg-btn[data-disabled] { opacity: .35; cursor: not-allowed; pointer-events: none }
+.pg-item[data-selected] {
+  background: var(--accent);
+  color: var(--on-accent);
+  border-color: var(--accent);
+}
+.pg-item[data-selected]:hover { background: var(--accent-d); color: var(--on-accent) }
+.pg-ellipsis { min-width: 28px; text-align: center; color: var(--t3); font-size: 13px; user-select: none }
+
 /* ── TEAM GROUPS (Users page) ─────────────── */
 .tg-list {
   display: flex;

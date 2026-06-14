@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useApp } from './context/AppContext.jsx';
-import { getDB, getSession, setSession, tryLogin, saveDB, checkFollowUpReminders, getLeads, getProperties, expireHolds, migrateTenancy, mergeDB, findDuplicateLeads } from './lib/db.js';
+import { getDB, getSession, setSession, tryLogin, saveDB, checkFollowUpReminders, getLeads, getProperties, expireHolds, migrateTenancy, mergeDB, findDuplicateLeads, purgeDemoSeed, dedupeLeads } from './lib/db.js';
 import { seedDB, SEED_PROPERTIES, DEMO_PROPERTIES } from './lib/seed.js';
 import { sbLoad, sbSubscribeNotifs } from './lib/supabase.js';
 import { avc, ini, rlabel } from './lib/helpers.js';
@@ -377,6 +377,10 @@ export default function App() {
       if (!freshDB.properties.length) {
         freshDB.properties = DEMO_PROPERTIES.map(p => ({ ...p, units: p.units.map(u => ({ ...u })) }));
       }
+      // Drop legacy demo seed accounts so they don't re-sync to the cloud
+      purgeDemoSeed(freshDB);
+      // Remove duplicate leads (keep newest) so the app stops re-uploading dupes
+      dedupeLeads(freshDB);
       // Multi-tenant backfill: ensure companies + companyId on existing data, and a master account
       migrateTenancy(freshDB);
       checkFollowUpReminders(freshDB);
