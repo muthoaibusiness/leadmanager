@@ -70,12 +70,18 @@ export default function InitialAgentDash() {
 
   const meetingsMonth = achievement(user.id, ROLES.IA); // meetings set this month
 
-  // Meetings this IA set — tracked by meetingSetBy so they persist even after the
-  // Meeting Agent progresses the lead (visit scheduled/done, etc.).
-  const meetingSetLeads = db.leads.filter(l => l.meetingSetBy === user.id);
+  // Leads this IA forwarded — so they can track status even after the lead leaves
+  // their own list (assignedTo changes to the Meeting Agent / Team Lead).
+  // Captured by meetingSetBy === me (set when forwarding to a Meeting Agent) OR
+  // by being a previous assignee on a lead that has progressed past contact.
+  const FWD_STATUSES = ['MEETING_SET', 'SITE_VISIT_SCHEDULED', 'SITE_VISIT_DONE', 'NEGOTIATING', 'DEAL_CLOSED_WON', 'DEAL_CLOSED_LOST'];
+  const meetingSetLeads = db.leads.filter(l =>
+    l.meetingSetBy === user.id ||
+    ((l.previousAssignees || []).includes(user.id) && FWD_STATUSES.includes(l.status))
+  );
 
   // ── My customers table ──
-  const tabs = ['All', 'New', 'Contacted', 'Interested', `Meeting Set (${meetingSetLeads.length})`];
+  const tabs = ['All', 'New', 'Contacted', 'Interested', `Forwarded / Meeting Set (${meetingSetLeads.length})`];
   const tFilter = ['ALL', 'NEW', 'CONTACTED', 'INTERESTED', 'MEETING_SET'];
 
   let disp = leads;
