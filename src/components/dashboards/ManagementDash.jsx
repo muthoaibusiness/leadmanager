@@ -2,7 +2,6 @@ import { useState } from 'react';
 import { useApp } from '../../context/AppContext.jsx';
 import { getDB, getDeletionLog, calcPipelineValue, getBookings, bookingPaid, bookingDue, bookingNextDue } from '../../lib/db.js';
 import StatCard from '../StatCard.jsx';
-import StatsCards from '../ui/stats-cards.jsx';
 import CustomersTable from '../ui/customers-table.jsx';
 import Mi from '../Mi.jsx';
 import Avatar from '../Avatar.jsx';
@@ -224,14 +223,7 @@ export default function ManagementDash() {
 
   return (
     <>
-      {/* Full-width KPI band (shadcn stats-cards, adapted) — real company metrics */}
-      <StatsCards items={[
-        { title: 'Total Revenue', value: fmtBDT(rev), sub: `${won.length} deals won`, icon: 'money' },
-        { title: 'Collections', value: fmtBDT(collected), sub: 'Received to date', icon: 'card' },
-        { title: 'Active Customers', value: active.length, delta: `${trendDelta >= 0 ? '+' : ''}${trendDelta}% vs last week`, deltaDir: trendDelta < 0 ? 'down' : 'up', icon: 'users' },
-        { title: 'Win Rate', value: `${wr}%`, sub: `${won.length}/${won.length + lost.length} closed`, icon: 'up' },
-      ]} />
-
+      {/* KPI row — revenue, customers, collections, win rate (with 14-day sparklines) */}
       <div className="grid-4" style={{ marginBottom: '22px' }}>
         {trendCards.map((c, i) => <StatTrend key={i} {...c} />)}
       </div>

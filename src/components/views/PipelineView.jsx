@@ -64,10 +64,6 @@ export default function PipelineView() {
 
   return (
     <div className="pk-wrap">
-      <div className="pk-toolbar">
-        <div className="pk-hint"><Mi>drag_indicator</Mi>Drag a card to move it · click a stage title to rename</div>
-      </div>
-
       {demandTop.length > 0 && (
         <div className="pk-demand">
           <span className="pk-demand-hd"><Mi>apartment</Mi>Project demand</span>

@@ -231,7 +231,7 @@ function PageHero() {
   if (view === 'properties' && user.role === ROLES.MGMT) actions.push(<button key="add-prop" className="btn btn-p" onClick={() => { setPropEdit({}); openModal('property-form'); }}><Mi>add</Mi>Add Property</button>);
 
   return (
-    <div className="hero">
+    <div className={`hero${view === 'pipeline' ? ' hero-compact' : ''}`}>
       <div className="hero-main">
         {drilled
           ? <button className="hero-back" onClick={clearDrill}><Mi>arrow_back</Mi>All Customers</button>

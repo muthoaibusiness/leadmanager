@@ -1480,7 +1480,7 @@ a {
   transition: transform var(--tr)
 }
 
-@media(max-width:768px) {
+@media(max-width:1023px) {
   .sidebar {
     position: fixed;
     top: 0;
@@ -1547,7 +1547,7 @@ a {
   font-size: 20px
 }
 
-@media(max-width:768px) {
+@media(max-width:1023px) {
   .sb-close {
     display: flex
   }
@@ -1965,7 +1965,7 @@ a {
   font-size: 22px
 }
 
-@media(max-width:768px) {
+@media(max-width:1023px) {
   .ham {
     display: flex
   }
@@ -2113,6 +2113,12 @@ a {
   color: var(--t2);
   margin-top: 11px
 }
+
+/* Compact hero (Pipeline) — reclaim vertical space for the board */
+.hero-compact { margin-bottom: 12px }
+.hero-compact .hero-eyebrow { margin-bottom: 2px }
+.hero-compact .hero-title { font-size: clamp(22px, 3vw, 30px) }
+.hero-compact .hero-sub { display: none }
 
 .hero-acts {
   display: flex;
@@ -4245,6 +4251,16 @@ a {
   box-shadow: var(--sh)
 }
 
+/* IA dashboard — priorities row (target + who-to-call side by side) */
+.ia-priorities {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 16px;
+  align-items: start;
+  margin-bottom: 20px;
+}
+.ia-priorities > * { margin-bottom: 0 }
+
 .fuq-hd {
   display: flex;
   align-items: center;
@@ -6270,6 +6286,19 @@ textarea.fi {
   z-index: 500;
   display: flex;
   min-width: 700px
+}
+/* Mobile: full-width sheet, stacked presets + single calendar (no 700px overflow) */
+@media (max-width: 768px) {
+  .drp-panel {
+    position: fixed;
+    left: 8px; right: 8px; top: 60px;
+    min-width: 0; width: auto;
+    flex-direction: column;
+    max-height: 82vh; overflow-y: auto;
+  }
+  .drp-presets { width: 100%; display: flex; flex-wrap: wrap; gap: 6px }
+  .drp-cals { justify-content: center }
+  .drp-cals .drp-cal ~ .drp-cal { display: none } /* show one month on phones */
 }
 
 .drp-presets {
@@ -8922,30 +8951,13 @@ textarea.fi {
   font-size: 16px
 }
 
-.pk-board {
-  display: grid;
-  grid-template-columns: repeat(5, minmax(300px, 1fr));
-  gap: 16px;
-  overflow-x: auto;
-  padding-bottom: 6px;
-  min-height: calc(100vh - 230px)
-}
+/* (board layout defined once below in the kanban section) */
 
-@media(max-width:1080px) {
-  .pk-board {
-    grid-auto-flow: column;
-    grid-template-columns: none;
-    grid-auto-columns: minmax(290px, 1fr)
-  }
-}
-
-/* Apple-glass columns + cards */
+/* Solid, high-contrast columns + cards */
 .pk-col {
-  background: rgba(255, 255, 255, .025);
-  backdrop-filter: blur(10px) saturate(140%);
-  -webkit-backdrop-filter: blur(10px) saturate(140%);
-  border: 1px solid rgba(255, 255, 255, .07);
-  border-radius: 18px;
+  background: var(--surf);
+  border: 1px solid var(--bd);
+  border-radius: 14px;
   display: flex;
   flex-direction: column;
   min-height: 140px;
@@ -8954,8 +8966,10 @@ textarea.fi {
 
 .pk-col.over {
   border-color: var(--volt);
-  background: rgba(200, 255, 0, .07)
+  background: rgba(200, 255, 0, .06)
 }
+.pk-col-body::-webkit-scrollbar { width: 5px }
+.pk-col-body::-webkit-scrollbar-thumb { background: var(--bd2); border-radius: 3px }
 
 .pk-col-hd {
   display: flex;
@@ -9004,22 +9018,19 @@ textarea.fi {
 }
 
 .pk-card {
-  background: rgba(255, 255, 255, .06);
-  backdrop-filter: blur(16px) saturate(160%);
-  -webkit-backdrop-filter: blur(16px) saturate(160%);
-  border: 1px solid rgba(255, 255, 255, .10);
-  border-radius: 16px;
-  padding: 15px 16px;
+  background: var(--surf2);
+  border: 1px solid var(--bd);
+  border-radius: 12px;
+  padding: 13px 14px;
   cursor: grab;
-  box-shadow: 0 6px 22px rgba(0, 0, 0, .28), inset 0 1px 0 rgba(255, 255, 255, .10);
-  transition: background var(--tr), border-color var(--tr), transform var(--tr), box-shadow var(--tr)
+  box-shadow: var(--sh);
+  transition: border-color var(--tr), transform var(--tr), box-shadow var(--tr)
 }
 
 .pk-card:hover {
-  background: rgba(255, 255, 255, .10);
-  border-color: rgba(255, 255, 255, .20);
+  border-color: var(--bd2);
   transform: translateY(-2px);
-  box-shadow: 0 12px 30px rgba(0, 0, 0, .36), inset 0 1px 0 rgba(255, 255, 255, .14)
+  box-shadow: var(--sh-md)
 }
 
 .pk-card.dragging {
@@ -9286,25 +9297,34 @@ textarea.fi {
   text-align: center
 }
 
-/* ── PIPELINE — multi-pipeline kanban upgrade ───────────── */
+/* ── PIPELINE — kanban board (single source of truth) ───────────── */
 .pk-board {
   display: flex;
-  grid-template-columns: none;
-  gap: 14px;
+  flex-wrap: nowrap;
+  gap: 16px;
   overflow-x: auto;
-  padding-bottom: 6px;
-  align-items: flex-start
+  overflow-y: hidden;
+  padding-bottom: 10px;
+  align-items: stretch;
+  min-height: calc(100vh - 250px);
+  scroll-snap-type: x proximity;
+}
+.pk-board::-webkit-scrollbar { height: 8px }
+.pk-board::-webkit-scrollbar-thumb { background: var(--bd2); border-radius: 4px }
+
+.pk-board > .pk-col {
+  flex: 0 0 300px;
+  width: 300px;
+  scroll-snap-align: start;
+}
+@media(max-width:560px) {
+  .pk-board > .pk-col { flex-basis: 84vw; width: 84vw }
 }
 
-@media(max-width:1080px) {
-  .pk-board {
-    grid-auto-flow: unset
-  }
-}
-
-.pk-board>.pk-col {
-  flex: 0 0 252px;
-  min-width: 252px
+/* column body scrolls within a fixed-height column so headers stay aligned */
+.pk-col-body {
+  max-height: calc(100vh - 320px);
+  overflow-y: auto;
 }
 
 .pk-tools {
@@ -9635,4 +9655,64 @@ textarea.fi {
   .ftabs::-webkit-scrollbar, .imp-stats::-webkit-scrollbar { display: none }
   /* stat cards: 1 per row on very small phones for readability */
   .sc-grid { grid-template-columns: 1fr }
+}
+/* ── Extra mobile fallbacks (deep audit pass) ─────────────────────── */
+@media (max-width: 768px) {
+  .pf-kpi-grid { grid-template-columns: repeat(2, 1fr) }
+  .li-mg { grid-template-columns: repeat(2, 1fr) }
+  /* bookings / properties list rows: let cells wrap instead of clipping */
+  .lt-row.bk-grid, .lt-row.prop-row { flex-wrap: wrap; row-gap: 4px }
+}
+@media (max-width: 480px) {
+  .pf-kpi-grid { grid-template-columns: 1fr }
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   PRODUCTION RESPONSIVE PASS — mobile 320–767 · tablet 768–1023 · desktop 1024+
+   (plain-CSS equivalent of the requested Tailwind responsive standards)
+   ══════════════════════════════════════════════════════════════════ */
+
+/* Overflow prevention — never allow horizontal page scroll on phones/tablets */
+@media (max-width: 1023px) {
+  html, body { overflow-x: hidden; max-width: 100% }
+  img, svg, canvas, video { max-width: 100% }
+}
+
+/* KPI / card grids — 1 col mobile · 2 col tablet · full on desktop */
+@media (min-width: 768px) and (max-width: 1023px) {
+  .grid-3, .grid-4, .grid-5, .grid-6 { grid-template-columns: repeat(2, 1fr) }
+}
+@media (max-width: 767px) {
+  .grid-2, .grid-3, .grid-4, .grid-5, .grid-6 { grid-template-columns: 1fr }
+}
+
+/* Modals — 95vw on mobile, internal scroll, never cut off */
+@media (max-width: 767px) {
+  .mov { padding: 12px }
+  .modal, .pf-modal { width: 95vw; max-width: 95vw; max-height: 92vh }
+  .m-body { max-height: calc(92vh - 120px) }
+}
+
+/* Touch targets — min 44px for actions on touch screens */
+@media (max-width: 1023px) {
+  .btn { min-height: 44px }
+  .ham, .m-x, .sb-close, .p-back { min-width: 44px; min-height: 44px }
+  .fsel, .finp, .fi { min-height: 44px }
+}
+
+/* Data tables that aren't card-stacked — wrap to horizontal scroll, never overflow page */
+@media (max-width: 1023px) {
+  .analytics-card, .del-log, .dt, .tbl-wrap, .acc-table { overflow-x: auto; -webkit-overflow-scrolling: touch }
+}
+
+/* Long text — wrap instead of forcing width */
+@media (max-width: 767px) {
+  .pg-title, .hero-title, .sec-t, .m-ttl { overflow-wrap: anywhere }
+  .pg-head { gap: 8px }
+  .pg-acts { gap: 6px }
+}
+
+/* Notification panel — full-width sheet on phones (was fixed 360px → overflow) */
+@media (max-width: 767px) {
+  .notif-panel { width: auto; left: 8px; right: 8px; max-height: 70vh }
 }
