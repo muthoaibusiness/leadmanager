@@ -9568,3 +9568,64 @@ textarea.fi {
 .sc-kpi-delta.down { color: var(--red) }
 .sc-kpi-arrow { width: 13px; height: 13px; flex-shrink: 0 }
 .sc-kpi-sub { padding-top: 5px; font-size: 12px; color: var(--t3) }
+
+/* ══════════════════════════════════════════════════════════════════
+   GLOBAL MOBILE OPTIMIZATION PASS — applies to all app pages/admin
+   ══════════════════════════════════════════════════════════════════ */
+
+/* Tablet & down: kill the Pipeline page's desktop right-offset (was causing
+   horizontal overflow / cut-off on phones & tablets). */
+@media (max-width: 1024px) {
+  .pg-inner.pg-wide { max-width: 1240px; margin-left: auto; margin-right: auto }
+}
+
+@media (max-width: 768px) {
+  /* tighter page chrome */
+  .pg-head { padding: 0 12px }
+  .pg-title { font-size: 15px }
+  .hero { gap: 12px; margin-bottom: 18px }
+  .sec-hd { margin-top: 6px }
+
+  /* modals fill more of the screen, content scrolls */
+  .mov { padding: 12px }
+  .modal { max-width: 100%; max-height: 92vh }
+  .pf-modal { max-width: 100% }
+
+  /* stacked form rows */
+  .fg-row { grid-template-columns: 1fr }
+
+  /* accounts bulk-create action bar stacks full-width */
+  .acc-actions { flex-direction: column; align-items: stretch }
+  .acc-actions .btn-p { width: 100% }
+  .acc-actions-l { display: flex; gap: 8px }
+  .acc-actions-l .btn { flex: 1 }
+  .acc-card { padding: 16px 14px }
+  .acc-list-tools { width: 100%; margin-left: 0 }
+  .acc-search { flex: 1 }
+  .acc-search input { width: 100% }
+
+  /* master admin: one company card per row */
+  .ms-grid { grid-template-columns: 1fr }
+  .ms-bar { flex-wrap: wrap }
+
+  /* customers / contributors table: roomy header on small screens */
+  .cot-card { padding: 16px 14px }
+  .cot-title { font-size: 19px }
+  .tbl-td { padding: 14px 12px; font-size: 14px }
+  .tbl-th { padding: 0 12px; font-size: 11px }
+
+  /* KPI cards: comfortable text */
+  .sc-kpi-val { font-size: 22px }
+  .mc-v { font-size: 22px }
+}
+
+@media (max-width: 480px) {
+  .pg-body { padding: 12px 10px }
+  .hero h1, .pg-hero-title { font-size: 22px }
+  .btn { padding: 9px 12px }
+  /* let long filter/tab bars scroll instead of squashing */
+  .ftabs, .imp-stats { flex-wrap: nowrap; overflow-x: auto; -webkit-overflow-scrolling: touch }
+  .ftabs::-webkit-scrollbar, .imp-stats::-webkit-scrollbar { display: none }
+  /* stat cards: 1 per row on very small phones for readability */
+  .sc-grid { grid-template-columns: 1fr }
+}
