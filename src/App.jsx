@@ -7,8 +7,6 @@ import { avc, ini, rlabel } from './lib/helpers.js';
 import { ROLES } from './lib/constants.js';
 
 import Mi from './components/Mi.jsx';
-import InteractiveShader from './components/ui/aurora-shader.jsx';
-import ShaderDemo from './components/ui/hive.jsx';
 import { SignIn1 } from './components/ui/modern-stunning-sign-in.jsx';
 import { ProgressCircle } from './components/ui/progress.jsx';
 import LandingPage from './components/LandingPage.jsx';
@@ -277,11 +275,6 @@ function AppShell() {
   const wide = view === 'pipeline'; // kanban needs the full canvas
   return (
     <div id="app">
-      {/* Animated WebGL2 "hive" shader behind all admin pages (tinted under a coal wash for legibility) */}
-      <div className="app-aurora">
-        <ShaderDemo />
-        <div className="app-aurora-wash" />
-      </div>
       <Sidebar />
       <div className="page">
         <PageHeader />
