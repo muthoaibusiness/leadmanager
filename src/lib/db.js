@@ -184,12 +184,16 @@ function sameCompany(entityCid, userCid) {
   return !userCid || !entityCid || entityCid === userCid;
 }
 
-export function getLeads(user) {
+// opts.involved (IA/MA only): also include leads the agent forwarded (where they
+// are a previous assignee), so views like the Leads tab can show/filter their
+// forwarded leads (e.g. Meeting Set) even after ownership moved on.
+export function getLeads(user, opts = {}) {
   const db = getDB();
   if (user.role === ROLES.MASTER) return db.leads; // master sees everything
   const inCo = db.leads.filter(l => sameCompany(l.companyId, user.companyId));
   if (user.role === ROLES.MGMT) return inCo;
   if (user.role === ROLES.TL) return inCo.filter(l => l.teamId === user.teamId);
+  if (opts.involved) return inCo.filter(l => l.assignedTo === user.id || (l.previousAssignees || []).includes(user.id));
   return inCo.filter(l => l.assignedTo === user.id);
 }
 

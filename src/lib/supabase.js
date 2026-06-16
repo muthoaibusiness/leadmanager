@@ -1,5 +1,17 @@
-export const SB_URL = 'https://nqfxxdrxdcdhoerwylfn.supabase.co';
-export const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5xZnh4ZHJ4ZGNkaG9lcnd5bGZuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzcwOTA0NzAsImV4cCI6MjA5MjY2NjQ3MH0.Q4I0DSu7mYZfufpHosOTR3yhaw1UWDYi0fF6n5IPIxQ';
+// Supabase config — loaded from environment (Vite exposes VITE_* on import.meta.env).
+// Set these in a local .env file (see .env.example). Never hardcode credentials here.
+export const SB_URL = import.meta.env.VITE_SUPABASE_URL;
+export const SB_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
+
+// Startup validation — clear error if required config is missing.
+if (!SB_URL || !SB_KEY) {
+  console.error(
+    '[config] Missing required environment variables: ' +
+    [!SB_URL && 'VITE_SUPABASE_URL', !SB_KEY && 'VITE_SUPABASE_ANON_KEY'].filter(Boolean).join(', ') +
+    '. Create a .env file in the project root (copy .env.example). Cloud sync is disabled until set.'
+  );
+}
+
 export const SB_H = { apikey: SB_KEY, Authorization: 'Bearer ' + SB_KEY, 'Content-Type': 'application/json' };
 
 export async function sbGet(path) {

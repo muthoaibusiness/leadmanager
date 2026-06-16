@@ -10,7 +10,7 @@ export default function LeadsView() {
     agentFilter, setAgentFilter, teamFilter, dbVersion, dateRange, db,
   } = useApp();
 
-  let leads = getLeads(user);
+  let leads = getLeads(user, { involved: true }); // include forwarded leads so status filters (e.g. Meeting Set) show them
   if (agentFilter) leads = leads.filter(l => l.assignedTo === agentFilter || l.previousAssignees.includes(agentFilter));
   else if (teamFilter) leads = leads.filter(l => l.teamId === teamFilter);
 
