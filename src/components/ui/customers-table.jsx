@@ -1,7 +1,7 @@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './table.jsx';
 
 // Clean dark customers table (same shadcn table primitives, adapted). Columns:
-// Name · Phone · Project · Status · Value. Data-driven via `rows`.
+// Name · Phone · Project · Agent · Status · Value. Data-driven via `rows`.
 const statusClass = (tone) =>
   tone === 'won' ? 'cot-badge ok' : tone === 'lost' ? 'cot-badge off' : 'cot-badge warn';
 
@@ -23,6 +23,7 @@ export default function CustomersTable({
             <TableHead className="cot-name-col">Name</TableHead>
             <TableHead>Phone</TableHead>
             <TableHead>Project</TableHead>
+            <TableHead>Agent</TableHead>
             <TableHead>Status</TableHead>
             <TableHead className="cot-right">Value</TableHead>
           </TableRow>
@@ -33,12 +34,13 @@ export default function CustomersTable({
               <TableCell className="cot-strong">{r.name}</TableCell>
               <TableCell className="cot-muted">{r.phone || '—'}</TableCell>
               <TableCell className="cot-muted">{r.project || '—'}</TableCell>
+              <TableCell className="cot-muted">{r.agent || 'Unassigned'}</TableCell>
               <TableCell><span className={statusClass(r.tone)}>{r.status}</span></TableCell>
               <TableCell className="cot-right">{r.value}</TableCell>
             </TableRow>
           ))}
           {!rows.length && (
-            <TableRow><TableCell colSpan={5} className="cot-empty">No customers yet.</TableCell></TableRow>
+            <TableRow><TableCell colSpan={6} className="cot-empty">No customers yet.</TableCell></TableRow>
           )}
         </TableBody>
       </Table>

@@ -1,39 +1,31 @@
 import { useApp } from '../../context/AppContext.jsx';
 import { getLeads, getDB, calcPipelineValue } from '../../lib/db.js';
 import StatCard from '../StatCard.jsx';
+import TargetCard from './TargetCard.jsx';
+import DashGreeting from './DashGreeting.jsx';
 import Mi from '../Mi.jsx';
-import { fmtBDT, scoreLead, scoreLabel, avc, ini, fmtAgo } from '../../lib/helpers.js';
-import { STATUS_LABELS, SRC_LABELS } from '../../lib/constants.js';
+import { fmtBDT, scoreLead, scoreLabel, fmtAgo } from '../../lib/helpers.js';
+import { STATUS_LABELS, SRC_LABELS, ROLES } from '../../lib/constants.js';
 import { Donut, Funnel, Ring } from '../charts/Charts.jsx';
 
 function ScoredPipeline({ leads, db, onOpen }) {
-  if (!leads.length) return <div className="empty"><Mi>inbox</Mi><p>No customers here</p></div>;
+  if (!leads.length) return <div className="iad-q-empty"><Mi>check_circle</Mi><b>Nothing to close</b><span>No deals in negotiation or ready to close.</span></div>;
   const scored = leads
     .map(l => ({ l, score: scoreLead(l, db.activities?.[l.id] || []) }))
     .sort((a, b) => b.score - a.score);
   return (
-    <div className="sp-list">
+    <div className="iad-q-list">
       {scored.map(({ l, score }) => {
-        const { label, color, bg } = scoreLabel(score);
+        const sl = scoreLabel(score);
         const pipe = calcPipelineValue(l.id, db);
         return (
-          <div key={l.id} className="sp-row" onClick={() => onOpen(l.id)}>
-            <div className="sp-av" style={{ background: avc(l.name) }}>{ini(l.name)}</div>
-            <div className="sp-info">
-              <div className="sp-name">{l.name}</div>
-              <div className="sp-meta">{STATUS_LABELS[l.status] || l.status}{pipe > 0 ? ' · ' + fmtBDT(pipe) : ''}</div>
-              {l.propertyInterest && <div className="sp-prop">{l.propertyInterest}</div>}
+          <div key={l.id} className="iad-q-row" onClick={() => onOpen(l.id)}>
+            <div className="iad-q-info">
+              <div className="iad-q-name">{l.name}</div>
+              <div className="iad-q-meta">{STATUS_LABELS[l.status] || l.status}{pipe > 0 ? ' · ' + fmtBDT(pipe) : ''} · {fmtAgo(l.updatedAt)}</div>
             </div>
-            <div className="sp-score-wrap">
-              <div className="sp-score-bar-track">
-                <div className="sp-score-bar-fill" style={{ width: score + '%', background: color }} />
-              </div>
-              <div className="sp-score-badge" style={{ background: bg, color }}>
-                <Mi>psychology</Mi>{score} · {label}
-              </div>
-            </div>
-            <div className="sp-ago">{fmtAgo(l.updatedAt)}</div>
-            <Mi style={{ color: 'var(--t3)', fontSize: '18px' }}>chevron_right</Mi>
+            <span className="iad-q-score" style={{ color: sl.color }}>{sl.label}</span>
+            <a className="iad-q-call" href={`tel:${l.phone}`} title="Call" onClick={e => e.stopPropagation()}><Mi>call</Mi></a>
           </div>
         );
       })}
@@ -42,24 +34,26 @@ function ScoredPipeline({ leads, db, onOpen }) {
 }
 
 export default function TeamLeadDash() {
-  const { user, tab, setTab, dateRange, setPanLead } = useApp();
+  const { user, dateRange, setPanLead } = useApp();
   const db = getDB();
   const leads = getLeads(user);
 
   const hasRange = !!dateRange?.range;
-  const rangeStart = dateRange?.range?.start || (() => { const d = new Date(); d.setDate(1); d.setHours(0,0,0,0); return d; })();
+  const rangeStart = dateRange?.range?.start || (() => { const d = new Date(); d.setDate(1); d.setHours(0, 0, 0, 0); return d; })();
   const rangeEnd = dateRange?.range?.end || new Date();
   const inRange = iso => { const d = new Date(iso); return d >= rangeStart && d <= rangeEnd; };
 
   const allActs = Object.values(db.activities || {}).flat();
-  const teamUserIds = db.users.filter(u => u.teamId === user.teamId).map(u => u.id);
+  const teamUsers = db.users.filter(u => u.teamId === user.teamId);
+  const teamUserIds = teamUsers.map(u => u.id);
 
   const won = leads.filter(l => l.status === 'DEAL_CLOSED_WON' && inRange(l.updatedAt));
   const lost = leads.filter(l => l.status === 'DEAL_CLOSED_LOST' && inRange(l.updatedAt));
   const neg = leads.filter(l => l.status === 'NEGOTIATING');
   const toClose = leads.filter(l => l.status === 'SITE_VISIT_DONE');
+  const closing = [...neg, ...toClose]; // deals to close — primary work list
   const rev = won.reduce((s, l) => s + (l.dealValue || 0), 0);
-  const pipe = leads.filter(l => ['NEGOTIATING', 'SITE_VISIT_DONE'].includes(l.status)).reduce((s, l) => s + calcPipelineValue(l.id, db), 0);
+  const pipe = closing.reduce((s, l) => s + calcPipelineValue(l.id, db), 0);
   const wr = won.length + lost.length > 0 ? Math.round(won.length / (won.length + lost.length) * 100) : 0;
 
   const teamActs = allActs.filter(a => teamUserIds.includes(a.userId) && inRange(a.timestamp));
@@ -68,6 +62,18 @@ export default function TeamLeadDash() {
   const talkMins = Math.round(talkSecs / 60);
   const offersSent = allActs.filter(a => a.type === 'OFFER' && inRange(a.timestamp)).length;
   const newLeads = leads.filter(l => inRange(l.createdAt)).length;
+
+  // Top performers in this team (by deals won, then revenue).
+  const perf = teamUsers
+    .filter(u => [ROLES.IA, ROLES.MA, ROLES.TL].includes(u.role))
+    .map(u => {
+      const uLeads = leads.filter(l => l.assignedTo === u.id || (l.previousAssignees || []).includes(u.id));
+      const uWon = uLeads.filter(l => l.status === 'DEAL_CLOSED_WON');
+      return { u, won: uWon.length, rev: uWon.reduce((s, l) => s + (l.dealValue || 0), 0) };
+    })
+    .filter(p => p.won > 0 || p.rev > 0)
+    .sort((a, b) => b.won - a.won || b.rev - a.rev)
+    .slice(0, 5);
 
   // Chart data (team)
   const sc = {}; leads.forEach(l => { sc[l.status] = (sc[l.status] || 0) + 1; });
@@ -81,25 +87,65 @@ export default function TeamLeadDash() {
   const srcColors = { META_ADS: '#C8FF00', WHATSAPP_ADS: '#34D399', LINKEDIN: '#DDB948', HOTLINE: '#F0A92B', PERSONAL: '#2DD4BF', WEBSITE: '#F87171' };
   const srcData = Object.entries(srcC).sort((a, b) => b[1] - a[1]).map(([s, c]) => ({ label: SRC_LABELS[s] || s, value: c, color: srcColors[s] || '#9CA3AF' }));
 
-  const tabs = ['To Close', 'Negotiating', 'Won'];
-  let disp = tab === 1 ? neg : tab === 2 ? won : toClose;
-  if (dateRange?.range) { const { start, end } = dateRange.range; disp = disp.filter(l => { const d = new Date(l.createdAt); return d >= start && d <= end; }); }
-
   return (
-    <>
-      <div className="grid-4" style={{ marginBottom: '14px' }}>
-        <StatCard val={fmtBDT(rev)} label={hasRange ? 'Revenue' : 'Revenue This Month'} ico="payments" bg="#34D399" />
-        <StatCard val={fmtBDT(pipe)} label="Pipeline Value" ico="trending_up" bg="#C8FF00" />
-        <StatCard val={won.length + '/' + (won.length + lost.length)} label="Deals Won/Closed" ico="emoji_events" bg="#F0A92B" />
-        <StatCard val={wr + '%'} label="Win Rate" ico="percent" bg="#DDB948" />
+    <div className="iad-page">
+      <DashGreeting user={user} sub={closing.length > 0
+        ? `${closing.length} ${closing.length === 1 ? 'deal' : 'deals'} to close · ${fmtBDT(pipe)} in pipeline`
+        : 'No deals waiting to close right now.'} />
+
+      <div className="grid-4">
+        <StatCard val={fmtBDT(rev)} label={hasRange ? 'Revenue' : 'Revenue This Month'} tone="good" sub="closed won" />
+        <StatCard val={fmtBDT(pipe)} label="Pipeline Value" tone="accent" sub="to close" />
+        <StatCard val={won.length + '/' + (won.length + lost.length)} label="Deals Won/Closed" sub="this period" />
+        <StatCard val={wr + '%'} label="Win Rate" tone={wr >= 50 ? 'good' : ''} sub="closed won" />
       </div>
-      <div className="grid-4" style={{ marginBottom: '20px' }}>
-        <StatCard val={newLeads} label={hasRange ? 'New Customers' : 'New Customers This Month'} ico="person_add" bg="#2DD4BF" />
-        <StatCard val={siteVisits} label="Site Visits Done" ico="location_on" bg="#34D399" />
-        <StatCard val={offersSent} label="Proposals Sent" ico="price_check" bg="#DDB948" />
-        <StatCard val={talkMins + ' min'} label="Team Talk Time" ico="schedule" bg="#F0A92B" />
+      <div className="grid-4">
+        <StatCard val={newLeads} label={hasRange ? 'New Customers' : 'New This Month'} sub="leads in" />
+        <StatCard val={siteVisits} label="Site Visits Done" sub="this period" />
+        <StatCard val={offersSent} label="Proposals Sent" sub="offers" />
+        <StatCard val={talkMins + ' min'} label="Team Talk Time" sub="on calls" />
       </div>
-      <div className="grid-3" style={{ marginBottom: '20px' }}>
+
+      <div className="iad-layout">
+        {/* Primary: deals to close */}
+        <div className="iad-main">
+          <div className="iad-queue">
+            <div className="iad-q-hd">
+              <span className="iad-q-ttl">Deals to close</span>
+              {closing.length > 0 && <span className="iad-q-ct">{closing.length}</span>}
+            </div>
+            <ScoredPipeline leads={closing} db={db} onOpen={setPanLead} />
+          </div>
+        </div>
+
+        {/* Rail: target + top performers */}
+        <aside className="iad-rail">
+          <TargetCard user={user} />
+          <div className="iad-queue">
+            <div className="iad-q-hd">
+              <span className="iad-q-ttl">Top performers</span>
+            </div>
+            {perf.length === 0 ? (
+              <div className="iad-q-empty iad-q-empty-quiet"><span>No closed deals yet.</span></div>
+            ) : (
+              <div className="iad-q-list">
+                {perf.map((p, i) => (
+                  <div key={p.u.id} className="iad-q-row">
+                    <div className="iad-mt-time">#{i + 1}</div>
+                    <div className="iad-q-info">
+                      <div className="iad-q-name">{p.u.name}</div>
+                      <div className="iad-q-meta">{p.won} won · {fmtBDT(p.rev)}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </aside>
+      </div>
+
+      {/* Team analytics */}
+      <div className="grid-3" style={{ marginTop: '4px' }}>
         <div className="analytics-card">
           <div className="ac-hd"><Mi>filter_alt</Mi>Team Funnel</div>
           <div className="ac-body"><Funnel stages={funnelData} /></div>
@@ -115,19 +161,6 @@ export default function TeamLeadDash() {
           </div>
         </div>
       </div>
-      <div className="pipeline-banner">
-        <div className="pipeline-banner-body">
-          <div className="pipeline-banner-msg">
-            <strong>{user?.name?.split(' ')[0]}</strong>, some amazing deals are waiting to close. Best of luck! 🎯
-          </div>
-        </div>
-        <div className="ftabs" style={{ flexShrink: 0 }}>
-          {tabs.map((t, i) => (
-            <div key={i} className={`ftab${tab === i ? ' on' : ''}`} onClick={() => setTab(i)}>{t}</div>
-          ))}
-        </div>
-      </div>
-      <ScoredPipeline leads={disp} db={db} onOpen={setPanLead} />
-    </>
+    </div>
   );
 }

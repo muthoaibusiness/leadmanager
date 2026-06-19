@@ -3,20 +3,13 @@ import { useApp } from '../../context/AppContext.jsx';
 import { getLeads, getDB } from '../../lib/db.js';
 import StatCard from '../StatCard.jsx';
 import TargetCard from './TargetCard.jsx';
+import DashGreeting from './DashGreeting.jsx';
 import Mi from '../Mi.jsx';
-import Avatar from '../Avatar.jsx';
 import { scoreLead, scoreLabel } from '../../lib/helpers.js';
 import { STATUS_LABELS, SRC_LABELS } from '../../lib/constants.js';
 
 const CLOSED = ['DEAL_CLOSED_WON', 'DEAL_CLOSED_LOST', 'NOT_INTERESTED'];
 const REACHED_MEETING = ['MEETING_SET', 'SITE_VISIT_SCHEDULED', 'SITE_VISIT_DONE', 'NEGOTIATING', 'DEAL_CLOSED_WON'];
-
-function greeting() {
-  const h = new Date().getHours();
-  if (h < 12) return 'Good morning';
-  if (h < 17) return 'Good afternoon';
-  return 'Good evening';
-}
 
 // Why a lead needs a touch now + its priority. 0 overdue · 1 never called · 2 due today
 function queueReason(lead, touched, todayStart, todayEnd) {
@@ -67,20 +60,14 @@ export default function InitialAgentDash() {
 
   const QUEUE_CAP = 8;
   const shown = view.queue.slice(0, QUEUE_CAP);
-  const firstName = (user.name || '').trim().split(/\s+/)[0];
 
   return (
     <>
       <div className="iad-page">
       {/* Greeting */}
-      <div className="iad-greet">
-        <div className="iad-greet-hi">{greeting()}, <span>{firstName}</span></div>
-        <div className="iad-greet-sub">
-          {view.queue.length > 0
-            ? <>{view.queue.length} {view.queue.length === 1 ? 'lead' : 'leads'} to work today</>
-            : <>You're all caught up.</>}
-        </div>
-      </div>
+      <DashGreeting user={user} sub={view.queue.length > 0
+        ? `${view.queue.length} ${view.queue.length === 1 ? 'lead' : 'leads'} to work today`
+        : "You're all caught up."} />
 
       {/* KPIs — labels only, no icons */}
       <div className="grid-4">
@@ -111,7 +98,6 @@ export default function InitialAgentDash() {
                   const sl = scoreLabel(score);
                   return (
                     <div key={l.id} className="iad-q-row" onClick={() => setPanLead(l.id)}>
-                      <Avatar name={l.name} avatar={l.avatar} className="iad-q-av" />
                       <div className="iad-q-info">
                         <div className="iad-q-name">{l.name}</div>
                         <div className="iad-q-meta">{l.phone} · {SRC_LABELS[l.source] || l.source}</div>

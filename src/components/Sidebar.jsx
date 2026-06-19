@@ -9,7 +9,7 @@ import { canSee } from '../lib/constants.js';
 // when active. Visibility is driven by canSee(role, key).
 const SECTIONS = [
   { label: null, keys: ['dashboard', 'companies', 'reports'] },
-  { label: 'Sales Team', keys: ['leads', 'clients', 'pipeline', 'properties', 'bookings'] },
+  { label: 'Sales Team', keys: ['leads', 'pipeline', 'properties', 'bookings'] },
   { label: 'Admin', keys: ['team', 'users', 'accounts'] },
 ];
 

@@ -3,6 +3,7 @@ import { useApp } from './context/AppContext.jsx';
 import { getDB, getSession, setSession, tryLogin, saveDB, checkFollowUpReminders, getLeads, getProperties, expireHolds, migrateTenancy, mergeDB, findDuplicateLeads, purgeDemoSeed, dedupeLeads, reconcileDeletions } from './lib/db.js';
 import { seedDB, SEED_PROPERTIES, DEMO_PROPERTIES } from './lib/seed.js';
 import { sbLoad, sbSubscribeNotifs } from './lib/supabase.js';
+import { pushNotify, requestNotifyPermission } from './lib/pushNotify.js';
 import { avc, ini, rlabel } from './lib/helpers.js';
 import { ROLES } from './lib/constants.js';
 
@@ -175,8 +176,9 @@ function PageHeader() {
 function PageHero() {
   const { user, view, agentFilter, teamFilter, setAgentFilter, setTeamFilter, setTab, setStatusFilter, setSearch, openModal, setCreateUserRoles, setPropEdit, dbVersion } = useApp();
   if (!user) return null;
-  // Initial Agent dashboard has its own greeting header — skip the generic hero.
-  if (view === 'dashboard' && user.role === ROLES.IA) return null;
+  // Every dashboard now has its own greeting header — skip the generic hero.
+  if (view === 'dashboard') return null;
+  if (user.role === ROLES.MASTER && view === 'companies') return null;
   const db = getDB();
 
   const agentName = agentFilter ? db.users.find(u => u.id === agentFilter)?.name : '';
@@ -287,18 +289,21 @@ function AppShell() {
 
 // ── Root App ─────────────────────────────────────────────────────────────────
 export default function App() {
-  const { user, setUser, setView, refreshDB, searchRef, panLead, setPanLead, closeModal, modal, setSearch } = useApp();
+  const { user, setUser, setView, refreshDB, searchRef, panLead, setPanLead, closeModal, modal, setSearch, notifOpen } = useApp();
   const [loading, setLoading] = useState(true);
   const [loadVisible, setLoadVisible] = useState(true);
   const [showLogin, setShowLogin] = useState(false); // landing → login gate
   const [entering, setEntering] = useState(false);    // brief loader after login
   const initialized = useRef(false);
+  const notifOpenRef = useRef(false);
+  notifOpenRef.current = notifOpen; // live value for the (stable) realtime callback
 
   // Show the post-login loader for a beat, then reveal the app
   const enterApp = (u) => {
     setUser(u);
     if (u.role === ROLES.MASTER) setView('companies');
     refreshDB();
+    requestNotifyPermission(); // ask for browser push permission on login
     setEntering(true);
     setTimeout(() => setEntering(false), 1100);
   };
@@ -314,6 +319,13 @@ export default function App() {
       if (!db.notifications[user.id].find(n => n.id === newNotif.id)) {
         db.notifications[user.id].unshift(newNotif);
         refreshDB();
+        // Real-time browser push (sound + OS popup). Suppressed only when the user
+        // is actively viewing the notifications panel in a visible tab.
+        const suppress = notifOpenRef.current && document.visibilityState === 'visible';
+        pushNotify(newNotif, {
+          suppress,
+          onClick: (n) => { if (n.leadId) setPanLead(n.leadId); },
+        });
       }
     });
     return unsub;
@@ -390,7 +402,7 @@ export default function App() {
 
       // Try to restore session
       const u = getSession();
-      if (u) { setUser(u); if (u.role === ROLES.MASTER) setView('companies'); }
+      if (u) { setUser(u); if (u.role === ROLES.MASTER) setView('companies'); requestNotifyPermission(); }
     })();
   }, []);
 

@@ -4,6 +4,7 @@ import { useApp } from '../../context/AppContext.jsx';
 import { getDB, getCompanies, companyStats, createCompany, setCompanyActive } from '../../lib/db.js';
 import { fmtBDT } from '../../lib/helpers.js';
 import { ROLES } from '../../lib/constants.js';
+import DashGreeting from './DashGreeting.jsx';
 
 const PLANS = ['Starter', 'Growth', 'Enterprise'];
 const blankForm = () => ({ name: '', plan: 'Starter', adminName: '', adminEmail: '', password: '', phone: '' });
@@ -46,6 +47,8 @@ export default function MasterDash() {
 
   return (
     <div className="ms">
+      <DashGreeting user={user} sub={`${companies.length} ${companies.length === 1 ? 'company' : 'companies'} · ${totals.accounts} accounts · ${totals.leads} leads`} />
+
       {/* global KPIs */}
       <div className="ms-kpis">
         <div className="ms-kpi"><Mi>apartment</Mi><div><div className="ms-kpi-v">{companies.length}</div><div className="ms-kpi-l">Companies</div></div></div>

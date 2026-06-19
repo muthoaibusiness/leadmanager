@@ -2,47 +2,19 @@ import { useState } from 'react';
 import { useApp } from '../../context/AppContext.jsx';
 import { getDB, getDeletionLog, calcPipelineValue, getBookings, bookingPaid, bookingDue, bookingNextDue } from '../../lib/db.js';
 import StatCard from '../StatCard.jsx';
+import DashGreeting from './DashGreeting.jsx';
+import LiveActivity from './LiveActivity.jsx';
 import CustomersTable from '../ui/customers-table.jsx';
 import Mi from '../Mi.jsx';
-import Avatar from '../Avatar.jsx';
-import { fmtBDT, fmtAgo, fmtDT, startOfMonth, rlabel, slabel } from '../../lib/helpers.js';
+import { fmtBDT, fmtDT, startOfMonth, slabel } from '../../lib/helpers.js';
 import { ROLES, STATUS_LABELS, SRC_LABELS } from '../../lib/constants.js';
 import { Funnel } from '../charts/Charts.jsx';
 import StatTrend from '../StatTrend.jsx';
 
 function sclass(s) { return 's-' + (s || '').toLowerCase(); }
 
-function AgentActivityRow({ agent, leads, acts }) {
-  const myLeads = leads.filter(l => l.assignedTo === agent.id || l.previousAssignees.includes(agent.id));
-  const myActs = acts.filter(a => a.userId === agent.id);
-  const recentAct = [...myActs].sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))[0];
-  const won = myLeads.filter(l => l.status === 'DEAL_CLOSED_WON').length;
-  const active = myLeads.filter(l => !['DEAL_CLOSED_WON', 'DEAL_CLOSED_LOST', 'NOT_INTERESTED'].includes(l.status)).length;
-  const calls = myLeads.reduce((s, l) => s + (l.callCount || 0), 0);
-  return (
-    <div className="aa-row">
-      <Avatar name={agent.name} avatar={agent.avatar} className="aa-av" />
-      <div className="aa-info">
-        <div className="aa-name">{agent.name}</div>
-        <div className="aa-role">{rlabel(agent.role)}</div>
-      </div>
-      <div className="aa-stats">
-        <div className="aa-stat"><div className="aa-sv">{myLeads.length}</div><div className="aa-sl">Customers</div></div>
-        <div className="aa-stat"><div className="aa-sv">{active}</div><div className="aa-sl">Active</div></div>
-        <div className="aa-stat"><div className="aa-sv">{calls}</div><div className="aa-sl">Calls</div></div>
-        <div className="aa-stat"><div className="aa-sv" style={{ color: 'var(--green)' }}>{won}</div><div className="aa-sl">Won</div></div>
-      </div>
-      <div className="aa-last">
-        {recentAct
-          ? <><div className="aa-act">{recentAct.description}</div><div className="aa-time">{fmtAgo(recentAct.timestamp)}</div></>
-          : <div className="aa-time">No activity</div>}
-      </div>
-    </div>
-  );
-}
-
 export default function ManagementDash() {
-  const { user, setView, setTeamFilter, setAgentFilter, setTab, setSearch, setPropSel, openModal, dateRange } = useApp();
+  const { user, setView, setTeamFilter, setAgentFilter, setTab, setSearch, setPropSel, openModal, dateRange, dbVersion } = useApp();
   const [activeTab, setActiveTab] = useState(0);
   const db = getDB();
   const sm = startOfMonth();
@@ -63,7 +35,6 @@ export default function ManagementDash() {
 
   const allLeads = filterByDate(coLeads);
   const allAgents = coUsers.filter(u => u.role === ROLES.IA || u.role === ROLES.MA || u.role === ROLES.TL);
-  const allActs = Object.entries(db.activities || {}).filter(([lid]) => coLeadIds.has(lid)).flatMap(([, v]) => v);
 
   const won = allLeads.filter(l => l.status === 'DEAL_CLOSED_WON');
   const lost = allLeads.filter(l => l.status === 'DEAL_CLOSED_LOST');
@@ -137,6 +108,7 @@ export default function ManagementDash() {
 
   // Customers table rows (real recent leads) for the clean dark table
   const statusTone = (s) => s === 'DEAL_CLOSED_WON' ? 'won' : (s === 'DEAL_CLOSED_LOST' || s === 'NOT_INTERESTED') ? 'lost' : 'open';
+  const usersById = {}; coUsers.forEach(u => { usersById[u.id] = u; });
   const customerRows = [...coLeads]
     .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
     .slice(0, 8)
@@ -145,6 +117,7 @@ export default function ManagementDash() {
       name: l.name,
       phone: l.phone,
       project: l.dealProjectName || l.propertyInterest || '—',
+      agent: usersById[l.assignedTo]?.name || 'Unassigned',
       status: slabel(l.status),
       tone: statusTone(l.status),
       value: fmtBDT(l.dealValue || l.budget || 0),
@@ -219,10 +192,12 @@ export default function ManagementDash() {
 
   const viewTeamLeads = (teamId) => { setView('leads'); setTab(0); setSearch(''); setAgentFilter(null); setTeamFilter(teamId); };
 
-  const tabs = ['Overview', 'Agent Activity', 'Deletion Log'];
+  const tabs = ['Overview', <span key="la" className="la-tab"><span className="la-dot" />Live Activity</span>, 'Deletion Log'];
 
   return (
     <>
+      <DashGreeting user={user} sub={`${active.length} active deals · ${fmtBDT(pipe)} in pipeline · ${wr}% win rate`} />
+
       {/* KPI row — revenue, customers, collections, win rate (with 14-day sparklines) */}
       <div className="grid-4" style={{ marginBottom: '22px' }}>
         {trendCards.map((c, i) => <StatTrend key={i} {...c} />)}
@@ -270,15 +245,7 @@ export default function ManagementDash() {
       )}
 
       {activeTab === 1 && (
-        <>
-          <div className="sec-hd"><div className="sec-t"><Mi>manage_accounts</Mi>Agent Activity</div></div>
-          <div className="analytics-card" style={{ marginBottom: '16px', overflowX: 'auto' }}>
-            {allAgents.length === 0 && <div className="empty"><Mi>person_off</Mi><p>No agents</p></div>}
-            {allAgents.map(agent => (
-              <AgentActivityRow key={agent.id} agent={agent} leads={coLeads} acts={allActs} />
-            ))}
-          </div>
-        </>
+        <LiveActivity db={db} coLeads={coLeads} coUsers={coUsers} dbVersion={dbVersion} />
       )}
 
       {activeTab === 2 && (
