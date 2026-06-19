@@ -9715,3 +9715,57 @@ textarea.fi {
 @media (max-width: 767px) {
   .notif-panel { width: auto; left: 8px; right: 8px; max-height: 70vh }
 }
+
+/* ───────────────────────────────────────────────────────────────────────────
+   Initial Agent cockpit (iad-) — first-touch caller's daily command center
+   ─────────────────────────────────────────────────────────────────────────── */
+/* Focused single column */
+.iad-page { width:100% }
+/* dashboard layout — primary call list + side rail (target · meetings) */
+.iad-layout { display:grid; grid-template-columns:1fr 340px; gap:16px; margin-top:18px; align-items:start }
+.iad-main { min-width:0 }
+.iad-rail { display:flex; flex-direction:column; gap:16px }
+@media (max-width:900px){ .iad-layout { grid-template-columns:1fr } }
+
+.iad-greet { margin:4px 0 22px }
+.iad-greet-hi { font-family:var(--font-display); font-size:23px; font-weight:700; letter-spacing:-.02em; color:var(--t1) }
+.iad-greet-hi span { color:var(--accent) }
+.iad-greet-sub { margin-top:5px; font-size:13.5px; color:var(--t2) }
+
+/* meeting row: time chip instead of avatar */
+.iad-mt-time { width:54px; flex:0 0 54px; font-family:var(--font-display); font-size:13px; font-weight:700; color:var(--accent); text-align:center }
+.iad-q-empty-quiet { padding:26px 16px; color:var(--t3) }
+.iad-q-empty-quiet .mi { display:none }
+
+/* Call queue — calm, roomy list */
+.iad-queue { background:var(--surf); border:1px solid var(--bd); border-radius:var(--r-lg); overflow:hidden }
+.iad-q-hd { display:flex; align-items:center; gap:10px; padding:16px 18px 14px }
+.iad-q-ttl { font-family:var(--font-display); font-weight:600; font-size:14px; color:var(--t1) }
+.iad-q-ct { margin-left:auto; font-size:11px; font-weight:600; color:var(--t2); background:var(--surf2); padding:2px 9px; border-radius:999px }
+.iad-q-list { display:flex; flex-direction:column }
+.iad-q-row { display:flex; align-items:center; gap:13px; padding:13px 18px; border-top:1px solid var(--bd); cursor:pointer; transition:background var(--tr) }
+.iad-q-row:hover { background:var(--surf2) }
+.iad-q-av { width:36px; height:36px; border-radius:50%; flex:0 0 36px; display:flex; align-items:center; justify-content:center; font-size:12.5px; font-weight:700; color:#fff }
+.iad-q-info { min-width:0; flex:1 }
+.iad-q-name { font-size:13.5px; font-weight:600; color:var(--t1); white-space:nowrap; overflow:hidden; text-overflow:ellipsis }
+.iad-q-meta { margin-top:2px; font-size:12px; color:var(--t3); white-space:nowrap; overflow:hidden; text-overflow:ellipsis }
+/* reason + score: plain colored text, no pills */
+.iad-rs { font-size:11.5px; font-weight:600; white-space:nowrap; flex:0 0 auto }
+.iad-rs-overdue { color:var(--red) }
+.iad-rs-today { color:var(--orange) }
+.iad-rs-new { color:var(--t2) }
+.iad-q-score { font-size:11px; font-weight:600; width:64px; text-align:right; flex:0 0 auto }
+@media (max-width:560px){ .iad-q-score { display:none } }
+.iad-q-call { width:36px; height:36px; border-radius:50%; flex:0 0 36px; display:flex; align-items:center; justify-content:center; background:var(--blue-l); color:var(--accent); transition:all var(--tr) }
+.iad-q-call .mi { font-size:18px }
+.iad-q-call:hover { background:var(--accent); color:var(--on-accent) }
+.iad-q-more { text-align:center; padding:13px; font-size:12.5px; font-weight:600; color:var(--accent); cursor:pointer; border-top:1px solid var(--bd); transition:background var(--tr) }
+.iad-q-more:hover { background:var(--surf2) }
+.iad-q-empty { display:flex; flex-direction:column; align-items:center; gap:7px; padding:46px 16px; color:var(--t3); text-align:center; border-top:1px solid var(--bd) }
+.iad-q-empty .mi { font-size:30px; color:var(--green) }
+.iad-q-empty b { color:var(--t1); font-weight:600; font-size:13.5px }
+
+/* Right rail */
+.iad-rail { display:flex; flex-direction:column; gap:18px }
+.iad-rc { background:var(--surf); border:1px solid var(--bd); border-radius:var(--r-lg); padding:16px 16px 18px }
+.iad-rc-hd { font-size:12.5px; font-weight:600; color:var(--t2); margin-bottom:14px }

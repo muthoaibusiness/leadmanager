@@ -175,6 +175,8 @@ function PageHeader() {
 function PageHero() {
   const { user, view, agentFilter, teamFilter, setAgentFilter, setTeamFilter, setTab, setStatusFilter, setSearch, openModal, setCreateUserRoles, setPropEdit, dbVersion } = useApp();
   if (!user) return null;
+  // Initial Agent dashboard has its own greeting header — skip the generic hero.
+  if (view === 'dashboard' && user.role === ROLES.IA) return null;
   const db = getDB();
 
   const agentName = agentFilter ? db.users.find(u => u.id === agentFilter)?.name : '';
@@ -188,10 +190,9 @@ function PageHero() {
   const props = getProperties();
   const propAvail = props.filter(p => p.status !== 'SOLD_OUT').length;
   const teamAgents = db.users.filter(u => (u.role === ROLES.IA || u.role === ROLES.MA) && u.teamId === user.teamId).length;
-  const roleTag = { INITIAL_AGENT: 'My Today', MEETING_AGENT: 'My Today', TEAM_LEAD: 'Team Overview', MANAGEMENT: 'Company Overview' }[user.role];
 
   const META = {
-    dashboard: { eyebrow: rlabel(user.role), title: 'Dashboard', sub: roleTag + ' · real-estate sales engine' },
+    dashboard: { eyebrow: rlabel(user.role), title: 'Dashboard', sub: '' },
     leads: { eyebrow: 'Pipeline', title: 'Customers', sub: `${myLeads.length} customers · ${activeLeads} active` },
     pipeline: { eyebrow: 'Sales', title: 'Pipeline', sub: 'Drag deals across stages' },
     clients: { eyebrow: 'Relationships', title: 'Contacts', sub: '360° customer view' },
@@ -213,7 +214,7 @@ function PageHero() {
 
   // actions
   let actions = [];
-  if ([ROLES.IA, ROLES.TL].includes(user.role) && (view === 'dashboard' || view === 'leads')) {
+  if ([ROLES.IA, ROLES.TL].includes(user.role) && view === 'leads') {
     actions.push(<button key="add-lead" className="btn btn-p" onClick={() => openModal('add-lead')}><Mi>add</Mi>Add Customer</button>);
     actions.push(<button key="import" className="btn btn-g" onClick={() => openModal('import')}><Mi>upload</Mi>Import</button>);
   }
