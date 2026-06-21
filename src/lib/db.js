@@ -384,14 +384,24 @@ export function deletePropertyFn(id) {
 }
 
 // ── Unit booking (seat-style) ──
+// Build a unit list from the "saleable unit codes" text (e.g. "01, 02, A-4"),
+// falling back to U-01…U-N from Total units. Existing units with the same code
+// keep their status (hold/booked/sold), so editing codes never wipes live data.
+export function unitsFromCodes(saleableUnits, totalUnits, existing = []) {
+  const codes = (saleableUnits || '')
+    .split(/[\n,;/]+|\s{2,}/)
+    .map(s => s.trim())
+    .filter(Boolean);
+  const list = codes.length
+    ? codes
+    : Array.from({ length: totalUnits || 0 }, (_, i) => 'U-' + String(i + 1).padStart(2, '0'));
+  const byNo = new Map((existing || []).map(u => [u.no, u]));
+  return list.map(no => byNo.get(no) || ({ no, status: 'available', heldBy: null, heldByName: '', heldAt: null }));
+}
+
 export function genUnits(p) {
   if (p.units && p.units.length) return p.units;
-  const n = p.totalUnits || 0;
-  const arr = [];
-  for (let i = 1; i <= n; i++) {
-    arr.push({ no: 'U-' + String(i).padStart(2, '0'), status: 'available', heldBy: null, heldByName: '', heldAt: null });
-  }
-  return arr;
+  return unitsFromCodes(p.saleableUnits, p.totalUnits, []);
 }
 
 // action: 'lock' | 'book' | 'sold' | 'available' ; lead = {id,name}
@@ -403,7 +413,10 @@ export function setUnitStatus(propId, unitNo, action, user, lead, meta = {}) {
     const p = (db.properties || []).find(x => x.id === propId);
     if (!p) return;
     propName = p.name;
-    if (!p.units || !p.units.length) p.units = genUnits(p);
+    // Keep the stored units in step with the saleable codes (so actions target the
+    // same units the grid shows), preserving existing statuses by matching code.
+    if (p.saleableUnits && p.saleableUnits.trim()) p.units = unitsFromCodes(p.saleableUnits, p.totalUnits, p.units);
+    else if (!p.units || !p.units.length) p.units = genUnits(p);
     const u = p.units.find(x => x.no === unitNo);
     if (!u) return;
     if (action === 'available') {

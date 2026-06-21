@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import Mi from '../Mi.jsx';
 import { useApp } from '../../context/AppContext.jsx';
-import { getProperty, genUnits, setUnitStatus, getLeads } from '../../lib/db.js';
+import { getProperty, genUnits, unitsFromCodes, setUnitStatus, getLeads } from '../../lib/db.js';
 import { fmtBDT } from '../../lib/helpers.js';
 import { ROLES } from '../../lib/constants.js';
 
@@ -25,7 +25,11 @@ export default function UnitBookingModal() {
   if (!p) return <div className="mov on" onClick={closeModal} />;
 
   const isAdmin = user?.role === ROLES.MGMT;
-  const units = (p.units && p.units.length) ? p.units : genUnits(p);
+  // Saleable codes are authoritative for the grid — derive from them (keeping any
+  // existing hold/booked/sold status by matching code). Else use existing/generated.
+  const units = (p.saleableUnits && p.saleableUnits.trim())
+    ? unitsFromCodes(p.saleableUnits, p.totalUnits, p.units)
+    : ((p.units && p.units.length) ? p.units : genUnits(p));
   const counts = units.reduce((a, u) => { a[u.status] = (a[u.status] || 0) + 1; return a; }, {});
   const selUnit = sel ? units.find(u => u.no === sel) : null;
   const mine = selUnit && selUnit.heldBy === user.id;
@@ -76,12 +80,17 @@ export default function UnitBookingModal() {
             <div className="ub-grid">
               {units.map(u => {
                 const n = u.no.replace('U-', '');
+                // Held/booked/sold units can't be picked by an agent (admin still can,
+                // to manage them). Hovering shows who holds it.
+                const blocked = u.status !== 'available' && !isAdmin;
+                const who = u.clientName || u.heldByName;
                 return (
                   <button
                     key={u.no}
-                    className={`ub-seat ub-${u.status}${sel === u.no ? ' ub-sel' : ''}`}
-                    title={u.clientName ? `${LABEL[u.status]} · ${u.clientName}` : (u.heldByName ? `${LABEL[u.status]} · ${u.heldByName}` : LABEL[u.status])}
-                    onClick={() => setSel(u.no)}
+                    className={`ub-seat ub-${u.status}${sel === u.no ? ' ub-sel' : ''}${blocked ? ' ub-blocked' : ''}`}
+                    title={who ? `${LABEL[u.status]} · ${who}` : LABEL[u.status]}
+                    aria-disabled={blocked}
+                    onClick={() => { if (!blocked) setSel(u.no); }}
                   >
                     {n}
                   </button>

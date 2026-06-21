@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import Mi from '../Mi.jsx';
 import { useApp } from '../../context/AppContext.jsx';
-import { addPropertyFn, updatePropertyFn } from '../../lib/db.js';
+import { addPropertyFn, updatePropertyFn, unitsFromCodes } from '../../lib/db.js';
 import { PROPERTY_TYPES, PROPERTY_STATUS } from '../../lib/constants.js';
 
 const BLANK = {
@@ -71,6 +71,10 @@ export default function PropertyFormModal() {
       images: [f.img0, f.img1, f.img2].map(s => s.trim()).filter(Boolean),
       documents: docs.filter(d => d.url && d.url.trim()).map(d => ({ type: d.type, name: (d.name || '').trim(), url: d.url.trim() })),
     };
+    // Rebuild the bookable unit grid from the saleable codes (preserving statuses of
+    // matching codes). Skip if nothing to build so existing units aren't wiped.
+    const codeUnits = unitsFromCodes(data.saleableUnits, data.totalUnits, isEdit ? (propEdit.units || []) : []);
+    if (codeUnits.length) data.units = codeUnits;
     if (isEdit) { updatePropertyFn(propEdit.id, data); showToast('Property updated', 'ok'); }
     else { addPropertyFn(data); showToast('Property added', 'ok'); }
     refreshDB();

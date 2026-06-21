@@ -7771,8 +7771,8 @@ textarea.fi {
 }
 
 .ubL-available {
-  background: var(--surf2);
-  border-color: var(--bd2)
+  background: rgba(52, 211, 153, .22);
+  border-color: var(--green)
 }
 
 .ubL-locked {
@@ -7781,8 +7781,8 @@ textarea.fi {
 }
 
 .ubL-booked {
-  background: rgba(52, 211, 153, .22);
-  border-color: var(--green)
+  background: rgba(56, 189, 248, .22);
+  border-color: #38BDF8
 }
 
 .ubL-sold {
@@ -7819,8 +7819,9 @@ textarea.fi {
 }
 
 .ub-available {
-  background: var(--surf2);
-  color: var(--t1)
+  background: rgba(52, 211, 153, .16);
+  border-color: rgba(52, 211, 153, .55);
+  color: var(--green)
 }
 
 .ub-locked {
@@ -7830,9 +7831,19 @@ textarea.fi {
 }
 
 .ub-booked {
-  background: rgba(52, 211, 153, .18);
-  border-color: rgba(52, 211, 153, .55);
-  color: var(--green)
+  background: rgba(56, 189, 248, .16);
+  border-color: rgba(56, 189, 248, .55);
+  color: #38BDF8
+}
+
+.ub-blocked {
+  cursor: not-allowed;
+  opacity: .85
+}
+
+.ub-blocked:hover {
+  transform: none;
+  border-color: currentColor
 }
 
 .ub-sold {
