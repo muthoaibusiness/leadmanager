@@ -82,8 +82,9 @@ export function mergeDB(remote, local) {
   const leads = [...cloudLeads, ...freshLocal];
   return {
     companies: mergeArr(r.companies, l.companies),
-    users: mergeArr(r.users, l.users),
-    teams: mergeArr(r.teams, l.teams),
+    // users/teams: union cloud+local but never resurrect a tombstoned (deleted) id
+    users: mergeArr(r.users, l.users).filter(u => !deleted.has(u.id)),
+    teams: mergeArr(r.teams, l.teams).filter(t => !deleted.has(t.id)),
     leads,
     targets: mergeArr(r.targets, l.targets),
     deletionLog: tomb,
@@ -797,17 +798,40 @@ export function setTargetFn(userId, val) {
 export function createUserFn(name, email, password, phone, role, currentUser) {
   const id = 'u' + uid();
   const companyId = currentUser.companyId; // inherit the admin's company
+  const stamp = now_();
   if (role === ROLES.TL) {
     const tid = 't' + uid();
     mutate(db => {
       db.teams = db.teams || [];
-      db.teams.push({ id: tid, name: name + "'s Team", leadId: id, companyId });
-      db.users.push({ id, name, email, password: password || '1234', phone: phone || '', role, teamId: tid, companyId });
+      db.teams.push({ id: tid, name: name + "'s Team", leadId: id, companyId, createdAt: stamp, updatedAt: stamp });
+      db.users.push({ id, name, email, password: password || '1234', phone: phone || '', role, teamId: tid, companyId, isActive: true, createdAt: stamp, updatedAt: stamp });
     });
   } else {
-    mutate(db => { db.users.push({ id, name, email, password: password || '1234', phone: phone || '', role, teamId: currentUser.teamId, companyId }); });
+    mutate(db => { db.users.push({ id, name, email, password: password || '1234', phone: phone || '', role, teamId: currentUser.teamId, companyId, isActive: true, createdAt: stamp, updatedAt: stamp }); });
   }
   return id;
+}
+
+// Delete a user and persist it: tombstone (so the cloud snapshot can't resurrect
+// it on reload) + hard-delete from Supabase. If a Team Lead is removed, their team
+// is deleted too and its agents are unassigned.
+export function deleteUserFn(userId, currentUser) {
+  const db = getDB();
+  const u = db.users.find(x => x.id === userId);
+  if (!u) return;
+  const teamToKill = (u.role === ROLES.TL && u.teamId) ? u.teamId : null;
+  mutate(d => {
+    d.users = d.users.filter(x => x.id !== userId);
+    if (teamToKill) {
+      d.teams = (d.teams || []).filter(t => t.id !== teamToKill);
+      d.users.forEach(x => { if (x.teamId === teamToKill) { x.teamId = null; x.updatedAt = now_(); } });
+    }
+    d.deletionLog = d.deletionLog || [];
+    d.deletionLog.push({ id: userId, kind: 'user', name: u.name, status: u.role, deletedBy: currentUser?.name || '', deletedAt: now_() });
+    if (teamToKill) d.deletionLog.push({ id: teamToKill, kind: 'team', name: u.name + "'s Team", deletedBy: currentUser?.name || '', deletedAt: now_() });
+  });
+  sbDelete('users', [userId]);
+  if (teamToKill) sbDelete('teams', [teamToKill]);
 }
 
 // ── Companies (multi-tenant) ──

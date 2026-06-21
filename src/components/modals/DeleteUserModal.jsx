@@ -1,9 +1,9 @@
 import Mi from '../Mi.jsx';
 import { useApp } from '../../context/AppContext.jsx';
-import { getDB, mutate } from '../../lib/db.js';
+import { getDB, deleteUserFn } from '../../lib/db.js';
 
 export default function DeleteUserModal() {
-  const { modal, closeModal, deleteUserId, setDeleteUserId, refreshDB, showToast } = useApp();
+  const { modal, closeModal, deleteUserId, setDeleteUserId, refreshDB, showToast, user } = useApp();
   const isOpen = modal === 'del-user';
 
   const db = getDB();
@@ -14,7 +14,7 @@ export default function DeleteUserModal() {
     const db2 = getDB();
     const hasLeads = db2.leads.some(l => l.assignedTo === deleteUserId);
     if (hasLeads) { closeModal(); showToast('Cannot delete — user has active leads assigned', 'err'); return; }
-    mutate(db3 => { db3.users = db3.users.filter(u => u.id !== deleteUserId); });
+    deleteUserFn(deleteUserId, user); // tombstone + cloud delete so it stays gone after refresh
     setDeleteUserId(null);
     closeModal();
     refreshDB();
