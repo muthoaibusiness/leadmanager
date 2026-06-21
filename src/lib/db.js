@@ -729,6 +729,19 @@ export function setFollowUpFn(leadId, days, user) {
   addAct(leadId, { type: 'FOLLOW_UP', description: 'Follow-up reminder set for ' + days + ' day' + (days == 1 ? '' : 's') + ' — ' + new Date(iso).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }), userId: user.id, userName: user.name, durationSeconds: 0 });
 }
 
+// Schedule a follow-up at an exact date+time (ISO string).
+export function setFollowUpAt(leadId, iso, user) {
+  updLead(leadId, { nextFollowup: iso });
+  const when = new Date(iso).toLocaleString('en-GB', { weekday: 'short', day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
+  addAct(leadId, { type: 'FOLLOW_UP', description: 'Follow-up scheduled for ' + when, userId: user.id, userName: user.name, durationSeconds: 0 });
+}
+
+// Mark a follow-up task as done — clears the reminder.
+export function clearFollowup(leadId, user) {
+  updLead(leadId, { nextFollowup: null });
+  addAct(leadId, { type: 'FOLLOW_UP', description: 'Follow-up completed', userId: user.id, userName: user.name, durationSeconds: 0 });
+}
+
 export function markLostFn(leadId, reason, user) {
   updLead(leadId, { status: 'DEAL_CLOSED_LOST', dealStatus: 'LOST' });
   addAct(leadId, { type: 'DEAL', description: 'Deal LOST', userId: user.id, userName: user.name, durationSeconds: 0 });

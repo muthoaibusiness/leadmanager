@@ -13,7 +13,6 @@ export const NAV_SCOPES = {
   leads: ALL_ROLES,
   pipeline: ALL_ROLES,
   properties: ALL_ROLES,
-  bookings: ALL_ROLES,
   reports: ['MANAGEMENT', 'TEAM_LEAD'],
   team: ['TEAM_LEAD'],
   users: ['MANAGEMENT'],

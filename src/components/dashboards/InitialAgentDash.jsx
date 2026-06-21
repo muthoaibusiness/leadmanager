@@ -1,15 +1,15 @@
 import { useMemo } from 'react';
 import { useApp } from '../../context/AppContext.jsx';
-import { getLeads, getDB } from '../../lib/db.js';
+import { getLeads, getDB, clearFollowup } from '../../lib/db.js';
 import StatCard from '../StatCard.jsx';
 import TargetCard from './TargetCard.jsx';
 import DashGreeting from './DashGreeting.jsx';
+import SuccessGauge from '../SuccessGauge.jsx';
 import Mi from '../Mi.jsx';
 import { scoreLead, scoreLabel } from '../../lib/helpers.js';
 import { STATUS_LABELS, SRC_LABELS } from '../../lib/constants.js';
 
 const CLOSED = ['DEAL_CLOSED_WON', 'DEAL_CLOSED_LOST', 'NOT_INTERESTED'];
-const REACHED_MEETING = ['MEETING_SET', 'SITE_VISIT_SCHEDULED', 'SITE_VISIT_DONE', 'NEGOTIATING', 'DEAL_CLOSED_WON'];
 
 // Why a lead needs a touch now + its priority. 0 overdue · 1 never called · 2 due today
 function queueReason(lead, touched, todayStart, todayEnd) {
@@ -21,7 +21,7 @@ function queueReason(lead, touched, todayStart, todayEnd) {
 }
 
 export default function InitialAgentDash() {
-  const { user, dbVersion, setPanLead, nav } = useApp();
+  const { user, dbVersion, setPanLead, nav, refreshDB, showToast } = useApp();
   void dbVersion; // re-render when DB changes
   const db = getDB();
   const leads = getLeads(user);
@@ -44,18 +44,19 @@ export default function InitialAgentDash() {
 
     const untouched = active.filter(l => !touched(l));
     const myActs = Object.values(acts).flat();
-    const callsToday = myActs.filter(a => a.userId === user.id && a.type === 'CALL' && new Date(a.timestamp) >= todayStart).length;
+    const myCallsToday = myActs.filter(a => a.userId === user.id && a.type === 'CALL' && new Date(a.timestamp) >= todayStart);
+    const callsToday = myCallsToday.length;
+    // Talk time today = sum of logged call durations (seconds → minutes).
+    const talkSecsToday = myCallsToday.reduce((s, a) => s + (a.durationSeconds || 0), 0);
+    const talkMinsToday = Math.round(talkSecsToday / 60);
     const meetingsToday = db.leads.filter(l => l.meetingSetBy === user.id && l.meetingSetDate && new Date(l.meetingSetDate) >= todayStart).length;
-    const reached = leads.filter(l => l.meetingSetBy === user.id || REACHED_MEETING.includes(l.status)).length;
-    const conv = leads.length ? Math.round(reached / leads.length * 100) : 0;
 
-    // ── Today's meetings — visits scheduled today on my / forwarded leads ──
-    const meetings = db.leads
-      .filter(l => (l.assignedTo === user.id || l.meetingSetBy === user.id) && l.meetingDate &&
-        new Date(l.meetingDate) >= todayStart && new Date(l.meetingDate) <= todayEnd)
-      .sort((a, b) => new Date(a.meetingDate) - new Date(b.meetingDate));
+    // ── Follow-ups due today (+ overdue) — the task list ──
+    const followToday = active
+      .filter(l => l.nextFollowup && new Date(l.nextFollowup) <= todayEnd)
+      .sort((a, b) => new Date(a.nextFollowup) - new Date(b.nextFollowup));
 
-    return { now, queue, untouched, callsToday, meetingsToday, conv, active, meetings };
+    return { now, todayStart, queue, untouched, callsToday, talkMinsToday, meetingsToday, active, followToday };
   }, [leads, db, user.id, dbVersion]);
 
   const QUEUE_CAP = 8;
@@ -73,8 +74,49 @@ export default function InitialAgentDash() {
       <div className="grid-4">
         <StatCard val={view.untouched.length} label="Untouched" tone={view.untouched.length ? 'warn' : ''} sub="need first call" />
         <StatCard val={view.callsToday} label="Calls Today" sub="logged" />
+        <StatCard val={view.talkMinsToday + ' min'} label="Talk Time" tone={view.talkMinsToday ? 'accent' : ''} sub="today" />
         <StatCard val={view.meetingsToday} label="Meetings Set" tone={view.meetingsToday ? 'good' : ''} sub="today" />
-        <StatCard val={view.conv + '%'} label="To Meeting" tone="accent" sub="conversion" />
+      </div>
+
+      {/* Follow-ups due today — task list */}
+      <div className="iad-fu">
+        <div className="iad-q-hd">
+          <span className="iad-q-ttl">Follow-ups due today</span>
+          {view.followToday.length > 0 && <span className="iad-q-ct">{view.followToday.length}</span>}
+        </div>
+        {view.followToday.length === 0 ? (
+          <div className="iad-fu-empty">No follow-ups due today. Scheduled ones show here when their day arrives.</div>
+        ) : (
+          <table className="fut">
+            <thead>
+              <tr><th>Customer</th><th>Due</th><th>Status</th><th aria-label="actions" /></tr>
+            </thead>
+            <tbody>
+              {view.followToday.map(l => {
+                const fu = new Date(l.nextFollowup);
+                const overdue = fu < view.todayStart;
+                const time = fu.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+                const day = fu.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' });
+                return (
+                  <tr key={l.id} onClick={() => setPanLead(l.id)}>
+                    <td><div className="fut-name">{l.name}</div><div className="fut-sub">{l.phone} · {SRC_LABELS[l.source] || l.source}</div></td>
+                    <td><span className={`fut-due${overdue ? ' over' : ''}`}>{overdue ? `Overdue · ${day}` : time}</span></td>
+                    <td><span className="fut-status">{STATUS_LABELS[l.status] || l.status}</span></td>
+                    <td>
+                      <div className="fut-act">
+                        <a className="fut-ico" href={`tel:${l.phone}`} title="Call" onClick={e => e.stopPropagation()}><Mi>call</Mi></a>
+                        <button className="fut-ico fut-done" title="Mark done"
+                          onClick={e => { e.stopPropagation(); clearFollowup(l.id, user); refreshDB(); showToast('Follow-up completed', 'ok'); }}>
+                          <Mi>check</Mi>
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        )}
       </div>
 
       {/* Main (call list) + rail (target · today's meetings) */}
@@ -116,33 +158,10 @@ export default function InitialAgentDash() {
           </div>
         </div>
 
-        {/* Rail: monthly target + today's meetings */}
+        {/* Rail: monthly target + success rate */}
         <aside className="iad-rail">
           <TargetCard user={user} />
-          <div className="iad-queue">
-            <div className="iad-q-hd">
-              <span className="iad-q-ttl">Today's meetings</span>
-              {view.meetings.length > 0 && <span className="iad-q-ct">{view.meetings.length}</span>}
-            </div>
-            {view.meetings.length === 0 ? (
-              <div className="iad-q-empty iad-q-empty-quiet">
-                <span>No meetings scheduled today.</span>
-              </div>
-            ) : (
-              <div className="iad-q-list">
-                {view.meetings.map(l => (
-                  <div key={l.id} className="iad-q-row" onClick={() => setPanLead(l.id)}>
-                    <div className="iad-mt-time">{new Date(l.meetingDate).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}</div>
-                    <div className="iad-q-info">
-                      <div className="iad-q-name">{l.name}</div>
-                      <div className="iad-q-meta">{l.meetingLocation || 'Site visit'} · {STATUS_LABELS[l.status] || l.status}</div>
-                    </div>
-                    <a className="iad-q-call" href={`tel:${l.phone}`} title="Call" onClick={e => e.stopPropagation()}><Mi>call</Mi></a>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
+          <SuccessGauge user={user} />
         </aside>
       </div>
 

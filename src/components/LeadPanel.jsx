@@ -3,7 +3,7 @@ import Mi from './Mi.jsx';
 import { useApp } from '../context/AppContext.jsx';
 import LogCall from './LogCall.jsx';
 import { getLead, getActs, changeStatus, doneVisit, deleteLead, updLead, addAct } from '../lib/db.js';
-import { fmtD, fmtDT, fmtBDT, rlabel, scoreLead, scoreLabel } from '../lib/helpers.js';
+import { fmtD, fmtDT, fmtBDT, rlabel, scoreLead, scoreLabel, leadDisplayStatus } from '../lib/helpers.js';
 import ActivityTimeline from './ActivityTimeline.jsx';
 import { ROLES, STATUS_LABELS, SRC_LABELS } from '../lib/constants.js';
 
@@ -19,7 +19,6 @@ function LeadInfo({ l }) {
 
   // Spec sheet — label/value rows, shown only when there's a value.
   const specs = [];
-  specs.push(['Assigned', `${l.assignedToName || '—'}${l.assignedRole ? ' · ' + rlabel(l.assignedRole) : ''}`]);
   if (l.propertyInterest) specs.push(['Property', l.propertyInterest + (l.budget ? ' · ' + fmtBDT(l.budget) : '')]);
   if (l.dealValue > 0) specs.push(['Deal value', fmtBDT(l.dealValue)]);
   if (l.meetingDate) specs.push(['Site visit', fmtDT(l.meetingDate) + (l.meetingLocation ? ' · ' + l.meetingLocation : '')]);
@@ -36,7 +35,9 @@ function LeadInfo({ l }) {
         <div className="ld-eyebrow">{eyebrow}</div>
         <h2 className="ld-name">{l.name || 'Unnamed customer'}</h2>
         <div className="ld-tags">
-          <span className={`bdg ${sclass(l.status)}`}>{STATUS_LABELS[l.status] || l.status}</span>
+          {(() => { const ds = leadDisplayStatus(l); return <span className={`bdg ${ds.cls}`}>{ds.label}</span>; })()}
+          {l.nextFollowup && ['NEW', 'CONTACTED', 'INTERESTED'].includes(l.status) &&
+            <span className="bdg s-follow_up"><Mi>alarm</Mi>{fmtDT(l.nextFollowup)}</span>}
         </div>
       </div>
 
@@ -55,14 +56,27 @@ function LeadInfo({ l }) {
         </div>
       )}
 
-      <div className="ld-specs">
-        {specs.map(([k, v]) => (
-          <div key={k} className="ld-spec">
-            <span className="ld-spec-k">{k}</span>
-            <span className="ld-spec-v">{v}</span>
-          </div>
-        ))}
+      <div className="ld-agent">
+        <div className="ld-ag-cell">
+          <Mi>person</Mi>
+          <div className="ld-ag-tx"><div className="ld-ag-l">Assigned</div><div className="ld-ag-v">{l.assignedToName || 'Unassigned'}</div></div>
+        </div>
+        <div className="ld-ag-cell">
+          <Mi>badge</Mi>
+          <div className="ld-ag-tx"><div className="ld-ag-l">Role</div><div className="ld-ag-v">{l.assignedRole ? rlabel(l.assignedRole) : '—'}</div></div>
+        </div>
       </div>
+
+      {specs.length > 0 && (
+        <div className="ld-specs">
+          {specs.map(([k, v]) => (
+            <div key={k} className="ld-spec">
+              <span className="ld-spec-k">{k}</span>
+              <span className="ld-spec-v">{v}</span>
+            </div>
+          ))}
+        </div>
+      )}
 
       <div className="ld-stats">
         {stats.map(([lbl, n]) => (
@@ -116,9 +130,16 @@ function Actions({ l }) {
         <Mi>forward_to_inbox</Mi>Forward to Meeting Agent
       </button>
     );
-    if (['NEW', 'CONTACTED', 'INTERESTED'].includes(l.status)) btns.push(
+    // Before contact (NEW, not yet connected) — only the not-interested option.
+    if (l.status === 'NEW') btns.push(
       <button key="notint" className="btn btn-g btn-full" onClick={doNotInterested}>
         <Mi>thumb_down</Mi>Not Interested
+      </button>
+    );
+    // After contact — follow-up replaces not-interested; keep nurturing the lead.
+    if (['CONTACTED', 'INTERESTED'].includes(l.status)) btns.push(
+      <button key="followup" className="btn btn-full" style={{ background: 'var(--orange-l)', color: 'var(--orange)' }} onClick={() => openModal('follow-up')}>
+        <Mi>alarm</Mi>Follow-up
       </button>
     );
   }

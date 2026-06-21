@@ -3,13 +3,14 @@ import { useApp } from '../context/AppContext.jsx';
 import { clearSession } from '../lib/db.js';
 import { avc, ini, rlabel } from '../lib/helpers.js';
 import { canSee } from '../lib/constants.js';
+import AccountSwitcher from './AccountSwitcher.jsx';
 
 // Grouped, role-scoped navigation (Muthoclo admin pattern).
 // Sections render a label + their visible items; items may expand children
 // when active. Visibility is driven by canSee(role, key).
 const SECTIONS = [
   { label: null, keys: ['dashboard', 'companies', 'reports'] },
-  { label: 'Sales Team', keys: ['leads', 'pipeline', 'properties', 'bookings'] },
+  { label: 'Sales Team', keys: ['leads', 'pipeline', 'properties'] },
   { label: 'Admin', keys: ['team', 'users', 'accounts'] },
 ];
 
@@ -71,6 +72,8 @@ export default function Sidebar() {
             <Mi>close</Mi>
           </button>
         </div>
+
+        <div className="sb-switch"><AccountSwitcher /></div>
 
         <nav className="sb-nav">
           {SECTIONS.map((sec, si) => {

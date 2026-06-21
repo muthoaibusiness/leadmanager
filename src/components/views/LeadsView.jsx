@@ -4,6 +4,8 @@ import { STATUS_LABELS, ROLES } from '../../lib/constants.js';
 import LeadTable from '../LeadTable.jsx';
 import SearchBox from '../SearchBox.jsx';
 
+const FU_OVERLAY = ['NEW', 'CONTACTED', 'INTERESTED'];
+
 export default function LeadsView() {
   const {
     user, search, statusFilter, setStatusFilter,
@@ -15,7 +17,8 @@ export default function LeadsView() {
   else if (teamFilter) leads = leads.filter(l => l.teamId === teamFilter);
 
   let disp = leads;
-  if (statusFilter !== 'ALL') disp = disp.filter(l => l.status === statusFilter);
+  if (statusFilter === 'FOLLOW_UP') disp = disp.filter(l => l.nextFollowup && FU_OVERLAY.includes(l.status));
+  else if (statusFilter !== 'ALL') disp = disp.filter(l => l.status === statusFilter);
   if (search) { const q = search.toLowerCase(); disp = disp.filter(l => l.name.toLowerCase().includes(q) || l.phone.includes(q) || (l.propertyInterest || '').toLowerCase().includes(q)); }
   if (dateRange?.range) { const { start, end } = dateRange.range; disp = disp.filter(l => { const d = new Date(l.createdAt); return d >= start && d <= end; }); }
 
@@ -36,9 +39,10 @@ export default function LeadsView() {
     <>
       {/* Compact pill filter bar — everything applies live, no apply button. */}
       <div className="fbar">
-        <SearchBox placeholder="Name, phone or property..." style={{ flex: '0 1 300px', minWidth: '180px' }} />
+        <SearchBox placeholder="" style={{ flex: '0 1 300px', minWidth: '180px' }} />
         <select className="fsel" value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
           <option value="ALL">All status</option>
+          <option value="FOLLOW_UP">Follow-up</option>
           {Object.entries(STATUS_LABELS).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
         </select>
         {canFilterAgents && (

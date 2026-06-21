@@ -4,6 +4,7 @@ import { getLeads, getDB } from '../../lib/db.js';
 import StatCard from '../StatCard.jsx';
 import TargetCard from './TargetCard.jsx';
 import DashGreeting from './DashGreeting.jsx';
+import SuccessGauge from '../SuccessGauge.jsx';
 import Mi from '../Mi.jsx';
 import { scoreLead, scoreLabel } from '../../lib/helpers.js';
 import { STATUS_LABELS, ROLES } from '../../lib/constants.js';
@@ -109,6 +110,7 @@ export default function MeetingAgentDash() {
         {/* Rail: monthly target + upcoming scheduled visits */}
         <aside className="iad-rail">
           <TargetCard user={user} />
+          <SuccessGauge user={user} />
           <div className="iad-queue">
             <div className="iad-q-hd">
               <span className="iad-q-ttl">Upcoming visits</span>

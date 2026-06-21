@@ -34,7 +34,6 @@ export default function SearchBox({ placeholder = 'Search...', style }) {
           <Mi>close</Mi>
         </button>
       )}
-      {!search && <span style={{ fontSize: '11px', color: 'var(--t3)', whiteSpace: 'nowrap', marginLeft: 'auto' }}>/</span>}
     </div>
   );
 }

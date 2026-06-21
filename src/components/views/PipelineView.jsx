@@ -6,28 +6,8 @@ import {
   addStage, renameStage, deleteStage,
 } from '../../lib/db.js';
 import { fmtD, fmtBDT, scoreLead, scoreLabel } from '../../lib/helpers.js';
-
-// Semicircle tick-mark gauge (speedometer style) — matches the reference design.
-function TickGauge({ pct = 0, label }) {
-  const N = 44, cx = 100, cy = 104, rIn = 74, rOut = 96;
-  const p = Math.max(0, Math.min(100, pct));
-  const filled = Math.round((p / 100) * N);
-  const ticks = Array.from({ length: N }, (_, i) => {
-    const a = Math.PI - (i / (N - 1)) * Math.PI; // 180° → 0° over the top
-    const cos = Math.cos(a), sin = Math.sin(a);
-    return { x1: cx + rIn * cos, y1: cy - rIn * sin, x2: cx + rOut * cos, y2: cy - rOut * sin, on: i < filled };
-  });
-  return (
-    <div className="pks-gwrap">
-      <svg viewBox="0 0 200 116" className="pks-gsvg">
-        {ticks.map((t, i) => (
-          <line key={i} x1={t.x1} y1={t.y1} x2={t.x2} y2={t.y2} stroke={t.on ? 'var(--accent)' : 'var(--bd2)'} strokeWidth="2.6" strokeLinecap="round" />
-        ))}
-      </svg>
-      <div className="pks-gctr"><div className="pks-gpct">{p}%</div><div className="pks-glbl">{label}</div></div>
-    </div>
-  );
-}
+import { successRate } from '../../lib/successRate.js';
+import { TickGauge } from '../SuccessGauge.jsx';
 
 // Deal value from a forwarded offer (OFFER activity), falling back to budget.
 function dealValueOf(lead, acts) {
@@ -65,9 +45,9 @@ export default function PipelineView() {
 
   // ── Summary stats strip (real data) ──
   const allMine = getLeads(user);
-  const wonN = allMine.filter(l => l.status === 'DEAL_CLOSED_WON').length;
-  const lostN = allMine.filter(l => l.status === 'DEAL_CLOSED_LOST').length;
-  const winRate = wonN + lostN ? Math.round(wonN / (wonN + lostN) * 100) : 0;
+  // IA/MA are measured over every lead they ever touched (assigned or forwarded on).
+  const involved = getLeads(user, { involved: true });
+  const succ = successRate(user, allMine, involved);
   const inProgress = leads.length; // active deals on the board
   const pipelineValue = leads.reduce((s, l) => s + dealValueOf(l, getActs(l.id)), 0);
   const NEW_DAYS = 14;
@@ -116,7 +96,7 @@ export default function PipelineView() {
           </div>
         </div>
         <div className="pks-gauge">
-          <TickGauge pct={winRate} label="Successful deals" />
+          <TickGauge pct={succ.pct} label={`${succ.label} · ${succ.n}/${succ.d}`} />
         </div>
         <button className="pks-stat" onClick={() => nav('leads')}>
           <div className="pks-num">{inProgress}</div>
@@ -138,7 +118,7 @@ export default function PipelineView() {
       )}
 
       <div className="pk-board">
-        {pipeline.stages.map(s => (
+        {pipeline.stages.map((s, si) => (
           <div
             key={s.id}
             className={`pk-col${over === s.id ? ' over' : ''}`}
@@ -158,6 +138,8 @@ export default function PipelineView() {
                 const score = scoreLead(l, acts);
                 const sl = scoreLabel(score);
                 const dealVal = dealValueOf(l, acts);
+                const msgCount = acts.length; // total activity log entries
+                const matCount = acts.filter(a => a.type === 'OFFER').length; // materials / offers sent
                 return (
                 <div
                   key={l.id}
@@ -169,13 +151,14 @@ export default function PipelineView() {
                 >
                   <div className="pk-card-top">
                     <div className="pk-name">{l.name}</div>
-                    <button className="pk-kebab" onClick={e => { e.stopPropagation(); setPanLead(l.id); }} title="Open"><Mi>more_vert</Mi></button>
+                    <span className={`pk-mx pk-score-sm${si >= 1 ? ' glow' : ''}`} style={{ color: s.color }} title={`${sl.label} lead · score ${score} · ${s.name}`}><Mi>bolt</Mi>{score}</span>
                   </div>
                   <div className="pk-desc">{l.dealProjectName || l.propertyInterest || l.company || '—'}</div>
                   <div className="pk-card-ft">
                     <span className="pk-chip"><Mi>event</Mi>{fmtD(l.updatedAt)}</span>
                     {dealVal > 0 && <span className="pk-mx"><Mi>payments</Mi>{fmtBDT(dealVal)}</span>}
-                    <span className="pk-mx pk-score-sm" style={{ color: sl.color }} title={`${sl.label} lead · score ${score}`}><Mi>bolt</Mi>{score}</span>
+                    <span className="pk-mx" style={{ marginLeft: 'auto' }} title={`${msgCount} activities`}><Mi>chat_bubble</Mi>{msgCount}</span>
+                    <span className="pk-mx" title={`${matCount} materials sent`}><Mi>attach_file</Mi>{matCount}</span>
                   </div>
                 </div>
                 );

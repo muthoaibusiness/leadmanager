@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import Mi from './Mi.jsx';
 import Pagination from './Pagination.jsx';
-import { fmtD, fmtBDT } from '../lib/helpers.js';
+import { fmtD, fmtBDT, leadDisplayStatus } from '../lib/helpers.js';
 import { SRC_LABELS, STATUS_LABELS, ROLES } from '../lib/constants.js';
 import { useApp } from '../context/AppContext.jsx';
 import { bulkDeleteLeads } from '../lib/db.js';
@@ -116,7 +116,7 @@ export default function LeadTable({ leads }) {
               </div>
             </div>
             <div className="lt-cell">
-              <span className={`bdg ${sclass(l.status)}`}>{STATUS_LABELS[l.status] || l.status}</span>
+              {(() => { const ds = leadDisplayStatus(l); return <span className={`bdg ${ds.cls}`}>{ds.label}</span>; })()}
             </div>
             <div className="lt-cell">
               <span className="lt-date">{fmtD(l.createdAt)}</span>

@@ -29,7 +29,25 @@ export function AppProvider({ children }) {
   const [dbVersion, setDbVersion] = useState(0);
   const [credInfo, setCredInfo] = useState(null);
   const [dateRange, setDateRange] = useState({ preset: 'allTime', range: null });
+  const [impersonator, setImpersonator] = useState(null); // the real admin while viewing as another account
   const searchRef = useRef(null);
+
+  // Admin account switcher — become any account without email/password.
+  // The session is never changed, so a page reload always returns to the real admin.
+  const impersonate = useCallback((target) => {
+    if (!target) return;
+    setImpersonator(prev => prev || user);
+    setUser(target);
+    setView(target.role === 'MASTER' ? 'companies' : 'dashboard');
+    setSidebarOpen(false);
+  }, [user]);
+
+  const stopImpersonate = useCallback(() => {
+    setImpersonator(prev => {
+      if (prev) { setUser(prev); setView(prev.role === 'MASTER' ? 'companies' : 'dashboard'); }
+      return null;
+    });
+  }, []);
 
   const refreshDB = useCallback(() => {
     setDbVersion(v => v + 1);
@@ -80,6 +98,7 @@ export function AppProvider({ children }) {
     dbVersion, refreshDB,
     credInfo, setCredInfo,
     dateRange, setDateRange,
+    impersonator, impersonate, stopImpersonate,
     searchRef,
     nav,
     db,

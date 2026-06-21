@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useApp } from './context/AppContext.jsx';
-import { getDB, getSession, setSession, tryLogin, saveDB, checkFollowUpReminders, getLeads, getProperties, expireHolds, migrateTenancy, mergeDB, findDuplicateLeads, purgeDemoSeed, dedupeLeads, reconcileDeletions } from './lib/db.js';
+import { getDB, getSession, setSession, tryLogin, saveDB, checkFollowUpReminders, getLeads, getProperties, expireHolds, migrateTenancy, mergeDB, purgeDemoSeed, dedupeLeads, reconcileDeletions } from './lib/db.js';
 import { seedDB, SEED_PROPERTIES, DEMO_PROPERTIES } from './lib/seed.js';
 import { sbLoad, sbSubscribeNotifs } from './lib/supabase.js';
 import { pushNotify, requestNotifyPermission } from './lib/pushNotify.js';
@@ -9,9 +9,10 @@ import { ROLES } from './lib/constants.js';
 
 import Mi from './components/Mi.jsx';
 import { SignIn1 } from './components/ui/modern-stunning-sign-in.jsx';
-import { ProgressCircle } from './components/ui/progress.jsx';
+import LoadingRadar from './components/LoadingRadar.jsx';
 import LandingPage from './components/LandingPage.jsx';
 import Sidebar from './components/Sidebar.jsx';
+import ThemeToggle from './components/ThemeToggle.jsx';
 import NotifBell from './components/NotifBell.jsx';
 import LeadPanel from './components/LeadPanel.jsx';
 import Toast from './components/Toast.jsx';
@@ -57,22 +58,16 @@ import BookingModal from './components/modals/BookingModal.jsx';
 function LoadingScreen({ visible }) {
   return (
     <div id="ld" className={visible ? '' : 'out'} style={visible ? {} : { pointerEvents: 'none' }}>
-      <div className="ld-brand">
-        <span className="wlogo wlogo-white">WEPRO<span className="wlogo-accent"> CRM</span></span>
-        <div className="ld-sub">Real Estate CRM</div>
-      </div>
-      <div className="ld-spin" />
+      <LoadingRadar />
     </div>
   );
 }
 
-// ── Post-login loader (shadcn ProgressCircle spinner, adapted) ───────────────
+// ── Post-login loader — radar sweep, no text ─────────────────────────────────
 function PostLoginLoader() {
   return (
     <div className="pl-overlay">
-      <span className="wlogo wlogo-white">WEPRO<span className="wlogo-accent"> CRM</span></span>
-      <ProgressCircle value={25} size={40} strokeWidth={4} className="prog-spin" indicatorClassName="prog-volt" />
-      <div className="pl-text">Loading your workspace…</div>
+      <LoadingRadar />
     </div>
   );
 }
@@ -84,12 +79,6 @@ function LoginPage({ onLogin, onBack }) {
   const [showPw, setShowPw] = useState(false);
   const [err, setErr] = useState('');
   const [loading, setLoading] = useState(false);
-  const [demoOpen, setDemoOpen] = useState(false);
-  const db = getDB();
-
-  const order = { MANAGEMENT: 0, TEAM_LEAD: 1, MEETING_AGENT: 2, INITIAL_AGENT: 3 };
-  const users = [...db.users]
-    .sort((a, b) => (order[a.role] ?? 9) - (order[b.role] ?? 9));
 
   const doLogin = () => {
     if (!email || !pw) { setErr('Enter email and password.'); return; }
@@ -98,7 +87,7 @@ function LoginPage({ onLogin, onBack }) {
     setTimeout(() => {
       const u = tryLogin(email, pw);
       setLoading(false);
-      if (!u) { setErr('Incorrect credentials. Use a demo account below.'); return; }
+      if (!u) { setErr('Incorrect email or password.'); return; }
       setSession(u);
       onLogin(u);
     }, 500);
@@ -128,31 +117,6 @@ function LoginPage({ onLogin, onBack }) {
           password={pw} setPassword={setPw}
           error={err} loading={loading}
           onSignIn={doLogin} onKeyDown={handleKey} onBack={onBack}
-          footer={
-            <div className="demo-wrap">
-              <button className="demo-toggle" onClick={() => setDemoOpen(v => !v)}>
-                <Mi className="mi-left">person</Mi>
-                Demo Account
-                <Mi className="mi-right" style={{ transform: demoOpen ? 'rotate(180deg)' : 'none' }}>expand_more</Mi>
-              </button>
-              {demoOpen && (
-                <div className="demo-popup">
-                  <div className="demo-popup-hd">Quick access</div>
-                  <div className="demo-popup-list">
-                    {users.map(u => (
-                      <button key={u.id} className="dg-btn" onClick={() => { setEmail(u.email); setPw('1234'); setErr(''); setDemoOpen(false); }}>
-                        <div className="dg-av" style={{ background: `hsl(${u.name.charCodeAt(0) * 13 % 360},55%,45%)` }}>{u.name[0]}</div>
-                        <div>
-                          <div className="dg-name">{u.name}</div>
-                          <div className="dg-role">{rlabel(u.role)}</div>
-                        </div>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-          }
         />
       </div>
     </div>
@@ -220,15 +184,7 @@ function PageHero() {
     actions.push(<button key="add-lead" className="btn btn-p" onClick={() => openModal('add-lead')}><Mi>add</Mi>Add Customer</button>);
     actions.push(<button key="import" className="btn btn-g" onClick={() => openModal('import')}><Mi>upload</Mi>Import</button>);
   }
-  if (view === 'leads' && [ROLES.IA, ROLES.MA, ROLES.TL, ROLES.MGMT].includes(user.role)) {
-    const dupes = findDuplicateLeads(user);
-    const dn = dupes.reduce((s, g) => s + (g.leads.length - 1), 0);
-    actions.push(
-      <button key="dupes" className="btn btn-g" onClick={() => openModal('duplicates')}>
-        <Mi>content_copy</Mi>Duplicates{dn > 0 && <span className="dup-count">{dn}</span>}
-      </button>
-    );
-  }
+  // Duplicate checker button removed — dedup runs automatically on load/import.
   if (view === 'team' && user.role === ROLES.TL) actions.push(<button key="add-agent" className="btn btn-p" onClick={() => { setCreateUserRoles([ROLES.IA, ROLES.MA]); openModal('create-user'); }}><Mi>person_add</Mi>Add Agent</button>);
   if (view === 'users' && user.role === ROLES.MGMT) actions.push(<button key="add-tl" className="btn btn-p" onClick={() => { setCreateUserRoles([ROLES.TL]); openModal('create-user'); }}><Mi>person_add</Mi>Add Team Lead</button>);
   if (view === 'properties' && user.role === ROLES.MGMT) actions.push(<button key="add-prop" className="btn btn-p" onClick={() => { setPropEdit({}); openModal('property-form'); }}><Mi>add</Mi>Add Property</button>);
@@ -283,6 +239,7 @@ function AppShell() {
         <PageHeader />
         <main className="pg-body"><div className={`pg-inner${wide ? ' pg-wide' : ''}`}><PageHero /><PageBody /></div></main>
       </div>
+      <ThemeToggle />
     </div>
   );
 }

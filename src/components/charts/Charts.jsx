@@ -51,7 +51,7 @@ export function Ring({ pct, size = 116, thickness = 12, color = 'var(--volt)', l
       <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
         <g transform={`rotate(-90 ${size / 2} ${size / 2})`}>
           <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="var(--surf2)" strokeWidth={thickness} />
-          <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke={color} strokeWidth={thickness}
+          <circle cx={size / 2} cy={size / 2} r={r} fill="none" style={{ stroke: color }} strokeWidth={thickness}
             strokeLinecap="round" strokeDasharray={`${len} ${c - len}`} />
         </g>
         <text x="50%" y="47%" textAnchor="middle" dominantBaseline="middle" className="cr-val">{p}%</text>

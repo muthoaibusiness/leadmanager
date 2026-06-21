@@ -49,6 +49,43 @@
   --font-display: 'Inter', 'Plus Jakarta Sans', 'Hind Siliguri', sans-serif;
 }
 
+/* ── Light theme — overrides the same tokens; toggled via <html data-theme="light"> ── */
+:root[data-theme="light"] {
+  --bg: #F4F5F7;
+  --surf: #FFFFFF;
+  --surf2: #EEF0F3;
+  --bd: rgba(17, 20, 24, .12);
+  --bd2: rgba(17, 20, 24, .20);
+  --t1: #14171C;
+  --t2: rgba(20, 23, 28, .66);
+  --t3: rgba(20, 23, 28, .45);
+  /* volt lime is unreadable on white as text — use a deep olive that works both
+     as text on light AND as a button background (with white --on-accent). */
+  --accent: #4F7D00;
+  --accent-d: #3E6300;
+  --on-accent: #FFFFFF;
+  --volt: #4F7D00;
+  --blue: #4F7D00;
+  --blue-d: #3E6300;
+  --blue-l: rgba(79, 125, 0, .12);
+  --blue-b: rgba(79, 125, 0, .34);
+  --purple: #4F7D00;
+  --purple-l: rgba(79, 125, 0, .12);
+  --green: #15915F;
+  --green-l: rgba(21, 145, 95, .14);
+  --green-b: rgba(21, 145, 95, .34);
+  --gold: #9A7A12;
+  --orange: #C77A0E;
+  --orange-l: rgba(199, 122, 14, .14);
+  --red: #DC4C4C;
+  --red-l: rgba(220, 76, 76, .12);
+  --teal: #15915F;
+  --teal-l: rgba(21, 145, 95, .14);
+  --sh: 0 1px 3px rgba(17, 20, 24, .10), 0 1px 2px rgba(17, 20, 24, .06);
+  --sh-md: 0 6px 22px rgba(17, 20, 24, .10);
+  --sh-lg: 0 22px 50px rgba(17, 20, 24, .16);
+}
+
 *,
 *::before,
 *::after {
@@ -2661,45 +2698,62 @@ a {
   color: var(--t2)
 }
 
+.tc-noset {
+  font-size: 11px;
+  color: var(--orange);
+  font-weight: 600
+}
+
+.tc-body {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 16px
+}
+
+.tc-info {
+  flex: 1;
+  min-width: 0
+}
+
 .tc-nums {
   display: flex;
   align-items: baseline;
-  gap: 8px;
-  margin-bottom: 14px
+  gap: 7px;
+  margin-bottom: 12px
 }
 
 .tc-cur {
-  font-size: 52px;
+  font-size: 40px;
   font-weight: 800;
   color: var(--t1);
-  letter-spacing: -2px;
+  letter-spacing: -1.5px;
   line-height: 1
 }
 
 .tc-div {
-  font-size: 22px;
+  font-size: 20px;
   color: var(--t3);
   font-weight: 300
 }
 
 .tc-tar {
-  font-size: 30px;
+  font-size: 24px;
   font-weight: 700;
   color: var(--t2)
 }
 
 .tc-unit {
-  font-size: 13px;
-  color: var(--t2);
-  margin-left: 4px
+  font-size: 12px;
+  color: var(--t3);
+  text-transform: capitalize
 }
 
 .prog-track {
-  height: 10px;
+  height: 8px;
   background: var(--bd);
   border-radius: 5px;
-  overflow: hidden;
-  margin-bottom: 12px
+  overflow: hidden
 }
 
 .prog-fill {
@@ -2710,13 +2764,16 @@ a {
 
 .tc-meta {
   display: flex;
-  gap: 20px;
-  flex-wrap: wrap
+  gap: 16px;
+  flex-wrap: wrap;
+  border-top: 1px solid var(--bd);
+  padding-top: 13px
 }
 
 .tc-mi {
   font-size: 12px;
   color: var(--t2);
+  font-weight: 600;
   display: flex;
   align-items: center;
   gap: 5px
@@ -2728,7 +2785,7 @@ a {
 }
 
 .tc-pct {
-  font-size: 13px;
+  font-size: 18px;
   font-weight: 800
 }
 
@@ -9020,7 +9077,10 @@ textarea.fi {
   background: var(--surf2);
   border: 1px solid var(--bd);
   border-radius: 14px;
-  padding: 18px 18px;
+  padding: 26px 18px;
+  min-height: 220px;
+  display: flex;
+  flex-direction: column;
   cursor: grab;
   box-shadow: var(--sh);
   transition: border-color var(--tr), transform var(--tr), box-shadow var(--tr)
@@ -9076,8 +9136,8 @@ textarea.fi {
   display: flex;
   align-items: center;
   gap: 12px;
-  margin-top: 12px;
-  padding-top: 11px;
+  margin-top: auto;
+  padding-top: 12px;
   border-top: 1px solid var(--bd)
 }
 .pk-chip {
@@ -9090,6 +9150,19 @@ textarea.fi {
 .pk-mx .mi { font-size: 15px }
 .pk-score-sm { margin-left: auto; font-weight: 800 }
 .pk-score-sm .mi { color: inherit }
+/* Live-radar ping around the bolt — expanding ring in the stage colour. */
+.pk-score-sm.glow { gap: 12px }
+.pk-score-sm.glow .mi { position: relative }
+.pk-score-sm.glow .mi::after {
+  content: ''; position: absolute; left: 50%; top: 50%;
+  width: 16px; height: 16px; margin: -8px 0 0 -8px; border-radius: 50%;
+  border: 1.5px solid currentColor; pointer-events: none;
+  animation: pk-radar 1.6s ease-out infinite;
+}
+@keyframes pk-radar {
+  0% { transform: scale(.5); opacity: .85; }
+  100% { transform: scale(1.8); opacity: 0; }
+}
 
 .pk-val {
   font-size: 14px;
@@ -9834,3 +9907,139 @@ textarea.fi {
   .la-hint { display: none; }
   .la-feed { max-height: none; }
 }
+
+/* ── Success-rate gauge card (dashboard rail) ──────────────────────────── */
+.sg-card { background: var(--surf); border: 1px solid var(--bd); border-radius: 14px; padding: 14px 16px 6px; }
+.sg-hd { font-size: 12.5px; font-weight: 700; color: var(--t2); letter-spacing: .02em; }
+
+/* ── Follow-ups due today task table (IA dashboard) ────────────────────── */
+.iad-fu { background: var(--surf); border: 1px solid var(--bd); border-radius: 14px; padding: 14px 16px; margin: 14px 0; overflow-x: auto; }
+.fut { width: 100%; border-collapse: collapse; min-width: 460px; }
+.fut th { text-align: left; font-size: 10.5px; font-weight: 600; color: var(--t3); text-transform: uppercase; letter-spacing: .04em; padding: 4px 8px 8px; border-bottom: 1px solid var(--bd); }
+.fut td { padding: 10px 8px; border-bottom: 1px solid var(--bd); vertical-align: middle; }
+.fut tbody tr { cursor: pointer; }
+.fut tbody tr:hover { background: var(--surf2); }
+.fut tbody tr:last-child td { border-bottom: none; }
+.fut-name { font-size: 14px; font-weight: 600; color: var(--t1); }
+.fut-sub { font-size: 12px; color: var(--t3); margin-top: 1px; }
+.fut-due { font-size: 13px; color: var(--t2); font-weight: 650; white-space: nowrap; }
+.fut-due.over { color: var(--red); }
+.fut-status { font-size: 12.5px; color: var(--t2); }
+.fut-act { display: flex; gap: 8px; justify-content: flex-end; }
+.fut-ico { width: 34px; height: 34px; border-radius: 9px; display: grid; place-items: center; background: var(--surf2); border: 1px solid var(--bd2); color: var(--t1); cursor: pointer; }
+.fut-ico .mi { font-size: 18px; }
+.fut-done { color: var(--green); }
+
+/* Follow-up overlay status badge — sky blue, distinct from gold "Meeting Set" */
+.s-follow_up { color: #38BDF8; border-color: rgba(56, 189, 248, .45); }
+.iad-fu-empty { padding: 14px 8px; font-size: 13px; color: var(--t3); }
+
+/* Follow-up filter pill (Leads filter bar) */
+.fpill {
+  display: inline-flex; align-items: center; gap: 6px; height: 40px; padding: 0 16px;
+  border: 1px solid var(--bd); border-radius: 999px; background: var(--surf2);
+  color: var(--t2); font-size: 13px; font-weight: 600; cursor: pointer; white-space: nowrap;
+  flex-shrink: 0; transition: border-color var(--tr), color var(--tr), background var(--tr);
+}
+.fpill .mi { font-size: 17px; }
+.fpill:hover { border-color: var(--bd2); color: var(--t1); }
+.fpill.on { color: #38BDF8; border-color: rgba(56, 189, 248, .5); background: rgba(56, 189, 248, .10); }
+
+/* ── Theme toggle (floating, bottom-right) ─────────────────────────────── */
+.thtog {
+  position: fixed; right: 18px; bottom: 18px; z-index: 200;
+  width: 60px; height: 30px; padding: 3px; border-radius: 999px;
+  border: 1px solid var(--bd2); background: var(--surf2);
+  box-shadow: var(--sh-md); cursor: pointer; display: flex; align-items: center;
+  transition: background var(--tr), border-color var(--tr);
+}
+.thtog-knob {
+  width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center;
+  background: var(--accent); color: var(--on-accent);
+  transition: transform .3s ease, background var(--tr);
+}
+.thtog.light .thtog-knob { transform: translateX(30px); }
+.thtog-knob .mi { font-size: 16px; }
+@media (max-width: 767px) { .thtog { right: 14px; bottom: 78px; } }
+
+/* ── Radar sweep loader (.lr) — app loading screens ────────────────────── */
+.lr {
+  position: relative; display: flex; align-items: center; justify-content: center;
+  width: 150px; height: 150px; border-radius: 50%;
+  border: 1px solid #333; box-shadow: 25px 25px 75px rgba(0, 0, 0, .55); overflow: hidden;
+}
+.lr-ring {
+  position: absolute; inset: 20px; border-radius: 50%; border: 1px dashed #444;
+  box-shadow: inset -5px -5px 25px rgba(0, 0, 0, .25), inset 5px 5px 35px rgba(0, 0, 0, .25);
+}
+.lr-core {
+  position: absolute; width: 50px; height: 50px; border-radius: 50%; border: 1px dashed #444;
+  box-shadow: inset -5px -5px 25px rgba(0, 0, 0, .25), inset 5px 5px 35px rgba(0, 0, 0, .25);
+}
+.lr-sweep {
+  position: absolute; top: 50%; left: 50%; width: 50%; height: 100%;
+  background: transparent; transform-origin: top left; border-top: 1px dashed #fff;
+  animation: lr-radar 2s linear infinite;
+}
+.lr-beam {
+  position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+  background: seagreen; transform-origin: top left; transform: rotate(-55deg);
+  filter: blur(30px) drop-shadow(20px 20px 20px seagreen);
+}
+@keyframes lr-radar { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+
+/* Lead detail — Assigned | Role two-cell row (above stats / AI score) */
+.ld-agent {
+  display: grid; grid-template-columns: 1fr 1fr;
+  border: 1px solid var(--bd); border-radius: 12px; overflow: hidden; margin-bottom: 13px;
+}
+.ld-ag-cell { display: flex; align-items: center; gap: 10px; padding: 12px 14px; min-width: 0; }
+.ld-ag-cell:first-child { border-right: 1px solid var(--bd); }
+.ld-ag-cell .mi { font-size: 19px; color: var(--accent); flex: none; }
+.ld-ag-tx { min-width: 0; }
+.ld-ag-l { font-size: 10px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--t3); }
+.ld-ag-v { font-size: 13px; font-weight: 700; color: var(--t1); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* ── Admin account switcher (top bar) ──────────────────────────────────── */
+.acsw { position: relative; }
+.acsw-pill {
+  display: inline-flex; align-items: center; gap: 9px; height: 40px; padding: 4px 10px 4px 5px;
+  background: var(--surf2); border: 1px solid var(--bd); border-radius: 999px;
+  cursor: pointer; color: var(--t1); transition: border-color var(--tr), background var(--tr);
+}
+.acsw-pill:hover { border-color: var(--bd2); }
+.acsw-pill.imp { border-color: rgba(56, 189, 248, .55); background: rgba(56, 189, 248, .08); }
+.acsw-av { width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; font-size: 11px; font-weight: 700; color: #0A0A0A; flex: none; }
+.acsw-av.av-img { object-fit: cover; }
+.acsw-nm { font-size: 13.5px; font-weight: 700; max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.acsw-tag { font-size: 9.5px; font-weight: 800; text-transform: uppercase; letter-spacing: .05em; color: #38BDF8; background: rgba(56, 189, 248, .14); border-radius: 999px; padding: 2px 7px; }
+.acsw-pill .mi { font-size: 19px; color: var(--t3); }
+
+.acsw-menu {
+  position: absolute; top: calc(100% + 8px); left: 0; z-index: 320;
+  width: 280px; max-height: 60vh; overflow-y: auto;
+  background: var(--surf); border: 1px solid var(--bd2); border-radius: 14px;
+  box-shadow: var(--sh-lg); padding: 6px;
+}
+.acsw-hd { font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: var(--t3); padding: 8px 10px 6px; }
+.acsw-list { display: flex; flex-direction: column; gap: 2px; }
+.acsw-item {
+  display: flex; align-items: center; gap: 10px; width: 100%; text-align: left;
+  padding: 8px 10px; border-radius: 10px; background: none; border: none; cursor: pointer;
+  color: var(--t1); transition: background var(--tr);
+}
+.acsw-item:hover { background: var(--surf2); }
+.acsw-itx { display: flex; flex-direction: column; min-width: 0; }
+.acsw-in { font-size: 13.5px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.acsw-ir { font-size: 11px; color: var(--t3); }
+.acsw-return { color: #38BDF8; font-weight: 700; font-size: 13px; border-bottom: 1px solid var(--bd); border-radius: 10px 10px 0 0; margin-bottom: 4px; }
+.acsw-return .mi { font-size: 17px; }
+.acsw-empty { padding: 12px 10px; font-size: 12.5px; color: var(--t3); }
+@media (max-width: 600px) { .acsw-nm { max-width: 84px; } }
+
+/* Account switcher inside the sidebar — full width */
+.sb-switch { padding: 0 14px 10px; }
+.sb-switch .acsw { width: 100%; }
+.sb-switch .acsw-pill { width: 100%; }
+.sb-switch .acsw-nm { max-width: none; flex: 1; }
+.sb-switch .acsw-menu { width: 100%; }

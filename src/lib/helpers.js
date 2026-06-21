@@ -115,6 +115,16 @@ export function rlabel(r) {
 
 export function slabel(s) { return STATUS_LABELS[s] || s; }
 export function sclass(s) { return 's-' + (s || '').toLowerCase(); }
+
+// Display badge for a lead — overlays a "Follow-up" state when one is scheduled
+// on an early-stage lead, without touching the real workflow status.
+const FU_OVERLAY = ['NEW', 'CONTACTED', 'INTERESTED'];
+export function leadDisplayStatus(lead) {
+  if (lead.nextFollowup && FU_OVERLAY.includes(lead.status)) {
+    return { label: 'Follow-up', cls: 's-follow_up' };
+  }
+  return { label: STATUS_LABELS[lead.status] || lead.status, cls: 's-' + (lead.status || '').toLowerCase() };
+}
 export function srclabel(s) { return SRC_LABELS[s] || s; }
 export function srcclass(s) { return 'src-' + (s || '').toLowerCase(); }
 
