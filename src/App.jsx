@@ -28,6 +28,7 @@ import LeadsView from './components/views/LeadsView.jsx';
 import TeamView from './components/views/TeamView.jsx';
 import UsersView from './components/views/UsersView.jsx';
 import AccountsView from './components/views/AccountsView.jsx';
+import RequestsView from './components/views/RequestsView.jsx';
 import ProfileView from './components/views/ProfileView.jsx';
 import PropertiesView from './components/views/PropertiesView.jsx';
 import BookingsView from './components/views/BookingsView.jsx';
@@ -50,6 +51,8 @@ import CredsModal from './components/modals/CredsModal.jsx';
 import FollowUpModal from './components/modals/FollowUpModal.jsx';
 import LostModal from './components/modals/LostModal.jsx';
 import PropertyViewModal from './components/modals/PropertyViewModal.jsx';
+import ProjectConsole from './components/project/ProjectConsole.jsx';
+import { migrateProjects } from './lib/projects.js';
 import PropertyFormModal from './components/modals/PropertyFormModal.jsx';
 import UnitBookingModal from './components/modals/UnitBookingModal.jsx';
 import BookingModal from './components/modals/BookingModal.jsx';
@@ -168,6 +171,7 @@ function PageHero() {
     team: { eyebrow: 'Team', title: 'My Team', sub: `${teamAgents} agents` },
     users: { eyebrow: 'Administration', title: 'Users', sub: `${db.users.length} accounts` },
     accounts: { eyebrow: 'Administration', title: 'Account Management', sub: 'Create & manage multiple accounts' },
+    requests: { eyebrow: 'Administration', title: 'Hold Requests', sub: 'Approve agent unit holds' },
     profile: { eyebrow: 'Account', title: 'My Profile', sub: 'Manage your details & avatar' },
     companies: { eyebrow: 'Master Admin', title: 'Companies', sub: 'Company-wise overview' },
   };
@@ -224,6 +228,7 @@ function PageBody() {
   if (view === 'team') return <TeamView />;
   if (view === 'users') return <UsersView />;
   if (view === 'accounts') return <AccountsView />;
+  if (view === 'requests') return <RequestsView />;
   if (view === 'profile') return <ProfileView />;
   return null;
 }
@@ -348,6 +353,7 @@ export default function App() {
       dedupeLeads(freshDB);
       // Multi-tenant backfill: ensure companies + companyId on existing data, and a master account
       migrateTenancy(freshDB);
+      migrateProjects(freshDB); // backfill storefront fields (variants/media/fastClose)
       checkFollowUpReminders(freshDB);
       saveDB(freshDB);
       expireHolds(); // auto-release expired holds (saves internally if any)
@@ -387,6 +393,7 @@ export default function App() {
       <FollowUpModal />
       <LostModal />
       <PropertyViewModal />
+      <ProjectConsole />
       <PropertyFormModal />
       <UnitBookingModal />
       <BookingModal />

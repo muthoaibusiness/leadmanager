@@ -1,5 +1,5 @@
 import { useApp } from '../../context/AppContext.jsx';
-import { getLeads, getDB, calcPipelineValue } from '../../lib/db.js';
+import { getLeads, getDB, calcPipelineValue, getHoldRequests } from '../../lib/db.js';
 import StatCard from '../StatCard.jsx';
 import TargetCard from './TargetCard.jsx';
 import DashGreeting from './DashGreeting.jsx';
@@ -90,9 +90,11 @@ export default function TeamLeadDash() {
 
   return (
     <div className="iad-page">
-      <DashGreeting user={user} sub={closing.length > 0
-        ? `${closing.length} ${closing.length === 1 ? 'deal' : 'deals'} to close · ${fmtBDT(pipe)} in pipeline`
-        : 'No deals waiting to close right now.'} />
+      <DashGreeting user={user} sub={(() => {
+        const holdsSent = getHoldRequests().filter(r => teamUserIds.includes(r.agentId)).length;
+        const base = closing.length > 0 ? `${closing.length} ${closing.length === 1 ? 'deal' : 'deals'} to close · ${fmtBDT(pipe)} in pipeline` : 'No deals waiting to close right now.';
+        return holdsSent > 0 ? `${base} · ${holdsSent} hold ${holdsSent === 1 ? 'request' : 'requests'} sent` : base;
+      })()} />
 
       <div className="grid-4">
         <StatCard val={fmtBDT(rev)} label={hasRange ? 'Revenue' : 'Revenue This Month'} tone="good" sub="closed won" />

@@ -1,6 +1,6 @@
 import Mi from './Mi.jsx';
 import { useApp } from '../context/AppContext.jsx';
-import { clearSession } from '../lib/db.js';
+import { clearSession, getHoldRequests } from '../lib/db.js';
 import { avc, ini, rlabel } from '../lib/helpers.js';
 import { canSee } from '../lib/constants.js';
 import AccountSwitcher from './AccountSwitcher.jsx';
@@ -9,7 +9,7 @@ import AccountSwitcher from './AccountSwitcher.jsx';
 // Sections render a label + their visible items; items may expand children
 // when active. Visibility is driven by canSee(role, key).
 const SECTIONS = [
-  { label: null, keys: ['dashboard', 'companies', 'reports'] },
+  { label: null, keys: ['dashboard', 'companies', 'reports', 'requests'] },
   { label: 'Sales Team', keys: ['leads', 'pipeline', 'properties'] },
   { label: 'Admin', keys: ['team', 'users', 'accounts'] },
 ];
@@ -27,6 +27,7 @@ export default function Sidebar() {
     clients: { ico: 'account_circle', lbl: 'Contacts' },
     bookings: { ico: 'event_note', lbl: 'Sales Activity' },
     reports: { ico: 'bar_chart', lbl: 'Reports' },
+    requests: { ico: 'inbox', lbl: 'Requests' },
     properties: { ico: 'folder', lbl: 'Projects' },
     team: { ico: 'groups', lbl: 'Team' },
     users: { ico: 'manage_accounts', lbl: 'Users' },
@@ -37,13 +38,17 @@ export default function Sidebar() {
 
   const handleLogout = () => { clearSession(); setUser(null); };
 
+  const pendingHolds = role === 'MANAGEMENT' ? getHoldRequests().filter(r => r.status === 'pending').length : 0;
+
   const NavItem = ({ k }) => {
     const m = META[k];
     const active = view === k;
+    const badge = k === 'requests' && pendingHolds > 0 ? pendingHolds : 0;
     return (
       <div>
         <div className={`sb-it${active ? ' on' : ''}`} onClick={() => nav(k)}>
           <Mi>{m.ico}</Mi>{m.lbl}
+          {badge > 0 && <span className="sb-badge">{badge}</span>}
         </div>
         {active && m.children && (
           <div className="sb-sub">

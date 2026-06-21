@@ -81,14 +81,19 @@ export default function UnitBookingModal() {
               {units.map(u => {
                 const n = u.no.replace('U-', '');
                 // Held/booked/sold units can't be picked by an agent (admin still can,
-                // to manage them). Hovering shows who holds it.
+                // to manage them). Hovering shows the full info: who/client/days/offer.
                 const blocked = u.status !== 'available' && !isAdmin;
-                const who = u.clientName || u.heldByName;
+                const dleft = u.holdUntil ? Math.max(0, Math.ceil((new Date(u.holdUntil) - new Date()) / 86400000)) : null;
+                const parts = [LABEL[u.status]];
+                if (u.clientName) parts.push('Client: ' + u.clientName);
+                if (u.heldByName) parts.push('By: ' + u.heldByName);
+                if (u.status === 'locked' && dleft != null) parts.push(dleft + ' day' + (dleft === 1 ? '' : 's') + ' left');
+                if (u.offerPrice) parts.push('Offer ' + fmtBDT(u.offerPrice));
                 return (
                   <button
                     key={u.no}
                     className={`ub-seat ub-${u.status}${sel === u.no ? ' ub-sel' : ''}${blocked ? ' ub-blocked' : ''}`}
-                    title={who ? `${LABEL[u.status]} · ${who}` : LABEL[u.status]}
+                    title={parts.join('\n')}
                     aria-disabled={blocked}
                     onClick={() => { if (!blocked) setSel(u.no); }}
                   >

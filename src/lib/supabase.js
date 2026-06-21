@@ -177,6 +177,25 @@ export function rToU(r) {
 export function tToR(t) { return { id: t.id, name: t.name, lead_id: t.leadId, company_id: t.companyId || null }; }
 export function rToT(r) { return { id: r.id, name: r.name, leadId: r.lead_id, companyId: r.company_id || null }; }
 
+export function hrToR(h) {
+  return {
+    id: h.id, company_id: h.companyId || null, property_id: h.propertyId || null, property_name: h.propertyName || '',
+    variant_id: h.variantId || null, variant_name: h.variantName || '', unit_id: h.unitId || '',
+    agent_id: h.agentId || null, agent_name: h.agentName || '', client_name: h.clientName || '', client_phone: h.clientPhone || '',
+    deal_total: h.dealTotal || 0, offer_rate: h.offerRate || 0, status: h.status || 'pending',
+    hold_until: h.holdUntil || null, created_at: h.createdAt, decided_at: h.decidedAt || null, decided_by: h.decidedBy || '',
+  };
+}
+export function rToHr(r) {
+  return {
+    id: r.id, companyId: r.company_id || null, propertyId: r.property_id || '', propertyName: r.property_name || '',
+    variantId: r.variant_id || '', variantName: r.variant_name || '', unitId: r.unit_id || '',
+    agentId: r.agent_id || '', agentName: r.agent_name || '', clientName: r.client_name || '', clientPhone: r.client_phone || '',
+    dealTotal: r.deal_total || 0, offerRate: r.offer_rate || 0, status: r.status || 'pending',
+    holdUntil: r.hold_until || null, createdAt: r.created_at, decidedAt: r.decided_at || null, decidedBy: r.decided_by || '',
+  };
+}
+
 // Companies (multi-tenant)
 export function cToR(c) { return { id: c.id, name: c.name, plan: c.plan || 'Starter', is_active: c.isActive !== false, created_at: c.createdAt || new Date().toISOString() }; }
 export function rToC(r) { return { id: r.id, name: r.name, plan: r.plan || 'Starter', isActive: r.is_active !== false, createdAt: r.created_at }; }
@@ -276,6 +295,10 @@ export function pToR(p) {
     total_sft: p.totalSft || 0, unsold_sft: p.unsoldSft || 0, saleable_units: p.saleableUnits || '',
     drive_link: p.driveLink || '', purpose: p.purpose || '', size_text: p.sizeText || '',
     details: p.details || '', company_id: p.companyId || null, created_at: p.createdAt, updated_at: p.updatedAt,
+    // variant/storefront model
+    variants: p.variants || [], addons: p.addons || [], media: p.media || {},
+    fast_close_pct: p.fastClosePct || 0, fast_close_days: p.fastCloseDays || 0,
+    listing: p.listing || '', approval: p.approval || '',
   };
 }
 export function rToP(r) {
@@ -290,12 +313,16 @@ export function rToP(r) {
     totalSft: r.total_sft || 0, unsoldSft: r.unsold_sft || 0, saleableUnits: r.saleable_units || '',
     driveLink: r.drive_link || '', purpose: r.purpose || '', sizeText: r.size_text || '',
     details: r.details || '', companyId: r.company_id || null, createdAt: r.created_at, updatedAt: r.updated_at,
+    // variant/storefront model
+    variants: r.variants || [], addons: r.addons || [], media: r.media || {},
+    fastClosePct: r.fast_close_pct || 0, fastCloseDays: r.fast_close_days || 0,
+    listing: r.listing || '', approval: r.approval || '',
   };
 }
 
 export async function sbLoad() {
   try {
-    const [users, teams, leads, acts, notifs, targets, properties, bookings, companies] = await Promise.all([
+    const [users, teams, leads, acts, notifs, targets, properties, bookings, companies, holdReqs] = await Promise.all([
       sbGet('users'), sbGet('teams'), sbGet('leads'),
       sbGet('activities?order=timestamp.asc'),
       sbGet('notifications?order=created_at.desc'),
@@ -303,6 +330,7 @@ export async function sbLoad() {
       sbGet('properties?order=created_at.desc'),
       sbGet('bookings?order=created_at.desc'),
       sbGet('companies'),
+      sbGet('hold_requests?order=created_at.desc'),
     ]);
     if (!users || !users.length) return null;
     const actsMap = {};
@@ -324,6 +352,7 @@ export async function sbLoad() {
       targets: (targets || []).map(rToTg),
       properties: (properties || []).map(rToP),
       bookings: (bookings || []).map(rToBk),
+      holdRequests: (holdReqs || []).map(rToHr),
     };
   } catch (e) { console.warn('Supabase load failed:', e); return null; }
 }
@@ -345,6 +374,7 @@ export function sbSave(db) {
         sbUpsert('targets', (db.targets || []).map(tgToR)),
         sbUpsert('properties', (db.properties || []).map(pToR)),
         sbUpsert('bookings', (db.bookings || []).map(bkToR)),
+        sbUpsert('hold_requests', (db.holdRequests || []).map(hrToR)),
       ]);
     } catch (e) { console.warn('Supabase save failed:', e); }
   }, 400);

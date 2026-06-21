@@ -10,7 +10,7 @@ export function getDB() {
     try { _DB = JSON.parse(localStorage.getItem(KEY)) || null; } catch { }
   }
   if (!_DB) {
-    _DB = { companies: [], users: [], teams: [], leads: [], targets: [], activities: {}, notifications: {}, properties: [], bookings: [] };
+    _DB = { companies: [], users: [], teams: [], leads: [], targets: [], activities: {}, notifications: {}, properties: [], bookings: [], holdRequests: [] };
   }
   if (!_DB.companies) _DB.companies = [];
   if (!_DB.teams) _DB.teams = [];
@@ -90,6 +90,7 @@ export function mergeDB(remote, local) {
     deletionLog: tomb,
     properties: mergeArr(r.properties, l.properties),
     bookings: mergeArr(r.bookings, l.bookings),
+    holdRequests: mergeArr(r.holdRequests, l.holdRequests),
     activities: mergeActs(r.activities, l.activities),
     notifications: mergeNotifs(r.notifications, l.notifications),
   };
@@ -748,6 +749,56 @@ export function setFollowUpAt(leadId, iso, user) {
   updLead(leadId, { nextFollowup: iso });
   const when = new Date(iso).toLocaleString('en-GB', { weekday: 'short', day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
   addAct(leadId, { type: 'FOLLOW_UP', description: 'Follow-up scheduled for ' + when, userId: user.id, userName: user.name, durationSeconds: 0 });
+}
+
+// ── Hold requests (agent → management approval workflow) ─────────────────────
+export function getHoldRequests() {
+  const cid = currentCompanyId();
+  const all = getDB().holdRequests || [];
+  return cid ? all.filter(r => sameCompany(r.companyId, cid)) : all;
+}
+
+// Agent asks management to hold a unit. Records the request (pending) + notifies
+// every Management user in the company. Unit status is set by the caller.
+export function createHoldRequest(payload, user) {
+  const id = 'hr' + uid();
+  const req = {
+    id, companyId: user.companyId, status: 'pending',
+    createdAt: now_(), holdUntil: null, decidedAt: null, decidedBy: '',
+    ...payload, agentId: user.id, agentName: user.name,
+  };
+  mutate(db => { db.holdRequests = db.holdRequests || []; db.holdRequests.unshift(req); });
+  const mgmt = getDB().users.filter(u => u.role === ROLES.MGMT && sameCompany(u.companyId, user.companyId)).map(u => u.id);
+  addNotifs(mgmt.map(uid2 => ({
+    userId: uid2, type: 'HOLD_REQUEST', leadId: null,
+    message: `${user.name} requested a hold on ${payload.propertyName} · Unit ${payload.unitId} for ${payload.clientName}`,
+  })), user);
+  return id;
+}
+
+// Management accepts/rejects. On accept, stamps a hold-until date (default 2 days).
+// Returns the updated request so the caller can update the unit. Notifies the agent.
+export function decideHoldRequest(id, approve, user, days = 2) {
+  let req = null;
+  mutate(db => {
+    const r = (db.holdRequests || []).find(x => x.id === id);
+    if (!r) return;
+    r.status = approve ? 'approved' : 'rejected';
+    r.decidedAt = now_();
+    r.decidedBy = user.name;
+    if (approve) r.holdUntil = new Date(Date.now() + days * 86400000).toISOString();
+    req = { ...r };
+  });
+  if (req) {
+    const until = req.holdUntil ? new Date(req.holdUntil).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' }) : '';
+    addNotifs([{
+      userId: req.agentId, type: approve ? 'HOLD_APPROVED' : 'HOLD_REJECTED', leadId: null,
+      message: approve
+        ? `Hold approved — ${req.propertyName} · Unit ${req.unitId} booked until ${until}`
+        : `Hold rejected — ${req.propertyName} · Unit ${req.unitId}`,
+    }], user);
+  }
+  return req;
 }
 
 // Mark a follow-up task as done — clears the reminder.

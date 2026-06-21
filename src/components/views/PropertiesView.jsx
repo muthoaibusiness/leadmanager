@@ -35,7 +35,7 @@ export default function PropertiesView() {
     { l: 'Total Area', v: totalSft ? fmtSft(totalSft) + ' sft' : '—' },
   ];
 
-  const open = (id) => { setPropSel(id); openModal('property-view'); };
+  const open = (id) => { setPropSel(id); openModal('project-console'); };
 
   return (
     <>

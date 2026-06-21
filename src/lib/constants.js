@@ -14,6 +14,7 @@ export const NAV_SCOPES = {
   pipeline: ALL_ROLES,
   properties: ALL_ROLES,
   reports: ['MANAGEMENT', 'TEAM_LEAD'],
+  requests: ['MANAGEMENT'],
   team: ['TEAM_LEAD'],
   users: ['MANAGEMENT'],
   accounts: ['MANAGEMENT'],
@@ -63,6 +64,9 @@ export const NOTIF_ICO = {
   DEAL_WON: 'emoji_events',
   DEAL_LOST: 'thumb_down',
   NEW_USER: 'person',
+  HOLD_REQUEST: 'pan_tool',
+  HOLD_APPROVED: 'check_circle',
+  HOLD_REJECTED: 'cancel',
 };
 
 export const NOTIF_CLR = {
@@ -73,4 +77,7 @@ export const NOTIF_CLR = {
   DEAL_WON: '#16A34A',
   DEAL_LOST: '#DC2626',
   NEW_USER: '#2563EB',
+  HOLD_REQUEST: '#F0A92B',
+  HOLD_APPROVED: '#16A34A',
+  HOLD_REJECTED: '#DC2626',
 };
