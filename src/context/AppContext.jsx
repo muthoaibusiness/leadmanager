@@ -30,6 +30,7 @@ export function AppProvider({ children }) {
   const [credInfo, setCredInfo] = useState(null);
   const [dateRange, setDateRange] = useState({ preset: 'allTime', range: null });
   const [impersonator, setImpersonator] = useState(null); // the real admin while viewing as another account
+  const [consoleAdmin, setConsoleAdmin] = useState(false); // open the project console straight into Admin catalog
   const searchRef = useRef(null);
 
   // Admin account switcher — become any account without email/password.
@@ -99,6 +100,7 @@ export function AppProvider({ children }) {
     credInfo, setCredInfo,
     dateRange, setDateRange,
     impersonator, impersonate, stopImpersonate,
+    consoleAdmin, setConsoleAdmin,
     searchRef,
     nav,
     db,

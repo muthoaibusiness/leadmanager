@@ -886,6 +886,16 @@ export function deleteUserFn(userId, currentUser) {
   const teamToKill = (u.role === ROLES.TL && u.teamId) ? u.teamId : null;
   mutate(d => {
     d.users = d.users.filter(x => x.id !== userId);
+    // Unassign any leads owned by the removed user (keep them in the company, just
+    // ownerless) so the delete isn't blocked and no lead is lost.
+    (d.leads || []).forEach(l => {
+      if (l.assignedTo === userId) {
+        l.previousAssignees = l.previousAssignees || [];
+        if (!l.previousAssignees.includes(userId)) l.previousAssignees.push(userId);
+        l.assignedTo = null;
+        l.updatedAt = now_();
+      }
+    });
     if (teamToKill) {
       d.teams = (d.teams || []).filter(t => t.id !== teamToKill);
       d.users.forEach(x => { if (x.teamId === teamToKill) { x.teamId = null; x.updatedAt = now_(); } });

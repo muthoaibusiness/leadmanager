@@ -11,10 +11,7 @@ export default function DeleteUserModal() {
 
   const submit = () => {
     if (!deleteUserId) return;
-    const db2 = getDB();
-    const hasLeads = db2.leads.some(l => l.assignedTo === deleteUserId);
-    if (hasLeads) { closeModal(); showToast('Cannot delete — user has active leads assigned', 'err'); return; }
-    deleteUserFn(deleteUserId, user); // tombstone + cloud delete so it stays gone after refresh
+    deleteUserFn(deleteUserId, user); // tombstone + cloud delete + unassign their leads
     setDeleteUserId(null);
     closeModal();
     refreshDB();
@@ -30,7 +27,7 @@ export default function DeleteUserModal() {
         </div>
         <div className="m-body">
           <p style={{ fontSize: '14px', color: 'var(--t1)' }}>Remove <strong>{u?.name}</strong> from the system?</p>
-          <p style={{ fontSize: '13px', color: 'var(--t2)', marginTop: '8px' }}>Users with active leads cannot be removed. This action cannot be undone.</p>
+          <p style={{ fontSize: '13px', color: 'var(--t2)', marginTop: '8px' }}>Any leads they own become unassigned (kept in the company). If this is a Team Lead, their team is removed too. This cannot be undone.</p>
         </div>
         <div className="m-ft">
           <button className="btn btn-g" onClick={closeModal}>Cancel</button>

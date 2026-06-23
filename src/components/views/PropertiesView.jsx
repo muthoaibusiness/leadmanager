@@ -8,7 +8,7 @@ const PS_CLASS = { AVAILABLE: 'ps-available', FEW_LEFT: 'ps-few', SOLD_OUT: 'ps-
 const fmtSft = n => n >= 1000 ? (n / 1000).toFixed(n >= 100000 ? 0 : 1) + 'k' : String(n);
 
 export default function PropertiesView() {
-  const { user, setPropSel, openModal } = useApp();
+  const { user, setPropSel, openModal, setConsoleAdmin } = useApp();
   const isAdmin = user?.role === ROLES.MGMT;
   const [q, setQ] = useState('');
   const [city, setCity] = useState('ALL');
@@ -35,7 +35,7 @@ export default function PropertiesView() {
     { l: 'Total Area', v: totalSft ? fmtSft(totalSft) + ' sft' : '—' },
   ];
 
-  const open = (id) => { setPropSel(id); openModal('project-console'); };
+  const open = (id) => { setConsoleAdmin(false); setPropSel(id); openModal('project-console'); };
 
   return (
     <>

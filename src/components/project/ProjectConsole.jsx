@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import Mi from '../Mi.jsx';
 import { useApp } from '../../context/AppContext.jsx';
-import { getProjectById, setUnitStatus } from '../../lib/projects.js';
+import { getProjectById, setUnitStatus, removeProject } from '../../lib/projects.js';
 import { createHoldRequest, getLeads } from '../../lib/db.js';
 import { computeDeal, emptyDeal } from '../../lib/deal.js';
 import ProjectCatalog from './ProjectCatalog.jsx';
@@ -32,7 +32,7 @@ function useCountdown(targetMs) {
 }
 
 export default function ProjectConsole() {
-  const { modal, closeModal, propSel, user, refreshDB, showToast, dbVersion } = useApp();
+  const { modal, closeModal, propSel, user, refreshDB, showToast, dbVersion, consoleAdmin } = useApp();
   const isOpen = modal === 'project-console';
   const isAdmin = user?.role === ROLES.MGMT;
 
@@ -50,7 +50,7 @@ export default function ProjectConsole() {
   const variant = variants.find(v => v.id === vid) || variants[0] || null;
 
   // reset when opening a different project
-  useEffect(() => { if (isOpen) { setVid(null); setDeal(emptyDeal()); setCq(''); setAdmin(false); } }, [propSel, isOpen]);
+  useEffect(() => { if (isOpen) { setVid(null); setDeal(emptyDeal()); setCq(''); setAdmin(!!consoleAdmin); } }, [propSel, isOpen]);
   // keep deal.variantId in sync; reset unit when variant changes
   useEffect(() => { if (variant) setDeal(d => (d.variantId === variant.id ? d : { ...emptyDeal(), variantId: variant.id })); }, [variant?.id]);
 
@@ -127,6 +127,8 @@ export default function ProjectConsole() {
     showToast(`Deal closed · Unit ${deal.unitId} sold`, 'ok');
   };
   const newDeal = () => setDeal({ ...emptyDeal(), variantId: variant?.id });
+  // closing an untitled (abandoned) new project cleans it up
+  const handleClose = () => { if (p && !(p.name || '').trim()) removeProject(p.id); closeModal(); };
 
   const plans = calc ? [
     { id: 'full', name: 'Full payment', sub: '−1% extra', total: calc.dealTotal * 0.99, lines: [`One-time ${fmtBDT(calc.dealTotal * 0.99)}`] },
@@ -135,7 +137,7 @@ export default function ProjectConsole() {
   ] : [];
 
   return (
-    <div className="mov on" onClick={closeModal}>
+    <div className="mov on" onClick={handleClose}>
       <div className="modal pc-modal" onClick={e => e.stopPropagation()}>
         <div className="pc-top">
           <div className="pc-top-l"><Mi>storefront</Mi><b>{p.name}</b></div>
@@ -146,7 +148,7 @@ export default function ProjectConsole() {
                 <button className={admin ? 'on' : ''} onClick={() => setAdmin(true)}>Admin catalog</button>
               </div>
             )}
-            <button className="m-x" onClick={closeModal}><Mi>close</Mi></button>
+            <button className="m-x" onClick={handleClose}><Mi>close</Mi></button>
           </div>
         </div>
 
