@@ -279,8 +279,8 @@ export default function ManagementDash() {
       {/* Clean dark customers table — real recent leads */}
       <div style={{ marginTop: 20 }}>
         <CustomersTable
-          title="Customers"
-          subtitle="Latest customers in your pipeline"
+          title="Latest Leads"
+          subtitle="In your pipeline"
           rows={customerRows}
         />
       </div>

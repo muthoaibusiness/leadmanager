@@ -162,8 +162,7 @@ export function scoreLead(lead, acts) {
 }
 
 export function scoreLabel(s) {
-  if (s >= 80) return { label: 'Hot', color: '#F87171', bg: 'rgba(248,113,113,.14)' };
-  if (s >= 60) return { label: 'Warm', color: '#F0A92B', bg: 'rgba(240,169,43,.14)' };
-  if (s >= 35) return { label: 'Lukewarm', color: '#2DD4BF', bg: 'rgba(45,212,191,.14)' };
+  if (s >= 75) return { label: 'Hot', color: '#F87171', bg: 'rgba(248,113,113,.14)' };
+  if (s >= 35) return { label: 'Warm', color: '#F0A92B', bg: 'rgba(240,169,43,.14)' };
   return { label: 'Cold', color: '#9CA3AF', bg: 'rgba(255,255,255,.06)' };
 }

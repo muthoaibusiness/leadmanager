@@ -32,7 +32,7 @@ export default function Sidebar() {
     clients: { ico: 'account_circle', lbl: 'Contacts' },
     bookings: { ico: 'event_note', lbl: 'Sales Activity' },
     reports: { ico: 'bar_chart', lbl: 'Reports' },
-    agentperf: { ico: 'leaderboard', lbl: 'Agent Performance' },
+    agentperf: { ico: 'leaderboard', lbl: 'Performance' },
     requests: { ico: 'inbox', lbl: 'Requests' },
     properties: { ico: 'folder', lbl: 'Projects' },
     team: { ico: 'groups', lbl: 'Team' },

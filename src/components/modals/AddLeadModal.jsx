@@ -2,8 +2,10 @@ import { useRef, useEffect, useState } from 'react';
 import Mi from '../Mi.jsx';
 import { useApp } from '../../context/AppContext.jsx';
 import { getLead, addLeadFn, updLead, addAct, leadByPhone, normalizePhone } from '../../lib/db.js';
-import { SRC_LABELS } from '../../lib/constants.js';
+import { SRC_LABELS, ROLES } from '../../lib/constants.js';
 import ProjectInterestPicker from '../ProjectInterestPicker.jsx';
+
+const leadCode = (l) => l.externalId || ('#' + String(l.id || '').slice(-6).toUpperCase());
 
 export default function AddLeadModal() {
   const { modal, closeModal, user, panLead, refreshDB, showToast, setPanLead } = useApp();
@@ -74,6 +76,13 @@ export default function AddLeadModal() {
     const city = cityRef.current.value.trim();
 
     if (isEdit && panLead) {
+      // Reject if any of the (possibly changed) numbers already belong to a DIFFERENT lead.
+      let clash = null;
+      for (const ph of cleanPhones) { const c = leadByPhone(ph); if (c && c.id !== panLead) { clash = c; break; } }
+      if (clash) {
+        showToast(`Number already exists on lead ${leadCode(clash)} (${clash.assignedToName || '—'}). Change rejected — contact your admin to swap.`, 'err');
+        return;
+      }
       const old = getLead(panLead);
       const changes = [];
       if (old.name !== name) changes.push(`Name: "${old.name}" → "${name}"`);
@@ -91,6 +100,14 @@ export default function AddLeadModal() {
     } else {
       const dup = leadByPhone(phone);
       if (dup) {
+        // Lead already on the server. If it belongs to another team (not the
+        // current agent's team root), block — only an admin can swap it over.
+        const isAdmin = user.role === ROLES.MGMT || user.role === ROLES.MASTER;
+        const otherTeam = dup.teamId && user.teamId && dup.teamId !== user.teamId;
+        if (!isAdmin && otherTeam) {
+          showToast(`This lead (ID ${leadCode(dup)}) is already on another agent’s panel. Please contact your admin to swap.`, 'err');
+          return;
+        }
         // number already exists → update it, and alert which agent owns it
         const owner = dup.assignedToName || '—';
         updLead(dup.id, { name, phones: cleanPhones, email, emails: cleanEmails, company: company || '—', source, propertyInterest: prop, budget: parseFloat(budget) || 0, profession, city });

@@ -8,6 +8,7 @@ import ActivityTimeline from './ActivityTimeline.jsx';
 import { ROLES, STATUS_LABELS, SRC_LABELS } from '../lib/constants.js';
 
 function sclass(s) { return 's-' + (s || '').toLowerCase(); }
+const leadCode = (l) => l.externalId || ('#' + String(l.id || '').slice(-6).toUpperCase());
 
 function LeadInfo({ l }) {
   const phones = (l.phones?.length ? l.phones : [l.phone]).filter(Boolean);
@@ -25,7 +26,8 @@ function LeadInfo({ l }) {
   if (l.city || l.profession) specs.push(['Location', [l.city, l.profession].filter(Boolean).join(' · ')]);
   if (l.priority) specs.push(['Priority', l.priority + (l.preferredTime ? ' · ' + l.preferredTime : '')]);
   if (l.nextFollowup) specs.push(['Follow-up', fmtD(l.nextFollowup)]);
-  if (l.externalId) specs.push(['Lead ID', l.externalId + (l.materialSent ? ' · Material: ' + l.materialSent : '')]);
+  specs.push(['Lead ID', leadCode(l) + (l.materialSent ? ' · Material: ' + l.materialSent : '')]);
+  if (l.createdAt) specs.push(['Created', fmtD(l.createdAt)]);
 
   const stats = [['Calls', l.callCount], ['SMS', l.smsCount], ['WhatsApp', l.whatsappCount], ['Visits', l.visitCount]];
 
@@ -155,7 +157,9 @@ function Actions({ l }) {
         <Mi>check_circle</Mi>Mark Visit as Done
       </button>
     );
-    if (l.status === 'SITE_VISIT_DONE' && l.assignedRole === ROLES.MA) btns.push(
+    // Meeting Agent can forward to the next agent (Team Lead) any time they hold
+    // the lead — not only after the visit is marked done.
+    if (l.assignedRole === ROLES.MA && !['NEGOTIATING', 'DEAL_CLOSED_WON', 'DEAL_CLOSED_LOST', 'NOT_INTERESTED'].includes(l.status)) btns.push(
       <button key="fwd-tl" className="btn btn-purple btn-full" onClick={() => openModal('forward-tl')}>
         <Mi>forward_to_inbox</Mi>Forward to Team Lead
       </button>

@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useApp } from '../../context/AppContext.jsx';
 import { getLeads } from '../../lib/db.js';
 import { STATUS_LABELS, ROLES } from '../../lib/constants.js';
@@ -12,15 +13,26 @@ export default function LeadsView() {
     agentFilter, setAgentFilter, teamFilter, dbVersion, dateRange, db,
   } = useApp();
 
+  // Initial/Meeting agents get a My Leads ↔ Forwarded toggle.
+  const isAgent = [ROLES.IA, ROLES.MA].includes(user.role);
+  const [tab, setTab] = useState('mine');
+
   let leads = getLeads(user, { involved: true }); // include forwarded leads so status filters (e.g. Meeting Set) show them
   if (agentFilter) leads = leads.filter(l => l.assignedTo === agentFilter || l.previousAssignees.includes(agentFilter));
   else if (teamFilter) leads = leads.filter(l => l.teamId === teamFilter);
+
+  // Agent tabs: "mine" = leads they currently hold; "fwd" = leads they forwarded on.
+  const myFwd = (l) => (l.previousAssignees || []).includes(user.id) && l.assignedTo !== user.id;
+  if (isAgent) leads = tab === 'fwd' ? leads.filter(myFwd) : leads.filter(l => l.assignedTo === user.id);
+  const fwdCount = isAgent ? getLeads(user, { involved: true }).filter(myFwd).length : 0;
 
   let disp = leads;
   if (statusFilter === 'FOLLOW_UP') disp = disp.filter(l => l.nextFollowup && FU_OVERLAY.includes(l.status));
   else if (statusFilter !== 'ALL') disp = disp.filter(l => l.status === statusFilter);
   if (search) { const q = search.toLowerCase(); disp = disp.filter(l => l.name.toLowerCase().includes(q) || l.phone.includes(q) || (l.propertyInterest || '').toLowerCase().includes(q)); }
-  if (dateRange?.range) { const { start, end } = dateRange.range; disp = disp.filter(l => { const d = new Date(l.createdAt); return d >= start && d <= end; }); }
+  // Leads list shows the agent's full book — the global date filter (default Today)
+  // only scopes dashboard counts, not the working lead list. (dateRange kept for ref.)
+  void dateRange;
 
   // Agent filter is an admin-only control. Regular agents (IA/MA) only ever see
   // their own leads (enforced in getLeads), so the picker is hidden for them.
@@ -38,6 +50,14 @@ export default function LeadsView() {
 
   return (
     <>
+      {isAgent && (
+        <div className="ftabs" style={{ marginBottom: 12 }}>
+          <button className={`ftab${tab === 'mine' ? ' on' : ''}`} onClick={() => setTab('mine')}>My Leads</button>
+          <button className={`ftab${tab === 'fwd' ? ' on' : ''}`} onClick={() => setTab('fwd')}>
+            Forwarded{fwdCount > 0 ? ` (${fwdCount})` : ''}
+          </button>
+        </div>
+      )}
       {/* Compact pill filter bar — everything applies live, no apply button. */}
       <div className="fbar">
         <SearchBox placeholder="" style={{ flex: '0 1 300px', minWidth: '180px' }} />

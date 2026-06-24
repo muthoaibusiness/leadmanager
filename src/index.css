@@ -11120,3 +11120,6 @@ textarea.fi {
 .pip-opt-add, .pip-opt-add > .mi { color: var(--accent); font-weight: 600; }
 .pip-empty { padding: 12px; text-align: center; color: var(--t3); font-size: 12px; }
 .fg-hint { color: var(--t3); font-weight: 400; font-size: 11px; }
+
+.pco-prices.solo { grid-template-columns: 1fr; }
+.pco-box-v small { font-size: 60%; font-weight: 600; color: var(--t2); }

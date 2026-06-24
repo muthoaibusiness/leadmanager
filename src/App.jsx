@@ -169,7 +169,7 @@ function PageHero() {
     clients: { eyebrow: 'Relationships', title: 'Contacts', sub: '360° customer view' },
     properties: { eyebrow: 'Catalog', title: 'Projects', sub: `${props.length} projects · ${propAvail} available` },
     reports: { eyebrow: 'Insights', title: 'Reports', sub: 'Live sales analytics' },
-    agentperf: { eyebrow: 'Insights', title: 'Agent Performance', sub: 'Per-role scorecards & funnels' },
+    agentperf: { eyebrow: 'Insights', title: 'Performance', sub: 'Per-role scorecards & funnels' },
     bookings: { eyebrow: 'Sales', title: 'Sales Activity', sub: 'Payments, instalments & dues' },
     team: { eyebrow: 'Team', title: 'My Team', sub: `${teamAgents} agents` },
     users: { eyebrow: 'Administration', title: 'Users', sub: `${db.users.length} accounts` },

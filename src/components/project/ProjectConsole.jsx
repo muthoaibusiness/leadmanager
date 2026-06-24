@@ -90,6 +90,11 @@ export default function ProjectConsole() {
   const totalUnits = variants.reduce((s, v) => s + v.units.length, 0);
   const availUnits = variants.reduce((s, v) => s + v.units.filter(u => u.status === 'available').length, 0);
   const vAvail = variant ? variant.units.filter(u => u.status === 'available').length : 0;
+  // Floor (bottom) price + total project value are commercially sensitive — only
+  // Team Leads and Management see them; initial/meeting agents do not.
+  const canSeeFloor = [ROLES.TL, ROLES.MGMT, ROLES.MASTER].includes(user?.role);
+  // Total project value at list rate = Σ blocks (rate × size × units).
+  const projectValue = variants.reduce((s, v) => s + (v.listRate || 0) * (v.size || 0) * (v.units.length || 0), 0);
 
   // Offers can only go to an existing customer — search this user's leads.
   const myLeads = getLeads(user);
@@ -172,6 +177,7 @@ export default function ProjectConsole() {
                     <div className="phs-facts">
                       <div className="phs-fact"><span className="pch-fl">Handover</span><span className="pch-fv">{p.handover || '—'}</span></div>
                       <div className="phs-fact"><span className="pch-fl">Total units</span><span className="pch-fv">{totalUnits}</span></div>
+                      {canSeeFloor && <div className="phs-fact"><span className="pch-fl">Project value</span><span className="pch-fv">{crShort(projectValue)}</span></div>}
                       <div className="phs-fact"><span className="pch-fl">Approval</span><span className="pch-fv">{p.approval ? <>{p.approval} ✓</> : '—'}</span></div>
                       {p.listing && <div className="phs-fact"><span className="pch-fl">Listing</span><span className="pch-fv">#{p.listing}</span></div>}
                     </div>
@@ -196,6 +202,7 @@ export default function ProjectConsole() {
                   <div className="pch-facts">
                     <div className="pch-fact"><span className="pch-fl">Handover</span><span className="pch-fv">{p.handover || '—'}</span></div>
                     <div className="pch-fact"><span className="pch-fl">Total units</span><span className="pch-fv">{totalUnits}</span></div>
+                    {canSeeFloor && <div className="pch-fact"><span className="pch-fl">Project value</span><span className="pch-fv">{crShort(projectValue)}</span></div>}
                     <div className="pch-fact"><span className="pch-fl">Approval</span><span className="pch-fv">{p.approval ? <>{p.approval} ✓</> : '—'}</span></div>
                     {p.listing && <div className="pch-fact"><span className="pch-fl">Listing</span><span className="pch-fv">#{p.listing}</span></div>}
                   </div>
@@ -254,17 +261,25 @@ export default function ProjectConsole() {
               {/* price & offer */}
               {variant && calc && (
                 <div className="pc-sec pc-offer">
-                  <div className="pco-prices">
+                  <div className={`pco-prices${canSeeFloor ? '' : ' solo'}`}>
                     <div className="pco-box">
                       <div className="pco-box-l">Top price · list</div>
-                      <div className="pco-box-v">{fmtBDT(variant.listRate * variant.size)}</div>
-                      <div className="pco-box-s">{fmtBDT(variant.listRate)} / sqft</div>
+                      <div className="pco-box-v">{fmtBDT(variant.listRate)} <small>/ sqft</small></div>
+                      <div className="pco-box-s">Total {crShort(variant.listRate * variant.size)}</div>
                     </div>
-                    <div className="pco-box floor">
-                      <div className="pco-box-l">Bottom price · floor</div>
-                      <div className="pco-box-v">{fmtBDT(calc.floorPrice)}</div>
-                      <div className="pco-box-s">{fmtBDT(variant.floorRate)} / sqft · floor</div>
-                    </div>
+                    {canSeeFloor && (
+                      <div className="pco-box floor">
+                        <div className="pco-box-l">Bottom price · floor</div>
+                        {variant.floorRate > 0 ? (
+                          <>
+                            <div className="pco-box-v">{fmtBDT(variant.floorRate)} <small>/ sqft</small></div>
+                            <div className="pco-box-s">Total {crShort(variant.floorRate * variant.size)}</div>
+                          </>
+                        ) : (
+                          <div className="pco-box-v" style={{ opacity: .55 }}>Not set</div>
+                        )}
+                      </div>
+                    )}
                   </div>
 
                   <div className="pco-panel">
