@@ -150,9 +150,32 @@ export function migrateTenancy(db) {
 }
 
 export function saveDB(db) {
-  _DB = db;
-  localStorage.setItem(KEY, JSON.stringify(db));
-  sbSave(db);
+  _DB = db;            // in-memory copy is always current
+  persistLocal(db);    // best-effort local cache (never throws)
+  sbSave(db);          // Supabase = source of truth
+}
+
+// localStorage is ~5MB; the full dataset (esp. activities + property media) can
+// exceed it and setItem would THROW, crashing whatever triggered the save (even
+// navigation). Persist best-effort: full snapshot, then progressively trimmed
+// fallbacks. Since sbSave/sbLoad keep the cloud authoritative and mergeDB rebuilds
+// the dropped parts on next load, a trimmed cache only costs a reload round-trip.
+function persistLocal(db) {
+  const attempts = [
+    () => JSON.stringify(db),
+    () => JSON.stringify({ ...db, activities: {} }),
+    () => JSON.stringify({ ...db, activities: {}, properties: (db.properties || []).map(p => ({ ...p, images: [], media: {}, documents: [] })) }),
+    () => JSON.stringify({ ...db, activities: {}, notifications: {}, properties: [], bookings: [] }),
+  ];
+  for (const make of attempts) {
+    try { localStorage.setItem(KEY, make()); return true; }
+    catch (e) {
+      if (e && e.name === 'QuotaExceededError') continue; // shrink and retry
+      console.warn('saveDB: local persist failed —', e); return false;
+    }
+  }
+  console.warn('saveDB: localStorage full even after trimming — running on cloud sync only.');
+  return false;
 }
 
 export function mutate(fn) {
@@ -194,7 +217,21 @@ export function getLeads(user, opts = {}) {
   if (user.role === ROLES.MASTER) return db.leads; // master sees everything
   const inCo = db.leads.filter(l => sameCompany(l.companyId, user.companyId));
   if (user.role === ROLES.MGMT) return inCo;
-  if (user.role === ROLES.TL) return inCo.filter(l => l.teamId === user.teamId);
+  if (user.role === ROLES.TL) {
+    // A Team Lead sees every lead under their team. "Under their team" =
+    // the lead originated in the team (teamId) OR is currently/previously
+    // handled by any member of the team. The assignee union guards against
+    // teamId drift, since fwdLead reassigns `assignedTo` without touching
+    // `teamId` — so a lead can sit with a team agent yet carry a stale team.
+    const teamMemberIds = new Set(
+      db.users.filter(u => u.teamId === user.teamId).map(u => u.id)
+    );
+    return inCo.filter(l =>
+      l.teamId === user.teamId ||
+      teamMemberIds.has(l.assignedTo) ||
+      (l.previousAssignees || []).some(id => teamMemberIds.has(id))
+    );
+  }
   if (opts.involved) return inCo.filter(l => l.assignedTo === user.id || (l.previousAssignees || []).includes(user.id));
   return inCo.filter(l => l.assignedTo === user.id);
 }

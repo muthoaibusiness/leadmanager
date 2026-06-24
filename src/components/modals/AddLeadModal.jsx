@@ -1,8 +1,9 @@
 import { useRef, useEffect, useState } from 'react';
 import Mi from '../Mi.jsx';
 import { useApp } from '../../context/AppContext.jsx';
-import { getLead, addLeadFn, updLead, addAct, leadByPhone, normalizePhone, getProperties } from '../../lib/db.js';
+import { getLead, addLeadFn, updLead, addAct, leadByPhone, normalizePhone } from '../../lib/db.js';
 import { SRC_LABELS } from '../../lib/constants.js';
+import ProjectInterestPicker from '../ProjectInterestPicker.jsx';
 
 export default function AddLeadModal() {
   const { modal, closeModal, user, panLead, refreshDB, showToast, setPanLead } = useApp();
@@ -12,18 +13,13 @@ export default function AddLeadModal() {
   const nameRef = useRef();
   const companyRef = useRef();
   const sourceRef = useRef();
-  const propRef = useRef();
   const budgetRef = useRef();
   const profRef = useRef();
   const cityRef = useRef();
 
   const [phones, setPhones] = useState(['']);
   const [emails, setEmails] = useState(['']);
-
-  const projects = getProperties(); // catalog for the Property Interest dropdown
-  const editLead = isEdit && panLead ? getLead(panLead) : null;
-  const curProp = editLead?.propertyInterest || '';
-  const projNames = new Set(projects.map(p => p.name));
+  const [interest, setInterest] = useState(''); // multi project-interest tags (comma-joined)
 
   useEffect(() => {
     if (!isOpen) return;
@@ -33,7 +29,7 @@ export default function AddLeadModal() {
       nameRef.current.value = l.name || '';
       companyRef.current.value = l.company && l.company !== '—' ? l.company : '';
       sourceRef.current.value = l.source || 'META_ADS';
-      propRef.current.value = l.propertyInterest || '';
+      setInterest(l.propertyInterest || '');
       budgetRef.current.value = l.budget || '';
       profRef.current.value = l.profession || '';
       cityRef.current.value = l.city || '';
@@ -43,7 +39,7 @@ export default function AddLeadModal() {
       nameRef.current.value = '';
       companyRef.current.value = '';
       sourceRef.current.value = 'META_ADS';
-      propRef.current.value = '';
+      setInterest('');
       budgetRef.current.value = '';
       profRef.current.value = '';
       cityRef.current.value = '';
@@ -72,7 +68,7 @@ export default function AddLeadModal() {
     const email = cleanEmails[0] || '';
     const company = companyRef.current.value.trim();
     const source = sourceRef.current.value;
-    const prop = propRef.current.value.trim();
+    const prop = interest.trim();
     const budget = budgetRef.current.value;
     const profession = profRef.current.value.trim();
     const city = cityRef.current.value.trim();
@@ -192,15 +188,11 @@ export default function AddLeadModal() {
                 <option value="PERSONAL">Personal</option>
               </select>
             </div>
-            <div className="fg"><label>Customer Location</label><input className="fi" ref={cityRef} type="text" placeholder="e.g. Dubai, Sharjah" /></div>
+            <div className="fg"><label>Customer Location</label><input className="fi" ref={cityRef} type="text" placeholder="e.g. Dhaka, Chattogram" /></div>
           </div>
           <div className="fg">
-            <label>Property Interest (Project)</label>
-            <select className="fi" ref={propRef} defaultValue="">
-              <option value="">Select a project…</option>
-              {projects.map(p => <option key={p.id} value={p.name}>{p.name}</option>)}
-              {curProp && !projNames.has(curProp) && <option value={curProp}>{curProp}</option>}
-            </select>
+            <label>Project Interest <span className="fg-hint">— add one or more</span></label>
+            <ProjectInterestPicker value={interest} onChange={setInterest} />
           </div>
           <div className="fg"><label>Budget (BDT)</label><input className="fi" ref={budgetRef} type="number" min="0" placeholder="e.g. 850000" /></div>
         </div>

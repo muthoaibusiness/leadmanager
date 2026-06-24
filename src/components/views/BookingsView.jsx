@@ -37,7 +37,7 @@ export default function BookingsView() {
         <div className="mc"><div className="mc-top"><div className="mc-ico" style={{ background: '#2DD4BF' }}><Mi>description</Mi></div></div><div className="mc-v">{fmtBDT(contracted)}</div><div className="mc-l">Contracted Value</div></div>
         <div className="mc"><div className="mc-top"><div className="mc-ico" style={{ background: '#34D399' }}><Mi>payments</Mi></div></div><div className="mc-v">{fmtBDT(collected)}</div><div className="mc-l">Collected</div></div>
         <div className="mc"><div className="mc-top"><div className="mc-ico" style={{ background: '#F0A92B' }}><Mi>hourglass_bottom</Mi></div></div><div className="mc-v">{fmtBDT(outstanding)}</div><div className="mc-l">Outstanding Dues</div></div>
-        <div className="mc"><div className="mc-top"><div className="mc-ico" style={{ background: '#C8FF00' }}><Mi>receipt_long</Mi></div></div><div className="mc-v">{activeCt}</div><div className="mc-l">Active Bookings</div></div>
+        <div className="mc"><div className="mc-top"><div className="mc-ico" style={{ background: '#FFFFFF' }}><Mi>receipt_long</Mi></div></div><div className="mc-v">{activeCt}</div><div className="mc-l">Active Bookings</div></div>
       </div>
 
       <div className="prop-toolbar">

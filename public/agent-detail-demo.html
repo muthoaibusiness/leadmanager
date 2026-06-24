@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Individual Performance · Minimal Intelligence</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+<style>
+:root{--bg:#0D0D0D;--surf:#161616;--bd:#222;--accent:#7C6EF5;--green:#22C55E;--warn:#F59E0B;--red:#EF4444;--cyan:#5ED6D6;--t1:#F5F5F5;--t2:#6B6B6B}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t1);min-height:100vh;-webkit-font-smoothing:antialiased}
+.lbl{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.09em;color:var(--t2)}
+.bar{position:sticky;top:0;z-index:20;display:flex;align-items:center;gap:14px;padding:16px clamp(16px,4vw,40px);
+  background:rgba(13,13,13,.82);backdrop-filter:blur(14px);border-bottom:1px solid var(--bd)}
+.bar h1{font-size:17px;font-weight:700;letter-spacing:-.02em;white-space:nowrap}
+.bar h1 b{color:var(--accent)}
+.bar .sp{flex:1}
+.fsel{background:var(--surf);border:1px solid var(--bd);color:var(--t1);font:inherit;font-size:12.5px;border-radius:10px;height:36px;padding:0 11px;cursor:pointer;max-width:240px}
+.wrap{max-width:1300px;margin:0 auto;padding:24px clamp(16px,4vw,40px) 60px;display:flex;flex-direction:column;gap:20px}
+
+/* header card */
+.hero{display:flex;align-items:center;gap:18px;background:var(--surf);border:1px solid var(--bd);border-radius:18px;padding:22px 24px;flex-wrap:wrap}
+.hav{width:62px;height:62px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:22px;font-weight:800;color:#fff;background:#2a2a2a;border:3px solid var(--bd);flex-shrink:0}
+.hav.t-green{border-color:var(--green)}.hav.t-warn{border-color:var(--warn)}.hav.t-red{border-color:var(--red)}
+.hmeta{min-width:0}
+.hmeta h2{font-size:24px;font-weight:800;letter-spacing:-.02em}
+.hmeta .sub{font-size:13px;color:var(--t2);margin-top:3px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.badge{font-size:11px;font-weight:600;padding:3px 9px;border-radius:20px}
+.badge.on{background:rgba(34,197,94,.14);color:var(--green)}.badge.off{background:rgba(239,68,68,.14);color:var(--red)}
+.hspace{flex:1}
+.hscore{text-align:center;padding:0 6px}
+.hscore .sv{font-size:40px;font-weight:800;letter-spacing:-.03em;line-height:1;color:var(--accent)}
+.hscore .sl{margin-top:4px}
+.hconv{text-align:center;padding:0 6px}
+.hconv .cv{font-size:40px;font-weight:800;letter-spacing:-.03em;line-height:1}
+.hconv .cl{margin-top:4px}
+
+/* kpi strip */
+.kstrip{display:flex;flex-wrap:wrap;background:var(--surf);border:1px solid var(--bd);border-radius:16px;padding:18px 6px}
+.kpi{flex:1;min-width:120px;text-align:center;padding:6px 10px;position:relative}
+.kpi+.kpi::before{content:"";position:absolute;left:0;top:14%;height:72%;width:1px;background:var(--bd)}
+.kpi .v{font-size:clamp(24px,2.6vw,34px);font-weight:800;letter-spacing:-.03em;line-height:1}
+.kpi .l{margin-top:7px}
+.kpi.accent .v{color:var(--accent)}.kpi.green .v{color:var(--green)}.kpi.warn .v{color:var(--warn)}
+
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+@media(max-width:920px){.grid{grid-template-columns:1fr}}
+.col{display:flex;flex-direction:column;gap:20px;min-width:0}
+.card{background:var(--surf);border:1px solid var(--bd);border-radius:16px;padding:18px}
+.card .hd{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px}
+.card .hd .mini{font-size:11px;color:var(--t2)}
+
+.steps-rail{position:relative}.steps-rail::before{content:"";position:absolute;top:23px;left:9%;right:9%;height:2px;background:var(--bd)}
+.steps{display:flex;align-items:flex-start;justify-content:space-between;position:relative}
+.step{display:flex;flex-direction:column;align-items:center;gap:9px;flex:1;z-index:1}
+.step .circ{border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700;color:#fff;border:2px solid transparent;font-size:14px}
+.step.drop .circ{border-color:var(--red);box-shadow:0 0 0 4px rgba(239,68,68,.14)}
+.step .nm{font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:var(--t2);text-align:center;max-width:78px;line-height:1.25}
+.step .dpct{font-size:10px;font-weight:700;color:var(--red);min-height:13px}
+
+.bars{display:flex;flex-direction:column;gap:12px}
+.brow{display:grid;grid-template-columns:96px 1fr auto;align-items:center;gap:11px}
+.bname{font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.btrack{height:4px;border-radius:4px;background:#202020;overflow:hidden}
+.bfill{height:100%;border-radius:4px;transition:width .6s cubic-bezier(.2,.8,.2,1)}
+.bval{font-size:12.5px;font-weight:700;font-variant-numeric:tabular-nums}
+
+/* compare bars (agent vs avg) */
+.cmp{display:flex;flex-direction:column;gap:15px}
+.crow .ctop{display:flex;justify-content:space-between;font-size:12px;margin-bottom:6px}
+.crow .ctop b{font-weight:700}.crow .ctop .avg{color:var(--t2)}
+.ctrack{position:relative;height:6px;border-radius:5px;background:#202020;overflow:visible}
+.cfill{height:100%;border-radius:5px;transition:width .6s cubic-bezier(.2,.8,.2,1)}
+.cmark{position:absolute;top:-3px;width:2px;height:12px;background:var(--t1);opacity:.55;border-radius:2px}
+
+/* activity trend */
+.trend{display:flex;align-items:flex-end;gap:5px;height:96px;padding-top:6px}
+.tcol{flex:1;display:flex;flex-direction:column;justify-content:flex-end;gap:2px;height:100%}
+.tb{width:100%;border-radius:2px 2px 0 0;min-height:1px;transition:height .5s cubic-bezier(.2,.8,.2,1)}
+.tb.lead{background:var(--accent)}.tb.won{background:var(--green)}
+.legend{display:flex;gap:14px;font-size:11px;color:var(--t2)}
+.legend i{display:inline-block;width:9px;height:9px;border-radius:3px;margin-right:5px;vertical-align:middle}
+
+.tags{display:flex;flex-wrap:wrap;gap:8px}
+.tag{font-size:12px;font-weight:600;padding:6px 12px;border-radius:20px;background:#1c1c1c;border:1px solid var(--bd)}
+.tag.r{border-color:rgba(239,68,68,.4);color:#fda4a4}.tag.g{border-color:rgba(34,197,94,.4);color:#86efac}
+.tag.p{border-color:rgba(124,110,245,.4);color:#c4bcff}.tag.w{border-color:rgba(245,158,11,.4);color:#fcd34d}
+
+.tl{list-style:none;display:flex;flex-direction:column}
+.tl li{display:flex;align-items:center;gap:11px;padding:9px 0;border-bottom:1px solid var(--bd);font-size:13px}
+.tl li:last-child{border-bottom:0}
+.tl .ic{width:26px;height:26px;border-radius:8px;background:#121212;border:1px solid var(--bd);display:flex;align-items:center;justify-content:center;font-size:13px;flex-shrink:0}
+.tl .tx{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--t1)}
+.tl .who{color:var(--t2);font-size:11px}
+.tl .t{color:var(--t2);font-size:11px;white-space:nowrap}
+
+.statpills{display:flex;flex-wrap:wrap;gap:8px}
+.sp2{display:flex;align-items:center;gap:7px;background:#121212;border:1px solid var(--bd);border-radius:20px;padding:6px 12px;font-size:12.5px}
+.sp2 b{font-weight:700}.sp2 .dot{width:8px;height:8px;border-radius:50%}
+
+.none{color:var(--t2);font-size:13px;text-align:center;padding:14px}
+.empty{text-align:center;padding:80px 20px;color:var(--t2)}.empty b{display:block;color:var(--t1);font-size:18px;margin-bottom:6px}
+.empty code{background:var(--surf);padding:2px 7px;border-radius:6px;color:var(--accent)}
+</style>
+</head>
+<body>
+<div class="bar">
+  <h1>Individual <b>Performance</b></h1>
+  <div class="sp"></div>
+  <select class="fsel" id="agent"></select>
+  <select class="fsel" id="period" style="max-width:150px">
+    <option value="7">7 days</option><option value="30" selected>30 days</option>
+    <option value="90">90 days</option><option value="0">All time</option>
+  </select>
+</div>
+<div class="wrap" id="wrap"></div>
+
+<script type="module">
+import { buildAgentPerf, ROLE_VIEWS } from '/src/lib/agentPerf.js';
+const R={IA:'INITIAL_AGENT',MA:'MEETING_AGENT',TL:'TEAM_LEAD'};
+const DB=(()=>{try{return JSON.parse(localStorage.getItem('propcrm_v1'))}catch{return null}})();
+const $=s=>document.querySelector(s);const wrap=$('#wrap');
+if(!DB||!DB.users){wrap.innerHTML=`<div class="empty"><b>No CRM data in this browser</b>Open <code>http://localhost:8090/</code>, sign in, then reload.</div>`;throw new Error('no data');}
+
+const STATUS={NEW:'New',CONTACTED:'Contacted',INTERESTED:'Interested',MEETING_SET:'Meeting Set',SITE_VISIT_SCHEDULED:'Visit Scheduled',SITE_VISIT_DONE:'Visit Done',NEGOTIATING:'Negotiating',DEAL_CLOSED_WON:'Won',DEAL_CLOSED_LOST:'Lost',NOT_INTERESTED:'Not Interested'};
+const STCLR={NEW:'#6B6B6B',CONTACTED:'#7C6EF5',INTERESTED:'#8E7BF0',MEETING_SET:'#5ED6D6',SITE_VISIT_SCHEDULED:'#5ED6D6',SITE_VISIT_DONE:'#4FBE93',NEGOTIATING:'#F59E0B',DEAL_CLOSED_WON:'#22C55E',DEAL_CLOSED_LOST:'#EF4444',NOT_INTERESTED:'#EF4444'};
+const AICON={CALL:'📞',FOLLOW_UP:'🔁',NOTE:'📝',OFFER:'💰',STATUS_CHANGE:'🔄',VISIT:'📍',VISIT_SCHED:'📅',VISIT_DONE:'✅',FORWARDED:'↪️',CREATED:'✨',ASSIGNED:'👤',DEAL:'🏆',DEAL_LOST:'👎',CART:'🛒',BOOKING:'🧾',LOST_REASON:'❌'};
+const FFUNNEL=['#7C6EF5','#8E7BF0','#6FB6C9','#4FBE93','#22C55E'];
+const ts=s=>s?new Date(s).getTime():0;
+const fmtBDT=v=>!v?'৳0':v>=1e7?'৳'+(v/1e7).toFixed(2)+'Cr':v>=1e5?'৳'+(v/1e5).toFixed(2)+'L':v>=1e3?'৳'+Math.round(v/1e3)+'k':'৳'+Math.round(v);
+const ini=n=>(n||'?').trim().split(/\s+/).slice(0,2).map(w=>w[0]).join('').toUpperCase();
+const tier=c=>c>=50?'green':c>=25?'warn':'red';
+const ago=tsv=>{const s=(Date.now()-ts(tsv))/1000;return s<60?'now':s<3600?Math.floor(s/60)+'m':s<86400?Math.floor(s/3600)+'h':s<2592000?Math.floor(s/86400)+'d':new Date(tsv).toLocaleDateString('en',{month:'short',day:'numeric'});};
+const convOf=r=>r.u.role===R.IA?r.contactRate:r.u.role===R.MA?r.showRate:r.closeRate;
+const volOf=r=>r.u.role===R.IA?r.sourced:r.u.role===R.MA?r.mReceived:r.won;
+const involved=id=>DB.leads.filter(l=>l.assignedTo===id||(l.previousAssignees||[]).includes(id));
+
+const agents=DB.users.filter(u=>[R.IA,R.MA,R.TL].includes(u.role)).sort((a,b)=>(a.name||'').localeCompare(b.name||''));
+const qid=new URLSearchParams(location.search).get('id');
+const state={id:qid&&agents.some(a=>a.id===qid)?qid:(agents[0]&&agents[0].id),period:30};
+
+$('#agent').innerHTML=agents.map(a=>`<option value="${a.id}" ${a.id===state.id?'selected':''}>${a.name} · ${ROLE_VIEWS[a.role].label}</option>`).join('');
+$('#agent').onchange=e=>{state.id=e.target.value;render();};
+$('#period').onchange=e=>{state.period=+e.target.value;render();};
+
+function animate(el,to,{fmt=null}={}){const dur=1100,t0=performance.now();
+  (function s(now){const p=Math.min((now-t0)/dur,1),e=1-Math.pow(1-p,3),v=to*e;
+    el.textContent=fmt?fmt(v):Math.round(v).toLocaleString();if(p<1)requestAnimationFrame(s);})(t0);}
+
+function activityMix(id){
+  const t={CALL:0,FOLLOW_UP:0,NOTE:0,VISIT:0,OFFER:0,FORWARDED:0};
+  Object.values(DB.activities||{}).forEach(arr=>(arr||[]).forEach(a=>{if(a.userId!==id)return;
+    if(a.type==='CALL')t.CALL++;else if(a.type==='FOLLOW_UP')t.FOLLOW_UP++;else if(a.type==='NOTE')t.NOTE++;
+    else if(['VISIT','VISIT_DONE','VISIT_SCHED'].includes(a.type))t.VISIT++;else if(a.type==='OFFER')t.OFFER++;else if(a.type==='FORWARDED')t.FORWARDED++;}));
+  return [['Calls',t.CALL],['Follow-ups',t.FOLLOW_UP],['Notes',t.NOTE],['Visits',t.VISIT],['Offers',t.OFFER],['Forwards',t.FORWARDED]].filter(x=>x[1]>0);
+}
+function recentActs(id){
+  const out=[];const lmap={};DB.leads.forEach(l=>lmap[l.id]=l.name);
+  Object.entries(DB.activities||{}).forEach(([lid,arr])=>(arr||[]).forEach(a=>{if(a.userId===id)out.push({...a,lead:lmap[lid]||'—'});}));
+  return out.sort((a,b)=>ts(b.timestamp)-ts(a.timestamp)).slice(0,8);
+}
+function dailyTrend(id){
+  const days=30,now=new Date();now.setHours(0,0,0,0);const lead=Array(days).fill(0),won=Array(days).fill(0);
+  involved(id).forEach(l=>{const d=Math.floor((ts(now)-ts(new Date(new Date(l.createdAt).setHours(0,0,0,0))))/864e5);if(d>=0&&d<days)lead[days-1-d]++;
+    if(l.status==='DEAL_CLOSED_WON'){const wd=Math.floor((ts(now)-ts(new Date(new Date(l.updatedAt||l.createdAt).setHours(0,0,0,0))))/864e5);if(wd>=0&&wd<days)won[days-1-wd]++;}});
+  return {lead,won};
+}
+function statusMix(id){
+  const m={};involved(id).forEach(l=>{m[l.status]=(m[l.status]||0)+1;});
+  return Object.entries(m).sort((a,b)=>b[1]-a[1]);
+}
+function insights(r){
+  const out=[];const f=ROLE_VIEWS[r.u.role].funnel(r,FFUNNEL);
+  let di=-1,dp=0;for(let i=1;i<f.length;i++){const pv=f[i-1].value||0;const d=pv?1-f[i].value/pv:0;if(d>dp&&pv>0){dp=d;di=i;}}
+  if(di>0&&dp>=.4)out.push({c:'r',x:`🔴 Drops at ${f[di].label} (−${Math.round(dp*100)}%)`});
+  if(r.resp!=null&&r.resp<=4)out.push({c:'g',x:`⚡ Fast responder · ${r.resp.toFixed(1)}h`});
+  else if(r.resp!=null&&r.resp>24)out.push({c:'r',x:`🐢 Slow response · ${r.resp.toFixed(1)}h`});
+  if(r.u.role===R.IA&&r.untouched>0)out.push({c:'w',x:`🟠 ${r.untouched} untouched leads`});
+  if(r.u.role===R.IA&&r.followups>=10)out.push({c:'g',x:'🔁 Diligent follow-up'});
+  if(r.u.role===R.TL&&r.revenue>0)out.push({c:'p',x:`💰 ${fmtBDT(r.revenue)} closed`});
+  const sp=dailyTrend(r.u.id).lead;if(sp.slice(-7).reduce((a,b)=>a+b,0)>sp.slice(0,7).reduce((a,b)=>a+b,0))out.push({c:'g',x:'📈 Trending up'});
+  if(r.score>=70)out.push({c:'p',x:'⭐ Top performer'});else if(r.score<30)out.push({c:'w',x:'⚠️ Needs attention'});
+  return out.length?out:[{c:'p',x:'➖ Steady performance'}];
+}
+
+function render(){
+  const all=buildAgentPerf(DB,{periodDays:state.period});
+  const r=all.find(x=>x.u.id===state.id);
+  if(!r){wrap.innerHTML=`<div class="empty"><b>Agent not found</b></div>`;return;}
+  const role=r.u.role,C=ROLE_VIEWS[role],u=r.u;
+  const peers=all.filter(x=>x.u.role===role);
+  const avg=k=>{const v=peers.map(k).filter(x=>x!=null);return v.length?v.reduce((a,b)=>a+b,0)/v.length:0;};
+  const avgConv=avg(convOf),avgScore=avg(x=>x.score),avgVol=avg(volOf),avgResp=avg(x=>x.resp);
+  const conv=convOf(r),t=tier(conv);
+  const kpis=C.kpis(r).concat([{label:'Conversion',val:'__CONV__'},{label:'Avg Response',val:'__RESP__'}]);
+  const funnel=C.funnel(r,FFUNNEL);
+  let di=-1,dp=0;for(let i=1;i<funnel.length;i++){const pv=funnel[i-1].value||0;const x=pv?1-funnel[i].value/pv:0;if(x>dp&&pv>0){dp=x;di=i;}}
+  const mix=activityMix(u.id),mixMax=Math.max(...mix.map(m=>m[1]),1);
+  const tr=dailyTrend(u.id),trMax=Math.max(...tr.lead,...tr.won,1);
+  const recents=recentActs(u.id),smix=statusMix(u.id),sTot=involved(u.id).length||1;
+
+  // comparisons (agent vs team avg). resp: lower better → invert display
+  const cmp=[
+    {l:'Conversion',a:conv,avg:avgConv,fmt:x=>x.toFixed(0)+'%',max:Math.max(conv,avgConv,1)},
+    {l:'Score',a:r.score,avg:avgScore,fmt:x=>Math.round(x),max:100},
+    {l:C.label.includes('Initial')?'Leads sourced':C.label.includes('Meeting')?'Meetings':'Deals won',a:volOf(r),avg:avgVol,fmt:x=>Math.round(x),max:Math.max(volOf(r),avgVol,1)},
+    {l:'Response (h)',a:r.resp,avg:avgResp,fmt:x=>x==null?'—':x.toFixed(1)+'h',max:Math.max(r.resp||0,avgResp||0,1),lowerBetter:true},
+  ];
+
+  wrap.innerHTML=`
+  <div class="hero">
+    <div class="hav t-${t}">${ini(u.name)}</div>
+    <div class="hmeta">
+      <h2>${u.name}</h2>
+      <div class="sub">${C.label} · ${u.email||'—'} <span class="badge ${u.isActive!==false?'on':'off'}">${u.isActive!==false?'Active':'Inactive'}</span></div>
+    </div>
+    <div class="hspace"></div>
+    <div class="hconv"><div class="cv" style="color:var(--${t==='green'?'green':t==='warn'?'warn':'red'})" data-to="${conv}" data-fmt="pct">0%</div><div class="cl lbl">Conversion</div></div>
+    <div class="hscore"><div class="sv" data-to="${r.score}">0</div><div class="sl lbl">Score / 100</div></div>
+  </div>
+
+  <div class="kstrip">${kpis.map(k=>{
+    let v=k.val,ft='';
+    if(v==='__REVENUE__'){v=r.revenue;ft='bdt';}
+    else if(v==='__CONV__'){v=conv;ft='pct';}
+    else if(v==='__RESP__'){v=r.resp==null?null:r.resp;ft='resp';}
+    const cls=k.tone==='good'?'green':k.tone==='warn'?'warn':k.tone==='accent'?'accent':'';
+    const init=ft==='bdt'?'৳0':ft==='pct'?'0%':ft==='resp'?(v==null?'—':'0h'):'0';
+    return `<div class="kpi ${cls}"><div class="v" data-to="${v==null?'':v}" data-fmt="${ft}">${init}</div><div class="l">${k.label}</div></div>`;
+  }).join('')}</div>
+
+  <div class="grid">
+    <div class="col">
+      <div class="card">
+        <div class="hd"><span class="lbl">Personal funnel</span><span class="mini">${di>0?`drop → ${funnel[di].label}`:'—'}</span></div>
+        <div class="steps-rail"><div class="steps">${funnel.map((s,i)=>{const mx=Math.max(...funnel.map(x=>x.value),1);const sz=Math.round(30+22*(s.value/mx));
+          const dpc=i>0?Math.round((1-(s.value/(funnel[i-1].value||1)))*100):0;
+          return `<div class="step ${i===di?'drop':''}"><div class="circ" style="width:${sz}px;height:${sz}px;background:${s.color}">${s.value}</div><div class="nm">${s.label}</div><div class="dpct">${i===di?'−'+dpc+'%':''}</div></div>`;}).join('')}</div></div>
+      </div>
+      <div class="card">
+        <div class="hd"><span class="lbl">30-day activity</span><span class="legend"><span><i style="background:var(--accent)"></i>Leads</span><span><i style="background:var(--green)"></i>Closings</span></span></div>
+        <div class="trend">${tr.lead.map((lv,i)=>`<div class="tcol"><div class="tb won" data-h="${Math.round(tr.won[i]/trMax*100)}" style="height:0"></div><div class="tb lead" data-h="${Math.round(lv/trMax*100)}" style="height:0"></div></div>`).join('')}</div>
+      </div>
+      <div class="card">
+        <div class="hd"><span class="lbl">Activity mix</span><span class="mini">all logged</span></div>
+        <div class="bars">${mix.length?mix.map(([l,v])=>`<div class="brow"><div class="bname">${l}</div><div class="btrack"><div class="bfill" data-w="${Math.round(v/mixMax*100)}" style="width:0;background:var(--accent)"></div></div><div class="bval">${v}</div></div>`).join(''):'<div class="none">No logged activity.</div>'}</div>
+      </div>
+    </div>
+
+    <div class="col">
+      <div class="card">
+        <div class="hd"><span class="lbl">Insights</span></div>
+        <div class="tags">${insights(r).map(t=>`<span class="tag ${t.c}">${t.x}</span>`).join('')}</div>
+      </div>
+      <div class="card">
+        <div class="hd"><span class="lbl">vs Team average</span><span class="mini">${C.label} cohort</span></div>
+        <div class="cmp">${cmp.map(c=>{const aw=Math.min(100,Math.round((c.a||0)/c.max*100));const mw=Math.min(100,Math.round((c.avg||0)/c.max*100));
+          const better=c.lowerBetter?(c.a!=null&&c.a<=c.avg):(c.a>=c.avg);
+          return `<div class="crow"><div class="ctop"><span>${c.l}</span><span><b style="color:var(--${better?'green':'warn'})">${c.fmt(c.a)}</b> <span class="avg">avg ${c.fmt(c.avg)}</span></span></div>
+            <div class="ctrack"><div class="cfill" data-w="${aw}" style="width:0;background:var(--${better?'green':'warn'})"></div><div class="cmark" style="left:${mw}%"></div></div></div>`;}).join('')}</div>
+      </div>
+      <div class="card">
+        <div class="hd"><span class="lbl">Lead status mix</span><span class="mini">${sTot} leads handled</span></div>
+        <div class="statpills">${smix.length?smix.map(([s,n])=>`<span class="sp2"><span class="dot" style="background:${STCLR[s]||'#6B6B6B'}"></span>${STATUS[s]||s} <b>${n}</b></span>`).join(''):'<div class="none">No leads.</div>'}</div>
+      </div>
+      <div class="card">
+        <div class="hd"><span class="lbl">Recent activity</span></div>
+        <ul class="tl">${recents.length?recents.map(a=>`<li><span class="ic">${AICON[a.type]||'•'}</span><span class="tx">${(a.description||a.type)} <span class="who">· ${a.lead}</span></span><span class="t">${ago(a.timestamp)}</span></li>`).join(''):'<li class="none">No activity logged.</li>'}</ul>
+      </div>
+    </div>
+  </div>`;
+
+  // animate
+  const fmtFor=ft=>ft==='bdt'?fmtBDT:ft==='pct'?(x=>x.toFixed(1)+'%'):ft==='resp'?(x=>x.toFixed(1)+'h'):null;
+  wrap.querySelectorAll('[data-to]').forEach(el=>{if(el.dataset.to==='')return;const to=+el.dataset.to;if(isNaN(to))return;animate(el,to,{fmt:fmtFor(el.dataset.fmt)});});
+  requestAnimationFrame(()=>{
+    wrap.querySelectorAll('.bfill,.cfill').forEach(el=>el.style.width=(el.dataset.w||0)+'%');
+    wrap.querySelectorAll('.tb').forEach(el=>el.style.height=(el.dataset.h||0)+'%');
+  });
+}
+render();
+</script>
+</body>
+</html>

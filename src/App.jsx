@@ -35,6 +35,7 @@ import BookingsView from './components/views/BookingsView.jsx';
 import PipelineView from './components/views/PipelineView.jsx';
 import ClientsView from './components/views/ClientsView.jsx';
 import ReportsView from './components/views/ReportsView.jsx';
+import AgentPerformanceView from './components/views/AgentPerformanceView.jsx';
 
 import AddLeadModal from './components/modals/AddLeadModal.jsx';
 import ForwardModal from './components/modals/ForwardModal.jsx';
@@ -134,6 +135,7 @@ function PageHeader() {
       <button className="ham" onClick={() => setSidebarOpen(true)}><Mi>menu</Mi></button>
       <div style={{ flex: 1 }} />
       <DateRangePicker />
+      <span className="pg-div" />
       <NotifBell />
     </header>
   );
@@ -167,6 +169,7 @@ function PageHero() {
     clients: { eyebrow: 'Relationships', title: 'Contacts', sub: '360° customer view' },
     properties: { eyebrow: 'Catalog', title: 'Projects', sub: `${props.length} projects · ${propAvail} available` },
     reports: { eyebrow: 'Insights', title: 'Reports', sub: 'Live sales analytics' },
+    agentperf: { eyebrow: 'Insights', title: 'Agent Performance', sub: 'Per-role scorecards & funnels' },
     bookings: { eyebrow: 'Sales', title: 'Sales Activity', sub: 'Payments, instalments & dues' },
     team: { eyebrow: 'Team', title: 'My Team', sub: `${teamAgents} agents` },
     users: { eyebrow: 'Administration', title: 'Users', sub: `${db.users.length} accounts` },
@@ -225,6 +228,7 @@ function PageBody() {
   if (view === 'properties') return <PropertiesView />;
   if (view === 'bookings') return <BookingsView />;
   if (view === 'reports') return <ReportsView />;
+  if (view === 'agentperf') return <AgentPerformanceView />;
   if (view === 'team') return <TeamView />;
   if (view === 'users') return <UsersView />;
   if (view === 'accounts') return <AccountsView />;

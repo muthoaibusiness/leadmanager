@@ -56,7 +56,7 @@ export default function LiveActivity({ db, coLeads, coUsers, dbVersion }) {
             const who = usersById[e.userId];
             const isLead = e.kind === 'lead';
             const ico = isLead ? 'person_add' : actIcon(e.type);
-            const clr = isLead ? '#C8FF00' : actClr(e.type);
+            const clr = isLead ? '#FFFFFF' : actClr(e.type);
             return (
               <div key={i} className="la-row">
                 <span className="la-ico" style={{ color: clr, borderColor: clr }}><Mi>{ico}</Mi></span>

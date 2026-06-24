@@ -23,11 +23,15 @@ export default function PropertyViewModal() {
   const docs = p.documents?.filter(d => d && d.url) || [];
   const amenities = (p.amenities || []).filter(Boolean);
   const sizeStr = p.sizeMin && p.sizeMax ? `${p.sizeMin}–${p.sizeMax} sqft` : (p.sizeMin ? `${p.sizeMin}+ sqft` : '—');
-  const availPct = p.totalUnits ? Math.round((p.unitsAvailable / p.totalUnits) * 100) : 0;
+  // Total saleable units = sum across blocks (variants); e.g. Block A 8 + Block B 8 = 16.
+  const blockUnits = (p.variants || []).reduce((s, v) => s + ((v.units || []).length || 0), 0);
+  const totalUnits = blockUnits || p.totalUnits || 0;
+  const availUnits = (p.variants || []).reduce((s, v) => s + ((v.units || []).filter(u => u.status === 'available').length), 0) || p.unitsAvailable || 0;
+  const availPct = totalUnits ? Math.round((availUnits / totalUnits) * 100) : 0;
   const priceTotal = p.askingPrice ? fmtBDT(p.askingPrice) : 'On request';
   const overview = p.details
     || `${p.type} development${p.developer ? ' by ' + p.developer : ''} located in ${[p.area, p.district].filter(Boolean).join(', ')}. `
-       + `${p.totalUnits ? p.totalUnits + ' units' : 'Multiple units'}${p.facing ? ', ' + p.facing + ' facing' : ''}`
+       + `${totalUnits ? totalUnits + ' units' : 'Multiple units'}${p.facing ? ', ' + p.facing + ' facing' : ''}`
        + `${p.handover ? ', handover ' + p.handover : ''}.`;
 
   const specs = [
@@ -44,7 +48,7 @@ export default function PropertyViewModal() {
     { ico: 'apartment', l: 'Type', v: p.type },
     { ico: 'business', l: 'Developer', v: p.developer },
     { ico: 'event_available', l: 'Handover', v: p.handover },
-    { ico: 'meeting_room', l: 'Total units', v: p.totalUnits || null },
+    { ico: 'meeting_room', l: 'Saleable units', v: totalUnits || null },
   ].filter(q => q.v);
 
   const handleEdit = () => { setPropEdit(p); openModal('property-form'); };
@@ -165,7 +169,7 @@ export default function PropertyViewModal() {
                 <div className="pv-res-hd">Availability</div>
                 <div className="pv-avail">
                   <div className="pv-avail-top">
-                    <span className="pv-avail-n">{p.unitsAvailable}<small> / {p.totalUnits} units</small></span>
+                    <span className="pv-avail-n">{availUnits}<small> / {totalUnits} units</small></span>
                     <span className="pv-avail-pct">{availPct}% open</span>
                   </div>
                   <div className="pv-avail-bar"><div className="pv-avail-fill" style={{ width: availPct + '%' }} /></div>

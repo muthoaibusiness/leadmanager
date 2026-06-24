@@ -79,13 +79,13 @@ export default function TeamLeadDash() {
   // Chart data (team)
   const sc = {}; leads.forEach(l => { sc[l.status] = (sc[l.status] || 0) + 1; });
   const FUN = [
-    ['NEW', 'New', '#C8FF00'], ['CONTACTED', 'Contacted', '#A6D400'], ['INTERESTED', 'Interested', '#DDB948'],
+    ['NEW', 'New', '#FFFFFF'], ['CONTACTED', 'Contacted', '#D4D4D8'], ['INTERESTED', 'Interested', '#DDB948'],
     ['MEETING_SET', 'Meeting Set', '#F0A92B'], ['SITE_VISIT_DONE', 'Visit Done', '#2DD4BF'],
     ['NEGOTIATING', 'Negotiating', '#34D399'], ['DEAL_CLOSED_WON', 'Won', '#34D399'],
   ];
   const funnelData = FUN.map(([k, l, c]) => ({ label: l, value: sc[k] || 0, color: c }));
   const srcC = {}; leads.forEach(l => { srcC[l.source] = (srcC[l.source] || 0) + 1; });
-  const srcColors = { META_ADS: '#C8FF00', WHATSAPP_ADS: '#34D399', LINKEDIN: '#DDB948', HOTLINE: '#F0A92B', PERSONAL: '#2DD4BF', WEBSITE: '#F87171' };
+  const srcColors = { META_ADS: '#FFFFFF', WHATSAPP_ADS: '#34D399', LINKEDIN: '#DDB948', HOTLINE: '#F0A92B', PERSONAL: '#2DD4BF', WEBSITE: '#F87171' };
   const srcData = Object.entries(srcC).sort((a, b) => b[1] - a[1]).map(([s, c]) => ({ label: SRC_LABELS[s] || s, value: c, color: srcColors[s] || '#9CA3AF' }));
 
   return (

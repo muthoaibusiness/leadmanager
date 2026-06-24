@@ -88,9 +88,9 @@ function CalMonth({ year, month, selStart, selEnd, hover, selecting, onDay, onHo
 export default function DateRangePicker() {
   const { dateRange, setDateRange } = useApp();
   const [open, setOpen]           = useState(false);
-  const [preset, setPreset]       = useState('allTime');
-  const [selStart, setSelStart]   = useState(null);
-  const [selEnd, setSelEnd]       = useState(null);
+  const [preset, setPreset]       = useState(dateRange?.preset || 'allTime');
+  const [selStart, setSelStart]   = useState(dateRange?.range?.start || null);
+  const [selEnd, setSelEnd]       = useState(dateRange?.range?.end || null);
   const [selecting, setSelecting] = useState('start');
   const [hover, setHover]         = useState(null);
   const [leftYear, setLeftYear]   = useState(()=>{ const d=new Date(); return d.getFullYear(); });

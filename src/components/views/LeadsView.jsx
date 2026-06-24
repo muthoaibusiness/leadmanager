@@ -29,9 +29,10 @@ export default function LeadsView() {
   const canFilterAgents = isMgmt || user.role === ROLES.TL;
   const agentOptions = canFilterAgents
     ? (db.users || [])
-        .filter(u => isMgmt
+        .filter(u => u.isActive !== false && (isMgmt
           ? [ROLES.IA, ROLES.MA, ROLES.TL].includes(u.role)
-          : (u.teamId === user.teamId && [ROLES.IA, ROLES.MA].includes(u.role)))
+          // A Team Lead can only filter by agents inside their own team.
+          : (u.teamId === user.teamId && [ROLES.IA, ROLES.MA].includes(u.role))))
         .sort((a, b) => (a.name || '').localeCompare(b.name || ''))
     : [];
 

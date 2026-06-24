@@ -28,7 +28,9 @@ export function AppProvider({ children }) {
   const [toast, setToast] = useState(null);
   const [dbVersion, setDbVersion] = useState(0);
   const [credInfo, setCredInfo] = useState(null);
-  const [dateRange, setDateRange] = useState({ preset: 'allTime', range: null });
+  // Default the global date filter to "today" so counts start from the current day after login.
+  const todayRange = () => { const s = new Date(); s.setHours(0, 0, 0, 0); const e = new Date(); e.setHours(23, 59, 59, 999); return { start: s, end: e }; };
+  const [dateRange, setDateRange] = useState({ preset: 'today', range: todayRange() });
   const [impersonator, setImpersonator] = useState(null); // the real admin while viewing as another account
   const [consoleAdmin, setConsoleAdmin] = useState(false); // open the project console straight into Admin catalog
   const searchRef = useRef(null);

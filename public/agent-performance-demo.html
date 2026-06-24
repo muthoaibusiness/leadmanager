@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Agent Performance · Minimal Intelligence</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+<style>
+:root{
+  --bg:#0D0D0D; --surf:#161616; --bd:#222222; --accent:#7C6EF5;
+  --green:#22C55E; --warn:#F59E0B; --red:#EF4444; --t1:#F5F5F5; --t2:#6B6B6B;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html{-webkit-font-smoothing:antialiased}
+body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t1);min-height:100vh}
+.lbl{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.09em;color:var(--t2)}
+
+/* sticky top bar */
+.bar{position:sticky;top:0;z-index:20;display:flex;align-items:center;gap:18px;
+  padding:18px clamp(16px,4vw,40px);background:rgba(13,13,13,.82);backdrop-filter:blur(14px);border-bottom:1px solid var(--bd)}
+.bar h1{font-size:18px;font-weight:700;letter-spacing:-.02em;white-space:nowrap}
+.bar h1 b{color:var(--accent)}
+.bar .sp{flex:1}
+.seg{display:inline-flex;background:var(--surf);border:1px solid var(--bd);border-radius:10px;padding:3px}
+.seg button{border:0;background:transparent;color:var(--t2);font:inherit;font-size:12.5px;font-weight:600;
+  padding:6px 12px;border-radius:7px;cursor:pointer;transition:.25s ease}
+.seg button.on{background:var(--accent);color:#fff}
+.seg.ghost button.on{background:#fff;color:var(--bg)}
+.fld{display:flex;align-items:center;gap:7px;background:var(--surf);border:1px solid var(--bd);border-radius:10px;height:36px;padding:0 11px}
+.fld input{background:0;border:0;outline:0;color:var(--t1);font:inherit;font-size:13px;width:150px}
+.fld input::placeholder{color:var(--t2)}
+.fld svg{width:15px;height:15px;stroke:var(--t2);fill:none}
+.fsel{background:var(--surf);border:1px solid var(--bd);color:var(--t1);font:inherit;font-size:12.5px;border-radius:10px;height:36px;padding:0 10px;cursor:pointer}
+
+/* layout */
+.wrap{display:grid;grid-template-columns:1.05fr .95fr;gap:26px;padding:26px clamp(16px,4vw,40px) 60px;max-width:1340px;margin:0 auto}
+@media(max-width:920px){.wrap{grid-template-columns:1fr;gap:20px}}
+.col{display:flex;flex-direction:column;gap:22px;min-width:0}
+
+/* KPI strip */
+.kstrip{display:flex;background:var(--surf);border:1px solid var(--bd);border-radius:16px;padding:20px 8px}
+.kpi{flex:1;text-align:center;padding:0 8px;position:relative}
+.kpi+.kpi::before{content:"";position:absolute;left:0;top:14%;height:72%;width:1px;background:var(--bd)}
+.kpi .v{font-size:clamp(30px,3.4vw,46px);font-weight:800;letter-spacing:-.03em;line-height:1}
+.kpi .l{margin-top:8px}
+.kpi.accent .v{color:var(--accent)} .kpi.green .v{color:var(--green)} .kpi.warn .v{color:var(--warn)}
+
+/* section shell */
+.card{background:var(--surf);border:1px solid var(--bd);border-radius:16px;padding:18px 18px 16px}
+.card .hd{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px}
+.card .hd .lbl{color:var(--t2)}
+.card .hd .mini{font-size:11px;color:var(--t2)}
+
+/* conversion thin bars */
+.cv{display:flex;flex-direction:column;gap:13px}
+.cv-row{display:grid;grid-template-columns:92px 1fr 40px;align-items:center;gap:12px}
+.cv-name{font-size:12.5px;color:var(--t1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cv-track{height:4px;border-radius:4px;background:#202020;overflow:hidden;cursor:default}
+.cv-fill{height:100%;border-radius:4px;transition:width .6s cubic-bezier(.2,.8,.2,1)}
+.cv-pct{font-size:12.5px;font-weight:700;text-align:right;font-variant-numeric:tabular-nums}
+
+/* step funnel */
+.steps{display:flex;align-items:flex-start;justify-content:space-between;padding:6px 2px 0}
+.step{display:flex;flex-direction:column;align-items:center;gap:9px;flex:1;position:relative;z-index:1}
+.step .circ{border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700;color:#fff;
+  border:2px solid transparent;transition:.3s ease;font-size:14px}
+.step.drop .circ{border-color:var(--red);box-shadow:0 0 0 4px rgba(239,68,68,.14)}
+.step .nm{font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:var(--t2);text-align:center;max-width:74px;line-height:1.25}
+.step .dpct{font-size:10px;font-weight:700;color:var(--red)}
+.steps-rail{position:relative}
+.steps-rail::before{content:"";position:absolute;top:23px;left:9%;right:9%;height:2px;background:var(--bd);z-index:0}
+
+/* breakdown pills */
+.pills{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+.pill{border-radius:12px;padding:14px 12px;border:1px solid var(--bd);background:#121212}
+.pill .pv{font-size:24px;font-weight:800;letter-spacing:-.02em}
+.pill .pl{margin-top:3px}
+.pill.won{border-color:rgba(34,197,94,.32)} .pill.won .pv{color:var(--green)}
+.pill.lost{border-color:rgba(239,68,68,.32)} .pill.lost .pv{color:var(--red)}
+.pill.pend{border-color:rgba(124,110,245,.32)} .pill.pend .pv{color:var(--accent)}
+.pill.silent .pv{color:var(--t2)}
+
+/* agent list */
+.alist{display:flex;flex-direction:column;gap:8px}
+.sortbar{display:flex;align-items:center;gap:10px;margin-bottom:2px}
+.arow{background:var(--surf);border:1px solid var(--bd);border-radius:14px;overflow:hidden;transition:border-color .3s ease}
+.arow:hover{border-color:#333}
+.arow.open{border-color:var(--accent)}
+.atop{display:flex;align-items:center;gap:13px;height:64px;padding:0 16px;cursor:pointer}
+.av{width:32px;height:32px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;
+  flex-shrink:0;color:#fff;background:#2a2a2a;border:2px solid transparent}
+.av.t-green{border-color:var(--green)} .av.t-warn{border-color:var(--warn)} .av.t-red{border-color:var(--red)}
+.amid{flex:1;min-width:0}
+.amid .an{font-size:14px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.amid .as{font-size:11.5px;color:var(--t2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:1px}
+.aright{display:flex;align-items:center;gap:14px}
+.aspark{width:84px;height:26px}
+.aconv{font-size:20px;font-weight:800;letter-spacing:-.02em;font-variant-numeric:tabular-nums;min-width:52px;text-align:right}
+.aconv.t-green{color:var(--green)} .aconv.t-warn{color:var(--warn)} .aconv.t-red{color:var(--red)}
+.aexp{max-height:0;opacity:0;transition:max-height .3s ease,opacity .3s ease;border-top:1px solid transparent}
+.arow.open .aexp{max-height:260px;opacity:1;border-top-color:var(--bd)}
+.aexp-in{padding:16px}
+.qstats{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:14px}
+.qstat{background:#121212;border:1px solid var(--bd);border-radius:10px;padding:11px 12px}
+.qstat .qv{font-size:18px;font-weight:700}
+.qstat .ql{margin-top:2px}
+.tags{display:flex;flex-wrap:wrap;gap:7px}
+.tag{font-size:11.5px;font-weight:600;padding:5px 11px;border-radius:20px;background:#1c1c1c;border:1px solid var(--bd);color:var(--t1)}
+.tag.r{border-color:rgba(239,68,68,.4);color:#fda4a4} .tag.g{border-color:rgba(34,197,94,.4);color:#86efac}
+.tag.p{border-color:rgba(124,110,245,.4);color:#c4bcff} .tag.w{border-color:rgba(245,158,11,.4);color:#fcd34d}
+.mini-steps{display:flex;align-items:center;gap:6px;margin-bottom:14px;flex-wrap:wrap}
+.ms{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--t2)}
+.ms b{color:var(--t1);font-weight:700;font-size:13px}
+.ms-arrow{color:var(--t2)}
+@media(max-width:560px){.aspark{display:none}.kpi .v{font-size:28px}}
+
+.tip{position:fixed;z-index:50;background:#000;border:1px solid var(--bd);border-radius:8px;padding:6px 10px;font-size:12px;pointer-events:none;opacity:0;transition:opacity .15s;white-space:nowrap}
+.empty{grid-column:1/-1;text-align:center;padding:80px 20px;color:var(--t2)}
+.empty b{display:block;color:var(--t1);font-size:18px;margin-bottom:6px}
+.empty code{background:var(--surf);padding:2px 7px;border-radius:6px;color:var(--accent)}
+.demo-flag{position:fixed;bottom:14px;right:14px;font-size:11px;color:var(--t2);background:var(--surf);border:1px solid var(--bd);padding:6px 11px;border-radius:20px;z-index:30}
+</style>
+</head>
+<body>
+<div class="bar">
+  <h1>Agent <b>Performance</b></h1>
+  <div class="seg ghost" id="roleSeg"></div>
+  <div class="sp"></div>
+  <select class="fsel" id="period">
+    <option value="7">7 days</option><option value="30" selected>30 days</option>
+    <option value="90">90 days</option><option value="0">All time</option>
+  </select>
+  <div class="fld">
+    <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7" stroke-width="2"/><path d="M21 21l-4-4" stroke-width="2" stroke-linecap="round"/></svg>
+    <input id="search" placeholder="Search agent" />
+  </div>
+</div>
+
+<div class="wrap" id="wrap"></div>
+<div class="tip" id="tip"></div>
+<div class="demo-flag">⚡ Live demo · your real data</div>
+
+<script type="module">
+import { buildAgentPerf, ROLE_VIEWS } from '/src/lib/agentPerf.js';
+
+const R = { IA:'INITIAL_AGENT', MA:'MEETING_AGENT', TL:'TEAM_LEAD' };
+const DB = (() => { try { return JSON.parse(localStorage.getItem('propcrm_v1')); } catch { return null; } })();
+const $ = s => document.querySelector(s);
+const wrap = $('#wrap');
+
+if (!DB || !DB.users || !DB.users.length) {
+  wrap.innerHTML = `<div class="empty"><b>No CRM data in this browser</b>Open <code>http://localhost:8090/</code>, sign in, then reload this demo.</div>`;
+  throw new Error('no data');
+}
+
+// ── per-role view config (conversion metric, subtitle, quick stats) ──
+const fmtBDT = v => !v ? '৳0' : v>=1e7 ? '৳'+(v/1e7).toFixed(2)+'Cr' : v>=1e5 ? '৳'+(v/1e5).toFixed(2)+'L' : v>=1e3 ? '৳'+Math.round(v/1e3)+'k' : '৳'+Math.round(v);
+const CFG = {
+  [R.IA]: { conv:r=>r.contactRate, sub:r=>`${r.sourced} sourced · ${r.followups} follow-ups`,
+    stats:r=>[['Contacted',r.contacted],['Follow-ups',r.followups],['Meetings',r.meetingsSet]] },
+  [R.MA]: { conv:r=>r.showRate, sub:r=>`${r.mReceived} received · ${r.visitsDone} visits done`,
+    stats:r=>[['Received',r.mReceived],['Visits Done',r.visitsDone],['Sent TL',r.sentTL]] },
+  [R.TL]: { conv:r=>r.closeRate, sub:r=>`${fmtBDT(r.revenue)} · ${r.won} won`,
+    stats:r=>[['Won',r.won],['Lost',r.lost],['Revenue',fmtBDT(r.revenue)]] },
+};
+const tier = c => c>=50 ? 'green' : c>=25 ? 'warn' : 'red';
+const ini = n => (n||'?').trim().split(/\s+/).slice(0,2).map(w=>w[0]).join('').toUpperCase();
+
+const state = { role: R.IA, period: 30, q:'', sort:'best', open:null };
+
+// role segmented control
+$('#roleSeg').innerHTML = [R.IA,R.MA,R.TL].map(rk =>
+  `<button data-r="${rk}" class="${state.role===rk?'on':''}">${ROLE_VIEWS[rk].label}</button>`).join('');
+$('#roleSeg').onclick = e => { const b=e.target.closest('button'); if(!b)return; state.role=b.dataset.r; state.open=null;
+  [...$('#roleSeg').children].forEach(x=>x.classList.toggle('on',x===b)); render(); };
+$('#period').onchange = e => { state.period=+e.target.value; render(); };
+$('#search').oninput = e => { state.q=e.target.value.trim().toLowerCase(); render(); };
+
+// 7-day daily volume series for an agent (their involved leads by createdAt)
+function spark(id){
+  const days=7, now=new Date(); now.setHours(0,0,0,0); const out=Array(days).fill(0);
+  (DB.leads||[]).forEach(l=>{
+    if(l.assignedTo!==id && !(l.previousAssignees||[]).includes(id)) return;
+    const d=Math.floor((now - new Date(new Date(l.createdAt).setHours(0,0,0,0)))/864e5);
+    if(d>=0 && d<days) out[days-1-d]++;
+  });
+  return out;
+}
+function sparkSVG(pts){
+  if(!pts.some(p=>p)) pts=pts.map(()=>0);
+  const w=84,h=26,mx=Math.max(...pts,1),step=w/(pts.length-1);
+  const up=pts[pts.length-1]>=pts[0];
+  const c=pts.map((p,i)=>`${(i*step).toFixed(1)},${(h-2-(p/mx)*(h-4)).toFixed(1)}`);
+  return `<svg class="aspark" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none"><polyline points="${c.join(' ')}" fill="none" stroke="${up?'#22C55E':'#EF4444'}" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"/></svg>`;
+}
+
+let DATA=null;
+function compute(){
+  const all = buildAgentPerf(DB, { periodDays: state.period });
+  const rows = all.filter(r=>r.u.role===state.role);
+  const agg = rows.reduce((a,r)=>{['sourced','contacted','qualified','untouched','calls','talkMins','followups','meetingsSet','mReceived','visitsSched','visitsDone','sentTL','negotiation','proposals','won','lost','revenue'].forEach(k=>a[k]=(a[k]||0)+r[k]);return a;},{});
+  agg.contactRate=agg.sourced?agg.contacted/agg.sourced*100:0;
+  agg.showRate=agg.visitsSched?agg.visitsDone/agg.visitsSched*100:0;
+  agg.closeRate=(agg.won+agg.lost)?agg.won/(agg.won+agg.lost)*100:0;
+  return { rows, agg };
+}
+
+function animate(el,to,{dec=0,suffix='',prefix='',fmt=null}={}){
+  const dur=1200,t0=performance.now();
+  (function step(now){ const p=Math.min((now-t0)/dur,1),e=1-Math.pow(1-p,3),v=to*e;
+    el.textContent=fmt?fmt(v):prefix+(dec?v.toFixed(dec):Math.round(v).toLocaleString())+suffix;
+    if(p<1)requestAnimationFrame(step); })(t0);
+}
+
+function render(){
+  DATA=compute();
+  const { rows, agg } = DATA; const cfg=CFG[state.role]; const C=ROLE_VIEWS[state.role];
+  const kpis=C.kpis(agg);
+  const funnel=C.funnel(agg,['#7C6EF5','#8E7BF0','#6FB6C9','#4FBE93','#22C55E']);
+  // biggest drop stage index
+  let dropIdx=-1,dropPct=0;
+  for(let i=1;i<funnel.length;i++){ const prev=funnel[i-1].value||0; const dp=prev?(1-funnel[i].value/prev):0; if(dp>dropPct){dropPct=dp;dropIdx=i;} }
+  // breakdown pills
+  const entered=funnel[0].value||0, won=agg.won||funnel[funnel.length-1].value||0;
+  const lost=agg.lost||0, silent=agg.untouched||0, pend=Math.max(0,entered-won-lost-silent);
+
+  let list=rows.slice();
+  if(state.q) list=list.filter(r=>r.u.name.toLowerCase().includes(state.q));
+  list.sort((a,b)=> state.sort==='alpha' ? a.u.name.localeCompare(b.u.name)
+    : state.sort==='worst' ? cfg.conv(a)-cfg.conv(b) : cfg.conv(b)-cfg.conv(a));
+
+  const convBars=rows.slice().filter(r=>r[C.volume==='revenue'?'won':'sourced']!==undefined)
+    .sort((a,b)=>cfg.conv(b)-cfg.conv(a)).slice(0,8);
+
+  wrap.innerHTML = `
+  <div class="col">
+    <div class="kstrip">${kpis.map((k,i)=>`
+      <div class="kpi ${k.tone==='good'?'green':k.tone==='warn'?'warn':k.tone==='accent'?'accent':''}">
+        <div class="v" data-to="${k.val==='__REVENUE__'?agg.revenue:(typeof k.val==='number'?k.val:0)}" data-rev="${k.val==='__REVENUE__'?1:0}">${typeof k.val==='number'?'0':(k.val==='__REVENUE__'?'৳0':k.val)}</div>
+        <div class="l">${k.label}</div>
+      </div>`).join('')}</div>
+
+    <div>
+      <div class="sortbar">
+        <span class="lbl">Agents</span><div class="sp" style="flex:1"></div>
+        <div class="seg" id="sortSeg">
+          <button data-s="best" class="${state.sort==='best'?'on':''}">Best</button>
+          <button data-s="worst" class="${state.sort==='worst'?'on':''}">Worst</button>
+          <button data-s="alpha" class="${state.sort==='alpha'?'on':''}">A–Z</button>
+        </div>
+      </div>
+      <div class="alist" id="alist">
+        ${list.length?list.map(r=>agentRow(r,cfg,C)).join(''):`<div class="card" style="text-align:center;color:var(--t2)">No agents match.</div>`}
+      </div>
+    </div>
+  </div>
+
+  <div class="col">
+    <div class="card">
+      <div class="hd"><span class="lbl">Pipeline funnel</span><span class="mini">${dropIdx>0?`biggest drop → ${funnel[dropIdx].label}`:'—'}</span></div>
+      <div class="steps-rail"><div class="steps">${funnel.map((s,i)=>{
+        const mxv=Math.max(...funnel.map(x=>x.value),1); const sz=Math.round(30+22*(s.value/mxv));
+        const dp=i>0?Math.round((1-(s.value/(funnel[i-1].value||1)))*100):0;
+        return `<div class="step ${i===dropIdx?'drop':''}">
+          <div class="circ" style="width:${sz}px;height:${sz}px;background:${s.color}">${s.value}</div>
+          <div class="nm">${s.label}</div>${i>0?`<div class="dpct">${i===dropIdx?'−'+dp+'%':''}</div>`:''}
+        </div>`; }).join('')}</div></div>
+    </div>
+
+    <div class="card">
+      <div class="hd"><span class="lbl">Conversion by agent</span><span class="mini">${C.label.replace(' Agent','')} · top ${convBars.length}</span></div>
+      <div class="cv">${convBars.map(r=>{const c=cfg.conv(r);const t=tier(c);
+        return `<div class="cv-row"><div class="cv-name">${r.u.name}</div>
+          <div class="cv-track"><div class="cv-fill" data-tip="${r.u.name} · ${c.toFixed(1)}%" style="width:0;background:var(--${t==='green'?'green':t==='warn'?'warn':'red'})"></div></div>
+          <div class="cv-pct" style="color:var(--${t==='green'?'green':t==='warn'?'warn':'red'})">${Math.round(c)}%</div></div>`;
+      }).join('')||'<div style="color:var(--t2);font-size:13px">No data.</div>'}</div>
+    </div>
+
+    <div class="card">
+      <div class="hd"><span class="lbl">Outcome breakdown</span></div>
+      <div class="pills">
+        <div class="pill won"><div class="pv" data-to="${won}">0</div><div class="pl">Won</div></div>
+        <div class="pill lost"><div class="pv" data-to="${lost}">0</div><div class="pl">Lost</div></div>
+        <div class="pill pend"><div class="pv" data-to="${pend}">0</div><div class="pl">Pending</div></div>
+        <div class="pill silent"><div class="pv" data-to="${silent}">0</div><div class="pl">Silent</div></div>
+      </div>
+    </div>
+  </div>`;
+
+  // count-up: KPIs (revenue formatted ৳Cr/L) + outcome pills, 0 → value in 1.2s
+  wrap.querySelectorAll('.kpi .v').forEach(el=>{
+    const to=+el.dataset.to; if(isNaN(to)) return;
+    animate(el, to, +el.dataset.rev ? { fmt:fmtBDT } : {});
+  });
+  wrap.querySelectorAll('.pill .pv').forEach(el=>animate(el,+el.dataset.to));
+  // grow conversion bars in after paint
+  requestAnimationFrame(()=>wrap.querySelectorAll('.cv-fill').forEach(el=>{ const m=/(\d[\d.]*)%/.exec(el.dataset.tip); el.style.width=Math.min(100,parseFloat(m[1]))+'%'; }));
+
+  bind();
+}
+
+function agentRow(r,cfg,C){
+  const c=cfg.conv(r),t=tier(c);
+  return `<div class="arow ${state.open===r.u.id?'open':''}" data-id="${r.u.id}">
+    <div class="atop">
+      <div class="av t-${t}" style="background:#2a2a2a">${ini(r.u.name)}</div>
+      <div class="amid"><div class="an">${r.u.name}</div><div class="as">${cfg.sub(r)}</div></div>
+      <div class="aright">${sparkSVG(spark(r.u.id))}<div class="aconv t-${t}">${Math.round(c)}%</div></div>
+    </div>
+    <div class="aexp"><div class="aexp-in">
+      <div class="mini-steps">${C.funnel(r,['#7C6EF5','#8E7BF0','#6FB6C9','#4FBE93','#22C55E']).map((s,i,a)=>
+        `${i?'<span class="ms-arrow">→</span>':''}<span class="ms"><b>${s.value}</b> ${s.label}</span>`).join('')}</div>
+      <div class="qstats">${cfg.stats(r).map(([l,v])=>`<div class="qstat"><div class="qv">${v}</div><div class="ql lbl">${l}</div></div>`).join('')}</div>
+      <div class="tags">${insights(r,C).map(t=>`<span class="tag ${t.c}">${t.x}</span>`).join('')}</div>
+    </div></div>
+  </div>`;
+}
+
+function insights(r,C){
+  const out=[]; const f=C.funnel(r,['a','b','c','d','e']);
+  let di=-1,dp=0; for(let i=1;i<f.length;i++){const pv=f[i-1].value||0;const d=pv?1-f[i].value/pv:0;if(d>dp&&pv>0){dp=d;di=i;}}
+  if(di>0&&dp>=.4) out.push({c:'r',x:`🔴 Drops at ${f[di].label}`});
+  if(r.resp!=null&&r.resp<=4) out.push({c:'g',x:'⚡ Fast Responder'});
+  if(r.u.role==='INITIAL_AGENT'&&r.untouched>0) out.push({c:'w',x:`🟠 ${r.untouched} untouched`});
+  if(r.u.role==='INITIAL_AGENT'&&r.followups>=10) out.push({c:'g',x:'🔁 Diligent follow-up'});
+  const sp=spark(r.u.id); if(sp[sp.length-1]>sp[0]) out.push({c:'g',x:'📈 Trending up'});
+  else if(sp[sp.length-1]<sp[0]) out.push({c:'r',x:'📉 Declining this week'});
+  if(r.score>=70) out.push({c:'p',x:'⭐ Top performer'});
+  else if(r.score<30) out.push({c:'w',x:'⚠️ Needs attention'});
+  if(!out.length) out.push({c:'p',x:'➖ Steady'});
+  return out.slice(0,3);
+}
+
+function bind(){
+  $('#sortSeg').onclick=e=>{const b=e.target.closest('button');if(!b)return;state.sort=b.dataset.s;render();};
+  // toggle expand IN PLACE (no re-render) so the max-height transition animates
+  wrap.querySelectorAll('.arow').forEach(el=>el.querySelector('.atop').onclick=()=>{
+    const open=el.classList.contains('open');
+    wrap.querySelectorAll('.arow.open').forEach(x=>x.classList.remove('open'));
+    if(!open) el.classList.add('open');
+    state.open=open?null:el.dataset.id;
+  });
+  const tip=$('#tip');
+  wrap.querySelectorAll('.cv-fill').forEach(el=>{
+    el.parentElement.onmousemove=ev=>{tip.textContent=el.dataset.tip;tip.style.opacity=1;tip.style.left=(ev.clientX+12)+'px';tip.style.top=(ev.clientY-30)+'px';};
+    el.parentElement.onmouseleave=()=>tip.style.opacity=0;
+  });
+}
+
+render();
+</script>
+</body>
+</html>

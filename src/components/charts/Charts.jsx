@@ -1,7 +1,7 @@
 // Lightweight dependency-free SVG charts — Kitdrop dark + volt palette.
 // Donut, Ring, Sparkline, MiniBars, HBars, Funnel.
 
-export const CHART_COLORS = ['#C8FF00', '#34D399', '#DDB948', '#2DD4BF', '#F0A92B', '#F87171', '#C73A1A', '#9CA3AF'];
+export const CHART_COLORS = ['#54B848', '#A1A1AA', '#71717A', '#D4D4D8', '#52525B', '#34D399', '#F87171', '#3F3F46'];
 
 export function Donut({ data, size = 150, thickness = 20, centerVal, centerSub }) {
   const items = (data || []).filter(d => d.value > 0);

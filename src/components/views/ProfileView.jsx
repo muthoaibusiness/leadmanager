@@ -78,7 +78,7 @@ export default function ProfileView() {
       { ico: 'call', val: calls, label: 'Calls This Month', color: '#2DD4BF' },
       { ico: 'schedule', val: talkMins + ' min', label: 'Talk Time', color: '#DDB948' },
       { ico: 'check_circle', val: meetingsSet, label: 'Meetings Set', color: '#34D399', sub: tgt ? `Target: ${tgt.value}` : '' },
-      { ico: 'person', val: active, label: 'Active Customers', color: '#C8FF00' },
+      { ico: 'person', val: active, label: 'Active Customers', color: '#FFFFFF' },
     ];
   } else if (fresh.role === ROLES.MA) {
     kpis = [
@@ -89,7 +89,7 @@ export default function ProfileView() {
     ];
   } else if (fresh.role === ROLES.TL) {
     kpis = [
-      { ico: 'groups', val: teamUsers.length, label: 'Team Members', color: '#C8FF00' },
+      { ico: 'groups', val: teamUsers.length, label: 'Team Members', color: '#FFFFFF' },
       { ico: 'group', val: teamLeads.length, label: 'Team Leads', color: '#2DD4BF' },
       { ico: 'payments', val: fmtBDT(teamRev), label: 'Team Revenue', color: '#34D399' },
       { ico: 'emoji_events', val: teamWon.length, label: 'Team Deals Won', color: '#F0A92B' },
@@ -99,7 +99,7 @@ export default function ProfileView() {
     const allWon = allLeads.filter(l => l.status === 'DEAL_CLOSED_WON' && l.updatedAt && new Date(l.updatedAt) >= sm);
     const allRev = allWon.reduce((s, l) => s + (l.dealValue || 0), 0);
     kpis = [
-      { ico: 'group', val: db.users.length, label: 'Total Users', color: '#C8FF00' },
+      { ico: 'group', val: db.users.length, label: 'Total Users', color: '#FFFFFF' },
       { ico: 'groups', val: db.teams?.length || 0, label: 'Teams', color: '#2DD4BF' },
       { ico: 'payments', val: fmtBDT(allRev), label: 'Monthly Revenue', color: '#34D399' },
       { ico: 'emoji_events', val: allWon.length, label: 'Deals Won', color: '#F0A92B' },

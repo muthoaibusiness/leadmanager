@@ -46,7 +46,7 @@ export default function ManagementDash() {
 
   const srcCounts = {};
   allLeads.forEach(l => { srcCounts[l.source] = (srcCounts[l.source] || 0) + 1; });
-  const srcColors = { META_ADS: '#C8FF00', WHATSAPP_ADS: '#34D399', LINKEDIN: '#DDB948', HOTLINE: '#F0A92B', PERSONAL: '#2DD4BF', WEBSITE: '#F87171' };
+  const srcColors = { META_ADS: '#FFFFFF', WHATSAPP_ADS: '#34D399', LINKEDIN: '#DDB948', HOTLINE: '#F0A92B', PERSONAL: '#2DD4BF', WEBSITE: '#F87171' };
 
   const statusCounts = {};
   allLeads.forEach(l => { statusCounts[l.status] = (statusCounts[l.status] || 0) + 1; });
@@ -56,7 +56,7 @@ export default function ManagementDash() {
     .map(([s, c]) => ({ label: SRC_LABELS[s] || s, value: c, color: srcColors[s] || '#9CA3AF' }));
 
   const FUNNEL = [
-    ['NEW', 'New', '#C8FF00'], ['CONTACTED', 'Contacted', '#A6D400'], ['INTERESTED', 'Interested', '#DDB948'],
+    ['NEW', 'New', '#FFFFFF'], ['CONTACTED', 'Contacted', '#D4D4D8'], ['INTERESTED', 'Interested', '#DDB948'],
     ['MEETING_SET', 'Meeting Set', '#F0A92B'], ['SITE_VISIT_DONE', 'Visit Done', '#2DD4BF'],
     ['NEGOTIATING', 'Negotiating', '#34D399'], ['DEAL_CLOSED_WON', 'Won', '#34D399'],
   ];
@@ -82,7 +82,7 @@ export default function ManagementDash() {
   const cartVal = c => c.value || propPrice(c.propertyId);
   const inStage = (...ss) => carts.filter(c => ss.includes(c.stage));
   const commerceFunnel = [
-    { label: 'In Cart', value: carts.length, color: '#C8FF00' },
+    { label: 'In Cart', value: carts.length, color: '#FFFFFF' },
     { label: 'Checkout · Offer', value: inStage('CHECKOUT', 'PAYMENT', 'PURCHASED').length, color: '#DDB948' },
     { label: 'Payment · Lock', value: inStage('PAYMENT', 'PURCHASED').length, color: '#2DD4BF' },
     { label: 'Purchased', value: inStage('PURCHASED').length, color: '#34D399' },
@@ -123,13 +123,19 @@ export default function ManagementDash() {
       value: fmtBDT(l.dealValue || l.budget || 0),
     }));
 
-  // Top projects
+  // Top projects — count units from the blocks (variants), matching the Projects
+  // page (e.g. Block A 8 + Block B 8 = 16). Falls back to the legacy flat units /
+  // stored totalUnits so older projects still show.
   const projStats = coProps.map(p => {
-    const u = p.units || [];
+    const blockUnits = (p.variants || []).flatMap(v => v.units || []);
+    const units = blockUnits.length ? blockUnits : (p.units || []);
+    const total = units.length || p.totalUnits || 0;
     const pb = bookings.filter(b => b.propertyId === p.id);
     return {
-      p, sold: u.filter(x => x.status === 'sold').length, booked: u.filter(x => x.status === 'booked').length,
-      total: p.totalUnits || u.length, carts: carts.filter(c => c.propertyId === p.id).length,
+      p,
+      sold: units.filter(x => x.status === 'sold').length,
+      booked: units.filter(x => ['booked', 'hold', 'locked'].includes(x.status)).length,
+      total, carts: carts.filter(c => c.propertyId === p.id).length,
       rev: pb.reduce((s, b) => s + bookingPaid(b), 0),
     };
   }).sort((a, b) => b.rev - a.rev || b.sold - a.sold);

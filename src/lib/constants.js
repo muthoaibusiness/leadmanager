@@ -14,6 +14,7 @@ export const NAV_SCOPES = {
   pipeline: ALL_ROLES,
   properties: ALL_ROLES,
   reports: ['MANAGEMENT', 'TEAM_LEAD'],
+  agentperf: ['MANAGEMENT', 'TEAM_LEAD'],
   requests: ['MANAGEMENT'],
   team: ['TEAM_LEAD'],
   users: ['MANAGEMENT'],
