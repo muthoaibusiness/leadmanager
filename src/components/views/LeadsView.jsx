@@ -30,9 +30,12 @@ export default function LeadsView() {
   if (statusFilter === 'FOLLOW_UP') disp = disp.filter(l => l.nextFollowup && FU_OVERLAY.includes(l.status));
   else if (statusFilter !== 'ALL') disp = disp.filter(l => l.status === statusFilter);
   if (search) { const q = search.toLowerCase(); disp = disp.filter(l => l.name.toLowerCase().includes(q) || l.phone.includes(q) || (l.propertyInterest || '').toLowerCase().includes(q)); }
-  // Leads list shows the agent's full book — the global date filter (default Today)
-  // only scopes dashboard counts, not the working lead list. (dateRange kept for ref.)
-  void dateRange;
+  // Apply the global date filter (by createdAt) — except on the Forwarded tab,
+  // which is a historical hand-off list and should always show every forwarded lead.
+  if (dateRange?.range && !(isAgent && tab === 'fwd')) {
+    const { start, end } = dateRange.range;
+    disp = disp.filter(l => { const d = new Date(l.createdAt); return d >= start && d <= end; });
+  }
 
   // Agent filter is an admin-only control. Regular agents (IA/MA) only ever see
   // their own leads (enforced in getLeads), so the picker is hidden for them.

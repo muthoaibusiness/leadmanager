@@ -46,12 +46,18 @@ export function buildAgentPerf(db, { periodDays = 30, start = null, end = null, 
   const stat = {};
   users.forEach(u => { stat[u.id] = blank(u); });
 
-  // Per-agent activity rollup (calls, talk time, offers, visits) keyed by who did them.
+  // Per-agent activity rollup — count ONLY valid/real activity (skip system or
+  // empty entries; a call counts only if it has real talk duration > 0).
   Object.entries(acts).forEach(([leadId, arr]) => {
     (arr || []).forEach(a => {
+      if (!a || !a.userId || a.userId === 'system') return;
       const s = stat[a.userId]; if (!s) return;
-      if (a.type === 'CALL') { s.calls++; s.talkMins += (a.durationSeconds || 0) / 60; }
-      else if (a.type === 'FOLLOW_UP') s.followups++;
+      if (a.type === 'CALL') {
+        const sec = a.durationSeconds || 0;
+        if (sec > 0) { s.calls++; s.talkMins += sec / 60; } // valid connected call
+      } else if (a.type === 'FOLLOW_UP' && a.description) {
+        s.followups++;
+      }
     });
   });
 

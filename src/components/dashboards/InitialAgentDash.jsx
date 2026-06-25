@@ -61,13 +61,13 @@ export default function InitialAgentDash() {
       .filter(l => l.nextFollowup && new Date(l.nextFollowup) <= todayEnd)
       .sort((a, b) => new Date(a.nextFollowup) - new Date(b.nextFollowup));
 
-    // ── All-time totals (every lead this agent ever received / actioned) ──
-    const involvedAll = getLeads(user, { involved: true });
+    // ── Totals for the selected date range (leads received in the period) ──
+    const periodLeads = getLeads(user, { involved: true }).filter(l => inWin(l.createdAt));
     const totals = {
-      leads: involvedAll.length,
-      connected: involvedAll.filter(l => (l.callCount || 0) > 0 || l.status !== 'NEW').length,
-      interested: involvedAll.filter(l => l.status === 'INTERESTED').length,
-      onFollowup: active.filter(l => l.nextFollowup).length,
+      leads: periodLeads.length,
+      connected: periodLeads.filter(l => (l.callCount || 0) > 0 || l.status !== 'NEW').length,
+      interested: periodLeads.filter(l => l.status === 'INTERESTED').length,
+      onFollowup: periodLeads.filter(l => l.nextFollowup && !CLOSED.includes(l.status)).length,
     };
 
     return { now, todayStart, queue, untouched, callsToday, talkMinsToday, meetingsToday, active, followToday, totals };
@@ -75,8 +75,12 @@ export default function InitialAgentDash() {
 
   const QUEUE_CAP = 8;
   const shown = view.queue.slice(0, QUEUE_CAP);
-  const dr = dateRange?.preset;
-  const periodSub = (!dr || dr === 'allTime') ? 'all time' : dr === 'today' ? 'today' : 'in range';
+  const PERIOD_LABELS = {
+    today: 'today', yesterday: 'yesterday', last7: 'last 7 days', last28: 'last 28 days',
+    last30: 'last 30 days', thisMonth: 'this month', lastMonth: 'last month', last90: 'last 90 days',
+    qtd: 'quarter to date', thisYear: 'this year', lastYear: 'last year', allTime: 'all time', custom: 'selected range',
+  };
+  const periodSub = PERIOD_LABELS[dateRange?.preset] || (dateRange?.range ? 'selected range' : 'all time');
 
   return (
     <>
@@ -88,7 +92,7 @@ export default function InitialAgentDash() {
 
       {/* All-time totals — every lead received / actioned */}
       <div className="grid-4">
-        <StatCard val={view.totals.leads} label="Total Leads" sub="received" />
+        <StatCard val={view.totals.leads} label="Total Leads" sub={periodSub} />
         <StatCard val={view.totals.connected} label="Connected" tone={view.totals.connected ? 'accent' : ''} sub="called" />
         <StatCard val={view.totals.interested} label="Interested" tone={view.totals.interested ? 'good' : ''} sub="qualified" />
         <StatCard val={view.totals.onFollowup} label="On Follow-up" tone={view.totals.onFollowup ? 'warn' : ''} sub="active" />

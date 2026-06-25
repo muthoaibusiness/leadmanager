@@ -143,7 +143,7 @@ function PageHeader() {
 
 // ── In-body hero header (eyebrow + big title + subtitle + actions) ───────────
 function PageHero() {
-  const { user, view, agentFilter, teamFilter, setAgentFilter, setTeamFilter, setTab, setStatusFilter, setSearch, openModal, setCreateUserRoles, setPropEdit, setPropSel, setConsoleAdmin, dbVersion } = useApp();
+  const { user, view, agentFilter, teamFilter, setAgentFilter, setTeamFilter, setTab, setStatusFilter, setSearch, openModal, setCreateUserRoles, setPropEdit, setPropSel, setConsoleAdmin, dbVersion, dateRange } = useApp();
   if (!user) return null;
   // Every dashboard now has its own greeting header — skip the generic hero.
   if (view === 'dashboard') return null;
@@ -156,7 +156,11 @@ function PageHero() {
   const clearDrill = () => { setAgentFilter(null); setTeamFilter(null); setTab(0); setStatusFilter('ALL'); setSearch(''); };
 
   // eyebrow / title / subtitle per view
-  const myLeads = getLeads(user);
+  // Header count follows the global date filter so it matches the filtered list.
+  const _dr = dateRange?.range;
+  const myLeads = _dr
+    ? getLeads(user).filter(l => { const d = new Date(l.createdAt); return d >= _dr.start && d <= _dr.end; })
+    : getLeads(user);
   const activeLeads = myLeads.filter(l => !['DEAL_CLOSED_WON', 'DEAL_CLOSED_LOST', 'NOT_INTERESTED'].includes(l.status)).length;
   const props = getProperties();
   const propAvail = props.filter(p => p.status !== 'SOLD_OUT').length;

@@ -7119,12 +7119,21 @@ textarea.fi {
   grid-template-columns: 22px 1.7fr 100px 1fr 1.5fr 116px 112px
 }
 
-/* Mobile: the projects table keeps all columns and scrolls horizontally inside
-   its container (robust whether or not the admin checkbox column is present).
-   Only prop-rows get a min-width, so the leads table is unaffected. */
+/* Mobile: projects render as stacked cards — project name on its own line, the
+   rest (price · size · units · status · handover) wrap beneath. No scrolling;
+   name + price always visible. Works with or without the admin checkbox column. */
 @media(max-width:760px) {
-  .lt { overflow-x: auto; -webkit-overflow-scrolling: touch; }
-  .lt-hdr.prop-row, .lt-row.prop-row { min-width: 600px; }
+  .lt-hdr.prop-row { display: none; } /* header row not needed for cards */
+  .lt-row.prop-row, .lt-row.prop-row.with-cb {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px;
+    min-width: 0; padding: 13px 14px;
+  }
+  .prop-row .lt-cb-col { order: -1; flex: 0 0 auto; }
+  .prop-row .lt-cell { flex: 0 0 auto; min-width: 0; display: flex; align-items: center; }
+  .prop-row .lt-cell:has(.lt-n) { flex: 1 1 100%; } /* project name = full first line */
+  .prop-row.with-cb .lt-cell:has(.lt-n) { flex-basis: calc(100% - 36px); }
+  .prop-row .lt-n { font-size: 14px; }
+  .prop-row .lt-src, .prop-row .lt-date { font-size: 12px; color: var(--t2); }
 }
 
 /* Inventory summary + grouped catalog */
@@ -11143,31 +11152,37 @@ textarea.fi {
    (appended last so it wins over earlier same-specificity rules)
    ════════════════════════════════════════════════════════════════════════ */
 @media (max-width: 820px) {
-  .grid-4, .grid-3 { grid-template-columns: repeat(2, 1fr); }
+  /* stat grids: 2 per row; charts: full width */
+  .grid-4, .grid-3, .grid-2 { grid-template-columns: repeat(2, 1fr); }
   .rep-grid, .apf-charts.rep-grid, .mip-grid, .mip-charts.rep-grid, .pc-body { grid-template-columns: 1fr; }
   .mgrid, .apf-mgrid { grid-template-columns: 1fr; }
+  .iad-layout { grid-template-columns: 1fr; } /* agent dash: stack main + rail */
+}
+
+/* Kill page-level horizontal scroll on mobile; wide things scroll inside their own box. */
+@media (max-width: 768px) {
+  html, body, #app, .page, .pg-body, .pg-inner { max-width: 100%; overflow-x: hidden; }
+  .pk-wrap, .pk-board { max-width: 100%; }
+  .pk-board { overflow-x: auto; } /* kanban columns scroll inside the board, not the page */
+  .pk-board > .pk-col { min-width: 250px; }
 }
 
 @media (max-width: 560px) {
-  /* one column for every stat / chart grid */
-  .grid-4, .grid-3, .grid-2 { grid-template-columns: 1fr; gap: 12px; }
+  /* EVERY stat grid wraps to 2 columns — no horizontal scroll */
+  .grid-4, .grid-3, .grid-2 { grid-template-columns: repeat(2, 1fr); gap: 10px; }
 
-  /* KPI / stat strips → swipe horizontally instead of crushing */
-  .inv-strip, .kstrip, .mip-kstrip {
-    display: flex; flex-wrap: nowrap; overflow-x: auto; -webkit-overflow-scrolling: touch;
-    scrollbar-width: none; gap: 10px;
-  }
-  .inv-strip::-webkit-scrollbar, .kstrip::-webkit-scrollbar, .mip-kstrip::-webkit-scrollbar { display: none; }
-  .inv-tile, .mip-kpi { flex: 0 0 auto; min-width: 132px; }
+  /* KPI / stat strips → 2-column grid (was a swipe strip) */
+  .inv-strip, .mip-kstrip { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; overflow: visible; }
+  .inv-tile, .mip-kpi { min-width: 0; flex: none; }
   .mip-kpi + .mip-kpi::before { display: none; }
 
-  /* wide grid/data tables → horizontal scroll, keep columns intact */
-  .lt, .dt, .del-log, .acc-table, .tbl-wrap, .apf-tbl-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
-  .dt-h, .dt-r { min-width: 520px; }
+  /* genuinely wide data tables still scroll inside their box */
+  .dt, .del-log, .acc-table { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .dt-h, .dt-r { min-width: 480px; }
 
-  /* boxes / cards breathe less on small screens */
+  /* tighter cards */
   .card, .rep-card, .mip-card, .analytics-card, .act-card, .inv-tile,
-  .pf-card, .pco-box, .qstat, .mip-qstat, .pco-panel { padding: 14px; }
+  .pf-card, .pco-box, .qstat, .mip-qstat, .pco-panel { padding: 13px; }
   .pc-body { padding: 0; gap: 16px; }
 
   /* header / hero / toolbars */
@@ -11178,14 +11193,9 @@ textarea.fi {
   .fbar, .prop-toolbar, .mip-bar, .acc-toolbar { flex-wrap: wrap; gap: 8px; }
   .fbar .fsel, .prop-toolbar .fsel { flex: 1 1 auto; }
 
-  /* price boxes stack */
   .pco-prices { grid-template-columns: 1fr; }
-
-  /* modals & slide-overs use the full width */
   .modal { width: 100%; max-width: 100%; }
   .mov .modal { border-radius: 16px 16px 0 0; max-height: 92vh; }
   .umenu { left: 0; right: 0; }
-
-  /* picker tags wrap nicely */
   .pip-input { min-width: 90px; }
 }
