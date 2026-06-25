@@ -40,7 +40,14 @@ export const SRC_LABELS = {
   WEBSITE: 'Website',
   HOTLINE: 'Hotline',
   PERSONAL: 'Personal',
+  EVENT: 'Event',
+  WALKING: 'Walking',
+  TEAM_LEAD: 'Team Lead',
 };
+
+// Source options shown when adding a lead, by role.
+export const SOURCE_OPTIONS_IA = ['EVENT', 'WALKING', 'PERSONAL', 'TEAM_LEAD'];
+export const SOURCE_OPTIONS_DEFAULT = ['META_ADS', 'WHATSAPP_ADS', 'LINKEDIN', 'WEBSITE', 'HOTLINE', 'PERSONAL'];
 
 export const STATUS_LABELS = {
   NEW: 'New',

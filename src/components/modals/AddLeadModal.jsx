@@ -2,7 +2,7 @@ import { useRef, useEffect, useState } from 'react';
 import Mi from '../Mi.jsx';
 import { useApp } from '../../context/AppContext.jsx';
 import { getLead, addLeadFn, updLead, addAct, leadByPhone, normalizePhone } from '../../lib/db.js';
-import { SRC_LABELS, ROLES } from '../../lib/constants.js';
+import { SRC_LABELS, ROLES, SOURCE_OPTIONS_IA, SOURCE_OPTIONS_DEFAULT } from '../../lib/constants.js';
 import ProjectInterestPicker from '../ProjectInterestPicker.jsx';
 
 const leadCode = (l) => l.externalId || ('#' + String(l.id || '').slice(-6).toUpperCase());
@@ -11,6 +11,9 @@ export default function AddLeadModal() {
   const { modal, closeModal, user, panLead, refreshDB, showToast, setPanLead } = useApp();
   const isEdit = modal === 'edit-lead';
   const isOpen = modal === 'add-lead' || isEdit;
+  // Initial Agents get a different source list (Event / Walking / Personal / Team Lead).
+  const sourceOpts = user?.role === ROLES.IA ? SOURCE_OPTIONS_IA : SOURCE_OPTIONS_DEFAULT;
+  const defaultSource = sourceOpts[0];
 
   const nameRef = useRef();
   const companyRef = useRef();
@@ -30,7 +33,7 @@ export default function AddLeadModal() {
       if (!l) return;
       nameRef.current.value = l.name || '';
       companyRef.current.value = l.company && l.company !== '—' ? l.company : '';
-      sourceRef.current.value = l.source || 'META_ADS';
+      sourceRef.current.value = l.source || defaultSource;
       setInterest(l.propertyInterest || '');
       budgetRef.current.value = l.budget || '';
       profRef.current.value = l.profession || '';
@@ -40,7 +43,7 @@ export default function AddLeadModal() {
     } else {
       nameRef.current.value = '';
       companyRef.current.value = '';
-      sourceRef.current.value = 'META_ADS';
+      sourceRef.current.value = defaultSource;
       setInterest('');
       budgetRef.current.value = '';
       profRef.current.value = '';
@@ -159,7 +162,7 @@ export default function AddLeadModal() {
             ))}
             <button type="button" onClick={addPhone}
               style={{ marginTop: '6px', fontSize: '12px', color: 'var(--blue)', background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px', padding: 0 }}>
-              <Mi>add</Mi> Add another number
+              <Mi>add</Mi> Add number
             </button>
           </div>
 
@@ -186,7 +189,7 @@ export default function AddLeadModal() {
             ))}
             <button type="button" onClick={addEmail}
               style={{ marginTop: '6px', fontSize: '12px', color: 'var(--blue)', background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px', padding: 0 }}>
-              <Mi>add</Mi> Add another email
+              <Mi>add</Mi> Add email
             </button>
           </div>
 
@@ -196,13 +199,8 @@ export default function AddLeadModal() {
           </div>
           <div className="fg-row">
             <div className="fg"><label>Source</label>
-              <select className="fi" ref={sourceRef}>
-                <option value="META_ADS">Meta Ads</option>
-                <option value="WHATSAPP_ADS">WhatsApp Ads</option>
-                <option value="LINKEDIN">LinkedIn</option>
-                <option value="WEBSITE">Website</option>
-                <option value="HOTLINE">Hotline</option>
-                <option value="PERSONAL">Personal</option>
+              <select className="fi" ref={sourceRef} defaultValue={defaultSource}>
+                {sourceOpts.map(s => <option key={s} value={s}>{SRC_LABELS[s] || s}</option>)}
               </select>
             </div>
             <div className="fg"><label>Customer Location</label><input className="fi" ref={cityRef} type="text" placeholder="e.g. Dhaka, Chattogram" /></div>

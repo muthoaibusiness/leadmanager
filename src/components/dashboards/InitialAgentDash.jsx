@@ -21,7 +21,7 @@ function queueReason(lead, touched, todayStart, todayEnd) {
 }
 
 export default function InitialAgentDash() {
-  const { user, dbVersion, setPanLead, nav, refreshDB, showToast } = useApp();
+  const { user, dbVersion, setPanLead, nav, refreshDB, showToast, dateRange } = useApp();
   void dbVersion; // re-render when DB changes
   const db = getDB();
   const leads = getLeads(user);
@@ -30,6 +30,11 @@ export default function InitialAgentDash() {
     const now = new Date();
     const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
     const todayEnd = new Date(); todayEnd.setHours(23, 59, 59, 999);
+    // Activity KPIs follow the global date filter (calendar). No range = all time.
+    const r = dateRange?.range;
+    const winStart = r ? new Date(r.start) : new Date(0);
+    const winEnd = r ? new Date(r.end) : todayEnd;
+    const inWin = (ts) => { if (!ts) return false; const d = new Date(ts); return d >= winStart && d <= winEnd; };
     const acts = db.activities || {};
     const touched = (l) =>
       (l.callCount || 0) > 0 || (l.smsCount || 0) > 0 || (l.whatsappCount || 0) > 0 ||
@@ -44,23 +49,34 @@ export default function InitialAgentDash() {
 
     const untouched = active.filter(l => !touched(l));
     const myActs = Object.values(acts).flat();
-    const myCallsToday = myActs.filter(a => a.userId === user.id && a.type === 'CALL' && new Date(a.timestamp) >= todayStart);
+    const myCallsToday = myActs.filter(a => a.userId === user.id && a.type === 'CALL' && inWin(a.timestamp));
     const callsToday = myCallsToday.length;
-    // Talk time today = sum of logged call durations (seconds → minutes).
+    // Talk time = sum of logged call durations in the selected range (seconds → minutes).
     const talkSecsToday = myCallsToday.reduce((s, a) => s + (a.durationSeconds || 0), 0);
     const talkMinsToday = Math.round(talkSecsToday / 60);
-    const meetingsToday = db.leads.filter(l => l.meetingSetBy === user.id && l.meetingSetDate && new Date(l.meetingSetDate) >= todayStart).length;
+    const meetingsToday = db.leads.filter(l => l.meetingSetBy === user.id && inWin(l.meetingSetDate)).length;
 
     // ── Follow-ups due today (+ overdue) — the task list ──
     const followToday = active
       .filter(l => l.nextFollowup && new Date(l.nextFollowup) <= todayEnd)
       .sort((a, b) => new Date(a.nextFollowup) - new Date(b.nextFollowup));
 
-    return { now, todayStart, queue, untouched, callsToday, talkMinsToday, meetingsToday, active, followToday };
-  }, [leads, db, user.id, dbVersion]);
+    // ── All-time totals (every lead this agent ever received / actioned) ──
+    const involvedAll = getLeads(user, { involved: true });
+    const totals = {
+      leads: involvedAll.length,
+      connected: involvedAll.filter(l => (l.callCount || 0) > 0 || l.status !== 'NEW').length,
+      interested: involvedAll.filter(l => l.status === 'INTERESTED').length,
+      onFollowup: active.filter(l => l.nextFollowup).length,
+    };
+
+    return { now, todayStart, queue, untouched, callsToday, talkMinsToday, meetingsToday, active, followToday, totals };
+  }, [leads, db, user.id, dbVersion, dateRange]);
 
   const QUEUE_CAP = 8;
   const shown = view.queue.slice(0, QUEUE_CAP);
+  const dr = dateRange?.preset;
+  const periodSub = (!dr || dr === 'allTime') ? 'all time' : dr === 'today' ? 'today' : 'in range';
 
   return (
     <>
@@ -70,12 +86,20 @@ export default function InitialAgentDash() {
         ? `${view.queue.length} ${view.queue.length === 1 ? 'lead' : 'leads'} to work today`
         : "You're all caught up."} />
 
+      {/* All-time totals — every lead received / actioned */}
+      <div className="grid-4">
+        <StatCard val={view.totals.leads} label="Total Leads" sub="received" />
+        <StatCard val={view.totals.connected} label="Connected" tone={view.totals.connected ? 'accent' : ''} sub="called" />
+        <StatCard val={view.totals.interested} label="Interested" tone={view.totals.interested ? 'good' : ''} sub="qualified" />
+        <StatCard val={view.totals.onFollowup} label="On Follow-up" tone={view.totals.onFollowup ? 'warn' : ''} sub="active" />
+      </div>
+
       {/* KPIs — labels only, no icons */}
       <div className="grid-4">
         <StatCard val={view.untouched.length} label="Untouched" tone={view.untouched.length ? 'warn' : ''} sub="need first call" />
-        <StatCard val={view.callsToday} label="Calls Today" sub="logged" />
-        <StatCard val={view.talkMinsToday + ' min'} label="Talk Time" tone={view.talkMinsToday ? 'accent' : ''} sub="today" />
-        <StatCard val={view.meetingsToday} label="Meetings Set" tone={view.meetingsToday ? 'good' : ''} sub="today" />
+        <StatCard val={view.callsToday} label="Calls" sub={periodSub} />
+        <StatCard val={view.talkMinsToday + ' min'} label="Talk Time" tone={view.talkMinsToday ? 'accent' : ''} sub={periodSub} />
+        <StatCard val={view.meetingsToday} label="Meetings Set" tone={view.meetingsToday ? 'good' : ''} sub={periodSub} />
       </div>
 
       {/* Follow-ups due today — task list */}

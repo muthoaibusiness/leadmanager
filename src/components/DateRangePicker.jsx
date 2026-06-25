@@ -165,7 +165,7 @@ export default function DateRangePicker() {
           {/* left: preset list */}
           <div className="drp-presets">
             {PRESETS.map(p=>(
-              <div key={p.key} className={`drp-preset${preset===p.key?' on':''}`} onClick={()=>selectPreset(p.key)}>
+              <div key={p.key} data-key={p.key} className={`drp-preset${preset===p.key?' on':''}`} onClick={()=>selectPreset(p.key)}>
                 {p.label}
               </div>
             ))}

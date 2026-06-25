@@ -5,14 +5,34 @@ import { avc, ini, fmtBDT, rlabel, startOfMonth, curMonth } from '../../lib/help
 import { ROLES } from '../../lib/constants.js';
 import Mi from '../Mi.jsx';
 
-function readAsDataURL(file) {
-  return new Promise((res, rej) => {
+// Downscale + compress an uploaded photo to a small square JPEG data URL so it
+// stays under the storage quota (full-res phone photos would blow it).
+function compressImage(file, max = 256) {
+  return new Promise((resolve, reject) => {
     const r = new FileReader();
-    r.onload = () => res(r.result);
-    r.onerror = rej;
+    r.onload = () => {
+      const img = new Image();
+      img.onload = () => {
+        const scale = Math.min(1, max / Math.max(img.width, img.height));
+        const w = Math.max(1, Math.round(img.width * scale));
+        const h = Math.max(1, Math.round(img.height * scale));
+        const c = document.createElement('canvas');
+        c.width = w; c.height = h;
+        c.getContext('2d').drawImage(img, 0, 0, w, h);
+        try { resolve(c.toDataURL('image/jpeg', 0.82)); } catch (err) { reject(err); }
+      };
+      img.onerror = reject;
+      img.src = r.result;
+    };
+    r.onerror = reject;
     r.readAsDataURL(file);
   });
 }
+
+// Demo avatar choices (DiceBear) seeded by the user — tiny URL, no storage cost.
+const DEMO_STYLES = ['adventurer', 'avataaars', 'bottts', 'thumbs', 'fun-emoji', 'micah'];
+const demoAvatarUrls = (seed) =>
+  DEMO_STYLES.map(s => `https://api.dicebear.com/9.x/${s}/svg?seed=${encodeURIComponent(seed || 'agent')}`);
 
 function KpiBox({ ico, val, label, color, sub }) {
   return (
@@ -111,10 +131,9 @@ export default function ProfileView() {
   const onPick = async (e) => {
     const f = e.target.files?.[0];
     if (!f) return;
-    if (f.size > 2 * 1024 * 1024) { showToast('Image too big (max 2MB)', 'err'); return; }
-    const url = await readAsDataURL(f);
-    setAvatar(url);
-    setDirty(true);
+    if (f.size > 10 * 1024 * 1024) { showToast('Image too big (max 10MB)', 'err'); return; }
+    try { setAvatar(await compressImage(f, 256)); setDirty(true); }
+    catch { showToast('Could not read that image', 'err'); }
   };
 
   const removeAvatar = () => { setAvatar(''); setDirty(true); };
@@ -153,6 +172,17 @@ export default function ProfileView() {
               <Mi>upload</Mi>{avatar ? 'Change' : 'Upload'}
             </button>
             {avatar && <button className="btn btn-g btn-sm" onClick={removeAvatar}><Mi>delete</Mi></button>}
+          </div>
+          <div className="pf-av-demos">
+            <span className="pf-av-demos-l">Or pick a demo</span>
+            <div className="pf-av-demos-row">
+              {demoAvatarUrls(name || fresh.id).map((u, i) => (
+                <button key={i} type="button" className={`pf-av-demo${avatar === u ? ' on' : ''}`} title="Use this avatar"
+                  onClick={() => { setAvatar(u); setDirty(true); }}>
+                  <img src={u} alt="" loading="lazy" />
+                </button>
+              ))}
+            </div>
           </div>
         </div>
         <div className="pf-hero-info">

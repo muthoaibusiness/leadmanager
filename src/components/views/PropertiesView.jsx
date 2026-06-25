@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useApp } from '../../context/AppContext.jsx';
 import { getProperties, deletePropertyFn } from '../../lib/db.js';
-import { sbDelete } from '../../lib/supabase.js';
 import { ROLES, PROPERTY_TYPES, PROPERTY_STATUS } from '../../lib/constants.js';
 import Mi from '../Mi.jsx';
 
@@ -42,8 +41,7 @@ export default function PropertiesView() {
     const ids = [...sel];
     if (!ids.length) return;
     if (!window.confirm(`Delete ${ids.length} project${ids.length > 1 ? 's' : ''}? This cannot be undone.`)) return;
-    ids.forEach(id => deletePropertyFn(id));   // local + queues cloud upsert of the rest
-    sbDelete('properties', ids);               // hard-delete from Supabase so they don't reappear on reload
+    ids.forEach(id => deletePropertyFn(id));   // tombstones + cloud-deletes each (no resurrect on reload)
     setSel(new Set());
     refreshDB();
     showToast(`${ids.length} project${ids.length > 1 ? 's' : ''} deleted`, 'ok');

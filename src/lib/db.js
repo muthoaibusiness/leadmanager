@@ -88,7 +88,7 @@ export function mergeDB(remote, local) {
     leads,
     targets: mergeArr(r.targets, l.targets),
     deletionLog: tomb,
-    properties: mergeArr(r.properties, l.properties),
+    properties: mergeArr(r.properties, l.properties).filter(p => !deleted.has(p.id)),
     bookings: mergeArr(r.bookings, l.bookings),
     holdRequests: mergeArr(r.holdRequests, l.holdRequests),
     activities: mergeActs(r.activities, l.activities),
@@ -418,7 +418,14 @@ export function updatePropertyFn(id, upd) {
 }
 
 export function deletePropertyFn(id) {
-  mutate(db => { db.properties = (db.properties || []).filter(p => p.id !== id); });
+  mutate(db => {
+    const p = (db.properties || []).find(x => x.id === id);
+    db.properties = (db.properties || []).filter(x => x.id !== id);
+    // Tombstone so the cloud copy is never resurrected by mergeDB on reload.
+    if (!db.deletionLog) db.deletionLog = [];
+    db.deletionLog.push({ id, name: p?.name || 'project', kind: 'property', deletedBy: 'admin', deletedAt: now_() });
+  });
+  sbDelete('properties', [id]); // hard-delete from Supabase
 }
 
 // ── Unit booking (seat-style) ──
@@ -708,7 +715,7 @@ export function dedupeLeads(db) {
 
 export function getDeletionLog() {
   const db = getDB();
-  return (db.deletionLog || []).slice().sort((a, b) => new Date(b.deletedAt) - new Date(a.deletedAt));
+  return (db.deletionLog || []).filter(d => d.kind !== 'property').slice().sort((a, b) => new Date(b.deletedAt) - new Date(a.deletedAt));
 }
 
 export function changeStatus(leadId, status, user) {
