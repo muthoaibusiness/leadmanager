@@ -1,8 +1,8 @@
 import { useState, useEffect, useRef } from 'react';
 import { useApp } from './context/AppContext.jsx';
-import { getDB, getSession, setSession, tryLogin, saveDB, checkFollowUpReminders, getLeads, getProperties, expireHolds, migrateTenancy, mergeDB, purgeDemoSeed, dedupeLeads, reconcileDeletions } from './lib/db.js';
+import { getDB, getSession, setSession, tryLogin, saveDB, checkFollowUpReminders, getLeads, getProperties, expireHolds, migrateTenancy, mergeDB, purgeDemoSeed, dedupeLeads, reconcileDeletions, applyRealtimeEvent } from './lib/db.js';
 import { seedDB, SEED_PROPERTIES, DEMO_PROPERTIES } from './lib/seed.js';
-import { sbLoad, sbSubscribeNotifs } from './lib/supabase.js';
+import { sbLoad, sbSubscribeAll } from './lib/supabase.js';
 import { pushNotify, requestNotifyPermission } from './lib/pushNotify.js';
 import { avc, ini, rlabel } from './lib/helpers.js';
 import { ROLES } from './lib/constants.js';
@@ -278,24 +278,26 @@ export default function App() {
     setTimeout(() => setEntering(false), 1100);
   };
 
-  // Real-time notification subscription
+  // Real-time universal subscription
   useEffect(() => {
     if (!user) return;
-    const unsub = sbSubscribeNotifs(user.id, (newNotif) => {
-      const db = getDB();
-      if (!db.notifications) db.notifications = {};
-      if (!db.notifications[user.id]) db.notifications[user.id] = [];
-      // avoid duplicates
-      if (!db.notifications[user.id].find(n => n.id === newNotif.id)) {
-        db.notifications[user.id].unshift(newNotif);
+    const unsub = sbSubscribeAll((table, type, record, oldRecord) => {
+      console.log(`[Realtime] ${type} ${table}`, record || oldRecord);
+      const changed = applyRealtimeEvent(table, type, record, oldRecord);
+      if (changed) {
         refreshDB();
-        // Real-time browser push (sound + OS popup). Suppressed only when the user
-        // is actively viewing the notifications panel in a visible tab.
-        const suppress = notifOpenRef.current && document.visibilityState === 'visible';
-        pushNotify(newNotif, {
-          suppress,
-          onClick: (n) => { if (n.leadId) setPanLead(n.leadId); },
-        });
+        // Trigger browser push if it's a new notification meant for this user
+        if (table === 'notifications' && type === 'INSERT' && record.user_id === user.id) {
+          const db = getDB();
+          const newNotif = (db.notifications[user.id] || []).find(n => n.id === record.id);
+          if (newNotif) {
+            const suppress = notifOpenRef.current && document.visibilityState === 'visible';
+            pushNotify(newNotif, {
+              suppress,
+              onClick: (n) => { if (n.leadId) setPanLead(n.leadId); },
+            });
+          }
+        }
       }
     });
     return unsub;

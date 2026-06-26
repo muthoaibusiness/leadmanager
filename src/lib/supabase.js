@@ -14,6 +14,15 @@ if (!SB_URL || !SB_KEY) {
 
 export const SB_H = { apikey: SB_KEY, Authorization: 'Bearer ' + SB_KEY, 'Content-Type': 'application/json' };
 
+function checkNetworkError(e) {
+  if (e.name === 'TypeError' && e.message === 'Failed to fetch') {
+    alert('Network error: Action could not be saved. Please check your internet connection.');
+    return true;
+  }
+  return false;
+}
+
+
 export async function sbGet(path) {
   try {
     const r = await fetch(`${SB_URL}/rest/v1/${path}`, { headers: SB_H });
@@ -45,6 +54,7 @@ export async function sbUpsert(table, rows) {
         body: JSON.stringify(payload),
       });
     } catch (e) {
+      checkNetworkError(e);
       console.error(`Supabase Upsert network error [${table}]:`, e);
       return { ok: false, error: e };
     }
@@ -88,6 +98,49 @@ export async function sbUpsert(table, rows) {
   console.error(`Supabase Upsert [${table}]: gave up after stripping ${stripped.join(', ')}`);
   return { ok: false };
 }
+
+export async function sbInsert(table, row) {
+  if (_missingTables.has(table)) return { ok: false, skipped: true };
+  try {
+    const r = await fetch(`${SB_URL}/rest/v1/${table}`, {
+      method: 'POST',
+      headers: { ...SB_H, Prefer: 'return=minimal' },
+      body: JSON.stringify(row),
+    });
+    if (!r.ok) {
+      let b = ''; try { b = await r.text(); } catch {}
+      console.error(`Supabase Insert Error [${table}] HTTP ${r.status}:`, b);
+      return { ok: false };
+    }
+    return { ok: true };
+  } catch (e) {
+    checkNetworkError(e);
+    console.error(`Supabase Insert network error [${table}]:`, e);
+    return { ok: false };
+  }
+}
+
+export async function sbUpdate(table, id, updates) {
+  if (_missingTables.has(table)) return { ok: false, skipped: true };
+  try {
+    const r = await fetch(`${SB_URL}/rest/v1/${table}?id=eq.${id}`, {
+      method: 'PATCH',
+      headers: { ...SB_H, Prefer: 'return=minimal' },
+      body: JSON.stringify(updates),
+    });
+    if (!r.ok) {
+      let b = ''; try { b = await r.text(); } catch {}
+      console.error(`Supabase Update Error [${table}] HTTP ${r.status}:`, b);
+      return { ok: false };
+    }
+    return { ok: true };
+  } catch (e) {
+    checkNetworkError(e);
+    console.error(`Supabase Update network error [${table}]:`, e);
+    return { ok: false };
+  }
+}
+
 
 // Raw REST DELETE with a filter (e.g. "leads?id=in.(...)"). Logs non-2xx.
 async function sbDeleteRaw(path) {
@@ -249,6 +302,52 @@ export function sbSubscribeNotifs(userId, onNew) {
         if (msg.event === 'postgres_changes') {
           const rec = msg.payload?.data?.record;
           if (rec && rec.user_id === userId) onNew(rToN(rec));
+        }
+      } catch {}
+    };
+    ws.onclose = () => {
+      clearInterval(hbTimer);
+      if (!dead) reconnTimer = setTimeout(connect, 5000);
+    };
+    ws.onerror = () => ws.close();
+  }
+
+  connect();
+  return () => { dead = true; clearInterval(hbTimer); clearTimeout(reconnTimer); try { ws?.close(); } catch {} };
+}
+
+export function sbSubscribeAll(onEvent) {
+  const wsUrl = `${SB_URL.replace('https://', 'wss://')}/realtime/v1/websocket?apikey=${SB_KEY}&vsn=1.0.0`;
+  let ws, hbTimer, reconnTimer;
+  let dead = false;
+  
+  const tables = ['users', 'teams', 'leads', 'activities', 'notifications', 'targets', 'companies', 'properties', 'bookings', 'hold_requests'];
+
+  function connect() {
+    try { ws = new WebSocket(wsUrl); } catch { return; }
+    ws.onopen = () => {
+      ws.send(JSON.stringify({
+        topic: `realtime:public`,
+        event: 'phx_join',
+        payload: { 
+          config: { 
+            postgres_changes: tables.map(table => ({ event: '*', schema: 'public', table }))
+          } 
+        },
+        ref: '1',
+      }));
+      hbTimer = setInterval(() => {
+        if (ws.readyState === 1) ws.send(JSON.stringify({ topic: 'phoenix', event: 'heartbeat', payload: {}, ref: String(Date.now()) }));
+      }, 25000);
+    };
+    ws.onmessage = (e) => {
+      try {
+        const msg = JSON.parse(e.data);
+        if (msg.event === 'postgres_changes') {
+          const payload = msg.payload?.data;
+          if (payload) {
+             onEvent(payload.table, payload.type, payload.record, payload.old_record);
+          }
         }
       } catch {}
     };

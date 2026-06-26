@@ -1,7 +1,6 @@
 import { ROLES, STATUS_LABELS, SRC_LABELS } from './constants.js';
 import { uid, now_, fmtBDT, fmtDT, curMonth, startOfMonth, rlabel } from './helpers.js';
-import { sbSave, sbUpsertNotifs, sbMarkRead, sbDelete, sbDeleteLeads } from './supabase.js';
-
+import { sbUpdate, sbInsert, sbUpsert, sbMarkRead, sbDelete, sbDeleteLeads, lToR, rToL, uToR, rToU, tToR, rToT, aToR, rToA, nToR, rToN, tgToR, rToTg, pToR, rToP, bkToR, rToBk, cToR, rToC, hrToR, rToHr, sbUpsertNotifs } from './supabase.js';
 export const KEY = 'propcrm_v1';
 export let _DB = null;
 
@@ -31,68 +30,9 @@ export function getDB() {
 export function mergeDB(remote, local) {
   const r = remote || {};
   const l = local || {};
-  const ts = (x) => new Date(x?.updatedAt || x?.createdAt || 0).getTime();
-  const mergeArr = (rem = [], loc = []) => {
-    const m = new Map();
-    rem.forEach(x => x && x.id != null && m.set(x.id, x));
-    loc.forEach(x => {
-      if (!x || x.id == null) return;
-      const ex = m.get(x.id);
-      if (!ex || ts(x) >= ts(ex)) m.set(x.id, x); // local edits / newer win
-    });
-    return [...m.values()];
-  };
-  // activities: keyed by leadId → union activity arrays by activity id
-  const mergeActs = (rem = {}, loc = {}) => {
-    const out = {};
-    new Set([...Object.keys(rem), ...Object.keys(loc)]).forEach(k => {
-      const m = new Map();
-      (rem[k] || []).forEach(a => a && m.set(a.id, a));
-      (loc[k] || []).forEach(a => a && m.set(a.id, a));
-      out[k] = [...m.values()];
-    });
-    return out;
-  };
-  // notifications: keyed by userId → union by notif id
-  const mergeNotifs = (rem = {}, loc = {}) => {
-    const out = {};
-    new Set([...Object.keys(rem), ...Object.keys(loc)]).forEach(k => {
-      const m = new Map();
-      (rem[k] || []).forEach(n => n && m.set(n.id, n));
-      (loc[k] || []).forEach(n => n && m.set(n.id, n));
-      out[k] = [...m.values()];
-    });
-    return out;
-  };
-  // tombstones: ids deleted locally must never be resurrected from the cloud
-  const tomb = (l.deletionLog || []).slice(-8000); // cap growth
-  const deleted = new Set(tomb.map(d => d.id));
-  // Leads: the CLOUD is the source of truth (so every browser shows the same set).
-  // We only keep a local-only lead if it's genuinely fresh (created/updated very
-  // recently and not yet synced). Stale local-only leads = ones deleted on another
-  // browser, so they are dropped. This stops per-browser divergence (e.g. 36 vs 51).
-  const GRACE_MS = 6 * 60 * 60 * 1000;
-  const nowMs = Date.now();
-  const remoteIds = new Set((r.leads || []).map(x => x.id));
-  const cloudLeads = (r.leads || []).filter(x => !deleted.has(x.id));
-  const freshLocal = (l.leads || []).filter(x =>
-    !remoteIds.has(x.id) && !deleted.has(x.id) &&
-    (nowMs - new Date(x.updatedAt || x.createdAt || 0).getTime() < GRACE_MS)
-  );
-  const leads = [...cloudLeads, ...freshLocal];
   return {
-    companies: mergeArr(r.companies, l.companies),
-    // users/teams: union cloud+local but never resurrect a tombstoned (deleted) id
-    users: mergeArr(r.users, l.users).filter(u => !deleted.has(u.id)),
-    teams: mergeArr(r.teams, l.teams).filter(t => !deleted.has(t.id)),
-    leads,
-    targets: mergeArr(r.targets, l.targets),
-    deletionLog: tomb,
-    properties: mergeArr(r.properties, l.properties).filter(p => !deleted.has(p.id)),
-    bookings: mergeArr(r.bookings, l.bookings),
-    holdRequests: mergeArr(r.holdRequests, l.holdRequests),
-    activities: mergeActs(r.activities, l.activities),
-    notifications: mergeNotifs(r.notifications, l.notifications),
+    ...r,
+    deletionLog: l.deletionLog || []
   };
 }
 
@@ -149,10 +89,89 @@ export function migrateTenancy(db) {
   return changed;
 }
 
+export function applyRealtimeEvent(table, eventType, record, oldRecord) {
+  if (!_DB) return false;
+  let changed = false;
+  
+  const handleArrayEvent = (arrName, converter) => {
+    if (!_DB[arrName]) _DB[arrName] = [];
+    if (eventType === 'INSERT' || eventType === 'UPDATE') {
+      const item = converter(record);
+      const idx = _DB[arrName].findIndex(x => x.id === item.id);
+      if (idx >= 0) _DB[arrName][idx] = item;
+      else _DB[arrName].unshift(item);
+      changed = true;
+    } else if (eventType === 'DELETE') {
+      const id = oldRecord?.id;
+      if (id) {
+        const before = _DB[arrName].length;
+        _DB[arrName] = _DB[arrName].filter(x => x.id !== id);
+        if (_DB[arrName].length !== before) changed = true;
+      }
+    }
+  };
+
+  if (table === 'users') handleArrayEvent('users', rToU);
+  else if (table === 'teams') handleArrayEvent('teams', rToT);
+  else if (table === 'leads') handleArrayEvent('leads', rToL);
+  else if (table === 'companies') handleArrayEvent('companies', rToC);
+  else if (table === 'properties') handleArrayEvent('properties', rToP);
+  else if (table === 'bookings') handleArrayEvent('bookings', rToBk);
+  else if (table === 'targets') handleArrayEvent('targets', rToTg);
+  else if (table === 'hold_requests') handleArrayEvent('holdRequests', rToHr);
+  else if (table === 'activities') {
+    if (eventType === 'INSERT' || eventType === 'UPDATE') {
+      const act = rToA(record);
+      const lid = record.lead_id;
+      if (lid) {
+        if (!_DB.activities[lid]) _DB.activities[lid] = [];
+        const idx = _DB.activities[lid].findIndex(a => a.id === act.id);
+        if (idx >= 0) _DB.activities[lid][idx] = act;
+        else _DB.activities[lid].unshift(act);
+        changed = true;
+      }
+    } else if (eventType === 'DELETE') {
+      const id = oldRecord?.id;
+      if (id) {
+        Object.keys(_DB.activities).forEach(lid => {
+          const arr = _DB.activities[lid];
+          const before = arr.length;
+          _DB.activities[lid] = arr.filter(a => a.id !== id);
+          if (_DB.activities[lid].length !== before) changed = true;
+        });
+      }
+    }
+  } else if (table === 'notifications') {
+    if (eventType === 'INSERT' || eventType === 'UPDATE') {
+      const n = rToN(record);
+      const uid = n.userId;
+      if (uid) {
+        if (!_DB.notifications[uid]) _DB.notifications[uid] = [];
+        const idx = _DB.notifications[uid].findIndex(x => x.id === n.id);
+        if (idx >= 0) _DB.notifications[uid][idx] = n;
+        else _DB.notifications[uid].unshift(n);
+        changed = true;
+      }
+    } else if (eventType === 'DELETE') {
+      const id = oldRecord?.id;
+      if (id) {
+        Object.keys(_DB.notifications).forEach(uid => {
+          const arr = _DB.notifications[uid];
+          const before = arr.length;
+          _DB.notifications[uid] = arr.filter(x => x.id !== id);
+          if (_DB.notifications[uid].length !== before) changed = true;
+        });
+      }
+    }
+  }
+
+  if (changed) persistLocal(_DB);
+  return changed;
+}
+
 export function saveDB(db) {
   _DB = db;            // in-memory copy is always current
   persistLocal(db);    // best-effort local cache (never throws)
-  sbSave(db);          // Supabase = source of truth
 }
 
 // localStorage is ~5MB; the full dataset (esp. activities + property media) can
@@ -403,18 +422,25 @@ export function getProperty(id) { return (getDB().properties || []).find(p => p.
 export function addPropertyFn(p) {
   const id = 'p' + uid();
   const companyId = p.companyId || currentCompanyId(); // belongs to the creating tenant
+  const newProp = { id, companyId, ...p, createdAt: now_(), updatedAt: now_() };
   mutate(db => {
     if (!db.properties) db.properties = [];
-    db.properties.unshift({ id, companyId, ...p, createdAt: now_(), updatedAt: now_() });
+    db.properties.unshift(newProp);
   });
+  sbInsert('properties', pToR(newProp));
   return id;
 }
 
 export function updatePropertyFn(id, upd) {
+  let updatedProp;
   mutate(db => {
     const i = (db.properties || []).findIndex(p => p.id === id);
-    if (i >= 0) db.properties[i] = { ...db.properties[i], ...upd, updatedAt: now_() };
+    if (i >= 0) {
+      db.properties[i] = { ...db.properties[i], ...upd, updatedAt: now_() };
+      updatedProp = db.properties[i];
+    }
   });
+  if (updatedProp) sbUpdate('properties', id, pToR(updatedProp));
 }
 
 export function deletePropertyFn(id) {
@@ -501,8 +527,14 @@ export function setUnitStatus(propId, unitNo, action, user, lead, meta = {}) {
       if (action === 'lock') bk.status = 'HOLD';
       if (action === 'book') { bk.status = 'ACTIVE'; bk.holdUntil = null; if (!bk.schedule.length) bk.schedule = defaultSchedule(bk.total); }
       if (action === 'sold') { bk.status = 'ACTIVE'; if (!bk.schedule.length) bk.schedule = defaultSchedule(bk.total); }
+      
+      // Upsert booking
+      sbUpsert('bookings', [bkToR(bk)]);
     }
   });
+  // Update property since units changed
+  const p = getProperty(propId);
+  if (p) sbUpdate('properties', propId, { units: p.units, updated_at: p.updatedAt });
   if (clientId && action !== 'available') {
     const verb = { lock: 'Held', book: 'Booked', sold: 'Sold' }[action] || 'Updated';
     const extra = action === 'lock' && (meta.offerPrice || meta.holdDays)
@@ -532,7 +564,15 @@ export function expireHolds() {
       }
     });
   });
-  if (changed) saveDB(db);
+  if (changed) {
+    saveDB(db);
+    (db.properties || []).forEach(p => {
+       sbUpdate('properties', p.id, { units: p.units, updated_at: p.updatedAt });
+    });
+    // For simplicity, we can rely on realtime subscriptions for others, but let's bulk upsert bookings since they are EXPIRED
+    const expBks = (db.bookings || []).filter(b => b.status === 'EXPIRED');
+    if (expBks.length) sbUpsert('bookings', expBks.map(bkToR));
+  }
   return changed;
 }
 
@@ -571,19 +611,22 @@ export function createBookingFromCart(leadId, user) {
   const c = l.cart;
   const total = c.value || 0;
   const id = 'bk' + uid();
+  const bk = {
+    id, leadId, leadName: l.name, companyId: l.companyId || user.companyId, propertyId: c.propertyId, propertyName: c.propertyName,
+    unitNo: c.unitNo || null, agentId: user.id, agentName: user.name,
+    total, status: 'ACTIVE', schedule: defaultSchedule(total), payments: [],
+    createdAt: now_(), updatedAt: now_(),
+  };
   mutate(d => {
     if (!d.bookings) d.bookings = [];
-    d.bookings.unshift({
-      id, leadId, leadName: l.name, companyId: l.companyId || user.companyId, propertyId: c.propertyId, propertyName: c.propertyName,
-      unitNo: c.unitNo || null, agentId: user.id, agentName: user.name,
-      total, status: 'ACTIVE', schedule: defaultSchedule(total), payments: [],
-      createdAt: now_(), updatedAt: now_(),
-    });
+    d.bookings.unshift(bk);
   });
+  sbInsert('bookings', bkToR(bk));
   return id;
 }
 
 export function recordPayment(bookingId, { amount, method, ref, scheduleIdx }, user) {
+  let updatedBk;
   mutate(db => {
     const b = (db.bookings || []).find(x => x.id === bookingId);
     if (!b) return;
@@ -593,11 +636,15 @@ export function recordPayment(bookingId, { amount, method, ref, scheduleIdx }, u
     const paid = b.payments.reduce((s, p) => s + (p.amount || 0), 0);
     if (paid >= (b.total || 0) && b.total > 0) b.status = 'COMPLETED';
     b.updatedAt = now_();
+    updatedBk = b;
   });
+  if (updatedBk) sbUpdate('bookings', bookingId, { payments: updatedBk.payments, schedule: updatedBk.schedule, status: updatedBk.status, updated_at: updatedBk.updatedAt });
 }
 
 export function setBookingStatus(bookingId, status) {
-  mutate(db => { const b = (db.bookings || []).find(x => x.id === bookingId); if (b) { b.status = status; b.updatedAt = now_(); } });
+  let updatedBk;
+  mutate(db => { const b = (db.bookings || []).find(x => x.id === bookingId); if (b) { b.status = status; b.updatedAt = now_(); updatedBk = b; } });
+  if (updatedBk) sbUpdate('bookings', bookingId, { status: updatedBk.status, updated_at: updatedBk.updatedAt });
 }
 
 // ── Commerce pipeline (cart → checkout → payment → purchased) ──
@@ -605,21 +652,17 @@ export const CART_STAGES = ['CART', 'CHECKOUT', 'PAYMENT', 'PURCHASED'];
 export const CART_STAGE_LABEL = { CART: 'In Cart', CHECKOUT: 'Offer Sent', PAYMENT: 'Payment / Locked', PURCHASED: 'Purchased' };
 
 export function cartAdd(leadId, property, unitNo, user) {
-  mutate(db => {
-    const l = db.leads.find(x => x.id === leadId);
-    if (!l) return;
-    l.cart = {
-      propertyId: property.id, propertyName: property.name, unitNo: unitNo || null,
-      stage: 'CART', value: property.askingPrice || 0,
-      addedBy: user.id, addedByName: user.name, addedAt: now_(), updatedAt: now_(),
-    };
-    l.updatedAt = now_();
-  });
+  const cart = {
+    propertyId: property.id, propertyName: property.name, unitNo: unitNo || null,
+    stage: 'CART', value: property.askingPrice || 0,
+    addedBy: user.id, addedByName: user.name, addedAt: now_(), updatedAt: now_(),
+  };
+  updLead(leadId, { cart });
   addAct(leadId, { type: 'CART', description: 'Added to cart: ' + property.name + (unitNo ? ' · Unit ' + unitNo.replace('U-', '') : ''), userId: user.id, userName: user.name, durationSeconds: 0 });
 }
 
 export function cartRemove(leadId, user) {
-  mutate(db => { const l = db.leads.find(x => x.id === leadId); if (l) { l.cart = null; l.updatedAt = now_(); } });
+  updLead(leadId, { cart: null });
   addAct(leadId, { type: 'CART', description: 'Removed project from cart', userId: user.id, userName: user.name, durationSeconds: 0 });
 }
 
@@ -627,11 +670,9 @@ export function cartRemove(leadId, user) {
 export function cartStage(leadId, stage, user, value) {
   const l0 = getLead(leadId);
   if (!l0 || !l0.cart) return;
-  const cart = l0.cart;
-  mutate(db => {
-    const l = db.leads.find(x => x.id === leadId);
-    if (l && l.cart) { l.cart.stage = stage; if (value != null) l.cart.value = value; l.cart.updatedAt = now_(); l.updatedAt = now_(); }
-  });
+  const cart = { ...l0.cart, stage, updatedAt: now_() };
+  if (value != null) cart.value = value;
+  updLead(leadId, { cart });
   const desc = { CHECKOUT: 'Offer sent — checkout', PAYMENT: 'Payment received — unit locked', PURCHASED: 'Purchased — deal closed' }[stage] || ('Stage → ' + stage);
   addAct(leadId, { type: 'CART', description: desc + ' (' + cart.propertyName + ')', userId: user.id, userName: user.name, durationSeconds: 0 });
   const leadRef = { id: leadId, name: l0.name };
@@ -649,17 +690,26 @@ export function cartStage(leadId, stage, user, value) {
 
 // ── Mutations ──
 export function addAct(leadId, act) {
+  const newAct = { ...act, id: 'a' + uid(), timestamp: now_() };
   mutate(db => {
     if (!db.activities[leadId]) db.activities[leadId] = [];
-    db.activities[leadId].unshift({ ...act, id: 'a' + uid(), timestamp: now_() });
+    db.activities[leadId].unshift(newAct);
   });
+  sbInsert('activities', aToR(newAct, leadId));
 }
 
 export function updLead(id, upd) {
+  const ts = now_();
   mutate(db => {
     const i = db.leads.findIndex(l => l.id === id);
-    if (i >= 0) db.leads[i] = { ...db.leads[i], ...upd, updatedAt: now_() };
+    if (i >= 0) db.leads[i] = { ...db.leads[i], ...upd, updatedAt: ts };
   });
+  const snakeUpd = { updated_at: ts };
+  Object.keys(upd).forEach(k => {
+    const snake = k.replace(/[A-Z]/g, letter => `_${letter.toLowerCase()}`);
+    snakeUpd[snake] = upd[k];
+  });
+  sbUpdate('leads', id, snakeUpd);
 }
 
 export function deleteLead(leadId, user) {
@@ -1118,9 +1168,11 @@ export function addLeadFn(name, phone, phones, email, emails, company, source, p
     meetingDate: null, meetingLocation: '',
   };
   mutate(db => {
-    db.leads.push(lead);
+    db.leads.unshift(lead);
     db.activities[id] = [{ id: 'a' + uid(), type: 'CREATED', description: 'Lead created from ' + SRC_LABELS[source], userId: user.id, userName: user.name, timestamp: now_(), durationSeconds: 0 }];
   });
+  sbInsert('leads', lToR(lead));
+  sbInsert('activities', aToR(getDB().activities[id][0], id));
   addNotifs([{ userId: user.id, type: 'ASSIGNED', message: 'New lead added to your list: ' + name, leadId: id }], null);
   return id;
 }
