@@ -27,7 +27,7 @@ function LeadInfo({ l }) {
   if (l.priority) specs.push(['Priority', l.priority + (l.preferredTime ? ' · ' + l.preferredTime : '')]);
   if (l.nextFollowup) specs.push(['Follow-up', fmtD(l.nextFollowup)]);
   specs.push(['Lead ID', leadCode(l) + (l.materialSent ? ' · Material: ' + l.materialSent : '')]);
-  if (l.createdAt) specs.push(['Created', fmtD(l.createdAt)]);
+  if (l.createdAt) specs.push(['Created', fmtDT(l.createdAt)]);
 
   const stats = [['Calls', l.callCount], ['SMS', l.smsCount], ['WhatsApp', l.whatsappCount], ['Visits', l.visitCount]];
 

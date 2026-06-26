@@ -5,13 +5,13 @@ import Mi from './Mi.jsx';
 // CSS-variable theme by setting data-theme on <html>. Adapted from the shadcn
 // reference to this project's plain-JSX + CSS-variable stack (no Tailwind).
 export function applyStoredTheme() {
-  const t = localStorage.getItem('theme') || 'light';
+  const t = localStorage.getItem('theme') || 'dark';
   document.documentElement.dataset.theme = t;
   return t;
 }
 
 export default function ThemeToggle() {
-  const [theme, setTheme] = useState(() => localStorage.getItem('theme') || 'light');
+  const [theme, setTheme] = useState(() => localStorage.getItem('theme') || 'dark');
   const isDark = theme === 'dark';
 
   useEffect(() => {

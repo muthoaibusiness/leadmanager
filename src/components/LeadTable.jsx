@@ -97,28 +97,28 @@ export default function LeadTable({ leads }) {
                 <input type="checkbox" checked={selected.has(l.id)} onChange={() => {}} onClick={e => toggleOne(l.id, e)} />
               </div>
             )}
-            <div className="lt-cell">
+            <div className="lt-cell lt-cell-id">
               <span className="lt-id">{leadCode(l)}</span>
             </div>
-            <div className="lt-cell">
+            <div className="lt-cell lt-cell-main">
               <div style={{ minWidth: 0 }}>
                 <div className="lt-n">{l.name}</div>
                 <div className="lt-sub">{l.phone}</div>
               </div>
             </div>
-            <div className="lt-cell">
+            <div className="lt-cell lt-cell-src">
               <span className="lt-src">{SRC_LABELS[l.source] || l.source || '—'}</span>
             </div>
-            <div className="lt-cell">
+            <div className="lt-cell lt-cell-prop">
               <div style={{ minWidth: 0 }}>
                 <div className="lt-prop">{l.propertyInterest || '—'}</div>
                 <div className="lt-sub">{l.budget ? fmtBDT(l.budget) : ''}</div>
               </div>
             </div>
-            <div className="lt-cell">
+            <div className="lt-cell lt-cell-status">
               {(() => { const ds = leadDisplayStatus(l); return <span className={`bdg ${ds.cls}`}>{ds.label}</span>; })()}
             </div>
-            <div className="lt-cell">
+            <div className="lt-cell lt-cell-date">
               <span className="lt-date">{fmtD(l.createdAt)}</span>
             </div>
           </div>

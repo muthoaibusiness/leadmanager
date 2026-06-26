@@ -11199,3 +11199,116 @@ textarea.fi {
   .umenu { left: 0; right: 0; }
   .pip-input { min-width: 90px; }
 }
+
+/* ════════════════════════════════════════════════════════════════════════
+   USER-REQUESTED RESPONSIVE BUG FIXES
+   ════════════════════════════════════════════════════════════════════════ */
+@media (max-width: 768px) {
+  /* 1, 2, 5. All dashboard cards wrap into 2 columns per row */
+  .grid-4, .grid-3, .grid-2 {
+    display: grid !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 12px !important;
+    width: 100% !important;
+  }
+  
+  /* General horizontal scrolling kill switch */
+  body, html, #root, #app, .page, .iad-page, .management-dash, .pipeline-view, .properties-view, .pg-body, .pg-inner, .lt {
+    max-width: 100vw !important;
+    overflow-x: hidden !important;
+    box-sizing: border-box !important;
+  }
+  
+  /* 3. Pipeline dashboard horizontal scroll fix */
+  .pk-board {
+    display: flex !important;
+    max-width: 100vw !important;
+    overflow-x: auto !important;
+    padding-bottom: 16px !important;
+  }
+
+  /* 4. Projects List mobile responsive wrapping */
+  .lt-hdr { display: none !important; }
+  .lt-row {
+    display: grid !important;
+    grid-template-columns: auto 1fr auto !important;
+    gap: 6px 12px !important;
+    padding: 14px 16px !important;
+    width: 100% !important;
+    box-sizing: border-box !important;
+    border-bottom: 1px solid var(--bd) !important;
+    align-items: center !important;
+  }
+  .lt-cb-col {
+    grid-column: 1 !important;
+    grid-row: 1 !important;
+    padding: 0 !important;
+  }
+  .lt-cell {
+    min-width: 0 !important;
+    font-size: 13px !important;
+    padding: 0 !important;
+    text-align: left !important;
+  }
+  .lt-cell-main {
+    grid-column: 2 !important;
+    grid-row: 1 !important;
+    font-size: 14px !important;
+  }
+  .lt-cell-status {
+    grid-column: 3 !important;
+    grid-row: 1 / span 2 !important;
+    text-align: right !important;
+    align-self: start !important;
+  }
+  .lt-cell-src {
+    grid-column: 2 !important;
+    grid-row: 2 !important;
+    color: var(--t3) !important;
+  }
+  .lt-cell-prop {
+    grid-column: 2 !important;
+    grid-row: 3 !important;
+    color: var(--t3) !important;
+  }
+  .lt-cell-units {
+    grid-column: 3 !important;
+    grid-row: 3 !important;
+    text-align: right !important;
+  }
+  .lt-cell-id, .lt-cell-date, .lt-date {
+    display: none !important;
+  }
+}
+
+/* 6. Lead Details Page - 'Meeting Set' layout breaking bug */
+.s-meeting_set {
+  position: static !important;
+  display: inline-flex !important;
+  float: none !important;
+  height: auto !important;
+  width: auto !important;
+  overflow: visible !important;
+  white-space: nowrap !important;
+}
+
+.p-body {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 16px !important;
+}
+
+.ld-card, .score-card, .act-card, .offer-card {
+  flex: 0 0 auto !important;
+  min-height: min-content !important;
+  width: 100% !important;
+  box-sizing: border-box !important;
+  overflow: hidden !important;
+}
+
+.ld-tags {
+  display: flex !important;
+  flex-wrap: wrap !important;
+  gap: 8px !important;
+  align-items: center !important;
+}

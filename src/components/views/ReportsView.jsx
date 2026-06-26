@@ -26,10 +26,12 @@ export default function ReportsView() {
   const props = getProperties();
   const bookings = getBookings();
 
+  const validBookings = bookings.filter(b => !['EXPIRED', 'CANCELLED'].includes(b.status) && props.some(p => p.id === b.propertyId));
+
   // KPIs
-  const totalBooked = bookings.reduce((s, b) => s + (b.total || 0), 0);
-  const collected = bookings.reduce((s, b) => s + bookingPaid(b), 0);
-  const outstanding = bookings.reduce((s, b) => s + bookingDue(b), 0);
+  const totalBooked = validBookings.reduce((s, b) => s + (b.total || 0), 0);
+  const collected = validBookings.reduce((s, b) => s + bookingPaid(b), 0);
+  const outstanding = validBookings.reduce((s, b) => s + bookingDue(b), 0);
   const unitsAvail = props.reduce((s, p) => s + (p.unitsAvailable || 0), 0);
   const kpis = [
     { l: 'Total Booked', v: fmtBDT(totalBooked) },
@@ -40,7 +42,7 @@ export default function ReportsView() {
 
   // Sales by project (money)
   const byProj = {};
-  bookings.forEach(b => { byProj[b.propertyName || '—'] = (byProj[b.propertyName || '—'] || 0) + (b.total || 0); });
+  validBookings.forEach(b => { byProj[b.propertyName || '—'] = (byProj[b.propertyName || '—'] || 0) + (b.total || 0); });
   const salesByProject = Object.entries(byProj).map(([label, value], i) => ({ label, value, color: CHART_COLORS[i % CHART_COLORS.length] }))
     .sort((a, b) => b.value - a.value).slice(0, 6);
 

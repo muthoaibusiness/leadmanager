@@ -71,24 +71,24 @@ export default function PropertiesView() {
         ))}
       </div>
 
-      <div className="prop-toolbar">
-        <div className="pt-search">
+      <div className="prop-toolbar" style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', alignItems: 'center', marginBottom: '16px', background: 'var(--surf)', padding: '12px', borderRadius: '12px', border: '1px solid var(--bd2)' }}>
+        <div className="pt-search" style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: '1 1 200px', minWidth: '200px', background: 'var(--inset)', padding: '0 12px', borderRadius: '8px', border: '1px solid var(--bd2)' }}>
           <Mi>search</Mi>
-          <input placeholder="Search project, area, address..." value={q} onChange={e => setQ(e.target.value)} />
+          <input placeholder="Search project, area, address..." value={q} onChange={e => setQ(e.target.value)} style={{ border: 'none', background: 'transparent', outline: 'none', width: '100%', height: '36px', color: 'var(--t1)' }} />
         </div>
-        <select className="fsel" value={city} onChange={e => setCity(e.target.value)}>
+        <select className="fsel" value={city} onChange={e => setCity(e.target.value)} style={{ flex: '1 1 auto', height: '38px', minWidth: '120px', padding: '0 12px', borderRadius: '8px', border: '1px solid var(--bd2)', background: 'var(--surf)', color: 'var(--t1)' }}>
           <option value="ALL">All cities</option>
           {cities.map(c => <option key={c} value={c}>{c}</option>)}
         </select>
-        <select className="fsel" value={type} onChange={e => setType(e.target.value)}>
+        <select className="fsel" value={type} onChange={e => setType(e.target.value)} style={{ flex: '1 1 auto', height: '38px', minWidth: '120px', padding: '0 12px', borderRadius: '8px', border: '1px solid var(--bd2)', background: 'var(--surf)', color: 'var(--t1)' }}>
           <option value="ALL">All types</option>
           {PROPERTY_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
         </select>
-        <select className="fsel" value={status} onChange={e => setStatus(e.target.value)}>
+        <select className="fsel" value={status} onChange={e => setStatus(e.target.value)} style={{ flex: '1 1 auto', height: '38px', minWidth: '120px', padding: '0 12px', borderRadius: '8px', border: '1px solid var(--bd2)', background: 'var(--surf)', color: 'var(--t1)' }}>
           <option value="ALL">All status</option>
           {Object.entries(PROPERTY_STATUS).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
         </select>
-        <span className="fcount">{props.length}</span>
+        <span className="fcount" style={{ fontWeight: '600', color: 'var(--t2)', marginLeft: '4px' }}>{props.length}</span>
       </div>
 
       {canSelect && sel.size > 0 && (
@@ -121,15 +121,14 @@ export default function PropertiesView() {
                   <input type="checkbox" checked={sel.has(p.id)} onChange={() => {}} onClick={e => toggleOne(p.id, e)} />
                 </div>
               )}
-              <div className="lt-cell"><div style={{ minWidth: 0 }}>
+              <div className="lt-cell lt-cell-main"><div style={{ minWidth: 0 }}>
                 <div className="lt-n">{p.name}</div>
                 <div className="lt-sub">{[p.area, p.district].filter(Boolean).join(' · ')}</div>
               </div></div>
-              <div className="lt-cell"><span className="lt-src">{p.pricePerSqft ? '৳' + p.pricePerSqft.toLocaleString() : '—'}</span></div>
-              <div className="lt-cell"><span className="lt-src">{p.sizeText || '—'}</span></div>
-              <div className="lt-cell">
+              <div className="lt-cell lt-cell-src"><span className="lt-src">{p.pricePerSqft ? '৳' + p.pricePerSqft.toLocaleString() : '—'}</span></div>
+              <div className="lt-cell lt-cell-prop"><span className="lt-src">{p.sizeText || '—'}</span></div>
+              <div className="lt-cell lt-cell-units">
                 {(() => {
-                  // Units live in the blocks (variants): Block A 8 + Block B 8 = 16.
                   const blocks = p.variants || [];
                   const fromBlocks = blocks.reduce((s, v) => s + ((v.units || []).length || 0), 0);
                   const fromCodes = (p.saleableUnits || '').split(',').map(s => s.trim()).filter(Boolean).length;
@@ -140,8 +139,8 @@ export default function PropertiesView() {
                   return <span className="lt-src" title={tip}>{n ? `${n} unit${n > 1 ? 's' : ''}` : '—'}</span>;
                 })()}
               </div>
-              <div className="lt-cell"><span className={`bdg ${PS_CLASS[p.status] || ''}`}>{PROPERTY_STATUS[p.status] || p.status}</span></div>
-              <div className="lt-cell"><span className="lt-date">{p.handover || '—'}</span></div>
+              <div className="lt-cell lt-cell-status"><span className={`bdg ${PS_CLASS[p.status] || ''}`}>{PROPERTY_STATUS[p.status] || p.status}</span></div>
+              <div className="lt-cell lt-cell-date"><span className="lt-date">{p.handover || '—'}</span></div>
             </div>
           ))}
         </div>

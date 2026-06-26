@@ -92,7 +92,8 @@ export default function ManagementDash() {
   const cartConv = carts.length ? Math.round(inStage('PURCHASED').length / carts.length * 100) : 0;
 
   // Bookings & collections
-  const bookings = getBookings().filter(b => !cid || b.companyId === cid || coLeadIds.has(b.leadId));
+  const allBookings = getBookings().filter(b => !cid || b.companyId === cid || coLeadIds.has(b.leadId));
+  const bookings = allBookings.filter(b => !['EXPIRED', 'CANCELLED'].includes(b.status) && coProps.some(p => p.id === b.propertyId));
   const collected = bookings.reduce((s, b) => s + bookingPaid(b), 0);
   const outstanding = bookings.reduce((s, b) => s + bookingDue(b), 0);
   const unitsSold = coProps.reduce((s, p) => s + (p.units || []).filter(u => u.status === 'sold').length, 0);
