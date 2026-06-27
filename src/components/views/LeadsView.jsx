@@ -10,7 +10,7 @@ const FU_OVERLAY = ['NEW', 'CONTACTED', 'INTERESTED'];
 export default function LeadsView() {
   const {
     user, search, statusFilter, setStatusFilter,
-    agentFilter, setAgentFilter, teamFilter, dbVersion, dateRange, db,
+    teamFilter, setTeamFilter, dbVersion, dateRange, db,
   } = useApp();
 
   // Initial/Meeting agents get a My Leads ↔ Forwarded toggle.
@@ -18,8 +18,16 @@ export default function LeadsView() {
   const [tab, setTab] = useState('mine');
 
   let leads = getLeads(user, { involved: true }); // include forwarded leads so status filters (e.g. Meeting Set) show them
-  if (agentFilter) leads = leads.filter(l => l.assignedTo === agentFilter || l.previousAssignees.includes(agentFilter));
-  else if (teamFilter) leads = leads.filter(l => l.teamId === teamFilter);
+  if (teamFilter) {
+    const teamMemberIds = new Set(
+      (db.users || []).filter(u => u.teamId === teamFilter).map(u => u.id)
+    );
+    leads = leads.filter(l =>
+      l.teamId === teamFilter ||
+      teamMemberIds.has(l.assignedTo) ||
+      (l.previousAssignees || []).some(id => teamMemberIds.has(id))
+    );
+  }
 
   // Agent tabs: "mine" = leads they currently hold; "fwd" = leads they forwarded on.
   const myFwd = (l) => (l.previousAssignees || []).includes(user.id) && l.assignedTo !== user.id;
@@ -37,18 +45,10 @@ export default function LeadsView() {
     disp = disp.filter(l => { const d = new Date(l.createdAt); return d >= start && d <= end; });
   }
 
-  // Agent filter is an admin-only control. Regular agents (IA/MA) only ever see
-  // their own leads (enforced in getLeads), so the picker is hidden for them.
-  // MGMT can pick any agent; a Team Lead is scoped to their own team's agents.
   const isMgmt = user.role === ROLES.MGMT;
-  const canFilterAgents = isMgmt || user.role === ROLES.TL;
-  const agentOptions = canFilterAgents
-    ? (db.users || [])
-        .filter(u => u.isActive !== false && (isMgmt
-          ? [ROLES.IA, ROLES.MA, ROLES.TL].includes(u.role)
-          // A Team Lead can only filter by agents inside their own team.
-          : (u.teamId === user.teamId && [ROLES.IA, ROLES.MA].includes(u.role))))
-        .sort((a, b) => (a.name || '').localeCompare(b.name || ''))
+    
+  const teamOptions = isMgmt
+    ? (db.teams || []).filter(t => !user.companyId || !t.companyId || t.companyId === user.companyId)
     : [];
 
   return (
@@ -69,15 +69,18 @@ export default function LeadsView() {
           <option value="FOLLOW_UP">Follow-up</option>
           {Object.entries(STATUS_LABELS).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
         </select>
-        {canFilterAgents && (
+        {isMgmt && (
           <select
-            className="fsel fsel-agent"
-            value={agentFilter || ''}
-            onChange={e => setAgentFilter(e.target.value || null)}
-            title="Show leads for a specific agent"
+            className="fsel fsel-team"
+            value={teamFilter || ''}
+            onChange={e => setTeamFilter(e.target.value || null)}
+            title="Show leads for a specific team"
           >
-            <option value="">All leads</option>
-            {agentOptions.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+            <option value="">All teams</option>
+            {teamOptions.map(t => {
+              const tl = db.users?.find(u => u.id === t.leadId);
+              return <option key={t.id} value={t.id}>{tl ? tl.name : 'Team ' + t.id}</option>;
+            })}
           </select>
         )}
       </div>

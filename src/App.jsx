@@ -57,6 +57,7 @@ import { migrateProjects, createProject } from './lib/projects.js';
 import PropertyFormModal from './components/modals/PropertyFormModal.jsx';
 import UnitBookingModal from './components/modals/UnitBookingModal.jsx';
 import BookingModal from './components/modals/BookingModal.jsx';
+import TransferLeadModal from './components/modals/TransferLeadModal.jsx';
 
 // ── Loading screen ──────────────────────────────────────────────────────────
 function LoadingScreen({ visible }) {
@@ -407,6 +408,7 @@ export default function App() {
       <PropertyFormModal />
       <UnitBookingModal />
       <BookingModal />
+      <TransferLeadModal />
       <Toast />
     </>
   );

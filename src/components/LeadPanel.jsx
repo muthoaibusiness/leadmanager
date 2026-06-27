@@ -191,6 +191,14 @@ function Actions({ l }) {
     }
   }
 
+  if (r === ROLES.MGMT) {
+    btns.push(
+      <button key="transfer" className="btn btn-purple btn-full" onClick={() => openModal('transfer-lead')}>
+        <Mi>swap_horiz</Mi>Transfer Lead
+      </button>
+    );
+  }
+
   btns.push(
     <div key="log-call" className="log-call-wrap">
       <LogCall leadId={l.id} triggerClassName="btn btn-full" triggerStyle={{ background: 'var(--blue-l)', color: 'var(--accent)' }} />
