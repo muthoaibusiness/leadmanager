@@ -1,6 +1,8 @@
+import { useState } from 'react';
 import { useApp } from '../../context/AppContext.jsx';
 import { getLeads, getDB, calcPipelineValue, getHoldRequests } from '../../lib/db.js';
 import StatCard from '../StatCard.jsx';
+import KpiSheet from '../KpiSheet.jsx';
 import TargetCard from './TargetCard.jsx';
 import DashGreeting from './DashGreeting.jsx';
 import SuccessGauge from '../SuccessGauge.jsx';
@@ -38,6 +40,7 @@ export default function TeamLeadDash() {
   const { user, dateRange, setPanLead } = useApp();
   const db = getDB();
   const leads = getLeads(user);
+  const [detail, setDetail] = useState(null);
 
   const hasRange = !!dateRange?.range;
   const rangeStart = dateRange?.range?.start || (() => { const d = new Date(); d.setDate(1); d.setHours(0, 0, 0, 0); return d; })();
@@ -63,6 +66,17 @@ export default function TeamLeadDash() {
   const talkMins = Math.round(talkSecs / 60);
   const offersSent = allActs.filter(a => a.type === 'OFFER' && inRange(a.timestamp)).length;
   const newLeads = leads.filter(l => inRange(l.createdAt)).length;
+
+  // Lead/activity lists behind each KPI (for the click-through detail sheet).
+  const newLeadsList = leads.filter(l => inRange(l.createdAt));
+  const siteVisitsList = leads.filter(l => l.siteVisitDoneDate && inRange(l.siteVisitDoneDate));
+  const closedList = [...won, ...lost];
+  const _ln = {}; db.leads.forEach(l => { _ln[l.id] = l.name; });
+  const offerRows = [], callRows = [];
+  Object.entries(db.activities || {}).forEach(([lid, arr]) => (arr || []).forEach(a => {
+    if (a.type === 'OFFER' && inRange(a.timestamp)) offerRows.push({ leadId: lid, title: _ln[lid] || 'Lead', sub: 'offer', ts: a.timestamp });
+    if (a.type === 'CALL' && teamUserIds.includes(a.userId) && inRange(a.timestamp)) callRows.push({ leadId: lid, title: _ln[lid] || 'Lead', sub: 'call', ts: a.timestamp, right: Math.round((a.durationSeconds || 0) / 60) + 'm' });
+  }));
 
   // Top performers in this team (by deals won, then revenue).
   const perf = teamUsers
@@ -97,16 +111,16 @@ export default function TeamLeadDash() {
       })()} />
 
       <div className="grid-4">
-        <StatCard val={fmtBDT(rev)} label={hasRange ? 'Revenue' : 'Revenue This Month'} tone="good" sub="closed won" />
-        <StatCard val={fmtBDT(pipe)} label="Pipeline Value" tone="accent" sub="to close" />
-        <StatCard val={won.length + '/' + (won.length + lost.length)} label="Deals Won/Closed" sub="this period" />
-        <StatCard val={wr + '%'} label="Win Rate" tone={wr >= 50 ? 'good' : ''} sub="closed won" />
+        <StatCard val={fmtBDT(rev)} label={hasRange ? 'Revenue' : 'Revenue This Month'} tone="good" sub="closed won" onClick={() => setDetail({ title: 'Revenue · Deals Won', leads: won })} />
+        <StatCard val={fmtBDT(pipe)} label="Pipeline Value" tone="accent" sub="to close" onClick={() => setDetail({ title: 'Pipeline · Deals to close', leads: closing })} />
+        <StatCard val={won.length + '/' + (won.length + lost.length)} label="Deals Won/Closed" sub="this period" onClick={() => setDetail({ title: 'Deals Closed', leads: closedList })} />
+        <StatCard val={wr + '%'} label="Win Rate" tone={wr >= 50 ? 'good' : ''} sub="closed won" onClick={() => setDetail({ title: 'Closed Deals (Won + Lost)', leads: closedList })} />
       </div>
       <div className="grid-4">
-        <StatCard val={newLeads} label={hasRange ? 'New Customers' : 'New This Month'} sub="leads in" />
-        <StatCard val={siteVisits} label="Site Visits Done" sub="this period" />
-        <StatCard val={offersSent} label="Proposals Sent" sub="offers" />
-        <StatCard val={talkMins + ' min'} label="Team Talk Time" sub="on calls" />
+        <StatCard val={newLeads} label={hasRange ? 'New Customers' : 'New This Month'} sub="leads in" onClick={() => setDetail({ title: 'New Customers', leads: newLeadsList })} />
+        <StatCard val={siteVisits} label="Site Visits Done" sub="this period" onClick={() => setDetail({ title: 'Site Visits Done', leads: siteVisitsList })} />
+        <StatCard val={offersSent} label="Proposals Sent" sub="offers" onClick={() => setDetail({ title: 'Proposals Sent', rows: offerRows })} />
+        <StatCard val={talkMins + ' min'} label="Team Talk Time" sub="on calls" onClick={() => setDetail({ title: 'Team Calls', rows: callRows })} />
       </div>
 
       <div className="iad-layout">
@@ -165,6 +179,7 @@ export default function TeamLeadDash() {
           </div>
         </div>
       </div>
+      <KpiSheet detail={detail} onClose={() => setDetail(null)} onLead={(id) => { setDetail(null); setPanLead(id); }} />
     </div>
   );
 }

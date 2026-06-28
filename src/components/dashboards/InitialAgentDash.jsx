@@ -1,7 +1,8 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { useApp } from '../../context/AppContext.jsx';
 import { getLeads, getDB, clearFollowup } from '../../lib/db.js';
 import StatCard from '../StatCard.jsx';
+import KpiSheet from '../KpiSheet.jsx';
 import TargetCard from './TargetCard.jsx';
 import DashGreeting from './DashGreeting.jsx';
 import SuccessGauge from '../SuccessGauge.jsx';
@@ -22,6 +23,7 @@ function queueReason(lead, touched, todayStart, todayEnd) {
 
 export default function InitialAgentDash() {
   const { user, dbVersion, setPanLead, nav, refreshDB, showToast, dateRange } = useApp();
+  const [detail, setDetail] = useState(null);
   void dbVersion; // re-render when DB changes
   const db = getDB();
   const leads = getLeads(user);
@@ -48,13 +50,18 @@ export default function InitialAgentDash() {
       .sort((a, b) => a.r.prio - b.r.prio || b.score - a.score || new Date(a.l.createdAt) - new Date(b.l.createdAt));
 
     const untouched = active.filter(l => !touched(l));
-    const myActs = Object.values(acts).flat();
-    const myCallsToday = myActs.filter(a => a.userId === user.id && a.type === 'CALL' && inWin(a.timestamp));
-    const callsToday = myCallsToday.length;
-    // Talk time = sum of logged call durations in the selected range (seconds → minutes).
-    const talkSecsToday = myCallsToday.reduce((s, a) => s + (a.durationSeconds || 0), 0);
-    const talkMinsToday = Math.round(talkSecsToday / 60);
-    const meetingsToday = db.leads.filter(l => l.meetingSetBy === user.id && inWin(l.meetingSetDate)).length;
+    const leadName = {}; db.leads.forEach(l => { leadName[l.id] = l.name; });
+    const myCallList = []; let talkSecs = 0;
+    Object.entries(acts).forEach(([lid, arr]) => (arr || []).forEach(a => {
+      if (a.userId === user.id && a.type === 'CALL' && inWin(a.timestamp)) {
+        talkSecs += (a.durationSeconds || 0);
+        myCallList.push({ leadId: lid, title: leadName[lid] || 'Lead', sub: 'call', ts: a.timestamp, right: Math.round((a.durationSeconds || 0) / 60) + 'm' });
+      }
+    }));
+    const callsToday = myCallList.length;
+    const talkMins = Math.round(talkSecs / 60);
+    const meetingLeads = db.leads.filter(l => l.meetingSetBy === user.id && inWin(l.meetingSetDate));
+    const meetingsToday = meetingLeads.length;
 
     // ── Follow-ups due today (+ overdue) — the task list ──
     const followToday = active
@@ -63,14 +70,13 @@ export default function InitialAgentDash() {
 
     // ── Totals for the selected date range (leads received in the period) ──
     const periodLeads = getLeads(user, { involved: true }).filter(l => inWin(l.createdAt));
-    const totals = {
-      leads: periodLeads.length,
-      connected: periodLeads.filter(l => (l.callCount || 0) > 0 || l.status !== 'NEW').length,
-      interested: periodLeads.filter(l => l.status === 'INTERESTED').length,
-      onFollowup: periodLeads.filter(l => l.nextFollowup && !CLOSED.includes(l.status)).length,
-    };
+    const connectedLeads = periodLeads.filter(l => (l.callCount || 0) > 0 || l.status !== 'NEW');
+    const interestedLeads = periodLeads.filter(l => l.status === 'INTERESTED');
+    const followLeads = periodLeads.filter(l => l.nextFollowup && !CLOSED.includes(l.status));
+    const totals = { leads: periodLeads.length, connected: connectedLeads.length, interested: interestedLeads.length, onFollowup: followLeads.length };
+    const sets = { leads: periodLeads, connected: connectedLeads, interested: interestedLeads, onFollowup: followLeads, untouched, meetings: meetingLeads, calls: myCallList };
 
-    return { now, todayStart, queue, untouched, callsToday, talkMinsToday, meetingsToday, active, followToday, totals };
+    return { now, todayStart, queue, untouched, callsToday, talkMinsToday: talkMins, meetingsToday, active, followToday, totals, sets };
   }, [leads, db, user.id, dbVersion, dateRange]);
 
   const QUEUE_CAP = 8;
@@ -92,18 +98,18 @@ export default function InitialAgentDash() {
 
       {/* All-time totals — every lead received / actioned */}
       <div className="grid-4">
-        <StatCard val={view.totals.leads} label="Total Leads" sub={periodSub} />
-        <StatCard val={view.totals.connected} label="Connected" tone={view.totals.connected ? 'accent' : ''} sub="called" />
-        <StatCard val={view.totals.interested} label="Interested" tone={view.totals.interested ? 'good' : ''} sub="qualified" />
-        <StatCard val={view.totals.onFollowup} label="On Follow-up" tone={view.totals.onFollowup ? 'warn' : ''} sub="active" />
+        <StatCard val={view.totals.leads} label="Total Leads" sub={periodSub} onClick={() => setDetail({ title: 'Total Leads', leads: view.sets.leads })} />
+        <StatCard val={view.totals.connected} label="Connected" tone={view.totals.connected ? 'accent' : ''} sub="called" onClick={() => setDetail({ title: 'Connected', leads: view.sets.connected })} />
+        <StatCard val={view.totals.interested} label="Interested" tone={view.totals.interested ? 'good' : ''} sub="qualified" onClick={() => setDetail({ title: 'Interested', leads: view.sets.interested })} />
+        <StatCard val={view.totals.onFollowup} label="On Follow-up" tone={view.totals.onFollowup ? 'warn' : ''} sub="active" onClick={() => setDetail({ title: 'On Follow-up', leads: view.sets.onFollowup })} />
       </div>
 
       {/* KPIs — labels only, no icons */}
       <div className="grid-4">
-        <StatCard val={view.untouched.length} label="Untouched" tone={view.untouched.length ? 'warn' : ''} sub="need first call" />
-        <StatCard val={view.callsToday} label="Calls" sub={periodSub} />
-        <StatCard val={view.talkMinsToday + ' min'} label="Talk Time" tone={view.talkMinsToday ? 'accent' : ''} sub={periodSub} />
-        <StatCard val={view.meetingsToday} label="Meetings Set" tone={view.meetingsToday ? 'good' : ''} sub={periodSub} />
+        <StatCard val={view.untouched.length} label="Untouched" tone={view.untouched.length ? 'warn' : ''} sub="need first call" onClick={() => setDetail({ title: 'Untouched', leads: view.sets.untouched })} />
+        <StatCard val={view.callsToday} label="Calls" sub={periodSub} onClick={() => setDetail({ title: 'Calls', rows: view.sets.calls })} />
+        <StatCard val={view.talkMinsToday + ' min'} label="Talk Time" tone={view.talkMinsToday ? 'accent' : ''} sub={periodSub} onClick={() => setDetail({ title: 'Talk Time · calls', rows: view.sets.calls })} />
+        <StatCard val={view.meetingsToday} label="Meetings Set" tone={view.meetingsToday ? 'good' : ''} sub={periodSub} onClick={() => setDetail({ title: 'Meetings Set', leads: view.sets.meetings })} />
       </div>
 
       {/* Follow-ups due today — task list */}
@@ -194,6 +200,7 @@ export default function InitialAgentDash() {
       </div>
 
       </div>
+      <KpiSheet detail={detail} onClose={() => setDetail(null)} onLead={(id) => { setDetail(null); setPanLead(id); }} />
     </>
   );
 }

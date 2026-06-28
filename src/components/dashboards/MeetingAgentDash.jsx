@@ -1,7 +1,8 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { useApp } from '../../context/AppContext.jsx';
 import { getLeads, getDB } from '../../lib/db.js';
 import StatCard from '../StatCard.jsx';
+import KpiSheet from '../KpiSheet.jsx';
 import TargetCard from './TargetCard.jsx';
 import DashGreeting from './DashGreeting.jsx';
 import SuccessGauge from '../SuccessGauge.jsx';
@@ -27,6 +28,7 @@ export default function MeetingAgentDash() {
   void dbVersion;
   const db = getDB();
   const leads = getLeads(user);
+  const [detail, setDetail] = useState(null);
 
   const view = useMemo(() => {
     const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
@@ -63,10 +65,10 @@ export default function MeetingAgentDash() {
         : "No visits waiting — you're all set."} />
 
       <div className="grid-4">
-        <StatCard val={view.meetingSet.length} label="Meeting Set" tone={view.meetingSet.length ? 'warn' : ''} sub="need a visit" />
-        <StatCard val={view.sched.length} label="Visits Scheduled" sub="upcoming" />
-        <StatCard val={view.done.length} label="Visits Done" tone={view.done.length ? 'good' : ''} sub="completed" />
-        <StatCard val={view.fwdTL.length} label="Sent to Team Lead" tone="accent" sub="all time" />
+        <StatCard val={view.meetingSet.length} label="Meeting Set" tone={view.meetingSet.length ? 'warn' : ''} sub="need a visit" onClick={() => setDetail({ title: 'Meeting Set', leads: view.meetingSet })} />
+        <StatCard val={view.sched.length} label="Visits Scheduled" sub="upcoming" onClick={() => setDetail({ title: 'Visits Scheduled', leads: view.sched })} />
+        <StatCard val={view.done.length} label="Visits Done" tone={view.done.length ? 'good' : ''} sub="completed" onClick={() => setDetail({ title: 'Visits Done', leads: view.done })} />
+        <StatCard val={view.fwdTL.length} label="Sent to Team Lead" tone="accent" sub="all time" onClick={() => setDetail({ title: 'Sent to Team Lead', leads: view.fwdTL })} />
       </div>
 
       <div className="iad-layout">
@@ -137,6 +139,7 @@ export default function MeetingAgentDash() {
           </div>
         </aside>
       </div>
+      <KpiSheet detail={detail} onClose={() => setDetail(null)} onLead={(id) => { setDetail(null); setPanLead(id); }} />
     </div>
   );
 }
