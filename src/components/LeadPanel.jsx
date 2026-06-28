@@ -157,9 +157,9 @@ function Actions({ l }) {
         <Mi>check_circle</Mi>Mark Visit as Done
       </button>
     );
-    // Meeting Agent can forward to the next agent (Team Lead) any time they hold
-    // the lead — not only after the visit is marked done.
-    if (l.assignedRole === ROLES.MA && !['NEGOTIATING', 'DEAL_CLOSED_WON', 'DEAL_CLOSED_LOST', 'NOT_INTERESTED'].includes(l.status)) btns.push(
+    // Meeting Agent can forward to the next agent (Team Lead) any time they HOLD
+    // the lead (assignedTo === me) — reliable even if assignedRole wasn't updated.
+    if (l.assignedTo === user.id && !['DEAL_CLOSED_WON', 'DEAL_CLOSED_LOST', 'NOT_INTERESTED'].includes(l.status)) btns.push(
       <button key="fwd-tl" className="btn btn-purple btn-full" onClick={() => openModal('forward-tl')}>
         <Mi>forward_to_inbox</Mi>Forward to Team Lead
       </button>
@@ -167,17 +167,22 @@ function Actions({ l }) {
   }
 
   if (r === ROLES.TL || r === ROLES.MGMT) {
-    if (['SITE_VISIT_DONE', 'NEGOTIATING'].includes(l.status)) btns.push(
+    // A lead in the Team Lead's hands (forwarded from MA arrives at Meeting Set /
+    // Visit Scheduled / Visit Done) — let the TL act on any deal-stage lead, not
+    // only Visit Done / Negotiating, so a forwarded lead can always be closed.
+    const DEAL_STAGE = ['MEETING_SET', 'SITE_VISIT_SCHEDULED', 'SITE_VISIT_DONE', 'NEGOTIATING'];
+    const inDeal = DEAL_STAGE.includes(l.status);
+    if (inDeal) btns.push(
       <button key="deal" className="btn btn-success btn-full" onClick={() => openModal('deal')}>
         <Mi>emoji_events</Mi>Close as Won
       </button>
     );
-    if (l.status === 'SITE_VISIT_DONE') btns.push(
+    if (inDeal && l.status !== 'NEGOTIATING') btns.push(
       <button key="neg" className="btn btn-warn btn-full" onClick={() => doStatus('NEGOTIATING')}>
         <Mi>balance</Mi>Mark as Negotiating
       </button>
     );
-    if (['SITE_VISIT_DONE', 'NEGOTIATING'].includes(l.status)) {
+    if (inDeal) {
       btns.push(
         <button key="follow-up" className="btn btn-full" style={{ background: 'var(--orange-l)', color: 'var(--orange)' }} onClick={() => openModal('follow-up')}>
           <Mi>alarm</Mi>Take Time
