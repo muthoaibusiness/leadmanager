@@ -1,9 +1,10 @@
 import Mi from './Mi.jsx';
 
 // Muthoclo-style KPI card: label + delta + big value + full-width area sparkline w/ glow dot.
-export default function StatTrend({ label, value, delta, points, color = 'var(--volt)', gid }) {
+export default function StatTrend({ label, value, delta, points, color = 'var(--volt)', gid, onClick }) {
   const hasGraph = Array.isArray(points) && points.length > 1;
   const up = (delta ?? 0) >= 0;
+  const clickable = typeof onClick === 'function';
 
   let svg = null;
   if (hasGraph) {
@@ -33,7 +34,13 @@ export default function StatTrend({ label, value, delta, points, color = 'var(--
   }
 
   return (
-    <div className={`st-card${hasGraph ? ' has-graph' : ''}`}>
+    <div
+      className={`st-card${hasGraph ? ' has-graph' : ''}${clickable ? ' mc-click' : ''}`}
+      onClick={onClick}
+      role={clickable ? 'button' : undefined}
+      tabIndex={clickable ? 0 : undefined}
+      onKeyDown={clickable ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick(); } } : undefined}
+    >
       <div className="st-top">
         <span className="st-l">{label}</span>
         {delta != null && (
@@ -44,6 +51,7 @@ export default function StatTrend({ label, value, delta, points, color = 'var(--
       </div>
       <div className="st-v">{value}</div>
       {svg}
+      {clickable && <span className="mc-go"><Mi>chevron_right</Mi></span>}
     </div>
   );
 }

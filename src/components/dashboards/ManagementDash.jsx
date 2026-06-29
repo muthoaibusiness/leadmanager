@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useApp } from '../../context/AppContext.jsx';
 import { getDB, getDeletionLog, calcPipelineValue, getBookings, bookingPaid, bookingDue, bookingNextDue } from '../../lib/db.js';
 import StatCard from '../StatCard.jsx';
+import KpiSheet from '../KpiSheet.jsx';
 import DashGreeting from './DashGreeting.jsx';
 import LiveActivity from './LiveActivity.jsx';
 import CustomersTable from '../ui/customers-table.jsx';
@@ -14,8 +15,9 @@ import StatTrend from '../StatTrend.jsx';
 function sclass(s) { return 's-' + (s || '').toLowerCase(); }
 
 export default function ManagementDash() {
-  const { user, setView, setTeamFilter, setAgentFilter, setTab, setSearch, setPropSel, openModal, dateRange, dbVersion } = useApp();
+  const { user, setView, setTeamFilter, setAgentFilter, setTab, setSearch, setPropSel, openModal, dateRange, dbVersion, setPanLead } = useApp();
   const [activeTab, setActiveTab] = useState(0);
+  const [detail, setDetail] = useState(null);
   const db = getDB();
   const sm = startOfMonth();
   // company sandbox — management only sees their own tenant
@@ -158,11 +160,15 @@ export default function ManagementDash() {
   const collSeries = days14.map(([d, nx]) => allPays.filter(p => new Date(p.date) >= d && new Date(p.date) < nx).reduce((s, p) => s + (p.amount || 0), 0));
   const sDelta = arr => { const a = arr.slice(7).reduce((x, y) => x + y, 0), b = arr.slice(0, 7).reduce((x, y) => x + y, 0); return b ? Math.round((a - b) / b * 100) : (a ? 100 : 0); };
 
+  // Lead/booking lists behind each admin KPI (for the click-through detail sheet).
+  const closedList = [...won, ...lost];
+  const collectedRows = bookings.filter(b => bookingPaid(b) > 0)
+    .map(b => ({ leadId: b.leadId, title: b.leadName || b.clientName || 'Booking', sub: b.propertyName || '', right: fmtBDT(bookingPaid(b)) }));
   const trendCards = [
-    { label: 'Revenue', value: fmtBDT(rev), delta: sDelta(revSeries), points: revSeries, color: 'var(--volt)' },
-    { label: 'New Customers', value: trendTotal, delta: trendDelta, points: leadSeries, color: '#F4EFE5' },
-    { label: 'Collected', value: fmtBDT(collected), delta: sDelta(collSeries), points: collSeries, color: '#34D399' },
-    { label: 'Win Rate', value: wr + '%', delta: null, points: null, color: 'var(--gold)' },
+    { label: 'Revenue', value: fmtBDT(rev), delta: sDelta(revSeries), points: revSeries, color: 'var(--volt)', onClick: () => setDetail({ title: 'Revenue · Deals Won', leads: won }) },
+    { label: 'New Customers', value: trendTotal, delta: trendDelta, points: leadSeries, color: '#F4EFE5', onClick: () => setDetail({ title: 'New Customers', leads: allLeads }) },
+    { label: 'Collected', value: fmtBDT(collected), delta: sDelta(collSeries), points: collSeries, color: '#34D399', onClick: () => setDetail({ title: 'Collected · Bookings', rows: collectedRows }) },
+    { label: 'Win Rate', value: wr + '%', delta: null, points: null, color: 'var(--gold)', onClick: () => setDetail({ title: 'Closed Deals (Won + Lost)', leads: closedList }) },
   ];
 
   // Needs-attention (live, ignores date range)
@@ -285,6 +291,7 @@ export default function ManagementDash() {
           rows={customerRows}
         />
       </div>
+      <KpiSheet detail={detail} onClose={() => setDetail(null)} onLead={(id) => { setDetail(null); setPanLead && setPanLead(id); }} />
     </>
   );
 }
