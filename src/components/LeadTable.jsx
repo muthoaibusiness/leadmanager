@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import Mi from './Mi.jsx';
 import Pagination from './Pagination.jsx';
-import { fmtD, fmtBDT, leadDisplayStatus } from '../lib/helpers.js';
+import { fmtDateTimeAP, fmtBDT, leadDisplayStatus } from '../lib/helpers.js';
 import { SRC_LABELS, STATUS_LABELS, ROLES } from '../lib/constants.js';
 import { useApp } from '../context/AppContext.jsx';
 import { bulkDeleteLeads } from '../lib/db.js';
@@ -16,8 +16,9 @@ export default function LeadTable({ leads }) {
   const { setPanLead, user, refreshDB, showToast, sortBy } = useApp();
   const [page, setPage] = useState(0);
   const [selected, setSelected] = useState(new Set());
-  // multi-select bulk delete available to every role that manages leads
-  const canSelect = !!user && user.role !== ROLES.MASTER;
+  // Multi-select bulk delete is Management / Master (admin) only. Real agents —
+  // Initial Agent, Meeting Agent, Team Lead — cannot select or delete leads.
+  const canSelect = user?.role === ROLES.MGMT || user?.role === ROLES.MASTER;
 
   const CMP = {
     newest: (a, b) => new Date(b.createdAt) - new Date(a.createdAt),
@@ -119,7 +120,7 @@ export default function LeadTable({ leads }) {
               {(() => { const ds = leadDisplayStatus(l); return <span className={`bdg ${ds.cls}`}>{ds.label}</span>; })()}
             </div>
             <div className="lt-cell lt-cell-date">
-              <span className="lt-date">{fmtD(l.createdAt)}</span>
+              <span className="lt-date">{fmtDateTimeAP(l.createdAt)}</span>
             </div>
           </div>
         ))}

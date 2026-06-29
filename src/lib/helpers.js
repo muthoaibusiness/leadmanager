@@ -28,6 +28,14 @@ export function fmtDT(iso) {
   return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' }) + ', ' + d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
 }
 
+// Full date + 12-hour time with AM/PM, e.g. "25 Jun 2026, 03:51 PM".
+export function fmtDateTimeAP(iso) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) + ', ' +
+    d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
+}
+
 export function fmtAgo(iso) {
   if (!iso) return '';
   const m = Math.floor((Date.now() - new Date(iso)) / 60000);
