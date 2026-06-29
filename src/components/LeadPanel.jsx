@@ -11,8 +11,26 @@ function sclass(s) { return 's-' + (s || '').toLowerCase(); }
 const leadCode = (l) => l.externalId || ('#' + String(l.id || '').slice(-6).toUpperCase());
 
 function LeadInfo({ l }) {
+  const { user } = useApp();
   const phones = (l.phones?.length ? l.phones : [l.phone]).filter(Boolean);
   const emails = (l.emails?.length ? l.emails : l.email ? [l.email] : []).filter(Boolean);
+
+  // Profile completeness (Initial Agent) — 7 optional fields; Name + Phone are
+  // always required so they don't count.
+  const profChecks = [
+    emails.length > 0,                       // Email
+    !!(l.company && l.company !== '—'),      // Company
+    !!l.profession,                          // Profession
+    !!l.source,                              // Source
+    !!l.city,                                // Customer Location
+    !!l.propertyInterest,                    // Project Interest
+    (l.budget || 0) > 0,                     // Budget
+  ];
+  const profFilled = profChecks.filter(Boolean).length;
+  const prof = profFilled >= 7 ? { color: '#22C55E', label: 'Complete' }
+    : profFilled >= 5 ? { color: '#EAB308', label: 'Good' }
+    : profFilled >= 3 ? { color: '#F59E0B', label: 'Partial' }
+    : { color: '#EF4444', label: 'Incomplete' };
 
   // Eyebrow = source • company (the small kicker line above the big name).
   const eyebrow = [SRC_LABELS[l.source] || l.source || 'Lead',
@@ -40,6 +58,8 @@ function LeadInfo({ l }) {
           {(() => { const ds = leadDisplayStatus(l); return <span className={`bdg ${ds.cls}`}>{ds.label}</span>; })()}
           {l.nextFollowup && ['NEW', 'CONTACTED', 'INTERESTED'].includes(l.status) &&
             <span className="bdg s-follow_up"><Mi>alarm</Mi>{fmtDT(l.nextFollowup)}</span>}
+          {user?.role === ROLES.IA &&
+            <span className="ld-prof-tag" style={{ color: prof.color, marginLeft: 'auto' }}>{prof.label}</span>}
         </div>
       </div>
 

@@ -36,6 +36,7 @@ export default function LeadsView() {
 
   let disp = leads;
   if (statusFilter === 'FOLLOW_UP') disp = disp.filter(l => l.nextFollowup && FU_OVERLAY.includes(l.status));
+  else if (statusFilter === 'FORWARDED') disp = disp.filter(l => (l.previousAssignees || []).length > 0);
   else if (statusFilter !== 'ALL') disp = disp.filter(l => l.status === statusFilter);
   if (search) { const q = search.toLowerCase(); disp = disp.filter(l => l.name.toLowerCase().includes(q) || l.phone.includes(q) || (l.propertyInterest || '').toLowerCase().includes(q)); }
   // Apply the global date filter (by createdAt) — except on the Forwarded tab,
@@ -67,6 +68,7 @@ export default function LeadsView() {
         <select className="fsel" value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
           <option value="ALL">All status</option>
           <option value="FOLLOW_UP">Follow-up</option>
+          <option value="FORWARDED">Forwarded</option>
           {Object.entries(STATUS_LABELS).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
         </select>
         {isMgmt && (

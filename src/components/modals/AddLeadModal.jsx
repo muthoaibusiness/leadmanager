@@ -14,6 +14,9 @@ export default function AddLeadModal() {
   // Initial Agents get a different source list (Event / Walking / Personal / Team Lead).
   const sourceOpts = user?.role === ROLES.IA ? SOURCE_OPTIONS_IA : SOURCE_OPTIONS_DEFAULT;
   const defaultSource = sourceOpts[0];
+  // Only Admin / Management / Team Lead may edit or add phone numbers. For everyone
+  // else (Initial Agent, Meeting Agent) phones are read-only across all statuses.
+  const canEditPhone = [ROLES.MGMT, ROLES.MASTER, ROLES.TL].includes(user?.role);
 
   const nameRef = useRef();
   const companyRef = useRef();
@@ -139,31 +142,47 @@ export default function AddLeadModal() {
             <input className="fi" ref={nameRef} type="text" placeholder="e.g. Rahim Ahmed" />
           </div>
 
-          {/* Phone numbers */}
+          {/* Phone numbers — editable only for Admin / Management / Team Lead */}
           <div className="fg">
-            <label>Phone Number(s) *</label>
-            {phones.map((p, i) => (
-              <div key={i} style={{ display: 'flex', gap: '6px', marginBottom: i < phones.length - 1 ? '6px' : '0' }}>
-                <input
-                  className="fi"
-                  type="tel"
-                  placeholder={i === 0 ? '+971 50 000 0000 (primary)' : 'Additional number'}
-                  value={p}
-                  onChange={e => updatePhone(i, e.target.value)}
-                  style={{ flex: 1 }}
-                />
-                {phones.length > 1 && (
-                  <button type="button" onClick={() => removePhone(i)}
-                    style={{ padding: '0 10px', borderRadius: 'var(--r-sm)', background: 'var(--red-l)', color: 'var(--red)', border: 'none', cursor: 'pointer', flexShrink: 0 }}>
-                    <Mi>remove</Mi>
-                  </button>
-                )}
+            <label style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+              Phone Number(s){canEditPhone ? ' *' : ''}
+              {!canEditPhone && <Mi style={{ fontSize: '14px', color: 'var(--t3)' }}>lock</Mi>}
+            </label>
+            {canEditPhone ? (
+              <>
+                {phones.map((p, i) => (
+                  <div key={i} style={{ display: 'flex', gap: '6px', marginBottom: i < phones.length - 1 ? '6px' : '0' }}>
+                    <input
+                      className="fi"
+                      type="tel"
+                      placeholder={i === 0 ? '+971 50 000 0000 (primary)' : 'Additional number'}
+                      value={p}
+                      onChange={e => updatePhone(i, e.target.value)}
+                      style={{ flex: 1 }}
+                    />
+                    {phones.length > 1 && (
+                      <button type="button" onClick={() => removePhone(i)}
+                        style={{ padding: '0 10px', borderRadius: 'var(--r-sm)', background: 'var(--red-l)', color: 'var(--red)', border: 'none', cursor: 'pointer', flexShrink: 0 }}>
+                        <Mi>remove</Mi>
+                      </button>
+                    )}
+                  </div>
+                ))}
+                <button type="button" onClick={addPhone}
+                  style={{ marginTop: '6px', fontSize: '12px', color: 'var(--blue)', background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px', padding: 0 }}>
+                  <Mi>add</Mi> Add number
+                </button>
+              </>
+            ) : (
+              // Read-only: plain text with a lock icon, no inputs, no Add button.
+              <div className="ro-field">
+                {phones.filter(Boolean).length
+                  ? phones.filter(Boolean).map((p, i) => (
+                      <div key={i} className="ro-phone"><Mi className="ro-lock">lock</Mi>{p}</div>
+                    ))
+                  : <div className="ro-phone"><Mi className="ro-lock">lock</Mi>—</div>}
               </div>
-            ))}
-            <button type="button" onClick={addPhone}
-              style={{ marginTop: '6px', fontSize: '12px', color: 'var(--blue)', background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px', padding: 0 }}>
-              <Mi>add</Mi> Add number
-            </button>
+            )}
           </div>
 
           {/* Emails */}

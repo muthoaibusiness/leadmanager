@@ -11352,3 +11352,17 @@ textarea.fi {
 .kpi-rtx small { font-size: 11.5px; color: var(--t3); }
 .kpi-rt { font-size: 12.5px; font-weight: 700; color: var(--t2); }
 .kpi-empty { padding: 28px; text-align: center; color: var(--t3); font-size: 13px; }
+
+/* Read-only phone display in Edit Customer (non-editable roles) */
+.ro-field { display: flex; flex-direction: column; gap: 5px; }
+.ro-phone { font-size: 14px; font-weight: 600; color: var(--t1); padding: 9px 11px; background: var(--surf2); border: 1px solid var(--bd); border-radius: var(--r-sm); letter-spacing: .2px; }
+.ro-phone { display: flex; align-items: center; gap: 8px; }
+.ro-phone .ro-lock { font-size: 15px; color: var(--t3); flex-shrink: 0; }
+
+/* Profile completeness bar (Initial Agent, lead detail) */
+.ld-prof { margin: 2px 0 4px; }
+.ld-prof-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+.ld-prof-l { font-size: 12px; color: var(--t2); font-weight: 500; }
+.ld-prof-tag { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .4px; align-self: center; white-space: nowrap; }
+.ld-prof-bar { height: 6px; border-radius: 99px; background: var(--surf2); overflow: hidden; }
+.ld-prof-fill { height: 100%; border-radius: 99px; transition: width .3s ease, background .3s ease; }
