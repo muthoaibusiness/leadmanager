@@ -332,7 +332,9 @@ function Timeline({ acts }) {
 
 export default function LeadPanel() {
   const { panLead, setPanLead, openModal, dbVersion, user, refreshDB, showToast } = useApp();
-  const canDelete = user?.role === ROLES.TL || user?.role === ROLES.MGMT;
+  // Only Management / Master (admin) may delete a lead. Real agents — Initial
+  // Agent, Meeting Agent, Team Lead — cannot delete any lead.
+  const canDelete = user?.role === ROLES.MGMT || user?.role === ROLES.MASTER;
 
   function handleDelete() {
     if (!l) return;
