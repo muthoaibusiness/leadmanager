@@ -2,7 +2,7 @@ import { useEffect } from 'react';
 import Mi from './Mi.jsx';
 import { useApp } from '../context/AppContext.jsx';
 import LogCall from './LogCall.jsx';
-import { getLead, getActs, changeStatus, doneVisit, deleteLead, updLead, addAct } from '../lib/db.js';
+import { getLead, getActs, changeStatus, doneVisit, deleteLead, updLead, addAct, logNoAnswer } from '../lib/db.js';
 import { fmtD, fmtDT, fmtBDT, rlabel, scoreLead, scoreLabel, leadDisplayStatus } from '../lib/helpers.js';
 import ActivityTimeline from './ActivityTimeline.jsx';
 import { ROLES, STATUS_LABELS, SRC_LABELS } from '../lib/constants.js';
@@ -108,6 +108,13 @@ function Actions({ l }) {
     showToast('Marked as Not Interested', 'warn');
   };
 
+  const doNoAnswer = () => {
+    const res = logNoAnswer(l.id, user);
+    refreshDB();
+    if (res.hitCap) showToast('No answer 7× — moved to Not Interested', 'warn');
+    else showToast(`No Answer logged (${res.attempts}/7) · follow-up set for tomorrow`, '');
+  };
+
   const doDoneVisit = () => {
     doneVisit(l.id, user);
     refreshDB();
@@ -119,27 +126,41 @@ function Actions({ l }) {
   if (r === ROLES.IA) {
     if (l.status === 'NEW') btns.push(
       <button key="contacted" className="btn btn-p btn-full" onClick={() => doStatus('CONTACTED')}>
-        <Mi>phone_callback</Mi>Mark as Contacted
+        <Mi>phone_callback</Mi>Connected
       </button>
     );
     if (l.status === 'CONTACTED') btns.push(
       <button key="interested" className="btn btn-success btn-full" onClick={() => doStatus('INTERESTED')}>
-        <Mi>thumb_up</Mi>Mark as Interested
+        <Mi>thumb_up</Mi>Interested
       </button>
     );
     if (l.status === 'INTERESTED' && l.assignedRole === ROLES.IA) btns.push(
       <button key="fwd-ma" className="btn btn-teal btn-full" onClick={() => openModal('forward-ma')}>
-        <Mi>forward_to_inbox</Mi>Forward to Meeting Agent
+        <Mi>forward_to_inbox</Mi>FW to Next Agent
       </button>
     );
-    // Before contact (NEW, not yet connected) — only the not-interested option.
-    if (l.status === 'NEW') btns.push(
+    // Not Interested — manual disqualify, available before contact (NEW) and after
+    // connecting (CONTACTED) once the agent decides the lead isn't worth pursuing.
+    if (['NEW', 'CONTACTED'].includes(l.status)) btns.push(
       <button key="notint" className="btn btn-g btn-full" onClick={doNotInterested}>
         <Mi>thumb_down</Mi>Not Interested
       </button>
     );
-    // After contact — follow-up replaces not-interested; keep nurturing the lead.
-    if (['CONTACTED', 'INTERESTED'].includes(l.status)) btns.push(
+    // Attempt — neutral grey outcome: logs a 0-min call attempt, books a next-day
+    // follow-up, keeps current status. Available while chasing first contact (NEW),
+    // after connecting (CONTACTED), and once interested (3rd stage, confirming
+    // before hand-off). Counter restarts each stage; 7 in a stage → auto Not Interested.
+    if (['NEW', 'CONTACTED', 'INTERESTED'].includes(l.status)) {
+      const att = l.noAnswerCount || 0;
+      btns.push(
+        <button key="noans" className="btn btn-neutral btn-full" onClick={doNoAnswer}>
+          <Mi>phone_missed</Mi>Attempt{att > 0 ? ` (${att}/7)` : ''}
+        </button>
+      );
+    }
+    // After contact — follow-up to keep nurturing. Not at INTERESTED (3rd stage):
+    // that lead is qualified and ready to forward to a Meeting Agent.
+    if (l.status === 'CONTACTED') btns.push(
       <button key="followup" className="btn btn-full" style={{ background: 'var(--orange-l)', color: 'var(--orange)' }} onClick={() => openModal('follow-up')}>
         <Mi>alarm</Mi>Follow-up
       </button>

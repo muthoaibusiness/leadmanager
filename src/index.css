@@ -2470,6 +2470,18 @@ a {
   color: var(--t1)
 }
 
+/* Neutral "No Answer" — muted grey, not positive or negative */
+.btn-neutral {
+  background: var(--surf2);
+  color: var(--t3);
+  border-color: var(--bd)
+}
+.btn-neutral:hover {
+  background: var(--surf2);
+  border-color: var(--bd2);
+  color: var(--t2)
+}
+
 .btn-success {
   background: var(--green);
   color: var(--on-accent);

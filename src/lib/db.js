@@ -769,7 +769,9 @@ export function getDeletionLog() {
 }
 
 export function changeStatus(leadId, status, user) {
-  updLead(leadId, { status });
+  // Advancing a stage restarts the "No Answer" attempt counter — each stage gets
+  // its own fresh 7-attempt budget.
+  updLead(leadId, { status, noAnswerCount: 0 });
   addAct(leadId, { type: 'STATUS_CHANGE', description: 'Status → ' + (STATUS_LABELS[status] || status), userId: user.id, userName: user.name, durationSeconds: 0 });
 }
 
@@ -843,6 +845,47 @@ export function setFollowUpAt(leadId, iso, user) {
   updLead(leadId, { nextFollowup: iso });
   const when = new Date(iso).toLocaleString('en-GB', { weekday: 'short', day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
   addAct(leadId, { type: 'FOLLOW_UP', description: 'Follow-up scheduled for ' + when, userId: user.id, userName: user.name, durationSeconds: 0 });
+}
+
+// Phase-1 "No Answer": log a 0-min call attempt, auto-schedule a same-time follow-up
+// for tomorrow, keep status NEW. After `maxAttempts` no-answers, auto-disqualify the
+// lead to Not Interested. Returns { attempts, hitCap }.
+export function logNoAnswer(leadId, user, maxAttempts = 7) {
+  const lead = getLead(leadId);
+  if (!lead) return { attempts: 0, hitCap: false };
+  const attempts = (lead.noAnswerCount || 0) + 1;
+  const callTotal = (lead.callCount || 0) + 1;
+  const hitCap = attempts >= maxAttempts;
+
+  // Tomorrow, same time of day.
+  const next = new Date(); next.setDate(next.getDate() + 1);
+  const iso = next.toISOString();
+
+  const patch = { noAnswerCount: attempts, callCount: callTotal };
+  if (hitCap) { patch.status = 'NOT_INTERESTED'; patch.nextFollowup = null; }
+  else patch.nextFollowup = iso;
+  updLead(leadId, patch);
+
+  addAct(leadId, {
+    type: 'CALL', result: 'No Answer', durationSeconds: 0,
+    description: 'Call attempt · No Answer (' + attempts + '/' + maxAttempts + ')',
+    userId: user.id, userName: user.name,
+  });
+  if (hitCap) {
+    addAct(leadId, {
+      type: 'STATUS_CHANGE', durationSeconds: 0,
+      description: 'Auto Not Interested — no answer after ' + maxAttempts + ' attempts',
+      userId: user.id, userName: user.name,
+    });
+  } else {
+    const when = new Date(iso).toLocaleString('en-GB', { weekday: 'short', day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
+    addAct(leadId, {
+      type: 'FOLLOW_UP', durationSeconds: 0,
+      description: 'Auto follow-up next day — ' + when,
+      userId: user.id, userName: user.name,
+    });
+  }
+  return { attempts, hitCap };
 }
 
 // ── Hold requests (agent → management approval workflow) ─────────────────────
