@@ -14,9 +14,9 @@ export default function AddLeadModal() {
   // Initial Agents get a different source list (Event / Walking / Personal / Team Lead).
   const sourceOpts = user?.role === ROLES.IA ? SOURCE_OPTIONS_IA : SOURCE_OPTIONS_DEFAULT;
   const defaultSource = sourceOpts[0];
-  // Only Admin / Management / Team Lead may edit or add phone numbers. For everyone
-  // else (Initial Agent, Meeting Agent) phones are read-only across all statuses.
-  const canEditPhone = [ROLES.MGMT, ROLES.MASTER, ROLES.TL].includes(user?.role);
+  // Only Admin / Management may edit existing phone numbers. For everyone
+  // else (Team Lead, Initial Agent, Meeting Agent) phones are read-only when editing.
+  const canEditPhone = !isEdit || [ROLES.MGMT, ROLES.MASTER].includes(user?.role);
 
   const nameRef = useRef();
   const companyRef = useRef();
@@ -56,7 +56,10 @@ export default function AddLeadModal() {
     }
   }, [isOpen, isEdit, panLead]);
 
-  const updatePhone = (i, v) => setPhones(p => p.map((x, j) => j === i ? v : x));
+  const updatePhone = (i, v) => {
+    const sanitized = v.replace(/[^\d+ ]/g, '');
+    setPhones(p => p.map((x, j) => j === i ? sanitized : x));
+  };
   const addPhone = () => setPhones(p => [...p, '']);
   const removePhone = (i) => setPhones(p => p.filter((_, j) => j !== i));
 
