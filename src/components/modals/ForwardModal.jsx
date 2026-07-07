@@ -5,6 +5,16 @@ import { getDB, fwdLead, getProperties, updLead } from '../../lib/db.js';
 import { avc, ini, rlabel, fmtBDT } from '../../lib/helpers.js';
 import { ROLES } from '../../lib/constants.js';
 
+// Things the Initial Agent may have already shared with the client (clickable).
+const SHARED_OPTS = [
+  { key: 'price', label: 'Price idea', icon: 'sell' },
+  { key: 'brochure', label: 'Brochure', icon: 'description' },
+  { key: 'video', label: 'Video', icon: 'videocam' },
+  { key: 'image', label: 'Image', icon: 'image' },
+];
+// Working-hour windows by meeting type (24h).
+const HOURS = { ONLINE: { min: 10, max: 22, label: '10 AM – 10 PM' }, OFFLINE: { min: 10, max: 18, label: '10 AM – 6 PM' } };
+
 export default function ForwardModal() {
   const { modal, closeModal, user, panLead, refreshDB, showToast } = useApp();
   const isMA = modal === 'forward-ma';
@@ -18,11 +28,20 @@ export default function ForwardModal() {
   const [clientOffer, setClientOffer] = useState('');
   const [totalSft, setTotalSft] = useState('');
   const [offerNotes, setOfferNotes] = useState('');
+  // MA hand-off: meeting type/time + what was already shared.
+  const [meetingType, setMeetingType] = useState('ONLINE');
+  const [meetingAt, setMeetingAt] = useState('');
+  const [meetingLink, setMeetingLink] = useState('');
+  const [shared, setShared] = useState([]);
 
   const targetRole = isMA ? ROLES.MA : ROLES.TL;
+  const toggleShared = (k) => setShared(s => s.includes(k) ? s.filter(x => x !== k) : [...s, k]);
 
   useEffect(() => {
-    if (isOpen) { setSelected(null); setStep(1); setProjectId(''); setOurOffer(''); setClientOffer(''); setTotalSft(''); setOfferNotes(''); }
+    if (isOpen) {
+      setSelected(null); setStep(1); setProjectId(''); setOurOffer(''); setClientOffer(''); setTotalSft(''); setOfferNotes('');
+      setMeetingType('ONLINE'); setMeetingAt(''); setMeetingLink(''); setShared([]);
+    }
   }, [isOpen]);
 
   const db = getDB();
@@ -40,6 +59,17 @@ export default function ForwardModal() {
     if (!selected || !panLead) return;
     const toUser = db.users.find(u => u.id === selected);
     if (!toUser) return;
+
+    // MA hand-off: require a meeting time inside the working-hour window for the type.
+    if (isMA) {
+      if (!meetingAt) { showToast('Pick a meeting date & time', 'err'); return; }
+      const d = new Date(meetingAt);
+      const h = d.getHours() + d.getMinutes() / 60;
+      const w = HOURS[meetingType];
+      if (h < w.min || h > w.max) { showToast(`${meetingType === 'ONLINE' ? 'Online' : 'Offline'} meetings must be within ${w.label}`, 'err'); return; }
+      if (meetingType === 'ONLINE' && !meetingLink.trim()) { showToast('Add the online meeting link', 'err'); return; }
+    }
+
     const offerData = isTL ? {
       ourOffer: parseFloat(ourOffer) || 0,
       clientOffer: parseFloat(clientOffer) || 0,
@@ -51,6 +81,7 @@ export default function ForwardModal() {
     } : null;
     fwdLead(panLead, toUser, user, offerData);
     if (isTL && project) updLead(panLead, { dealProjectId: project.id, dealProjectName: project.name, propertyInterest: project.name });
+    if (isMA) updLead(panLead, { meetingType, meetingAt: new Date(meetingAt).toISOString(), meetingLink: meetingType === 'ONLINE' ? meetingLink.trim() : '', meetingShared: shared });
     closeModal();
     refreshDB();
     showToast('Lead forwarded to ' + toUser.name, 'ok');
@@ -88,11 +119,7 @@ export default function ForwardModal() {
             </div>
             <div className="m-ft">
               <button className="btn btn-g" onClick={closeModal}>Cancel</button>
-              {isTL ? (
-                <button className="btn btn-p" disabled={!selected} onClick={() => setStep(2)}>Next</button>
-              ) : (
-                <button className="btn btn-p" disabled={!selected} onClick={submit}>Forward</button>
-              )}
+              <button className="btn btn-p" disabled={!selected} onClick={() => setStep(2)}>Next</button>
             </div>
           </>
         )}
@@ -147,6 +174,63 @@ export default function ForwardModal() {
               <div className="fl">
                 <label>Negotiation Notes (optional)</label>
                 <textarea className="finp" rows={3} placeholder="Any context for the Team Lead…" value={offerNotes} onChange={e => setOfferNotes(e.target.value)} />
+              </div>
+            </div>
+            <div className="m-ft">
+              <button className="btn btn-g" onClick={() => setStep(1)}>Back</button>
+              <button className="btn btn-p" onClick={submit}>Forward</button>
+            </div>
+          </>
+        )}
+
+        {/* Step 2 — meeting details (MA only) */}
+        {step === 2 && isMA && (
+          <>
+            <div className="m-body">
+              <div className="m-hint" style={{ marginBottom: '14px' }}>
+                <Mi>event</Mi>Set up the meeting for <strong>{selectedUser?.name}</strong>.
+              </div>
+
+              {/* Meeting type */}
+              <div className="fl">
+                <label>Meeting type</label>
+                <div className="seg">
+                  <button type="button" className={`seg-b${meetingType === 'ONLINE' ? ' on' : ''}`} onClick={() => setMeetingType('ONLINE')}>
+                    <Mi>videocam</Mi>Online
+                  </button>
+                  <button type="button" className={`seg-b${meetingType === 'OFFLINE' ? ' on' : ''}`} onClick={() => setMeetingType('OFFLINE')}>
+                    <Mi>store</Mi>Offline
+                  </button>
+                </div>
+              </div>
+
+              {/* Meeting time within working hours */}
+              <div className="fl">
+                <label>Meeting time</label>
+                <input className="finp" type="datetime-local" value={meetingAt} onChange={e => setMeetingAt(e.target.value)} />
+                <div className="fi-hint"><Mi>schedule</Mi>Within working hours · {HOURS[meetingType].label}</div>
+              </div>
+
+              {/* Online meetings need a join link */}
+              {meetingType === 'ONLINE' && (
+                <div className="fl">
+                  <label>Meeting link</label>
+                  <input className="finp" type="url" placeholder="https://meet.google.com/… or Zoom link" value={meetingLink} onChange={e => setMeetingLink(e.target.value)} />
+                  <div className="fi-hint"><Mi>link</Mi>Shared with the Meeting Agent</div>
+                </div>
+              )}
+
+              {/* Already shared */}
+              <div className="fl">
+                <label>Already shared with client</label>
+                <div className="chip-grid">
+                  {SHARED_OPTS.map(o => (
+                    <button type="button" key={o.key} className={`chip-sel${shared.includes(o.key) ? ' on' : ''}`} onClick={() => toggleShared(o.key)}>
+                      <Mi>{o.icon}</Mi>{o.label}
+                      {shared.includes(o.key) && <Mi className="chip-ck">check</Mi>}
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
             <div className="m-ft">

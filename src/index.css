@@ -410,7 +410,7 @@ a {
 .fl label {
   font-size: 10px;
   font-weight: 700;
-  color: rgba(255, 255, 255, 0.6);
+  color: var(--t2);
   display: block;
   margin-bottom: 8px;
   letter-spacing: 1.5px;
@@ -435,27 +435,30 @@ a {
 
 .finp {
   width: 100%;
-  padding: 12px 18px 12px 48px;
-  border: 1px solid rgba(255, 255, 255, 0.15);
+  padding: 12px 18px;
+  border: 1px solid var(--bd2);
   border-radius: 999px;
   font-size: 14px;
-  color: #FFFFFF;
-  background: rgba(255, 255, 255, 0.08);
+  color: var(--t1);
+  background: var(--surf2);
   transition: all var(--tr);
   box-sizing: border-box;
   font-family: 'Montserrat', sans-serif
 }
 
+/* Icon-prefixed inputs (wrapped in .finp-wrap) keep room for the leading icon. */
+.finp-wrap > .finp { padding-left: 48px; }
+
 .finp:focus {
-  border-color: #5EC564;
+  border-color: var(--accent);
   outline: none;
-  background: rgba(255, 255, 255, 0.12);
-  color: #FFFFFF;
+  background: var(--surf);
+  color: var(--t1);
   box-shadow: none
 }
 
 .finp::placeholder {
-  color: rgba(255, 255, 255, 0.35);
+  color: var(--t3);
   font-family: 'Montserrat', sans-serif
 }
 
@@ -11366,3 +11369,146 @@ textarea.fi {
 .ld-prof-tag { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .4px; align-self: center; white-space: nowrap; }
 .ld-prof-bar { height: 6px; border-radius: 99px; background: var(--surf2); overflow: hidden; }
 .ld-prof-fill { height: 100%; border-radius: 99px; transition: width .3s ease, background .3s ease; }
+
+/* Forward modal — meeting type segmented control + shared chips */
+.seg { display: flex; gap: 6px; background: var(--surf2); padding: 4px; border-radius: var(--r-sm); border: 1px solid var(--bd); }
+.seg-b { flex: 1; display: flex; align-items: center; justify-content: center; gap: 6px; padding: 9px 10px; border: 0; border-radius: calc(var(--r-sm) - 3px); background: transparent; color: var(--t2); font: inherit; font-weight: 600; font-size: 13px; cursor: pointer; transition: all var(--tr); }
+.seg-b .mi { font-size: 17px; }
+.seg-b.on { background: var(--accent); color: #fff; }
+.chip-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.chip-sel { display: flex; align-items: center; gap: 7px; padding: 10px 12px; border: 1px solid var(--bd); border-radius: var(--r-sm); background: var(--surf2); color: var(--t2); font: inherit; font-weight: 600; font-size: 13px; cursor: pointer; transition: all var(--tr); position: relative; }
+.chip-sel .mi { font-size: 17px; }
+.chip-sel.on { border-color: var(--accent); color: var(--t1); background: var(--blue-l); }
+.chip-sel .chip-ck { margin-left: auto; color: var(--accent); font-size: 16px; }
+
+/* Meeting calendar (Google-style month grid) */
+.cal { display: flex; flex-direction: column; gap: 12px; }
+.cal-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.cal-title { font-family: var(--font-display); font-size: 20px; font-weight: 700; display: flex; align-items: center; gap: 10px; }
+.cal-count { font-family: var(--font); font-size: 12px; font-weight: 600; color: var(--t3); background: var(--surf2); border: 1px solid var(--bd); padding: 3px 9px; border-radius: 99px; }
+.cal-nav { display: flex; align-items: center; gap: 6px; }
+.cal-nav button { width: 34px; height: 34px; display: flex; align-items: center; justify-content: center; background: var(--surf2); border: 1px solid var(--bd); color: var(--t1); border-radius: 9px; cursor: pointer; }
+.cal-nav button:hover { border-color: var(--accent); }
+.cal-nav .cal-today-btn { width: auto; padding: 0 14px; font-weight: 600; font-size: 13px; }
+.cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; }
+.cal-head { margin-bottom: -4px; }
+.cal-wd { text-align: center; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; color: var(--t3); padding: 4px 0; }
+.cal-cell { min-height: 104px; background: var(--surf); border: 1px solid var(--bd); border-radius: 10px; padding: 6px; display: flex; flex-direction: column; gap: 4px; overflow: hidden; }
+.cal-empty { background: transparent; border: 0; }
+.cal-on-today { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
+.cal-dnum { font-size: 12px; font-weight: 700; color: var(--t2); align-self: flex-start; }
+.cal-on-today .cal-dnum { color: var(--accent); }
+.cal-events { display: flex; flex-direction: column; gap: 3px; overflow: hidden; }
+.cal-ev { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; width: 100%; text-align: left; border: 0; border-left: 3px solid; border-radius: 5px; padding: 3px 6px; cursor: pointer; font: inherit; line-height: 1.2; }
+.cal-ev.cal-onl { background: var(--blue-l); border-left-color: var(--accent); }
+.cal-ev.cal-off { background: var(--orange-l); border-left-color: var(--orange); }
+.cal-ev-t { font-size: 10px; font-weight: 700; color: var(--t2); }
+.cal-ev-n { font-size: 11.5px; font-weight: 600; color: var(--t1); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+.cal-more { font-size: 10.5px; color: var(--t3); font-weight: 600; padding-left: 4px; }
+@media (max-width: 767px) {
+  .cal-grid { gap: 3px; }
+  .cal-cell { min-height: 72px; padding: 3px; border-radius: 7px; }
+  .cal-ev-n { font-size: 10px; }
+  .cal-ev-t { font-size: 9px; }
+  .cal-wd { font-size: 9px; }
+}
+.ld-link { color: var(--accent); font-weight: 600; text-decoration: none; }
+.ld-link:hover { text-decoration: underline; }
+
+/* Native date/time pickers — match the theme so the calendar icon + popup are
+   visible on dark (was black-on-dark, blending into the background). */
+input[type="datetime-local"], input[type="date"], input[type="time"], input[type="month"] { color-scheme: dark; }
+[data-theme="light"] input[type="datetime-local"],
+[data-theme="light"] input[type="date"],
+[data-theme="light"] input[type="time"],
+[data-theme="light"] input[type="month"] { color-scheme: light; }
+input[type="datetime-local"]::-webkit-calendar-picker-indicator,
+input[type="date"]::-webkit-calendar-picker-indicator,
+input[type="time"]::-webkit-calendar-picker-indicator { opacity: .9; cursor: pointer; }
+
+/* Calendar — view toggle + hour-wise Day view */
+.cal-tools { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.cal-seg { display: flex; background: var(--surf2); border: 1px solid var(--bd); border-radius: 9px; padding: 3px; }
+.cal-seg button { border: 0; background: transparent; color: var(--t2); font: inherit; font-weight: 600; font-size: 12.5px; padding: 6px 14px; border-radius: 6px; cursor: pointer; }
+.cal-seg button.on { background: var(--accent); color: #fff; }
+.cal-cell { cursor: pointer; }
+.cal-cell:hover { border-color: var(--bd2); }
+
+.cal-day { display: flex; flex-direction: column; border: 1px solid var(--bd); border-radius: 12px; overflow: hidden; background: var(--surf); }
+.cal-day-empty { display: flex; align-items: center; gap: 8px; justify-content: center; padding: 22px; color: var(--t3); font-size: 13px; border-bottom: 1px solid var(--bd); }
+.cal-hr { display: grid; grid-template-columns: 64px 1fr; min-height: 52px; border-bottom: 1px solid var(--bd); }
+.cal-hr:last-child { border-bottom: 0; }
+.cal-hr-l { font-size: 11px; font-weight: 600; color: var(--t3); padding: 7px 10px; text-align: right; border-right: 1px solid var(--bd); }
+.cal-hr-lane { display: flex; flex-direction: column; gap: 5px; padding: 5px 8px; }
+.cal-blk { display: flex; flex-direction: column; gap: 1px; align-items: flex-start; text-align: left; border: 0; border-left: 3px solid; border-radius: 7px; padding: 7px 10px; cursor: pointer; font: inherit; }
+.cal-blk.cal-onl { background: var(--blue-l); border-left-color: var(--accent); }
+.cal-blk.cal-off { background: var(--orange-l); border-left-color: var(--orange); }
+.cal-blk-t { font-size: 11px; font-weight: 700; color: var(--t2); }
+.cal-blk-n { font-size: 13.5px; font-weight: 700; color: var(--t1); }
+.cal-blk-p { font-size: 11.5px; color: var(--t3); }
+
+/* Calendar — site-visit event color + legend */
+.cal-ev.cal-vis, .cal-blk.cal-vis { background: rgba(45,212,191,.14); border-left-color: #2DD4BF; }
+.cal-legend { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.cal-legend span { display: inline-flex; align-items: center; gap: 5px; font-size: 11.5px; color: var(--t3); font-weight: 600; }
+.cal-dot { width: 9px; height: 9px; border-radius: 3px; display: inline-block; }
+.cal-dot.cal-onl { background: var(--accent); }
+.cal-dot.cal-off { background: var(--orange); }
+.cal-dot.cal-vis { background: #2DD4BF; }
+@media (max-width: 767px) { .cal-legend { display: none; } }
+
+/* Project multi-pick chips (Schedule Site Visit) */
+.proj-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 9px; }
+.proj-chip { display: inline-flex; align-items: center; gap: 3px; padding: 5px 6px 5px 12px; background: var(--blue-l); color: var(--accent); border-radius: 99px; font-size: 12.5px; font-weight: 600; }
+.proj-chip button { display: inline-flex; align-items: center; border: 0; background: none; color: inherit; cursor: pointer; opacity: .65; padding: 0; }
+.proj-chip button:hover { opacity: 1; }
+.proj-chip .mi { font-size: 15px; }
+
+/* Carpool requests table (admin) */
+.cpool-sum { font-size: 13px; color: var(--t2); font-weight: 600; margin-bottom: 12px; }
+.cpool-tbl { border: 1px solid var(--bd); border-radius: 12px; overflow: hidden; }
+.cpool-hd, .cpool-row { display: grid; grid-template-columns: 1.2fr 1.2fr 1.4fr 1.4fr .8fr 1.4fr; gap: 10px; align-items: center; padding: 12px 14px; }
+.cpool-hd { background: var(--surf2); font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; color: var(--t3); }
+.cpool-row { border-top: 1px solid var(--bd); font-size: 13px; color: var(--t1); }
+.cpool-row > div { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.cpool-link { border: 0; background: none; color: var(--accent); font: inherit; font-weight: 600; cursor: pointer; padding: 0; text-align: left; }
+.cpool-act { display: flex; gap: 6px; flex-wrap: wrap; }
+.cpool-act-h { text-align: left; }
+.cpool-decided { font-size: 12px; color: var(--t3); }
+@media (max-width: 767px) {
+  .cpool-hd { display: none; }
+  .cpool-row { grid-template-columns: 1fr; gap: 5px; padding: 12px; }
+  .cpool-row > div { display: flex; justify-content: space-between; gap: 10px; white-space: normal; }
+  .cpool-row > div::before { content: attr(data-l); font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .4px; color: var(--t3); flex-shrink: 0; }
+  .cpool-act { justify-content: flex-end; }
+}
+
+/* Meeting Agent pipeline bar — one cohesive card, 5 connected stages */
+.mpipe { display: flex; align-items: stretch; background: var(--surf); border: 1px solid var(--bd); border-radius: 16px; overflow: hidden; margin-bottom: 14px; box-shadow: var(--sh); }
+.mpipe-seg { position: relative; flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 4px; padding: 16px 18px 18px; background: none; border: 0; border-left: 1px solid var(--bd); cursor: pointer; text-align: left; font: inherit; transition: background var(--tr); }
+.mpipe-seg:first-child { border-left: 0; }
+.mpipe-seg:hover { background: var(--surf2); }
+/* directional notch between stages */
+.mpipe-seg:not(:first-child)::before { content: ''; position: absolute; left: -7px; top: 50%; width: 12px; height: 12px; transform: translateY(-50%) rotate(45deg); background: var(--surf); border-right: 1px solid var(--bd); border-bottom: 1px solid var(--bd); z-index: 1; }
+.mpipe-seg:hover::before { background: var(--surf2); }
+.mpipe-step { font-size: 9.5px; font-weight: 700; letter-spacing: .6px; text-transform: uppercase; color: var(--t3); opacity: .65; }
+.mpipe-num { font-family: var(--font-display); font-size: 28px; font-weight: 700; line-height: 1; color: var(--t1); }
+.mpipe-lbl { font-size: 11px; font-weight: 700; color: var(--t2); max-width: 100%; line-height: 1.25; min-height: 2.5em; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.mpipe-bar { width: 26px; height: 3px; border-radius: 99px; margin-top: 3px; opacity: .85; }
+@media (max-width: 767px) {
+  .mpipe { overflow-x: auto; border-radius: 14px; -webkit-overflow-scrolling: touch; }
+  .mpipe-seg { flex: 0 0 40%; padding: 13px 14px 15px; }
+  .mpipe-num { font-size: 24px; }
+}
+
+/* Pipeline period caption */
+.mpipe-cap { display: flex; align-items: center; gap: 5px; font-size: 11.5px; font-weight: 600; color: var(--t3); margin: 2px 0 8px; }
+.mpipe-cap .mi { font-size: 14px; }
+
+/* Feature-access checklist (Edit User modal, admin) */
+.feat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; margin-top: 4px; }
+.feat-chip { display: flex; align-items: center; gap: 6px; padding: 9px 11px; border: 1px solid var(--bd); border-radius: var(--r-sm); background: var(--surf2); color: var(--t2); font: inherit; font-weight: 600; font-size: 13px; cursor: pointer; transition: all var(--tr); }
+.feat-chip .mi { font-size: 17px; color: var(--t3); }
+.feat-chip.on { border-color: var(--accent); color: var(--t1); background: var(--blue-l); }
+.feat-chip.on .mi { color: var(--accent); }
+@media (max-width: 767px) { .feat-grid { grid-template-columns: 1fr; } }

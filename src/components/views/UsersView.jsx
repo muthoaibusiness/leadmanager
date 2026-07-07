@@ -5,12 +5,31 @@ import Avatar from '../Avatar.jsx';
 import { rlabel } from '../../lib/helpers.js';
 import { ROLES } from '../../lib/constants.js';
 
-function UserRow({ u, showDelete }) {
+function EditBtn({ u }) {
+  const { setEditUser, openModal } = useApp();
+  return (
+    <button className="btn btn-g btn-sm" title="Edit access" onClick={() => { setEditUser(u); openModal('edit-agent'); }}>
+      <Mi>tune</Mi>
+    </button>
+  );
+}
+
+function DelBtn({ id }) {
   const { setDeleteUserId, openModal } = useApp();
+  return (
+    <button className="btn btn-g btn-sm ui-del" onClick={() => { setDeleteUserId(id); openModal('del-user'); }}>
+      <Mi>delete</Mi>
+    </button>
+  );
+}
+
+function UserRow({ u, showDelete }) {
   const roleTag = u.role === ROLES.IA
     ? <span className="bdg s-new">Initial Agent</span>
     : u.role === ROLES.MA
     ? <span className="bdg s-site_visit_done">Meeting Agent</span>
+    : u.role === ROLES.EXEC
+    ? <span className="bdg s-negotiating">Executive</span>
     : null;
 
   return (
@@ -22,24 +41,25 @@ function UserRow({ u, showDelete }) {
       </div>
       {roleTag}
       <span className="ui-ph">{u.phone || '—'}</span>
-      {showDelete && (
-        <button className="btn btn-g btn-sm ui-del" onClick={() => { setDeleteUserId(u.id); openModal('del-user'); }}>
-          <Mi>delete</Mi>
-        </button>
-      )}
+      <EditBtn u={u} />
+      {showDelete && <DelBtn id={u.id} />}
     </div>
   );
 }
 
 export default function UsersView() {
   const { user, dbVersion } = useApp();
+  void dbVersion;
   const db = getDB();
 
   if (user.role !== ROLES.MGMT) return null;
 
-  const teams = (db.teams || []).filter(t => !user.companyId || !t.companyId || t.companyId === user.companyId);
-  if (!teams.length) {
-    return <div className="empty"><Mi>manage_accounts</Mi><p>No teams yet. Add a Team Lead to start.</p></div>;
+  const inCo = (x) => !user.companyId || !x.companyId || x.companyId === user.companyId;
+  const teams = (db.teams || []).filter(inCo);
+  const execs = (db.users || []).filter(u => u.role === ROLES.EXEC && inCo(u));
+
+  if (!teams.length && !execs.length) {
+    return <div className="empty"><Mi>manage_accounts</Mi><p>No teams yet. Add a Team Lead or Executive to start.</p></div>;
   }
 
   return (
@@ -70,7 +90,8 @@ export default function UsersView() {
                 <div className="tg-stat"><div className="tg-sv">{active}</div><div className="tg-sl">Active Customers</div></div>
                 <div className="tg-stat"><div className="tg-sv" style={{ color: 'var(--green)' }}>{won}</div><div className="tg-sl">Won</div></div>
               </div>
-              <DeleteTLBtn tl={tl} />
+              <EditBtn u={tl} />
+              <DelBtn id={tl.id} />
             </div>
             <div className="tg-agents">
               {agents.length
@@ -81,15 +102,23 @@ export default function UsersView() {
           </div>
         );
       })}
-    </div>
-  );
-}
 
-function DeleteTLBtn({ tl }) {
-  const { setDeleteUserId, openModal } = useApp();
-  return (
-    <button className="btn btn-g btn-sm" onClick={() => { setDeleteUserId(tl.id); openModal('del-user'); }}>
-      <Mi>delete</Mi>
-    </button>
+      {execs.length > 0 && (
+        <div className="tg">
+          <div className="tg-hd">
+            <div className="ui-info">
+              <div className="ui-n" style={{ fontSize: '15px' }}>
+                Executives
+                <span className="bdg s-negotiating" style={{ marginLeft: '8px', fontSize: '10px' }}>{execs.length}</span>
+              </div>
+              <div className="ui-e">Custom-access accounts</div>
+            </div>
+          </div>
+          <div className="tg-agents">
+            {execs.map(u => <UserRow key={u.id} u={u} showDelete={true} />)}
+          </div>
+        </div>
+      )}
+    </div>
   );
 }

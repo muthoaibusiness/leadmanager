@@ -797,9 +797,16 @@ export function fwdLead(leadId, toUser, currentUser, offerData) {
   addNotifs(notifList, currentUser);
 }
 
-export function schedVisit(leadId, dt, loc, user) {
-  updLead(leadId, { status: 'SITE_VISIT_SCHEDULED', meetingDate: dt, meetingLocation: loc });
-  addAct(leadId, { type: 'STATUS_CHANGE', description: 'Site visit scheduled for ' + fmtDT(dt) + (loc ? ' at ' + loc : ''), userId: user.id, userName: user.name, durationSeconds: 0 });
+export function schedVisit(leadId, dt, loc, user, projects) {
+  const patch = { status: 'SITE_VISIT_SCHEDULED', meetingDate: dt, meetingLocation: loc };
+  if (Array.isArray(projects) && projects.length) {
+    patch.visitProjects = projects;
+    // Reflect the latest projects on the lead profile (Project Interest).
+    patch.propertyInterest = projects.map(p => p.name).join(', ');
+  }
+  updLead(leadId, patch);
+  const projTxt = (projects && projects.length) ? ' · ' + projects.map(p => p.name).join(', ') : '';
+  addAct(leadId, { type: 'STATUS_CHANGE', description: 'Site visit scheduled for ' + fmtDT(dt) + (loc ? ' at ' + loc : '') + projTxt, userId: user.id, userName: user.name, durationSeconds: 0 });
   const l = getLead(leadId);
   const iaId = l.previousAssignees[0];
   if (iaId) addNotifs([{ userId: iaId, type: 'VISIT_SCHED', message: 'Site visit scheduled for your lead: ' + l.name + ' on ' + fmtDT(dt), leadId }], user);
@@ -888,6 +895,33 @@ export function logNoAnswer(leadId, user, maxAttempts = 7) {
   return { attempts, hitCap };
 }
 
+// Meeting Agent attended the scheduled meeting — flag it + log to the timeline.
+// Status stays so the agent can then Schedule the Site Visit (booking).
+export function attendMeeting(leadId, user) {
+  const lead = getLead(leadId);
+  if (!lead) return;
+  updLead(leadId, { meetingAttended: true, meetingAttendedAt: now_() });
+  addAct(leadId, { type: 'VISIT', description: 'Meeting attended', userId: user.id, userName: user.name, durationSeconds: 0 });
+}
+
+// Meeting Agent reschedules a hand-off meeting to a new time/day. Logs the change
+// to the lead's activity timeline (old → new).
+export function rescheduleMeeting(leadId, iso, user, link, type) {
+  const lead = getLead(leadId);
+  if (!lead) return;
+  const oldAt = lead.meetingAt;
+  const newType = type || lead.meetingType || 'ONLINE';
+  const patch = { meetingAt: new Date(iso).toISOString(), meetingType: newType };
+  if (link !== undefined) patch.meetingLink = newType === 'ONLINE' ? link : '';
+  updLead(leadId, patch);
+  const fmt = (d) => d ? new Date(d).toLocaleString('en-GB', { weekday: 'short', day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—';
+  addAct(leadId, {
+    type: 'FOLLOW_UP', durationSeconds: 0,
+    description: (oldAt ? 'Meeting rescheduled: ' + fmt(oldAt) + ' → ' : 'Meeting time set: ') + fmt(iso),
+    userId: user.id, userName: user.name,
+  });
+}
+
 // ── Hold requests (agent → management approval workflow) ─────────────────────
 export function getHoldRequests() {
   const cid = currentCompanyId();
@@ -936,6 +970,46 @@ export function decideHoldRequest(id, approve, user, days = 2) {
     }], user);
   }
   return req;
+}
+
+// ── Carpool requests (Meeting Agent → Management approval for a site-visit ride) ──
+export function getCarpoolRequests() {
+  const cid = currentCompanyId();
+  const all = getDB().carpoolRequests || [];
+  return cid ? all.filter(r => sameCompany(r.companyId, cid)) : all;
+}
+
+export function createCarpoolRequest(payload, user) {
+  const id = 'cp' + uid();
+  const req = {
+    id, companyId: user.companyId, status: 'pending',
+    createdAt: now_(), decidedAt: null, decidedBy: '',
+    ...payload, agentId: user.id, agentName: user.name,
+  };
+  mutate(db => { db.carpoolRequests = db.carpoolRequests || []; db.carpoolRequests.unshift(req); });
+  if (payload.leadId) updLead(payload.leadId, { carpoolRequested: true });
+  const mgmt = getDB().users.filter(u => u.role === ROLES.MGMT && sameCompany(u.companyId, user.companyId)).map(u => u.id);
+  addNotifs(mgmt.map(uid2 => ({
+    userId: uid2, type: 'CARPOOL_REQUEST', leadId: payload.leadId || null,
+    message: `${user.name} requested a carpool${payload.clientName ? ' for ' + payload.clientName : ''}`,
+  })), user);
+  return id;
+}
+
+export function decideCarpoolRequest(id, approve, user) {
+  let agentId = null, clientName = '';
+  mutate(db => {
+    const r = (db.carpoolRequests || []).find(x => x.id === id);
+    if (!r) return;
+    r.status = approve ? 'approved' : 'rejected';
+    r.decidedAt = now_();
+    r.decidedBy = user.name;
+    agentId = r.agentId; clientName = r.clientName || '';
+  });
+  if (agentId) addNotifs([{
+    userId: agentId, type: 'CARPOOL_REQUEST', leadId: null,
+    message: `Your carpool request${clientName ? ' for ' + clientName : ''} was ${approve ? 'approved' : 'rejected'}`,
+  }], user);
 }
 
 // Mark a follow-up task as done — clears the reminder.

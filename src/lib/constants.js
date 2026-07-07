@@ -4,6 +4,7 @@ export const ROLES = {
   TL: 'TEAM_LEAD',
   MGMT: 'MANAGEMENT',
   MASTER: 'MASTER',        // super-admin above Management — oversees all companies
+  EXEC: 'EXECUTIVE',       // blank-canvas role — zero default access, admin grants features
 };
 
 // Role-scoped navigation (mirrors Muthoclo admin can(role, scope)).
@@ -11,18 +12,39 @@ const ALL_ROLES = ['INITIAL_AGENT', 'MEETING_AGENT', 'TEAM_LEAD', 'MANAGEMENT'];
 export const NAV_SCOPES = {
   dashboard: ALL_ROLES,
   leads: ALL_ROLES,
+  calendar: ['MEETING_AGENT', 'TEAM_LEAD', 'MANAGEMENT'],
   pipeline: ALL_ROLES,
   properties: ALL_ROLES,
   reports: ['MANAGEMENT', 'TEAM_LEAD'],
   agentperf: ['MANAGEMENT', 'TEAM_LEAD'],
   requests: ['MANAGEMENT'],
+  carpool: ['MANAGEMENT'],
   team: ['TEAM_LEAD'],
   users: ['MANAGEMENT'],
   accounts: ['MANAGEMENT'],
   companies: ['MASTER'],   // master-admin company-wise overview
   profile: [...ALL_ROLES, 'MASTER'],
 };
-export const canSee = (role, key) => (NAV_SCOPES[key] || []).includes(role);
+// Access check. If an admin has saved a custom `allowedFeatures` list on the user,
+// that list fully dictates access (overrides role defaults). Otherwise fall back to
+// the strict role-based NAV_SCOPES. Profile is always available (logout/account).
+export const canSee = (user, key) => {
+  if (!user) return false;
+  if (key === 'profile') return true;
+  if (Array.isArray(user.allowedFeatures)) return user.allowedFeatures.includes(key);
+  return (NAV_SCOPES[key] || []).includes(user.role);
+};
+
+// Features an admin can grant/revoke per user, in display order (nav features only;
+// 'companies' is master-only overview and 'profile' is always-on, so both excluded).
+export const FEATURE_KEYS = ['dashboard', 'leads', 'calendar', 'pipeline', 'properties', 'reports', 'agentperf', 'requests', 'carpool', 'team', 'users', 'accounts'];
+export const FEATURE_LABELS = {
+  dashboard: 'Home', leads: 'Leads', calendar: 'Calendar', pipeline: 'Pipeline', properties: 'Projects',
+  reports: 'Reports', agentperf: 'Performance', requests: 'Requests', carpool: 'Carpool', team: 'Team',
+  users: 'Users', accounts: 'Accounts',
+};
+// Default features for a standard role (from NAV_SCOPES). Executive resolves to none.
+export const defaultFeatures = (role) => FEATURE_KEYS.filter(k => (NAV_SCOPES[k] || []).includes(role));
 
 // Properties catalog
 export const PROPERTY_TYPES = ['Apartment', 'Duplex', 'Penthouse', 'Plot', 'Commercial', 'Villa'];

@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useApp } from '../../context/AppContext.jsx';
-import { getLeads, getDB } from '../../lib/db.js';
+import { getLeads, getDB, getTarget } from '../../lib/db.js';
 import StatCard from '../StatCard.jsx';
 import KpiSheet from '../KpiSheet.jsx';
 import TargetCard from './TargetCard.jsx';
@@ -9,19 +9,6 @@ import SuccessGauge from '../SuccessGauge.jsx';
 import Mi from '../Mi.jsx';
 import { scoreLead, scoreLabel } from '../../lib/helpers.js';
 import { STATUS_LABELS, ROLES } from '../../lib/constants.js';
-
-// Why this lead needs the meeting agent now + its priority.
-// 0 overdue visit · 1 visit today · 2 meeting set, needs a visit scheduled
-function visitReason(lead, todayStart, todayEnd) {
-  if (lead.status === 'SITE_VISIT_SCHEDULED') {
-    const d = lead.meetingDate ? new Date(lead.meetingDate) : null;
-    if (d && d < todayStart) return { label: 'Overdue', cls: 'iad-rs-overdue', prio: 0 };
-    if (d && d >= todayStart && d <= todayEnd) return { label: 'Visit today', cls: 'iad-rs-today', prio: 1 };
-    return null; // future visits live in the rail
-  }
-  if (lead.status === 'MEETING_SET') return { label: 'Schedule visit', cls: 'iad-rs-new', prio: 2 };
-  return null;
-}
 
 export default function MeetingAgentDash() {
   const { user, dbVersion, setPanLead, nav } = useApp();
@@ -33,77 +20,91 @@ export default function MeetingAgentDash() {
   const view = useMemo(() => {
     const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
     const todayEnd = new Date(); todayEnd.setHours(23, 59, 59, 999);
-    const acts = db.activities || {};
 
-    const meetingSet = leads.filter(l => l.status === 'MEETING_SET');
+    // Pipeline stages (non-overlapping): Meeting Set → Attended → Visit Scheduled
+    // → Visit Done → Offer Sent. Unqualified is the drop-off.
+    const meetingSet = leads.filter(l => l.status === 'MEETING_SET' && !l.meetingAttended); // awaiting attend
+    const attended = leads.filter(l => l.status === 'MEETING_SET' && l.meetingAttended);    // attended, needs a visit
     const sched = leads.filter(l => l.status === 'SITE_VISIT_SCHEDULED');
     const done = leads.filter(l => l.status === 'SITE_VISIT_DONE');
-    // Leads this MA forwarded on to a Team Lead (handled earlier, now sits with a TL).
     const fwdTL = db.leads.filter(l => (l.previousAssignees || []).includes(user.id) && l.assignedRole === ROLES.TL);
+    const unqualified = leads.filter(l => l.status === 'NOT_INTERESTED');
 
-    // Action queue: overdue visits → today's visits → meetings needing a visit.
-    const queue = [...sched, ...meetingSet]
-      .map(l => ({ l, r: visitReason(l, todayStart, todayEnd), score: scoreLead(l, acts[l.id]) }))
-      .filter(x => x.r)
-      .sort((a, b) => a.r.prio - b.r.prio || b.score - a.score || new Date(a.l.createdAt) - new Date(b.l.createdAt));
-
-    // Upcoming visits (scheduled in the future) for the rail, by date.
+    // Today's visits = ONLY visits scheduled for today (not all pending work).
+    const todayVisits = sched
+      .filter(l => l.meetingDate && new Date(l.meetingDate) >= todayStart && new Date(l.meetingDate) <= todayEnd)
+      .sort((a, b) => new Date(a.meetingDate) - new Date(b.meetingDate));
+    const overdue = sched.filter(l => l.meetingDate && new Date(l.meetingDate) < todayStart);
     const upcoming = sched
       .filter(l => l.meetingDate && new Date(l.meetingDate) > todayEnd)
       .sort((a, b) => new Date(a.meetingDate) - new Date(b.meetingDate));
 
-    return { meetingSet, sched, done, fwdTL, queue, upcoming };
+    return { meetingSet, attended, sched, done, fwdTL, unqualified, todayVisits, overdue, upcoming };
   }, [leads, db, user.id, dbVersion]);
 
-  const QUEUE_CAP = 8;
-  const shown = view.queue.slice(0, QUEUE_CAP);
+  // The visual pipeline funnel (clickable stages).
+  const STAGES = [
+    { key: 'set', label: 'Meeting Set', sub: 'to attend', val: view.meetingSet.length, leads: view.meetingSet, color: 'var(--orange)' },
+    { key: 'att', label: 'Meeting Attended', sub: 'needs a visit', val: view.attended.length, leads: view.attended, color: 'var(--accent)' },
+    { key: 'sched', label: 'Visit Scheduled', sub: 'upcoming', val: view.sched.length, leads: view.sched },
+    { key: 'done', label: 'Visit Done', sub: 'completed', val: view.done.length, leads: view.done, color: '#2DD4BF' },
+    { key: 'tl', label: 'Offer Sent', sub: 'handed off', val: view.fwdTL.length, leads: view.fwdTL, color: 'var(--accent)' },
+  ];
 
   return (
     <div className="iad-page">
-      <DashGreeting user={user} sub={view.queue.length > 0
-        ? `${view.queue.length} ${view.queue.length === 1 ? 'visit' : 'visits'} to handle today`
-        : "No visits waiting — you're all set."} />
+      <DashGreeting user={user} sub={view.todayVisits.length > 0
+        ? `${view.todayVisits.length} ${view.todayVisits.length === 1 ? 'visit' : 'visits'} scheduled today`
+        : "No visits scheduled today."} />
 
-      <div className="grid-4">
-        <StatCard val={view.meetingSet.length} label="Meeting Set" tone={view.meetingSet.length ? 'warn' : ''} sub="need a visit" onClick={() => setDetail({ title: 'Meeting Set', leads: view.meetingSet })} />
-        <StatCard val={view.sched.length} label="Visits Scheduled" sub="upcoming" onClick={() => setDetail({ title: 'Visits Scheduled', leads: view.sched })} />
-        <StatCard val={view.done.length} label="Visits Done" tone={view.done.length ? 'good' : ''} sub="completed" onClick={() => setDetail({ title: 'Visits Done', leads: view.done })} />
-        <StatCard val={view.fwdTL.length} label="Sent to Team Lead" tone="accent" sub="all time" onClick={() => setDetail({ title: 'Sent to Team Lead', leads: view.fwdTL })} />
+      {/* Pipeline bar — Meeting Set → Attended → Visit Scheduled → Visit Done → Offer Sent */}
+      <div className="mpipe">
+        {STAGES.map((s, i) => (
+          <button key={s.key} className="mpipe-seg" onClick={() => setDetail({ title: s.label, leads: s.leads })}>
+            <span className="mpipe-step">Step {i + 1}</span>
+            <span className="mpipe-num" style={s.val && s.color ? { color: s.color } : undefined}>{s.val}</span>
+            <span className="mpipe-lbl">{s.label}</span>
+            <span className="mpipe-bar" style={{ background: s.color || 'var(--t3)' }} />
+          </button>
+        ))}
+      </div>
+
+      <div className="grid-2">
+        <StatCard val={view.overdue.length} label="Overdue Visits" tone={view.overdue.length ? 'danger' : ''} sub="past due" onClick={() => setDetail({ title: 'Overdue Visits', leads: view.overdue })} />
+        <StatCard val={view.unqualified.length} label="Unqualified" tone={view.unqualified.length ? 'danger' : ''} sub="not interested" onClick={() => setDetail({ title: 'Unqualified', leads: view.unqualified })} />
       </div>
 
       <div className="iad-layout">
-        {/* Primary: today's visit work */}
+        {/* Primary: today's scheduled visits only */}
         <div className="iad-main">
           <div className="iad-queue">
             <div className="iad-q-hd">
               <span className="iad-q-ttl">Today's visits</span>
-              {view.queue.length > 0 && <span className="iad-q-ct">{view.queue.length}</span>}
+              {view.todayVisits.length > 0 && <span className="iad-q-ct">{view.todayVisits.length}</span>}
             </div>
-            {shown.length === 0 ? (
+            {view.todayVisits.length === 0 ? (
               <div className="iad-q-empty">
-                <Mi>check_circle</Mi>
-                <b>All caught up</b>
-                <span>No visits to schedule or run right now.</span>
+                <Mi>event_available</Mi>
+                <b>No visits today</b>
+                <span>Nothing scheduled for today.</span>
               </div>
             ) : (
               <div className="iad-q-list">
-                {shown.map(({ l, r, score }) => {
-                  const sl = scoreLabel(score);
+                {view.todayVisits.map(l => {
+                  const sl = scoreLabel(scoreLead(l, db.activities?.[l.id]));
                   return (
                     <div key={l.id} className="iad-q-row" onClick={() => setPanLead(l.id)}>
+                      <div className="iad-mt-time">{new Date(l.meetingDate).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })}</div>
                       <div className="iad-q-info">
                         <div className="iad-q-name">{l.name}</div>
-                        <div className="iad-q-meta">{l.phone} · {l.propertyInterest || l.dealProjectName || 'No project'}</div>
+                        <div className="iad-q-meta">{l.meetingLocation || 'Site visit'} · {l.propertyInterest || 'No project'}</div>
                       </div>
-                      <span className={`iad-rs ${r.cls}`}>{r.label}</span>
                       <span className="iad-q-score" style={{ color: sl.color }}>{sl.label}</span>
                       <a className="iad-q-call" href={`tel:${l.phone}`} title="Call" onClick={e => e.stopPropagation()}><Mi>call</Mi></a>
                     </div>
                   );
                 })}
-                {view.queue.length > QUEUE_CAP && (
-                  <div className="iad-q-more" onClick={() => nav('leads')}>View all in Leads</div>
-                )}
+                <div className="iad-q-more" onClick={() => nav('calendar')}>Open calendar</div>
               </div>
             )}
           </div>
@@ -111,7 +112,7 @@ export default function MeetingAgentDash() {
 
         {/* Rail: monthly target + upcoming scheduled visits */}
         <aside className="iad-rail">
-          <TargetCard user={user} />
+          {getTarget(user.id) && <TargetCard user={user} />}
           <SuccessGauge user={user} />
           <div className="iad-queue">
             <div className="iad-q-hd">

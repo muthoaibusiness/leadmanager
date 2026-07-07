@@ -117,6 +117,7 @@ export function rlabel(r) {
     TEAM_LEAD: 'Team Lead',
     MANAGEMENT: 'Management',
     MASTER: 'Master Admin',
+    EXECUTIVE: 'Executive',
   };
   return m[r] || r;
 }

@@ -10,8 +10,8 @@ import { canSee, ROLES } from '../lib/constants.js';
 // when active. Visibility is driven by canSee(role, key).
 const SECTIONS = [
   { label: null, keys: ['dashboard', 'companies', 'reports', 'agentperf', 'requests'] },
-  { label: 'Sales Team', keys: ['leads', 'properties'] },
-  { label: 'Admin', keys: ['team', 'users', 'accounts'] },
+  { label: 'Sales Team', keys: ['leads', 'calendar', 'properties'] },
+  { label: 'Admin', keys: ['team', 'users', 'accounts', 'carpool'] },
 ];
 
 // Nested sub-views: Pipeline is a view of Leads, so it lives indented under it.
@@ -27,7 +27,8 @@ export default function Sidebar() {
 
   const META = {
     dashboard: { ico: 'home', lbl: 'Home' },
-    leads: { ico: 'person_search', lbl: 'Leads' },
+    leads: { ico: 'person_search', lbl: role === ROLES.MA ? 'My Leads' : 'Leads' },
+    calendar: { ico: 'calendar_month', lbl: 'Calendar' },
     pipeline: { ico: 'view_kanban', lbl: 'Pipeline' },
     clients: { ico: 'account_circle', lbl: 'Contacts' },
     bookings: { ico: 'event_note', lbl: 'Sales Activity' },
@@ -38,6 +39,7 @@ export default function Sidebar() {
     team: { ico: 'groups', lbl: 'Team' },
     users: { ico: 'manage_accounts', lbl: 'Users' },
     accounts: { ico: 'group_add', lbl: 'Accounts' },
+    carpool: { ico: 'directions_car', lbl: 'Carpool Request' },
     companies: { ico: 'corporate_fare', lbl: 'Companies' },
     profile: { ico: 'account_circle', lbl: 'Profile' },
   };
@@ -56,9 +58,9 @@ export default function Sidebar() {
           <Mi>{m.ico}</Mi>{m.lbl}
           {badge > 0 && <span className="sb-badge">{badge}</span>}
         </div>
-        {active && kids && (
+        {active && kids && kids.some(c => canSee(user, c.key)) && (
           <div className="sb-sub">
-            {kids.map((c) => (
+            {kids.filter(c => canSee(user, c.key)).map((c) => (
               <div
                 key={c.key}
                 className={`sb-subit${view === c.key ? ' on' : ''}`}
@@ -86,7 +88,7 @@ export default function Sidebar() {
 
         <nav className="sb-nav">
           {SECTIONS.map((sec, si) => {
-            const keys = sec.keys.filter(k => canSee(role, k));
+            const keys = sec.keys.filter(k => canSee(user, k));
             if (!keys.length) return null;
             return (
               <div className="sb-sec" key={si}>
@@ -170,7 +172,7 @@ function UserMenu() {
               <div className="umenu-div" />
             </>
           )}
-          {canSee(user.role, 'profile') && (
+          {canSee(user, 'profile') && (
             <button className="umenu-item" onClick={() => { nav('profile'); setOpen(false); }}>
               <Mi>person</Mi><span>Profile</span>
             </button>

@@ -5,7 +5,7 @@ import { seedDB, SEED_PROPERTIES, DEMO_PROPERTIES } from './lib/seed.js';
 import { sbLoad, sbSubscribeAll } from './lib/supabase.js';
 import { pushNotify, requestNotifyPermission } from './lib/pushNotify.js';
 import { avc, ini, rlabel } from './lib/helpers.js';
-import { ROLES } from './lib/constants.js';
+import { ROLES, canSee, FEATURE_KEYS } from './lib/constants.js';
 
 import Mi from './components/Mi.jsx';
 import { SignIn1 } from './components/ui/modern-stunning-sign-in.jsx';
@@ -25,6 +25,8 @@ import ManagementDash from './components/dashboards/ManagementDash.jsx';
 import MasterDash from './components/dashboards/MasterDash.jsx';
 
 import LeadsView from './components/views/LeadsView.jsx';
+import CalendarView from './components/views/CalendarView.jsx';
+import CarpoolView from './components/views/CarpoolView.jsx';
 import TeamView from './components/views/TeamView.jsx';
 import UsersView from './components/views/UsersView.jsx';
 import AccountsView from './components/views/AccountsView.jsx';
@@ -39,6 +41,7 @@ import AgentPerformanceView from './components/views/AgentPerformanceView.jsx';
 
 import AddLeadModal from './components/modals/AddLeadModal.jsx';
 import ForwardModal from './components/modals/ForwardModal.jsx';
+import RescheduleModal from './components/modals/RescheduleModal.jsx';
 import SchedModal from './components/modals/SchedModal.jsx';
 import DealModal from './components/modals/DealModal.jsx';
 import NoteModal from './components/modals/NoteModal.jsx';
@@ -170,6 +173,7 @@ function PageHero() {
   const META = {
     dashboard: { eyebrow: rlabel(user.role), title: 'Dashboard', sub: '' },
     leads: { eyebrow: 'Pipeline', title: 'Customers', sub: `${myLeads.length} customers · ${activeLeads} active` },
+    calendar: { eyebrow: 'Schedule', title: 'Calendar', sub: 'Your scheduled meetings' },
     pipeline: { eyebrow: 'Sales', title: 'Pipeline', sub: 'Drag deals across stages' },
     clients: { eyebrow: 'Relationships', title: 'Contacts', sub: '360° customer view' },
     properties: { eyebrow: 'Catalog', title: 'Projects', sub: `${props.length} projects · ${propAvail} available` },
@@ -179,6 +183,7 @@ function PageHero() {
     team: { eyebrow: 'Team', title: 'My Team', sub: `${teamAgents} agents` },
     users: { eyebrow: 'Administration', title: 'Users', sub: `${db.users.length} accounts` },
     accounts: { eyebrow: 'Administration', title: 'Account Management', sub: 'Create & manage multiple accounts' },
+    carpool: { eyebrow: 'Administration', title: 'Carpool Requests', sub: 'Approve agent ride requests' },
     requests: { eyebrow: 'Administration', title: 'Hold Requests', sub: 'Approve agent unit holds' },
     profile: { eyebrow: 'Account', title: 'My Profile', sub: 'Manage your details & avatar' },
     companies: { eyebrow: 'Master Admin', title: 'Companies', sub: 'Company-wise overview' },
@@ -198,7 +203,7 @@ function PageHero() {
   }
   // Duplicate checker button removed — dedup runs automatically on load/import.
   if (view === 'team' && user.role === ROLES.TL) actions.push(<button key="add-agent" className="btn btn-p" onClick={() => { setCreateUserRoles([ROLES.IA, ROLES.MA]); openModal('create-user'); }}><Mi>person_add</Mi>Add Agent</button>);
-  if (view === 'users' && user.role === ROLES.MGMT) actions.push(<button key="add-tl" className="btn btn-p" onClick={() => { setCreateUserRoles([ROLES.TL]); openModal('create-user'); }}><Mi>person_add</Mi>Add Team Lead</button>);
+  if (view === 'users' && user.role === ROLES.MGMT) actions.push(<button key="add-user" className="btn btn-p" onClick={() => { setCreateUserRoles([ROLES.TL, ROLES.EXEC]); openModal('create-user'); }}><Mi>person_add</Mi>Add User</button>);
   if (view === 'properties' && user.role === ROLES.MGMT) actions.push(<button key="add-prop" className="btn btn-p" onClick={() => { const nid = createProject({ name: '', companyId: user.companyId }); setConsoleAdmin(true); setPropSel(nid); openModal('project-console'); }}><Mi>add</Mi>Add Property</button>);
 
   return (
@@ -225,9 +230,11 @@ function PageBody() {
     if (user.role === ROLES.IA) return <InitialAgentDash />;
     if (user.role === ROLES.MA) return <MeetingAgentDash />;
     if (user.role === ROLES.TL) return <TeamLeadDash />;
-    return <ManagementDash />;
+    if (user.role === ROLES.MGMT) return <ManagementDash />;
+    return null; // Executive / custom-access users have no role dashboard
   }
   if (view === 'leads') return <LeadsView />;
+  if (view === 'calendar') return <CalendarView />;
   if (view === 'pipeline') return <PipelineView />;
   if (view === 'clients') return <ClientsView />;
   if (view === 'properties') return <PropertiesView />;
@@ -238,6 +245,7 @@ function PageBody() {
   if (view === 'users') return <UsersView />;
   if (view === 'accounts') return <AccountsView />;
   if (view === 'requests') return <RequestsView />;
+  if (view === 'carpool') return <CarpoolView />;
   if (view === 'profile') return <ProfileView />;
   return null;
 }
@@ -260,7 +268,7 @@ function AppShell() {
 
 // ── Root App ─────────────────────────────────────────────────────────────────
 export default function App() {
-  const { user, setUser, setView, refreshDB, searchRef, panLead, setPanLead, closeModal, modal, setSearch, notifOpen } = useApp();
+  const { user, setUser, view, setView, refreshDB, searchRef, panLead, setPanLead, closeModal, modal, setSearch, notifOpen } = useApp();
   const [loading, setLoading] = useState(true);
   const [loadVisible, setLoadVisible] = useState(true);
   const [showLogin, setShowLogin] = useState(false); // landing → login gate
@@ -310,6 +318,16 @@ export default function App() {
     const t = setInterval(() => { if (expireHolds()) refreshDB(); }, 60000);
     return () => clearInterval(t);
   }, [user?.id]);
+
+  // Keep the user on a view they're allowed to see (e.g. Executives with no
+  // dashboard land on their first granted feature instead of a forbidden page).
+  useEffect(() => {
+    if (!user || !view) return;
+    if (!canSee(user, view)) {
+      const first = FEATURE_KEYS.find(k => canSee(user, k)) || 'profile';
+      setView(first);
+    }
+  }, [user?.id, view, user?.allowedFeatures]);
 
   useEffect(() => {
     function onKey(e) {
@@ -391,6 +409,7 @@ export default function App() {
       {/* Modals */}
       <AddLeadModal />
       <ForwardModal />
+      <RescheduleModal />
       <SchedModal />
       <DealModal />
       <NoteModal />

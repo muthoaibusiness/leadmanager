@@ -2,13 +2,14 @@ import { useEffect } from 'react';
 import Mi from './Mi.jsx';
 import { useApp } from '../context/AppContext.jsx';
 import LogCall from './LogCall.jsx';
-import { getLead, getActs, changeStatus, doneVisit, deleteLead, updLead, addAct, logNoAnswer } from '../lib/db.js';
-import { fmtD, fmtDT, fmtBDT, rlabel, scoreLead, scoreLabel, leadDisplayStatus } from '../lib/helpers.js';
+import { getLead, getActs, changeStatus, doneVisit, deleteLead, updLead, addAct, logNoAnswer, attendMeeting, createCarpoolRequest } from '../lib/db.js';
+import { fmtD, fmtDT, fmtBDT, rlabel, scoreLead, scoreLabel, leadDisplayStatus, fmtDateTimeAP } from '../lib/helpers.js';
 import ActivityTimeline from './ActivityTimeline.jsx';
 import { ROLES, STATUS_LABELS, SRC_LABELS } from '../lib/constants.js';
 
 function sclass(s) { return 's-' + (s || '').toLowerCase(); }
 const leadCode = (l) => l.externalId || ('#' + String(l.id || '').slice(-6).toUpperCase());
+const SHARED_LABEL = { price: 'Price idea', brochure: 'Brochure', video: 'Video', image: 'Image' };
 
 function LeadInfo({ l }) {
   const { user } = useApp();
@@ -40,7 +41,12 @@ function LeadInfo({ l }) {
   const specs = [];
   if (l.propertyInterest) specs.push(['Property', l.propertyInterest + (l.budget ? ' · ' + fmtBDT(l.budget) : '')]);
   if (l.dealValue > 0) specs.push(['Deal value', fmtBDT(l.dealValue)]);
+  // Meeting hand-off info set by the Initial Agent (shown to the Meeting Agent).
+  if (l.meetingAt) specs.push(['Meeting', (l.meetingType === 'OFFLINE' ? 'Offline' : 'Online') + ' · ' + fmtDateTimeAP(l.meetingAt)]);
+  if (l.meetingLink) specs.push(['Meeting link', <a href={l.meetingLink} target="_blank" rel="noreferrer" className="ld-link">Join online meeting</a>]);
+  if (l.meetingShared?.length) specs.push(['Already shared', l.meetingShared.map(k => SHARED_LABEL[k] || k).join(', ')]);
   if (l.meetingDate) specs.push(['Site visit', fmtDT(l.meetingDate) + (l.meetingLocation ? ' · ' + l.meetingLocation : '')]);
+  if (l.visitProjects?.length) specs.push(['Visit projects', l.visitProjects.map(p => p.name).join(', ')]);
   if (l.city || l.profession) specs.push(['Location', [l.city, l.profession].filter(Boolean).join(' · ')]);
   if (l.priority) specs.push(['Priority', l.priority + (l.preferredTime ? ' · ' + l.preferredTime : '')]);
   if (l.nextFollowup) specs.push(['Follow-up', fmtD(l.nextFollowup)]);
@@ -141,6 +147,18 @@ function Actions({ l }) {
     showToast('Visit marked as done', 'ok');
   };
 
+  const doAttend = () => {
+    attendMeeting(l.id, user);
+    refreshDB();
+    showToast('Meeting marked as attended', 'ok');
+  };
+
+  const doCarpool = () => {
+    createCarpoolRequest({ leadId: l.id, clientName: l.name, visitDate: l.meetingDate, projects: l.visitProjects || [] }, user);
+    refreshDB();
+    showToast('Carpool requested — pending admin approval', 'ok');
+  };
+
   const btns = [];
 
   if (r === ROLES.IA) {
@@ -188,6 +206,20 @@ function Actions({ l }) {
   }
 
   if (r === ROLES.MA) {
+    const maClosed = ['SITE_VISIT_DONE', 'NEGOTIATING', 'DEAL_CLOSED_WON', 'DEAL_CLOSED_LOST', 'NOT_INTERESTED'];
+    // Attended the scheduled meeting → log it, then schedule the site visit/booking.
+    if (l.status === 'MEETING_SET' && !l.meetingAttended) btns.push(
+      <button key="attend" className="btn btn-success btn-full" onClick={doAttend}>
+        <Mi>how_to_reg</Mi>Attend Meeting
+      </button>
+    );
+    // Reschedule / set the hand-off meeting time (logged to activity). Shown at the
+    // meeting stage even if no time was set — but gone once the meeting is attended.
+    if ((l.status === 'MEETING_SET' || l.meetingAt) && !l.meetingAttended) btns.push(
+      <button key="resched" className="btn btn-full" style={{ background: 'var(--blue-l)', color: 'var(--accent)' }} onClick={() => openModal('reschedule')}>
+        <Mi>event_repeat</Mi>Reschedule Meeting
+      </button>
+    );
     if (!['SITE_VISIT_SCHEDULED', 'SITE_VISIT_DONE', 'NEGOTIATING', 'DEAL_CLOSED_WON', 'DEAL_CLOSED_LOST', 'NOT_INTERESTED'].includes(l.status)) btns.push(
       <button key="sched" className="btn btn-teal btn-full" onClick={() => openModal('sched')}>
         <Mi>calendar_month</Mi>Schedule Site Visit
@@ -198,9 +230,24 @@ function Actions({ l }) {
         <Mi>check_circle</Mi>Mark Visit as Done
       </button>
     );
-    // Meeting Agent can forward to the next agent (Team Lead) any time they HOLD
-    // the lead (assignedTo === me) — reliable even if assignedRole wasn't updated.
-    if (l.assignedTo === user.id && !['DEAL_CLOSED_WON', 'DEAL_CLOSED_LOST', 'NOT_INTERESTED'].includes(l.status)) btns.push(
+    // Request a carpool ride to the site visit — admin approves in Carpool Requests.
+    if (l.status === 'SITE_VISIT_SCHEDULED') btns.push(
+      l.carpoolRequested
+        ? <button key="carpool" className="btn btn-g btn-full" disabled><Mi>directions_car</Mi>Carpool Requested</button>
+        : <button key="carpool" className="btn btn-full" style={{ background: 'var(--orange-l)', color: 'var(--orange)' }} onClick={doCarpool}><Mi>directions_car</Mi>Request Carpool</button>
+    );
+    // Attempt — couldn't reach the client; logs an attempt + next-day follow-up.
+    // 7 attempts in a stage → auto Not Interested. Disqualified leads come from here.
+    if (['MEETING_SET', 'SITE_VISIT_SCHEDULED'].includes(l.status)) {
+      const att = l.noAnswerCount || 0;
+      btns.push(
+        <button key="ma-attempt" className="btn btn-neutral btn-full" onClick={doNoAnswer}>
+          <Mi>phone_missed</Mi>Attempt{att > 0 ? ` (${att}/7)` : ''}
+        </button>
+      );
+    }
+    // Forward to Team Lead — only after the site visit is done (not at meeting stage).
+    if (l.status === 'SITE_VISIT_DONE') btns.push(
       <button key="fwd-tl" className="btn btn-purple btn-full" onClick={() => openModal('forward-tl')}>
         <Mi>forward_to_inbox</Mi>Forward to Team Lead
       </button>
