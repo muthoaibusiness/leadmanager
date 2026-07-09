@@ -24,9 +24,9 @@ export default function AddLeadModal() {
   const budgetRef = useRef();
   const profRef = useRef();
   const cityRef = useRef();
+  const emailRef = useRef();
 
   const [phones, setPhones] = useState(['']);
-  const [emails, setEmails] = useState(['']);
   const [interest, setInterest] = useState(''); // multi project-interest tags (comma-joined)
 
   useEffect(() => {
@@ -41,8 +41,8 @@ export default function AddLeadModal() {
       budgetRef.current.value = l.budget || '';
       profRef.current.value = l.profession || '';
       cityRef.current.value = l.city || '';
+      emailRef.current.value = l.email || '';
       setPhones(l.phones?.length ? l.phones : [l.phone || '']);
-      setEmails(l.emails?.length ? l.emails : [l.email || '']);
     } else {
       nameRef.current.value = '';
       companyRef.current.value = '';
@@ -51,8 +51,8 @@ export default function AddLeadModal() {
       budgetRef.current.value = '';
       profRef.current.value = '';
       cityRef.current.value = '';
+      emailRef.current.value = '';
       setPhones(['']);
-      setEmails(['']);
     }
   }, [isOpen, isEdit, panLead]);
 
@@ -63,20 +63,15 @@ export default function AddLeadModal() {
   const addPhone = () => setPhones(p => [...p, '']);
   const removePhone = (i) => setPhones(p => p.filter((_, j) => j !== i));
 
-  const updateEmail = (i, v) => setEmails(e => e.map((x, j) => j === i ? v : x));
-  const addEmail = () => setEmails(e => [...e, '']);
-  const removeEmail = (i) => setEmails(e => e.filter((_, j) => j !== i));
-
   const submit = () => {
     const name = nameRef.current.value.trim();
-    const cleanEmails = emails.map(e => e.trim()).filter(Boolean);
     // require + normalize phone(s) to country-code form (+880…)
     const cleanPhones = phones.map(p => normalizePhone(p)).filter(Boolean);
     if (!name) { showToast('Name is required', 'err'); return; }
     if (!cleanPhones.length) { showToast('A valid phone number is required (e.g. +8801XXXXXXXXX)', 'err'); return; }
 
     const phone = cleanPhones[0];
-    const email = cleanEmails[0] || '';
+    const email = emailRef.current.value.trim();
     const company = companyRef.current.value.trim();
     const source = sourceRef.current.value;
     const prop = interest.trim();
@@ -103,7 +98,7 @@ export default function AddLeadModal() {
       if ((old.budget || 0) !== (parseFloat(budget) || 0)) changes.push(`Budget: ${old.budget || 0} → ${parseFloat(budget) || 0}`);
       if ((old.profession || '') !== profession) changes.push(`Profession: ${old.profession || '—'} → ${profession || '—'}`);
       if ((old.city || '') !== city) changes.push(`Location: ${old.city || '—'} → ${city || '—'}`);
-      updLead(panLead, { name, phone, phones: cleanPhones, email, emails: cleanEmails, company: company || '—', source, propertyInterest: prop, budget: parseFloat(budget) || 0, profession, city });
+      updLead(panLead, { name, phone, phones: cleanPhones, email, company: company || '—', source, propertyInterest: prop, budget: parseFloat(budget) || 0, profession, city });
       if (changes.length > 0) addAct(panLead, { type: 'NOTE', description: 'Lead updated — ' + changes.join(', '), userId: user.id, userName: user.name, durationSeconds: 0 });
       closeModal(); refreshDB(); showToast('Lead updated', 'ok');
     } else {
@@ -119,14 +114,14 @@ export default function AddLeadModal() {
         }
         // number already exists → update it, and alert which agent owns it
         const owner = dup.assignedToName || '—';
-        updLead(dup.id, { name, phones: cleanPhones, email, emails: cleanEmails, company: company || '—', source, propertyInterest: prop, budget: parseFloat(budget) || 0, profession, city });
+        updLead(dup.id, { name, phones: cleanPhones, email, company: company || '—', source, propertyInterest: prop, budget: parseFloat(budget) || 0, profession, city });
         addAct(dup.id, { type: 'NOTE', description: `Re-submitted ${phone} — record updated (already handled by ${owner})`, userId: user.id, userName: user.name, durationSeconds: 0 });
         closeModal(); refreshDB();
         showToast(`Number ${phone} already exists — handled by ${owner}. Record updated.`, 'warn');
         setTimeout(() => setPanLead(dup.id), 150);
         return;
       }
-      const id = addLeadFn(name, phone, cleanPhones, email, cleanEmails, company, source, prop, budget, profession, city, user);
+      const id = addLeadFn(name, phone, cleanPhones, email, [], company, source, prop, budget, profession, city, user);
       closeModal(); refreshDB(); showToast('Lead added', 'ok');
       setTimeout(() => setPanLead(id), 150);
     }
@@ -188,31 +183,10 @@ export default function AddLeadModal() {
             )}
           </div>
 
-          {/* Emails */}
+          {/* Email */}
           <div className="fg">
-            <label>Email(s)</label>
-            {emails.map((e, i) => (
-              <div key={i} style={{ display: 'flex', gap: '6px', marginBottom: i < emails.length - 1 ? '6px' : '0' }}>
-                <input
-                  className="fi"
-                  type="email"
-                  placeholder={i === 0 ? 'primary@email.com' : 'Additional email'}
-                  value={e}
-                  onChange={ev => updateEmail(i, ev.target.value)}
-                  style={{ flex: 1 }}
-                />
-                {emails.length > 1 && (
-                  <button type="button" onClick={() => removeEmail(i)}
-                    style={{ padding: '0 10px', borderRadius: 'var(--r-sm)', background: 'var(--red-l)', color: 'var(--red)', border: 'none', cursor: 'pointer', flexShrink: 0 }}>
-                    <Mi>remove</Mi>
-                  </button>
-                )}
-              </div>
-            ))}
-            <button type="button" onClick={addEmail}
-              style={{ marginTop: '6px', fontSize: '12px', color: 'var(--blue)', background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px', padding: 0 }}>
-              <Mi>add</Mi> Add email
-            </button>
+            <label>Email</label>
+            <input className="fi" ref={emailRef} type="email" placeholder="e.g. primary@email.com" />
           </div>
 
           <div className="fg-row">

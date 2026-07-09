@@ -122,23 +122,57 @@ export async function sbInsert(table, row) {
 
 export async function sbUpdate(table, id, updates) {
   if (_missingTables.has(table)) return { ok: false, skipped: true };
-  try {
-    const r = await fetch(`${SB_URL}/rest/v1/${table}?id=eq.${id}`, {
-      method: 'PATCH',
-      headers: { ...SB_H, Prefer: 'return=minimal' },
-      body: JSON.stringify(updates),
-    });
-    if (!r.ok) {
-      let b = ''; try { b = await r.text(); } catch {}
-      console.error(`Supabase Update Error [${table}] HTTP ${r.status}:`, b);
-      return { ok: false };
+  let payload = { ...updates };
+  const stripped = [];
+
+  for (let attempt = 0; attempt < 12; attempt++) {
+    let r;
+    try {
+      r = await fetch(`${SB_URL}/rest/v1/${table}?id=eq.${id}`, {
+        method: 'PATCH',
+        headers: { ...SB_H, Prefer: 'return=minimal' },
+        body: JSON.stringify(payload),
+      });
+    } catch (e) {
+      checkNetworkError(e);
+      console.error(`Supabase Update network error [${table}]:`, e);
+      return { ok: false, error: e };
     }
-    return { ok: true };
-  } catch (e) {
-    checkNetworkError(e);
-    console.error(`Supabase Update network error [${table}]:`, e);
-    return { ok: false };
+
+    if (r.ok) {
+      if (stripped.length) {
+        console.warn(`Supabase: patched '${table}' after dropping unknown column(s): ${stripped.join(', ')}. Run the schema migration to persist them.`);
+      }
+      return { ok: true, stripped };
+    }
+
+    let body = '';
+    try { body = await r.text(); } catch {}
+    let j = {};
+    try { j = JSON.parse(body); } catch {}
+
+    if (j.code === 'PGRST205') {
+      _missingTables.add(table);
+      console.warn(`Supabase: table '${table}' not found — skipping cloud sync until migration is applied.`);
+      return { ok: false, skipped: true };
+    }
+
+    if (j.code === 'PGRST204') {
+      const m = /Could not find the '([^']+)' column/.exec(j.message || '');
+      const col = m && m[1];
+      if (col) {
+        stripped.push(col);
+        delete payload[col];
+        continue;
+      }
+    }
+
+    console.error(`Supabase Update Error [${table}] HTTP ${r.status}:`, body);
+    return { ok: false, status: r.status, body };
   }
+
+  console.error(`Supabase Update [${table}]: gave up after stripping ${stripped.join(', ')}`);
+  return { ok: false };
 }
 
 
