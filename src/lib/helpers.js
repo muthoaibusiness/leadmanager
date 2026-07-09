@@ -148,8 +148,9 @@ export function scoreLead(lead, acts) {
   else if (lead.budget >= 5000000) score += 8;
   else if (lead.budget >= 1000000) score += 5;
   else if (lead.budget > 0) score += 2;
-  // Call activity (0–10)
+  // Call activity (awards points for calls, deducts for failed attempts)
   score += Math.min(lead.callCount || 0, 5) * 2;
+  score -= Math.min(lead.noAnswerCount || 0, 5) * 2;
   // Visit done (+8)
   if (lead.visitCount > 0) score += 8;
   // Has property interest (+5)

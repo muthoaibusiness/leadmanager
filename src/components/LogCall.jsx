@@ -32,15 +32,19 @@ export default function LogCall({ leadId, triggerClassName = 'btn btn-full', tri
         <Mi>call</Mi>{triggerLabel}
       </button>
       {open && (
-        <div className="logcall-pop">
-          <div className="logcall-hd">
-            <span>Call duration</span>
-            <button className="logcall-x" onClick={() => setOpen(false)}><Mi>close</Mi></button>
-          </div>
-          <div className="logcall-chips">
-            {PRESETS.map(m => (
-              <button key={m} className="logcall-chip" onClick={() => log(m)}>{m} min</button>
-            ))}
+        <div className="modal-overlay" onClick={() => setOpen(false)}>
+          <div className="modal" style={{ maxWidth: '400px' }} onClick={e => e.stopPropagation()}>
+            <div className="modal-hd">
+              <span className="modal-ttl"><Mi>call</Mi> Call duration</span>
+              <button className="icon-btn" onClick={() => setOpen(false)}><Mi>close</Mi></button>
+            </div>
+            <div className="modal-bd">
+              <div className="logcall-chips" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px' }}>
+                {PRESETS.map(m => (
+                  <button key={m} className="btn" onClick={() => log(m)}>{m} min</button>
+                ))}
+              </div>
+            </div>
           </div>
         </div>
       )}

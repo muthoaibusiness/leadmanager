@@ -15,7 +15,11 @@ export default function LeadsView() {
 
   // Initial/Meeting agents get a My Leads ↔ Forwarded toggle.
   const isAgent = [ROLES.IA, ROLES.MA].includes(user.role);
+  const isTL = user.role === ROLES.TL;
+  const isMgmt = user.role === ROLES.MGMT;
+  
   const [tab, setTab] = useState('mine');
+  const [agentFilter, setAgentFilter] = useState('ALL');
 
   let leads = getLeads(user, { involved: true }); // include forwarded leads so status filters (e.g. Meeting Set) show them
   if (teamFilter) {
@@ -33,6 +37,10 @@ export default function LeadsView() {
   const myFwd = (l) => (l.previousAssignees || []).includes(user.id) && l.assignedTo !== user.id;
   if (isAgent) leads = tab === 'fwd' ? leads.filter(myFwd) : leads.filter(l => l.assignedTo === user.id);
   const fwdCount = isAgent ? getLeads(user, { involved: true }).filter(myFwd).length : 0;
+  
+  if (isTL && agentFilter !== 'ALL') {
+    leads = leads.filter(l => l.assignedTo === agentFilter);
+  }
 
   let disp = leads;
   if (statusFilter === 'FOLLOW_UP') disp = disp.filter(l => l.nextFollowup && FU_OVERLAY.includes(l.status));
@@ -46,11 +54,11 @@ export default function LeadsView() {
     disp = disp.filter(l => { const d = new Date(l.createdAt); return d >= start && d <= end; });
   }
 
-  const isMgmt = user.role === ROLES.MGMT;
-    
   const teamOptions = isMgmt
     ? (db.teams || []).filter(t => !user.companyId || !t.companyId || t.companyId === user.companyId)
     : [];
+    
+  const teamUsers = isTL ? (db.users || []).filter(u => u.teamId === user.teamId) : [];
 
   return (
     <>
@@ -83,6 +91,12 @@ export default function LeadsView() {
               const tl = db.users?.find(u => u.id === t.leadId);
               return <option key={t.id} value={t.id}>{tl ? tl.name : 'Team ' + t.id}</option>;
             })}
+          </select>
+        )}
+        {isTL && (
+          <select className="fsel fsel-team" value={agentFilter} onChange={e => setAgentFilter(e.target.value)} title="Show leads for a specific agent">
+            <option value="ALL">All agents</option>
+            {teamUsers.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
           </select>
         )}
       </div>

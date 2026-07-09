@@ -1228,28 +1228,18 @@ export function bulkCreateUsers(rows, currentUser) {
 export function normalizePhone(raw) {
   if (!raw) return '';
   let s = String(raw).trim();
-  const hadPlus = s.trim().startsWith('+');
   let digits = s.replace(/\D/g, '');
   if (!digits) return '';
-  if (hadPlus) {
-    // explicit country code already provided
-  } else if (digits.startsWith('880')) {
-    // already has BD country code without +
-  } else if (digits.startsWith('0')) {
-    digits = '880' + digits.replace(/^0+/, '');
-  } else if (digits.length === 10 && digits.startsWith('1')) {
-    digits = '880' + digits;
-  } else if (digits.length <= 11) {
-    // bare local-ish number, assume Bangladesh
-    digits = '880' + digits.replace(/^0+/, '');
+  if (digits.startsWith('0')) {
+    digits = '88' + digits;
   }
   if (digits.length < 10) return ''; // too short to be valid
-  return '+' + digits;
+  return digits;
 }
 
 export function isValidPhone(raw) {
   const n = normalizePhone(raw);
-  return /^\+\d{10,15}$/.test(n);
+  return /^\d{10,15}$/.test(n);
 }
 
 // Find an existing lead with the same (normalized) phone. Used to prevent

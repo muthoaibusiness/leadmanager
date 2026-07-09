@@ -1,0 +1,14 @@
+/* ISSUE 1 FIX: Call Duration Dialog Visibility */
+.logcall { position: relative; }
+.logcall-pop { z-index: 100 !important; }
+
+/* ISSUE 4 FIX: Invoice Unit Price and Amount Alignment */
+.inv-tbl th.inv-r, .inv-tbl td.inv-r { text-align: right !important; }
+
+/* ISSUE 6 FIX: Text Overlapping in Users View (Mobile) */
+@media (max-width: 768px) {
+  .tg-hd { flex-wrap: wrap; }
+  .tg-stats { flex-wrap: wrap; justify-content: flex-start; margin-top: 8px; }
+  .ui-row { flex-wrap: wrap; }
+  .ui-info { min-width: 100px; flex-shrink: 1; overflow: hidden; text-overflow: ellipsis; }
+}
