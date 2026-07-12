@@ -126,7 +126,19 @@ export default function PropertiesView() {
                 <div className="lt-sub">{[p.area, p.district].filter(Boolean).join(' · ')}</div>
               </div></div>
               <div className="lt-cell lt-cell-src"><span className="lt-src">{p.pricePerSqft ? '৳' + p.pricePerSqft.toLocaleString() : '—'}</span></div>
-              <div className="lt-cell lt-cell-prop"><span className="lt-src">{p.sizeText || '—'}</span></div>
+              <div className="lt-cell lt-cell-prop">
+                {(() => {
+                  if (p.variants && p.variants.length > 0) {
+                    const sizes = p.variants.map(v => v.size).filter(s => s > 0);
+                    if (sizes.length > 0) {
+                      const min = Math.min(...sizes);
+                      const max = Math.max(...sizes);
+                      return <span className="lt-src">{min === max ? `${min} sqft` : `${min} - ${max} sqft`}</span>;
+                    }
+                  }
+                  return <span className="lt-src">{p.sizeText || '—'}</span>;
+                })()}
+              </div>
               <div className="lt-cell lt-cell-units">
                 {(() => {
                   const blocks = p.variants || [];

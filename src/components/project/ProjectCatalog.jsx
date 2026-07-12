@@ -1,41 +1,75 @@
 import { useState } from 'react';
 import Mi from '../Mi.jsx';
 import { useApp } from '../../context/AppContext.jsx';
-import {
-  updateProject, addVariant, updateVariant, removeVariant, regenUnits,
-  addAddon, updateAddon, removeAddon, addMedia, removeMedia,
-} from '../../lib/projects.js';
+import { updateProject } from '../../lib/projects.js';
 
 const nextStatus = (s) => (s === 'available' ? 'hold' : s === 'hold' ? 'sold' : 'available');
 
-// Admin · Catalog — e-commerce-style product editor for a project. Writes live to
-// the property via the projects data module; lists only rebuild on add/remove so
-// typing never loses focus (inputs are keyed by stable id).
+// Admin · Catalog — e-commerce-style product editor for a project. Writes to
+// local state, only persisted globally when "Save product" is clicked.
 export default function ProjectCatalog({ project, onDone }) {
   const { refreshDB, showToast } = useApp();
-  const p = project;
+  
+  // Create a deep copy of the project for local editing so we don't mutate global state or jump around
+  const [p, setP] = useState(() => JSON.parse(JSON.stringify(project)));
   const id = p.id;
-  const up = (patch) => { updateProject(id, patch); refreshDB(); };
+  
+  const up = (patch) => setP(prev => ({ ...prev, ...patch }));
   const [counts, setCounts] = useState({}); // unit-count edit buffers, committed on blur
   const [lk, setLk] = useState({ url: '', label: '' }); // add-link form
-  const submitLink = () => { if (!lk.url.trim()) return; addMedia(id, 'links', { url: lk.url.trim(), label: lk.label.trim() || lk.url.trim() }); refreshDB(); setLk({ url: '', label: '' }); };
+
+  const addMedia = (kind, item) => setP(prev => ({ ...prev, media: { ...prev.media, [kind]: [...(prev.media[kind] || []), item] } }));
+  const removeMedia = (kind, index) => setP(prev => ({ ...prev, media: { ...prev.media, [kind]: (prev.media[kind] || []).filter((_, i) => i !== index) } }));
+
+  const submitLink = () => { if (!lk.url.trim()) return; addMedia('links', { url: lk.url.trim(), label: lk.label.trim() || lk.url.trim() }); setLk({ url: '', label: '' }); };
 
   const onFiles = (files, kind, asLabel) => {
     [...files].forEach(f => {
       if (f.size > 3 * 1024 * 1024) { showToast('File too large (max 3MB) — use a link instead', 'err'); return; }
       const r = new FileReader();
-      // TODO(storage): upload to real file storage and persist the returned URL
-      // instead of holding a base64 data URL in the property object.
-      r.onload = () => { addMedia(id, kind, asLabel ? { label: f.name, url: r.result } : { name: f.name, url: r.result }); refreshDB(); };
+      r.onload = () => addMedia(kind, asLabel ? { label: f.name, url: r.result } : { name: f.name, url: r.result });
       r.readAsDataURL(f);
     });
   };
 
+  const addVariant = () => setP(prev => ({ ...prev, variants: [...prev.variants, { id: 'v' + Date.now(), name: 'New type', beds: 0, baths: 0, size: 0, listRate: 0, floorRate: 0, unitPrefix: '', units: [] }] }));
+  const updateVariant = (vid, patch) => setP(prev => ({ ...prev, variants: prev.variants.map(v => v.id === vid ? { ...v, ...patch } : v) }));
+  const removeVariant = (vid) => setP(prev => { const left = prev.variants.filter(v => v.id !== vid); return { ...prev, variants: left.length ? left : prev.variants }; });
+  
+  const regenUnits = (vid, count) => {
+    setP(prev => ({
+      ...prev,
+      variants: prev.variants.map(v => {
+        if (v.id !== vid) return v;
+        const cur = new Map(v.units.map(u => [u.id, u]));
+        const units = Array.from({ length: Math.max(0, count | 0) }, (_, i) => {
+          const code = (v.unitPrefix || '') + (i + 1);
+          return cur.get(code) || { id: code, status: 'available' };
+        });
+        return { ...v, units };
+      })
+    }));
+  };
 
   const cycleUnit = (vid, uid) => {
-    const v = p.variants.find(x => x.id === vid);
-    updateVariant(id, vid, { units: v.units.map(u => (u.id === uid ? { ...u, status: nextStatus(u.status) } : u)) });
+    setP(prev => ({
+      ...prev,
+      variants: prev.variants.map(v => v.id === vid ? {
+        ...v,
+        units: v.units.map(u => (u.id === uid ? { ...u, status: nextStatus(u.status) } : u))
+      } : v)
+    }));
+  };
+
+  const addAddon = () => setP(prev => ({ ...prev, addons: [...(prev.addons || []), { id: 'ao' + Date.now(), name: 'Add-on', amount: 0, icon: 'add' }] }));
+  const updateAddon = (aid, patch) => setP(prev => ({ ...prev, addons: (prev.addons || []).map(a => a.id === aid ? { ...a, ...patch } : a) }));
+  const removeAddon = (aid) => setP(prev => ({ ...prev, addons: (prev.addons || []).filter(a => a.id !== aid) }));
+
+  const handleSave = () => {
+    updateProject(id, p);
     refreshDB();
+    showToast('Project saved', 'ok');
+    onDone();
   };
 
   return (
@@ -67,7 +101,7 @@ export default function ProjectCatalog({ project, onDone }) {
             {p.media.images.map((m, i) => (
               <div key={i} className="pcat-thumb">
                 <img src={m.url} alt="" />{i === 0 && <span className="pcat-cover">Cover</span>}
-                <button onClick={() => { removeMedia(id, 'images', i); refreshDB(); }}><Mi>close</Mi></button>
+                <button onClick={() => removeMedia('images', i)}><Mi>close</Mi></button>
               </div>
             ))}
           </div>
@@ -77,14 +111,14 @@ export default function ProjectCatalog({ project, onDone }) {
           <div key={'d' + i} className="pcat-item">
             <span className="pcat-item-ic"><Mi>picture_as_pdf</Mi></span>
             <div className="pcat-item-tx"><div className="pcat-item-n">{d.label || d.name || 'Document'}</div><div className="pcat-item-u">{(d.url || '').replace(/^data:.*/, 'uploaded file')}</div></div>
-            <button className="pcat-item-x" onClick={() => { removeMedia(id, 'docs', i); refreshDB(); }}><Mi>close</Mi></button>
+            <button className="pcat-item-x" onClick={() => removeMedia('docs', i)}><Mi>close</Mi></button>
           </div>
         ))}
         {p.media.links.map((l, i) => (
           <div key={'l' + i} className="pcat-item">
             <span className="pcat-item-ic"><Mi>link</Mi></span>
             <div className="pcat-item-tx"><div className="pcat-item-n">{l.label || 'Link'}</div><div className="pcat-item-u">{l.url}</div></div>
-            <button className="pcat-item-x" onClick={() => { removeMedia(id, 'links', i); refreshDB(); }}><Mi>close</Mi></button>
+            <button className="pcat-item-x" onClick={() => removeMedia('links', i)}><Mi>close</Mi></button>
           </div>
         ))}
 
@@ -98,7 +132,7 @@ export default function ProjectCatalog({ project, onDone }) {
 
       {/* Unit types */}
       <section className="pcat-sec">
-        <div className="pcat-hd"><Mi>apartment</Mi>Unit types <span className="pcat-note-inline">— variants. Leave a single type for a no-variant project.</span><button className="pcat-add" onClick={() => { addVariant(id); refreshDB(); }}><Mi>add</Mi>Add type</button></div>
+        <div className="pcat-hd"><Mi>apartment</Mi>Unit types <span className="pcat-note-inline">— variants. Leave a single type for a no-variant project.</span><button className="pcat-add" onClick={addVariant}><Mi>add</Mi>Add type</button></div>
         {p.variants.map(v => {
           const open = v.units.filter(u => u.status === 'available').length;
           const held = v.units.filter(u => u.status === 'hold').length;
@@ -106,23 +140,23 @@ export default function ProjectCatalog({ project, onDone }) {
           return (
           <div key={v.id} className="pcat-var">
             <div className="pcat-var-hd">
-              <input className="pcat-var-name" value={v.name} onChange={e => { updateVariant(id, v.id, { name: e.target.value }); refreshDB(); }} />
-              {p.variants.length > 1 && <button className="pcat-del" onClick={() => { removeVariant(id, v.id); refreshDB(); }}><Mi>close</Mi></button>}
+              <input className="pcat-var-name" value={v.name} onChange={e => updateVariant(v.id, { name: e.target.value })} />
+              {p.variants.length > 1 && <button className="pcat-del" onClick={() => removeVariant(v.id)}><Mi>close</Mi></button>}
             </div>
             <div className="pcat-vgrid">
-              <label className="pcat-f"><span>Beds</span><input type="number" value={v.beds} onChange={e => { updateVariant(id, v.id, { beds: parseInt(e.target.value, 10) || 0 }); refreshDB(); }} /></label>
-              <label className="pcat-f"><span>Baths</span><input type="number" value={v.baths} onChange={e => { updateVariant(id, v.id, { baths: parseInt(e.target.value, 10) || 0 }); refreshDB(); }} /></label>
-              <label className="pcat-f"><span>Size (sqft)</span><input type="number" value={v.size} onChange={e => { updateVariant(id, v.id, { size: parseInt(e.target.value, 10) || 0 }); refreshDB(); }} /></label>
-              <label className="pcat-f"><span>List ৳/sqft</span><input type="number" value={v.listRate} onChange={e => { updateVariant(id, v.id, { listRate: parseFloat(e.target.value) || 0 }); refreshDB(); }} /></label>
-              <label className="pcat-f"><span>Floor ৳/sqft</span><input type="number" value={v.floorRate} onChange={e => { updateVariant(id, v.id, { floorRate: parseFloat(e.target.value) || 0 }); refreshDB(); }} /></label>
+              <label className="pcat-f"><span>Beds</span><input type="number" value={v.beds} onChange={e => updateVariant(v.id, { beds: parseInt(e.target.value, 10) || 0 })} /></label>
+              <label className="pcat-f"><span>Baths</span><input type="number" value={v.baths} onChange={e => updateVariant(v.id, { baths: parseInt(e.target.value, 10) || 0 })} /></label>
+              <label className="pcat-f"><span>Size (sqft)</span><input type="number" value={v.size} onChange={e => updateVariant(v.id, { size: parseInt(e.target.value, 10) || 0 })} /></label>
+              <label className="pcat-f"><span>List ৳/sqft</span><input type="number" value={v.listRate} onChange={e => updateVariant(v.id, { listRate: parseFloat(e.target.value) || 0 })} /></label>
+              <label className="pcat-f"><span>Floor ৳/sqft</span><input type="number" value={v.floorRate} onChange={e => updateVariant(v.id, { floorRate: parseFloat(e.target.value) || 0 })} /></label>
             </div>
             <div className="pcat-vdiv" />
             <div className="pcat-vrow2">
-              <label className="pcat-f"><span>Unit prefix</span><input value={v.unitPrefix} onChange={e => { updateVariant(id, v.id, { unitPrefix: e.target.value }); refreshDB(); }} placeholder="A" /></label>
+              <label className="pcat-f"><span>Unit prefix</span><input value={v.unitPrefix} onChange={e => updateVariant(v.id, { unitPrefix: e.target.value })} placeholder="A" /></label>
               <label className="pcat-f"><span># of units</span>
                 <input type="number" min="0" value={counts[v.id] ?? v.units.length}
                   onChange={e => setCounts(c => ({ ...c, [v.id]: e.target.value }))}
-                  onBlur={e => { regenUnits(id, v.id, parseInt(e.target.value, 10) || 0); refreshDB(); setCounts(c => { const n = { ...c }; delete n[v.id]; return n; }); }} /></label>
+                  onBlur={e => { regenUnits(v.id, parseInt(e.target.value, 10) || 0); setCounts(c => { const n = { ...c }; delete n[v.id]; return n; }); }} /></label>
               <div className="pcat-vstat">{open} open · {held} held · {sold} sold</div>
             </div>
             {v.units.length > 0 && (
@@ -142,22 +176,22 @@ export default function ProjectCatalog({ project, onDone }) {
 
       {/* Add-ons */}
       <section className="pcat-sec">
-        <div className="pcat-hd"><Mi>add_circle</Mi>Add-ons<button className="pcat-add" onClick={() => { addAddon(id); refreshDB(); }}><Mi>add</Mi>Add row</button></div>
+        <div className="pcat-hd"><Mi>add_circle</Mi>Add-ons<button className="pcat-add" onClick={addAddon}><Mi>add</Mi>Add row</button></div>
         {(p.addons || []).length === 0 && <div className="pcat-note">No add-ons. They're opt-in per deal; prices set here per project.</div>}
         {(p.addons || []).map(a => (
           <div key={a.id} className="pcat-addon">
             <span className="pcat-addon-ic"><Mi>{a.icon || 'add'}</Mi></span>
-            <input className="pcat-addon-icin" value={a.icon} onChange={e => { updateAddon(id, a.id, { icon: e.target.value }); refreshDB(); }} placeholder="icon" />
-            <input className="pcat-addon-nm" value={a.name} onChange={e => { updateAddon(id, a.id, { name: e.target.value }); refreshDB(); }} placeholder="Car parking" />
-            <input className="pcat-addon-amt" type="number" value={a.amount} onChange={e => { updateAddon(id, a.id, { amount: parseFloat(e.target.value) || 0 }); refreshDB(); }} placeholder="0" />
-            <button className="pcat-del" onClick={() => { removeAddon(id, a.id); refreshDB(); }}><Mi>delete</Mi></button>
+            <input className="pcat-addon-icin" value={a.icon} onChange={e => updateAddon(a.id, { icon: e.target.value })} placeholder="icon" />
+            <input className="pcat-addon-nm" value={a.name} onChange={e => updateAddon(a.id, { name: e.target.value })} placeholder="Car parking" />
+            <input className="pcat-addon-amt" type="number" value={a.amount} onChange={e => updateAddon(a.id, { amount: parseFloat(e.target.value) || 0 })} placeholder="0" />
+            <button className="pcat-del" onClick={() => removeAddon(a.id)}><Mi>delete</Mi></button>
           </div>
         ))}
       </section>
 
       <div className="pcat-foot">
-        <button className="btn btn-g" onClick={() => onDone()}><Mi>visibility</Mi>Preview</button>
-        <button className="btn btn-p" onClick={() => { showToast('Project saved', 'ok'); onDone(); }}><Mi>save</Mi>Save product</button>
+        <button className="btn btn-g" onClick={() => onDone()}><Mi>visibility</Mi>Preview / Discard</button>
+        <button className="btn btn-p" onClick={handleSave}><Mi>save</Mi>Save product</button>
       </div>
     </div>
   );
