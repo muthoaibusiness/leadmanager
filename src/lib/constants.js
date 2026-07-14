@@ -12,6 +12,7 @@ const ALL_ROLES = ['INITIAL_AGENT', 'MEETING_AGENT', 'TEAM_LEAD', 'MANAGEMENT'];
 export const NAV_SCOPES = {
   dashboard: ALL_ROLES,
   leads: ALL_ROLES,
+  add_customer: ['INITIAL_AGENT', 'TEAM_LEAD'],
   calendar: ['MEETING_AGENT', 'TEAM_LEAD', 'MANAGEMENT'],
   pipeline: ALL_ROLES,
   properties: ALL_ROLES,
@@ -19,6 +20,7 @@ export const NAV_SCOPES = {
   agentperf: ['MANAGEMENT', 'TEAM_LEAD'],
   requests: ['MANAGEMENT'],
   carpool: ['MANAGEMENT'],
+  campaigns: ['MANAGEMENT'],
   team: ['TEAM_LEAD'],
   users: ['MANAGEMENT'],
   accounts: ['MANAGEMENT'],
@@ -37,10 +39,10 @@ export const canSee = (user, key) => {
 
 // Features an admin can grant/revoke per user, in display order (nav features only;
 // 'companies' is master-only overview and 'profile' is always-on, so both excluded).
-export const FEATURE_KEYS = ['dashboard', 'leads', 'calendar', 'pipeline', 'properties', 'reports', 'agentperf', 'requests', 'carpool', 'team', 'users', 'accounts'];
+export const FEATURE_KEYS = ['dashboard', 'leads', 'add_customer', 'calendar', 'pipeline', 'properties', 'campaigns', 'reports', 'agentperf', 'requests', 'carpool', 'team', 'users', 'accounts'];
 export const FEATURE_LABELS = {
-  dashboard: 'Home', leads: 'Leads', calendar: 'Calendar', pipeline: 'Pipeline', properties: 'Projects',
-  reports: 'Reports', agentperf: 'Performance', requests: 'Requests', carpool: 'Carpool', team: 'Team',
+  dashboard: 'Home', leads: 'Leads', add_customer: 'Add Customer', calendar: 'Calendar', pipeline: 'Pipeline', properties: 'Projects',
+  campaigns: 'Marketing', reports: 'Reports', agentperf: 'Performance', requests: 'Requests', carpool: 'Carpool', team: 'Team',
   users: 'Users', accounts: 'Accounts',
 };
 // Default features for a standard role (from NAV_SCOPES). Executive resolves to none.
@@ -54,6 +56,17 @@ export const PROPERTY_STATUS = {
   SOLD_OUT: 'Sold Out',
   UPCOMING: 'Upcoming',
 };
+
+// Marketing campaigns & ads
+export const CAMPAIGN_PLATFORMS = ['Meta', 'WhatsApp', 'Google', 'YouTube', 'LinkedIn', 'TikTok', 'Billboard', 'Print', 'Event', 'Other'];
+export const CAMPAIGN_STATUS = {
+  DRAFT: 'Draft',
+  ACTIVE: 'Active',
+  PAUSED: 'Paused',
+  COMPLETED: 'Completed',
+};
+// Where an ad runs — free text is allowed, these are just the quick picks.
+export const AD_SOURCE_APPS = ['Facebook', 'Instagram', 'WhatsApp', 'Messenger', 'Google', 'YouTube', 'LinkedIn', 'TikTok', 'Website', 'Other'];
 
 export const SRC_LABELS = {
   META_ADS: 'Meta',

@@ -1,10 +1,10 @@
 import { useState, useEffect, useRef } from 'react';
 import { useApp } from './context/AppContext.jsx';
-import { getDB, getSession, setSession, tryLogin, saveDB, checkFollowUpReminders, getLeads, getProperties, expireHolds, migrateTenancy, mergeDB, purgeDemoSeed, dedupeLeads, reconcileDeletions, applyRealtimeEvent } from './lib/db.js';
+import { getDB, getSession, setSession, tryLogin, saveDB, checkFollowUpReminders, getLeads, getProperties, getCampaigns, campaignLeads, expireHolds, migrateTenancy, mergeDB, purgeDemoSeed, dedupeLeads, reconcileDeletions, applyRealtimeEvent } from './lib/db.js';
 import { seedDB, SEED_PROPERTIES, DEMO_PROPERTIES } from './lib/seed.js';
 import { sbLoad, sbSubscribeAll } from './lib/supabase.js';
 import { pushNotify, requestNotifyPermission } from './lib/pushNotify.js';
-import { avc, ini, rlabel } from './lib/helpers.js';
+import { avc, ini, rlabel, fmtBDT } from './lib/helpers.js';
 import { ROLES, canSee, FEATURE_KEYS } from './lib/constants.js';
 
 import Mi from './components/Mi.jsx';
@@ -38,6 +38,7 @@ import PipelineView from './components/views/PipelineView.jsx';
 import ClientsView from './components/views/ClientsView.jsx';
 import ReportsView from './components/views/ReportsView.jsx';
 import AgentPerformanceView from './components/views/AgentPerformanceView.jsx';
+import CampaignsView from './components/views/CampaignsView.jsx';
 
 import AddLeadModal from './components/modals/AddLeadModal.jsx';
 import ForwardModal from './components/modals/ForwardModal.jsx';
@@ -61,6 +62,8 @@ import PropertyFormModal from './components/modals/PropertyFormModal.jsx';
 import UnitBookingModal from './components/modals/UnitBookingModal.jsx';
 import BookingModal from './components/modals/BookingModal.jsx';
 import TransferLeadModal from './components/modals/TransferLeadModal.jsx';
+import CampaignModal from './components/modals/CampaignModal.jsx';
+import AdModal from './components/modals/AdModal.jsx';
 
 // ── Loading screen ──────────────────────────────────────────────────────────
 function LoadingScreen({ visible }) {
@@ -147,11 +150,13 @@ function PageHeader() {
 
 // ── In-body hero header (eyebrow + big title + subtitle + actions) ───────────
 function PageHero() {
-  const { user, view, agentFilter, teamFilter, setAgentFilter, setTeamFilter, setTab, setStatusFilter, setSearch, openModal, setCreateUserRoles, setPropEdit, setPropSel, setConsoleAdmin, dbVersion, dateRange } = useApp();
+  const { user, view, agentFilter, teamFilter, setAgentFilter, setTeamFilter, setTab, setStatusFilter, setSearch, openModal, setCreateUserRoles, setPropEdit, setPropSel, setConsoleAdmin, setCampEdit, campSel, dbVersion, dateRange } = useApp();
   if (!user) return null;
   // Every dashboard now has its own greeting header — skip the generic hero.
   if (view === 'dashboard') return null;
   if (user.role === ROLES.MASTER && view === 'companies') return null;
+  // A drilled-into campaign renders its own back-link + title header.
+  if (view === 'campaigns' && campSel) return null;
   const db = getDB();
 
   const agentName = agentFilter ? db.users.find(u => u.id === agentFilter)?.name : '';
@@ -169,6 +174,9 @@ function PageHero() {
   const props = getProperties();
   const propAvail = props.filter(p => p.status !== 'SOLD_OUT').length;
   const teamAgents = db.users.filter(u => (u.role === ROLES.IA || u.role === ROLES.MA) && u.teamId === user.teamId).length;
+  const camps = getCampaigns();
+  const campLeads = camps.reduce((s, c) => s + campaignLeads(c.id).length, 0);
+  const campSpend = camps.reduce((s, c) => s + (c.cost || 0), 0);
 
   const META = {
     dashboard: { eyebrow: rlabel(user.role), title: 'Dashboard', sub: '' },
@@ -177,6 +185,7 @@ function PageHero() {
     pipeline: { eyebrow: 'Sales', title: 'Pipeline', sub: 'Drag deals across stages' },
     clients: { eyebrow: 'Relationships', title: 'Contacts', sub: '360° customer view' },
     properties: { eyebrow: 'Catalog', title: 'Projects', sub: `${props.length} projects · ${propAvail} available` },
+    campaigns: { eyebrow: 'Marketing', title: 'Marketing Campaigns', sub: `${camps.length} campaigns · ${fmtBDT(campSpend)} spend · ${campLeads} leads` },
     reports: { eyebrow: 'Insights', title: 'Reports', sub: 'Live sales analytics' },
     agentperf: { eyebrow: 'Insights', title: 'Performance', sub: 'Per-role scorecards & funnels' },
     bookings: { eyebrow: 'Sales', title: 'Sales Activity', sub: 'Payments, instalments & dues' },
@@ -197,13 +206,14 @@ function PageHero() {
 
   // actions
   let actions = [];
-  if ([ROLES.IA, ROLES.TL].includes(user.role) && view === 'leads') {
+  if (view === 'leads' && canSee(user, 'add_customer')) {
     actions.push(<button key="add-lead" className="btn btn-p" onClick={() => openModal('add-lead')}><Mi>add</Mi>Add Customer</button>);
     actions.push(<button key="import" className="btn btn-g" onClick={() => openModal('import')}><Mi>upload</Mi>Import</button>);
   }
   // Duplicate checker button removed — dedup runs automatically on load/import.
   if (view === 'team' && user.role === ROLES.TL) actions.push(<button key="add-agent" className="btn btn-p" onClick={() => { setCreateUserRoles([ROLES.IA, ROLES.MA]); openModal('create-user'); }}><Mi>person_add</Mi>Add Agent</button>);
   if (view === 'users' && user.role === ROLES.MGMT) actions.push(<button key="add-user" className="btn btn-p" onClick={() => { setCreateUserRoles([ROLES.TL, ROLES.EXEC]); openModal('create-user'); }}><Mi>person_add</Mi>Add User</button>);
+  if (view === 'campaigns' && canSee(user, 'campaigns')) actions.push(<button key="add-camp" className="btn btn-p" onClick={() => { setCampEdit({}); openModal('campaign'); }}><Mi>add</Mi>Add Campaign</button>);
   if (view === 'properties' && user.role === ROLES.MGMT) actions.push(<button key="add-prop" className="btn btn-p" onClick={() => { const nid = createProject({ name: '', companyId: user.companyId }); setConsoleAdmin(true); setPropSel(nid); openModal('project-console'); }}><Mi>add</Mi>Add Property</button>);
 
   return (
@@ -238,6 +248,7 @@ function PageBody() {
   if (view === 'pipeline') return <PipelineView />;
   if (view === 'clients') return <ClientsView />;
   if (view === 'properties') return <PropertiesView />;
+  if (view === 'campaigns') return <CampaignsView />;
   if (view === 'bookings') return <BookingsView />;
   if (view === 'reports') return <ReportsView />;
   if (view === 'agentperf') return <AgentPerformanceView />;
@@ -428,6 +439,8 @@ export default function App() {
       <UnitBookingModal />
       <BookingModal />
       <TransferLeadModal />
+      <CampaignModal />
+      <AdModal />
       <Toast />
     </>
   );

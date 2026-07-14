@@ -27,8 +27,10 @@ export default function EditAgentModal() {
       setPhone(a.phone || '');
       setAll(a.projects === 'ALL');
       setSel(new Set(Array.isArray(a.projects) ? a.projects : []));
-      // Pre-fill features: saved custom list, else the role's defaults (Executive = none).
-      setFeat(new Set(Array.isArray(a.allowedFeatures) ? a.allowedFeatures : defaultFeatures(a.role)));
+      const initialFeatures = Array.isArray(a.allowedFeatures)
+        ? a.allowedFeatures
+        : (a.role === ROLES.EXEC ? [] : defaultFeatures(a.role));
+      setFeat(new Set(initialFeatures));
     }
   }, [isOpen, a]);
 

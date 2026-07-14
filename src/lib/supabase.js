@@ -222,6 +222,7 @@ export function lToR(l) {
     notes: l.notes || '', external_id: l.externalId || null, priority: l.priority || null,
     preferred_time: l.preferredTime || null, next_followup: l.nextFollowup || null,
     material_sent: l.materialSent || null, cart: l.cart || null, company_id: l.companyId || null,
+    campaign_id: l.campaignId || null, ad_id: l.adId || null,
     created_at: l.createdAt, updated_at: l.updatedAt,
   };
 }
@@ -241,6 +242,7 @@ export function rToL(r) {
     notes: r.notes || '', externalId: r.external_id || null, priority: r.priority || null,
     preferredTime: r.preferred_time || null, nextFollowup: r.next_followup || null,
     materialSent: r.material_sent || null, cart: r.cart || null, companyId: r.company_id || null,
+    campaignId: r.campaign_id || null, adId: r.ad_id || null,
     createdAt: r.created_at, updatedAt: r.updated_at,
   };
 }
@@ -286,6 +288,41 @@ export function rToHr(r) {
 // Companies (multi-tenant)
 export function cToR(c) { return { id: c.id, name: c.name, plan: c.plan || 'Starter', is_active: c.isActive !== false, created_at: c.createdAt || new Date().toISOString() }; }
 export function rToC(r) { return { id: r.id, name: r.name, plan: r.plan || 'Starter', isActive: r.is_active !== false, createdAt: r.created_at }; }
+
+// Marketing campaigns. Named cmToR/rToCm because cToR/rToC are the company
+// converters above (and adToR/rToAd below, because aToR/rToA are activities).
+export function cmToR(c) {
+  return {
+    id: c.id, name: c.name || '', platform: c.platform || '', cost: c.cost || 0,
+    start_date: c.startDate || null, end_date: c.endDate || null, status: c.status || 'ACTIVE',
+    company_id: c.companyId || null, created_at: c.createdAt, updated_at: c.updatedAt,
+  };
+}
+export function rToCm(r) {
+  return {
+    id: r.id, name: r.name || '', platform: r.platform || '', cost: r.cost || 0,
+    startDate: r.start_date || null, endDate: r.end_date || null, status: r.status || 'ACTIVE',
+    companyId: r.company_id || null, createdAt: r.created_at, updatedAt: r.updated_at,
+  };
+}
+
+// Ads. `adId` is the ad's external id (hand-entered), distinct from `id`.
+export function adToR(a) {
+  return {
+    id: a.id, title: a.title || '', body: a.body || '', sourceurl: a.sourceUrl || '',
+    greetingmessage: a.greetingMessage || '', sourceapp: a.sourceApp || '', ad_id: a.adId || '',
+    campaign_id: a.campaignId || null, company_id: a.companyId || null,
+    created_at: a.createdAt, updated_at: a.updatedAt,
+  };
+}
+export function rToAd(r) {
+  return {
+    id: r.id, title: r.title || '', body: r.body || '', sourceUrl: r.sourceurl || '',
+    greetingMessage: r.greetingmessage || '', sourceApp: r.sourceapp || '', adId: r.ad_id || '',
+    campaignId: r.campaign_id || null, companyId: r.company_id || null,
+    createdAt: r.created_at, updatedAt: r.updated_at,
+  };
+}
 
 export function nToR(n) {
   return { id: n.id, user_id: n.userId, type: n.type, message: n.message, lead_id: n.leadId || null, is_read: n.read || false, created_at: n.timestamp || new Date().toISOString() };
@@ -355,7 +392,7 @@ export function sbSubscribeAll(onEvent) {
   let ws, hbTimer, reconnTimer;
   let dead = false;
   
-  const tables = ['users', 'teams', 'leads', 'activities', 'notifications', 'targets', 'companies', 'properties', 'bookings', 'hold_requests'];
+  const tables = ['users', 'teams', 'leads', 'activities', 'notifications', 'targets', 'companies', 'properties', 'bookings', 'hold_requests', 'campaigns', 'ads'];
 
   function connect() {
     try { ws = new WebSocket(wsUrl); } catch { return; }
@@ -455,7 +492,7 @@ export function rToP(r) {
 
 export async function sbLoad() {
   try {
-    const [users, teams, leads, acts, notifs, targets, properties, bookings, companies, holdReqs] = await Promise.all([
+    const [users, teams, leads, acts, notifs, targets, properties, bookings, companies, holdReqs, campaigns, ads] = await Promise.all([
       sbGet('users'), sbGet('teams'), sbGet('leads'),
       sbGet('activities?order=timestamp.asc'),
       sbGet('notifications?order=created_at.desc'),
@@ -464,6 +501,8 @@ export async function sbLoad() {
       sbGet('bookings?order=created_at.desc'),
       sbGet('companies'),
       sbGet('hold_requests?order=created_at.desc'),
+      sbGet('campaigns?order=created_at.desc'),
+      sbGet('ads?order=created_at.desc'),
     ]);
     if (!users || !users.length) return null;
     const actsMap = {};
@@ -486,6 +525,8 @@ export async function sbLoad() {
       properties: (properties || []).map(rToP),
       bookings: (bookings || []).map(rToBk),
       holdRequests: (holdReqs || []).map(rToHr),
+      campaigns: (campaigns || []).map(rToCm),
+      ads: (ads || []).map(rToAd),
     };
   } catch (e) { console.warn('Supabase load failed:', e); return null; }
 }
@@ -508,6 +549,8 @@ export function sbSave(db) {
         sbUpsert('properties', (db.properties || []).map(pToR)),
         sbUpsert('bookings', (db.bookings || []).map(bkToR)),
         sbUpsert('hold_requests', (db.holdRequests || []).map(hrToR)),
+        sbUpsert('campaigns', (db.campaigns || []).map(cmToR)),
+        sbUpsert('ads', (db.ads || []).map(adToR)),
       ]);
     } catch (e) { console.warn('Supabase save failed:', e); }
   }, 400);

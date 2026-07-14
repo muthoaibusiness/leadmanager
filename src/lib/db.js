@@ -1,6 +1,6 @@
 import { ROLES, STATUS_LABELS, SRC_LABELS } from './constants.js';
 import { uid, now_, fmtBDT, fmtDT, curMonth, startOfMonth, rlabel } from './helpers.js';
-import { sbUpdate, sbInsert, sbUpsert, sbMarkRead, sbDelete, sbDeleteLeads, lToR, rToL, uToR, rToU, tToR, rToT, aToR, rToA, nToR, rToN, tgToR, rToTg, pToR, rToP, bkToR, rToBk, cToR, rToC, hrToR, rToHr, sbUpsertNotifs } from './supabase.js';
+import { sbUpdate, sbInsert, sbUpsert, sbMarkRead, sbDelete, sbDeleteLeads, lToR, rToL, uToR, rToU, tToR, rToT, aToR, rToA, nToR, rToN, tgToR, rToTg, pToR, rToP, bkToR, rToBk, cToR, rToC, hrToR, rToHr, cmToR, rToCm, adToR, rToAd, sbUpsertNotifs } from './supabase.js';
 export const KEY = 'propcrm_v1';
 export let _DB = null;
 
@@ -9,13 +9,15 @@ export function getDB() {
     try { _DB = JSON.parse(localStorage.getItem(KEY)) || null; } catch { }
   }
   if (!_DB) {
-    _DB = { companies: [], users: [], teams: [], leads: [], targets: [], activities: {}, notifications: {}, properties: [], bookings: [], holdRequests: [] };
+    _DB = { companies: [], users: [], teams: [], leads: [], targets: [], activities: {}, notifications: {}, properties: [], bookings: [], holdRequests: [], campaigns: [], ads: [] };
   }
   if (!_DB.companies) _DB.companies = [];
   if (!_DB.teams) _DB.teams = [];
   if (!_DB.notifications) _DB.notifications = {};
   if (!_DB.properties) _DB.properties = [];
   if (!_DB.bookings) _DB.bookings = [];
+  if (!_DB.campaigns) _DB.campaigns = [];
+  if (!_DB.ads) _DB.ads = [];
   return _DB;
 }
 
@@ -119,6 +121,8 @@ export function applyRealtimeEvent(table, eventType, record, oldRecord) {
   else if (table === 'bookings') handleArrayEvent('bookings', rToBk);
   else if (table === 'targets') handleArrayEvent('targets', rToTg);
   else if (table === 'hold_requests') handleArrayEvent('holdRequests', rToHr);
+  else if (table === 'campaigns') handleArrayEvent('campaigns', rToCm);
+  else if (table === 'ads') handleArrayEvent('ads', rToAd);
   else if (table === 'activities') {
     if (eventType === 'INSERT' || eventType === 'UPDATE') {
       const act = rToA(record);
@@ -185,6 +189,7 @@ function persistLocal(db) {
     () => JSON.stringify({ ...db, activities: {} }),
     () => JSON.stringify({ ...db, activities: {}, properties: (db.properties || []).map(p => ({ ...p, images: [], media: {}, documents: [] })) }),
     () => JSON.stringify({ ...db, activities: {}, notifications: {}, properties: [], bookings: [] }),
+    () => JSON.stringify({ ...db, activities: {}, notifications: {}, properties: [], bookings: [], campaigns: [], ads: [] }),
   ];
   for (const make of attempts) {
     try { localStorage.setItem(KEY, make()); return true; }
@@ -452,6 +457,143 @@ export function deletePropertyFn(id) {
     db.deletionLog.push({ id, name: p?.name || 'project', kind: 'property', deletedBy: 'admin', deletedAt: now_() });
   });
   sbDelete('properties', [id]); // hard-delete from Supabase
+}
+
+// ── Marketing campaigns & ads ────────────────────────────────────────────────
+// A campaign carries the spend; ads hang off it; leads point at an ad/campaign.
+// "Leads generated" and cost-per-lead are always DERIVED from db.leads rather
+// than counted onto the campaign, so re-attributing a lead can never drift.
+export function getCampaigns() {
+  const cid = currentCompanyId();
+  const all = getDB().campaigns || [];
+  return cid ? all.filter(c => sameCompany(c.companyId, cid)) : all;
+}
+export function getCampaign(id) { return (getDB().campaigns || []).find(c => c.id === id); }
+
+// Ads for one campaign, or every ad in the company when campaignId is omitted.
+export function getAds(campaignId) {
+  const cid = currentCompanyId();
+  const all = getDB().ads || [];
+  const inCo = cid ? all.filter(a => sameCompany(a.companyId, cid)) : all;
+  return campaignId ? inCo.filter(a => a.campaignId === campaignId) : inCo;
+}
+export function getAd(id) { return (getDB().ads || []).find(a => a.id === id); }
+
+export function addCampaign(c) {
+  const id = 'cm' + uid();
+  const campaign = {
+    id, companyId: c.companyId || currentCompanyId(),
+    name: (c.name || '').trim(), platform: c.platform || '', cost: parseFloat(c.cost) || 0,
+    startDate: c.startDate || null, endDate: c.endDate || null, status: c.status || 'ACTIVE',
+    createdAt: now_(), updatedAt: now_(),
+  };
+  mutate(db => { db.campaigns = db.campaigns || []; db.campaigns.unshift(campaign); });
+  sbInsert('campaigns', cmToR(campaign));
+  return id;
+}
+
+export function updateCampaign(id, upd) {
+  let updated;
+  mutate(db => {
+    const i = (db.campaigns || []).findIndex(c => c.id === id);
+    if (i >= 0) {
+      db.campaigns[i] = { ...db.campaigns[i], ...upd, updatedAt: now_() };
+      updated = db.campaigns[i];
+    }
+  });
+  if (updated) sbUpdate('campaigns', id, cmToR(updated));
+}
+
+// Removing a campaign also removes its ads and clears the attribution off any
+// lead that pointed at them — otherwise those leads would keep a campaignId that
+// resolves to nothing and quietly skew every cost-per-lead figure.
+export function deleteCampaign(id) {
+  const adIds = (getDB().ads || []).filter(a => a.campaignId === id).map(a => a.id);
+  const orphaned = (getDB().leads || []).filter(l => l.campaignId === id).map(l => l.id);
+  mutate(db => {
+    db.campaigns = (db.campaigns || []).filter(c => c.id !== id);
+    db.ads = (db.ads || []).filter(a => a.campaignId !== id);
+    (db.leads || []).forEach(l => {
+      if (l.campaignId === id) { l.campaignId = null; l.adId = null; l.updatedAt = now_(); }
+    });
+  });
+  orphaned.forEach(lid => sbUpdate('leads', lid, { campaign_id: null, ad_id: null, updated_at: now_() }));
+  if (adIds.length) sbDelete('ads', adIds);
+  sbDelete('campaigns', [id]);
+}
+
+export function addAd(a) {
+  const id = 'ad' + uid();
+  const ad = {
+    id, companyId: a.companyId || currentCompanyId(), campaignId: a.campaignId || null,
+    title: (a.title || '').trim(), body: a.body || '', sourceUrl: a.sourceUrl || '',
+    greetingMessage: a.greetingMessage || '', sourceApp: a.sourceApp || '', adId: (a.adId || '').trim(),
+    createdAt: now_(), updatedAt: now_(),
+  };
+  mutate(db => { db.ads = db.ads || []; db.ads.unshift(ad); });
+  sbInsert('ads', adToR(ad));
+  return id;
+}
+
+export function updateAd(id, upd) {
+  let updated;
+  mutate(db => {
+    const i = (db.ads || []).findIndex(a => a.id === id);
+    if (i >= 0) {
+      db.ads[i] = { ...db.ads[i], ...upd, updatedAt: now_() };
+      updated = db.ads[i];
+    }
+  });
+  if (updated) sbUpdate('ads', id, adToR(updated));
+}
+
+// Leads keep their campaign attribution when a single ad goes away — only the
+// ad-level link is cleared, since the spend still belongs to the campaign.
+export function deleteAd(id) {
+  const orphaned = (getDB().leads || []).filter(l => l.adId === id).map(l => l.id);
+  mutate(db => {
+    db.ads = (db.ads || []).filter(a => a.id !== id);
+    (db.leads || []).forEach(l => { if (l.adId === id) { l.adId = null; l.updatedAt = now_(); } });
+  });
+  orphaned.forEach(lid => sbUpdate('leads', lid, { ad_id: null, updated_at: now_() }));
+  sbDelete('ads', [id]);
+}
+
+// Attribute an existing lead to an ad (and, implicitly, that ad's campaign).
+// Pass adId = null to clear the attribution entirely.
+export function attributeLead(leadId, adId, user) {
+  const ad = adId ? getAd(adId) : null;
+  if (adId && !ad) return;
+  updLead(leadId, { adId: ad ? ad.id : null, campaignId: ad ? ad.campaignId : null });
+  const campaign = ad?.campaignId ? getCampaign(ad.campaignId) : null;
+  const desc = ad
+    ? 'Attributed to ad "' + (ad.title || ad.adId || 'untitled') + '"' + (campaign ? ' · ' + campaign.name : '')
+    : 'Campaign attribution cleared';
+  addAct(leadId, { type: 'NOTE', description: desc, userId: user.id, userName: user.name, durationSeconds: 0 });
+}
+
+// Leads a campaign produced. Counts leads attributed to the campaign directly OR
+// to any of its ads, so an ad-only attribution is never missed.
+export function campaignLeads(campaignId) {
+  const adIds = new Set((getDB().ads || []).filter(a => a.campaignId === campaignId).map(a => a.id));
+  return (getDB().leads || []).filter(l => l.campaignId === campaignId || (l.adId && adIds.has(l.adId)));
+}
+export function adLeads(adId) { return (getDB().leads || []).filter(l => l.adId === adId); }
+
+// Cost / leads / cost-per-lead for one campaign. cpl is null (not 0 or Infinity)
+// when there are no leads yet, so the UI can render "—" instead of a fake number.
+export function campaignStats(campaignId) {
+  const c = getCampaign(campaignId);
+  const leads = campaignLeads(campaignId);
+  const cost = c?.cost || 0;
+  const won = leads.filter(l => l.status === 'DEAL_CLOSED_WON');
+  return {
+    cost,
+    leads: leads.length,
+    won: won.length,
+    revenue: won.reduce((s, l) => s + (l.dealValue || 0), 0),
+    cpl: leads.length ? cost / leads.length : null,
+  };
 }
 
 // ── Unit booking (seat-style) ──
@@ -1074,15 +1216,19 @@ export function createUserFn(name, email, password, phone, role, currentUser) {
   const id = 'u' + uid();
   const companyId = currentUser.companyId; // inherit the admin's company
   const stamp = now_();
+  const baseUser = { id, name, email, password: password || '1234', phone: phone || '', role, teamId: currentUser.teamId, companyId, isActive: true, createdAt: stamp, updatedAt: stamp };
+
   if (role === ROLES.TL) {
     const tid = 't' + uid();
     mutate(db => {
       db.teams = db.teams || [];
       db.teams.push({ id: tid, name: name + "'s Team", leadId: id, companyId, createdAt: stamp, updatedAt: stamp });
-      db.users.push({ id, name, email, password: password || '1234', phone: phone || '', role, teamId: tid, companyId, isActive: true, createdAt: stamp, updatedAt: stamp });
+      db.users.push({ ...baseUser, teamId: tid });
     });
   } else {
-    mutate(db => { db.users.push({ id, name, email, password: password || '1234', phone: phone || '', role, teamId: currentUser.teamId, companyId, isActive: true, createdAt: stamp, updatedAt: stamp }); });
+    mutate(db => {
+      db.users.push(role === ROLES.EXEC ? { ...baseUser, allowedFeatures: [] } : baseUser);
+    });
   }
   return id;
 }
@@ -1250,7 +1396,8 @@ export function leadByPhone(phone) {
   return getDB().leads.find(l => normalizePhone(l.phone) === n) || null;
 }
 
-export function addLeadFn(name, phone, phones, email, emails, company, source, prop, budget, profession, city, user) {
+// attribution (optional): { campaignId, adId } — marketing source of the lead.
+export function addLeadFn(name, phone, phones, email, emails, company, source, prop, budget, profession, city, user, attribution) {
   const norm = normalizePhone(phone);
   if (!norm) return null;            // never create a lead without a valid phone
   const dup = leadByPhone(norm);
@@ -1270,6 +1417,7 @@ export function addLeadFn(name, phone, phones, email, emails, company, source, p
     profession: profession || '', city: city || '',
     dealValue: 0, dealStatus: null, meetingSetBy: null, meetingSetDate: null,
     siteVisitDoneBy: null, siteVisitDoneDate: null, notes: '',
+    campaignId: attribution?.campaignId || null, adId: attribution?.adId || null,
     createdAt: now_(), updatedAt: now_(),
     callCount: 0, smsCount: 0, whatsappCount: 0, visitCount: 0,
     meetingDate: null, meetingLocation: '',

@@ -1,7 +1,7 @@
 import { useRef, useEffect, useState } from 'react';
 import Mi from '../Mi.jsx';
 import { useApp } from '../../context/AppContext.jsx';
-import { getLead, addLeadFn, updLead, addAct, leadByPhone, normalizePhone } from '../../lib/db.js';
+import { getLead, addLeadFn, updLead, addAct, leadByPhone, normalizePhone, getCampaigns, getAds } from '../../lib/db.js';
 import { SRC_LABELS, ROLES, SOURCE_OPTIONS_IA, SOURCE_OPTIONS_DEFAULT } from '../../lib/constants.js';
 import ProjectInterestPicker from '../ProjectInterestPicker.jsx';
 
@@ -28,6 +28,14 @@ export default function AddLeadModal() {
 
   const [phones, setPhones] = useState(['']);
   const [interest, setInterest] = useState(''); // multi project-interest tags (comma-joined)
+  const [campaignId, setCampaignId] = useState('');
+  const [adId, setAdId] = useState('');
+
+  // Marketing attribution. Ads are scoped to the picked campaign, so changing the
+  // campaign always clears the ad rather than leaving a mismatched pair behind.
+  const campaigns = getCampaigns();
+  const campaignAds = campaignId ? getAds(campaignId) : [];
+  const pickCampaign = (v) => { setCampaignId(v); setAdId(''); };
 
   useEffect(() => {
     if (!isOpen) return;
@@ -43,6 +51,8 @@ export default function AddLeadModal() {
       cityRef.current.value = l.city || '';
       emailRef.current.value = l.email || '';
       setPhones(l.phones?.length ? l.phones : [l.phone || '']);
+      setCampaignId(l.campaignId || '');
+      setAdId(l.adId || '');
     } else {
       nameRef.current.value = '';
       companyRef.current.value = '';
@@ -53,6 +63,8 @@ export default function AddLeadModal() {
       cityRef.current.value = '';
       emailRef.current.value = '';
       setPhones(['']);
+      setCampaignId('');
+      setAdId('');
     }
   }, [isOpen, isEdit, panLead]);
 
@@ -78,6 +90,8 @@ export default function AddLeadModal() {
     const budget = budgetRef.current.value;
     const profession = profRef.current.value.trim();
     const city = cityRef.current.value.trim();
+    // An ad is only meaningful under its campaign; drop it if no campaign is set.
+    const attribution = { campaignId: campaignId || null, adId: campaignId ? (adId || null) : null };
 
     if (isEdit && panLead) {
       // Reject if any of the (possibly changed) numbers already belong to a DIFFERENT lead.
@@ -98,7 +112,11 @@ export default function AddLeadModal() {
       if ((old.budget || 0) !== (parseFloat(budget) || 0)) changes.push(`Budget: ${old.budget || 0} → ${parseFloat(budget) || 0}`);
       if ((old.profession || '') !== profession) changes.push(`Profession: ${old.profession || '—'} → ${profession || '—'}`);
       if ((old.city || '') !== city) changes.push(`Location: ${old.city || '—'} → ${city || '—'}`);
-      updLead(panLead, { name, phone, phones: cleanPhones, email, company: company || '—', source, propertyInterest: prop, budget: parseFloat(budget) || 0, profession, city });
+      if ((old.campaignId || null) !== attribution.campaignId) {
+        const nameOf = (id) => campaigns.find(c => c.id === id)?.name || '—';
+        changes.push(`Campaign: ${old.campaignId ? nameOf(old.campaignId) : '—'} → ${attribution.campaignId ? nameOf(attribution.campaignId) : '—'}`);
+      }
+      updLead(panLead, { name, phone, phones: cleanPhones, email, company: company || '—', source, propertyInterest: prop, budget: parseFloat(budget) || 0, profession, city, ...attribution });
       if (changes.length > 0) addAct(panLead, { type: 'NOTE', description: 'Lead updated — ' + changes.join(', '), userId: user.id, userName: user.name, durationSeconds: 0 });
       closeModal(); refreshDB(); showToast('Lead updated', 'ok');
     } else {
@@ -114,14 +132,17 @@ export default function AddLeadModal() {
         }
         // number already exists → update it, and alert which agent owns it
         const owner = dup.assignedToName || '—';
-        updLead(dup.id, { name, phones: cleanPhones, email, company: company || '—', source, propertyInterest: prop, budget: parseFloat(budget) || 0, profession, city });
+        // Keep the original attribution unless this submission names a campaign —
+        // the first ad that produced the lead is the one that earned it.
+        const dupAttr = attribution.campaignId ? attribution : {};
+        updLead(dup.id, { name, phones: cleanPhones, email, company: company || '—', source, propertyInterest: prop, budget: parseFloat(budget) || 0, profession, city, ...dupAttr });
         addAct(dup.id, { type: 'NOTE', description: `Re-submitted ${phone} — record updated (already handled by ${owner})`, userId: user.id, userName: user.name, durationSeconds: 0 });
         closeModal(); refreshDB();
         showToast(`Number ${phone} already exists — handled by ${owner}. Record updated.`, 'warn');
         setTimeout(() => setPanLead(dup.id), 150);
         return;
       }
-      const id = addLeadFn(name, phone, cleanPhones, email, [], company, source, prop, budget, profession, city, user);
+      const id = addLeadFn(name, phone, cleanPhones, email, [], company, source, prop, budget, profession, city, user, attribution);
       closeModal(); refreshDB(); showToast('Lead added', 'ok');
       setTimeout(() => setPanLead(id), 150);
     }
@@ -206,6 +227,26 @@ export default function AddLeadModal() {
             <ProjectInterestPicker value={interest} onChange={setInterest} />
           </div>
           <div className="fg"><label>Budget (BDT)</label><input className="fi" ref={budgetRef} type="number" min="0" placeholder="e.g. 850000" /></div>
+
+          {/* Marketing attribution — drives cost per lead on the Campaigns view. */}
+          {campaigns.length > 0 && (
+            <div className="fg-row">
+              <div className="fg">
+                <label>Campaign</label>
+                <select className="fi" value={campaignId} onChange={e => pickCampaign(e.target.value)}>
+                  <option value="">— none —</option>
+                  {campaigns.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                </select>
+              </div>
+              <div className="fg">
+                <label>Ad</label>
+                <select className="fi" value={adId} onChange={e => setAdId(e.target.value)} disabled={!campaignId || !campaignAds.length}>
+                  <option value="">{!campaignId ? '— pick a campaign —' : campaignAds.length ? '— none —' : '— no ads yet —'}</option>
+                  {campaignAds.map(a => <option key={a.id} value={a.id}>{a.title || a.adId || 'Untitled ad'}</option>)}
+                </select>
+              </div>
+            </div>
+          )}
         </div>
         <div className="m-ft">
           <button className="btn btn-g" onClick={closeModal}>Cancel</button>
