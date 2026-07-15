@@ -202,8 +202,11 @@ function PageHero() {
     actions.push(<button key="import" className="btn btn-g" onClick={() => openModal('import')}><Mi>upload</Mi>Import</button>);
   }
   // Duplicate checker button removed — dedup runs automatically on load/import.
-  if (view === 'team' && user.role === ROLES.TL) actions.push(<button key="add-agent" className="btn btn-p" onClick={() => { setCreateUserRoles([ROLES.IA, ROLES.MA]); openModal('create-user'); }}><Mi>person_add</Mi>Add Agent</button>);
-  if (view === 'users' && user.role === ROLES.MGMT) actions.push(<button key="add-user" className="btn btn-p" onClick={() => { setCreateUserRoles([ROLES.TL, ROLES.EXEC]); openModal('create-user'); }}><Mi>person_add</Mi>Add User</button>);
+  // Executives are created by a Team Lead, alongside the two agent roles, so they land
+  // in that Team Lead's team (createUserFn stamps the creator's teamId). Management only
+  // creates Team Leads, each of which starts a team of its own.
+  if (view === 'team' && user.role === ROLES.TL) actions.push(<button key="add-agent" className="btn btn-p" onClick={() => { setCreateUserRoles([ROLES.IA, ROLES.MA, ROLES.EXEC]); openModal('create-user'); }}><Mi>person_add</Mi>Add Agent</button>);
+  if (view === 'users' && user.role === ROLES.MGMT) actions.push(<button key="add-user" className="btn btn-p" onClick={() => { setCreateUserRoles([ROLES.TL]); openModal('create-user'); }}><Mi>person_add</Mi>Add User</button>);
   if (view === 'properties' && user.role === ROLES.MGMT) actions.push(<button key="add-prop" className="btn btn-p" onClick={() => { const nid = createProject({ name: '', companyId: user.companyId }); setConsoleAdmin(true); setPropSel(nid); openModal('project-console'); }}><Mi>add</Mi>Add Property</button>);
 
   return (

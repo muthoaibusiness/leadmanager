@@ -1258,23 +1258,27 @@ export function leadByPhone(phone) {
   return getDB().leads.find(l => normalizePhone(l.phone) === n) || null;
 }
 
-export function addLeadFn(name, phone, phones, email, emails, company, source, prop, budget, profession, city, user) {
+export function addLeadFn(name, phone, phones, email, emails, company, source, prop, profession, city, user) {
   const norm = normalizePhone(phone);
   if (!norm) return null;            // never create a lead without a valid phone
   const dup = leadByPhone(norm);
   if (dup) return dup.id;            // never create a duplicate-phone lead — return the existing one
   phone = norm;
-  phones = [norm];
+  // Keep every valid number the caller supplied, primary first and de-duped.
+  // Phone is immutable once the lead exists, so creation is the only chance to
+  // record secondaries — dropping them here would lose them for good.
+  phones = [...new Set([norm, ...(phones || []).map(p => normalizePhone(p)).filter(Boolean)])];
   const id = 'l' + uid();
   const lead = {
     id, name,
-    phone, phones: phones || [phone],
+    phone, phones,
     email: email || '', emails: emails || (email ? [email] : []),
     company: company || '—', source, status: 'NEW',
     companyId: user.companyId, // tenant the lead belongs to
     assignedTo: user.id, assignedToName: user.name, assignedRole: user.role,
     teamId: user.teamId || 't1', previousAssignees: [],
-    propertyInterest: prop || '', budget: parseFloat(budget) || 0,
+    // budget is no longer captured in the lead UI; CSV import still sets it.
+    propertyInterest: prop || '', budget: 0,
     profession: profession || '', city: city || '',
     dealValue: 0, dealStatus: null, meetingSetBy: null, meetingSetDate: null,
     siteVisitDoneBy: null, siteVisitDoneDate: null, notes: '',

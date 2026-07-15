@@ -7,6 +7,13 @@ import SearchBox from '../SearchBox.jsx';
 
 const FU_OVERLAY = ['NEW', 'CONTACTED', 'INTERESTED'];
 
+// A lead's projects, as a list. `propertyInterest` is a single string holding one or
+// more project names, and the writers disagree on the separator: ProjectInterestPicker
+// and schedVisit join with ', ', CSV import joins with ' · '. Split on both. Matching
+// whole names (rather than a substring of the raw string) keeps "Lake" from also
+// selecting every "Lake View" lead.
+const projectsOf = (l) => (l.propertyInterest || '').split(/[,·]/).map(s => s.trim()).filter(Boolean);
+
 export default function LeadsView() {
   const {
     user, search, statusFilter, setStatusFilter,
@@ -20,6 +27,7 @@ export default function LeadsView() {
   
   const [tab, setTab] = useState('mine');
   const [agentFilter, setAgentFilter] = useState('ALL');
+  const [projectFilter, setProjectFilter] = useState('ALL');
 
   let leads = getLeads(user, { involved: true }); // include forwarded leads so status filters (e.g. Meeting Set) show them
   if (teamFilter) {
@@ -42,7 +50,25 @@ export default function LeadsView() {
     leads = leads.filter(l => l.assignedTo === agentFilter);
   }
 
+  // Project options come from the leads themselves, not the project catalog: the
+  // interest picker accepts free text and CSV import brings its own names, so a
+  // catalog-driven list would both miss real values and offer dead ones. Built from
+  // `leads` (before the filters below) so picking a project doesn't collapse the list
+  // to the one option just chosen. Deduped case-insensitively to match how the filter
+  // compares — otherwise "Sky Villa" and "sky villa" list twice and select the same
+  // leads — keeping the first spelling seen.
+  const projectSeen = new Map();
+  for (const p of leads.flatMap(projectsOf)) {
+    const k = p.toLowerCase();
+    if (!projectSeen.has(k)) projectSeen.set(k, p);
+  }
+  const projectOptions = [...projectSeen.values()].sort((a, b) => a.localeCompare(b));
+  // Changing tab/team can retire the chosen project; fall back rather than leave the
+  // select rendering blank on a value that is no longer an option.
+  const activeProject = projectOptions.includes(projectFilter) ? projectFilter : 'ALL';
+
   let disp = leads;
+  if (activeProject !== 'ALL') disp = disp.filter(l => projectsOf(l).some(p => p.toLowerCase() === activeProject.toLowerCase()));
   if (statusFilter === 'FOLLOW_UP') disp = disp.filter(l => l.nextFollowup && FU_OVERLAY.includes(l.status));
   else if (statusFilter === 'FORWARDED') disp = disp.filter(l => (l.previousAssignees || []).length > 0);
   else if (statusFilter !== 'ALL') disp = disp.filter(l => l.status === statusFilter);
@@ -79,6 +105,17 @@ export default function LeadsView() {
           <option value="FORWARDED">Forwarded</option>
           {Object.entries(STATUS_LABELS).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
         </select>
+        {projectOptions.length > 0 && (
+          <select
+            className="fsel"
+            value={activeProject}
+            onChange={e => setProjectFilter(e.target.value)}
+            title="Show leads interested in a specific project"
+          >
+            <option value="ALL">All projects</option>
+            {projectOptions.map(p => <option key={p} value={p}>{p}</option>)}
+          </select>
+        )}
         {isMgmt && (
           <select
             className="fsel fsel-team"

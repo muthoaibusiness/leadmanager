@@ -16,8 +16,9 @@ function LeadInfo({ l }) {
   const phones = (l.phones?.length ? l.phones : [l.phone]).filter(Boolean);
   const emails = (l.emails?.length ? l.emails : l.email ? [l.email] : []).filter(Boolean);
 
-  // Profile completeness (Initial Agent) — 7 optional fields; Name + Phone are
-  // always required so they don't count.
+  // Profile completeness (Initial Agent) — 6 optional fields; Name + Phone are
+  // always required so they don't count. Every check must map to something the
+  // agent can actually fill in, or the meter can never reach Complete.
   const profChecks = [
     emails.length > 0,                       // Email
     !!(l.company && l.company !== '—'),      // Company
@@ -25,12 +26,11 @@ function LeadInfo({ l }) {
     !!l.source,                              // Source
     !!l.city,                                // Customer Location
     !!l.propertyInterest,                    // Project Interest
-    (l.budget || 0) > 0,                     // Budget
   ];
   const profFilled = profChecks.filter(Boolean).length;
-  const prof = profFilled >= 7 ? { color: '#22C55E', label: 'Complete' }
-    : profFilled >= 5 ? { color: '#EAB308', label: 'Good' }
-    : profFilled >= 3 ? { color: '#F59E0B', label: 'Partial' }
+  const prof = profFilled >= 6 ? { color: '#22C55E', label: 'Complete' }
+    : profFilled >= 4 ? { color: '#EAB308', label: 'Good' }
+    : profFilled >= 2 ? { color: '#F59E0B', label: 'Partial' }
     : { color: '#EF4444', label: 'Incomplete' };
 
   // Eyebrow = source • company (the small kicker line above the big name).
@@ -39,7 +39,7 @@ function LeadInfo({ l }) {
 
   // Spec sheet — label/value rows, shown only when there's a value.
   const specs = [];
-  if (l.propertyInterest) specs.push(['Property', l.propertyInterest + (l.budget ? ' · ' + fmtBDT(l.budget) : '')]);
+  if (l.propertyInterest) specs.push(['Property', l.propertyInterest]);
   if (l.dealValue > 0) specs.push(['Deal value', fmtBDT(l.dealValue)]);
   // Meeting hand-off info set by the Initial Agent (shown to the Meeting Agent).
   if (l.meetingAt) specs.push(['Meeting', (l.meetingType === 'OFFLINE' ? 'Offline' : 'Online') + ' · ' + fmtDateTimeAP(l.meetingAt)]);

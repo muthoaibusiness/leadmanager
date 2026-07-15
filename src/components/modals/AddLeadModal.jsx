@@ -16,18 +16,24 @@ export default function AddLeadModal() {
   const defaultSource = sourceOpts[0];
   // Only Admin / Management may edit existing phone numbers. For everyone
   // else (Team Lead, Initial Agent, Meeting Agent) phones are read-only when editing.
-  const canEditPhone = !isEdit || [ROLES.MGMT, ROLES.MASTER].includes(user?.role);
+  // Phone is the lead's identity — it is the dedup key every import and manual add
+  // matches on — so it is captured at creation and locked afterwards for every role,
+  // Admin and Master included. There is no override.
+  const canEditPhone = !isEdit;
+  // Source is stamped when the lead is created and is never editable afterwards —
+  // no role override, so reporting by source stays trustworthy.
+  const canEditSource = !isEdit;
 
   const nameRef = useRef();
   const companyRef = useRef();
-  const sourceRef = useRef();
-  const budgetRef = useRef();
   const profRef = useRef();
   const cityRef = useRef();
   const emailRef = useRef();
 
   const [phones, setPhones] = useState(['']);
   const [interest, setInterest] = useState(''); // multi project-interest tags (comma-joined)
+  // State, not a ref: the locked view renders no <select> for a ref to hang off.
+  const [source, setSource] = useState(defaultSource);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -36,9 +42,8 @@ export default function AddLeadModal() {
       if (!l) return;
       nameRef.current.value = l.name || '';
       companyRef.current.value = l.company && l.company !== '—' ? l.company : '';
-      sourceRef.current.value = l.source || defaultSource;
+      setSource(l.source || defaultSource);
       setInterest(l.propertyInterest || '');
-      budgetRef.current.value = l.budget || '';
       profRef.current.value = l.profession || '';
       cityRef.current.value = l.city || '';
       emailRef.current.value = l.email || '';
@@ -46,9 +51,8 @@ export default function AddLeadModal() {
     } else {
       nameRef.current.value = '';
       companyRef.current.value = '';
-      sourceRef.current.value = defaultSource;
+      setSource(defaultSource);
       setInterest('');
-      budgetRef.current.value = '';
       profRef.current.value = '';
       cityRef.current.value = '';
       emailRef.current.value = '';
@@ -65,40 +69,35 @@ export default function AddLeadModal() {
 
   const submit = () => {
     const name = nameRef.current.value.trim();
-    // require + normalize phone(s) to country-code form (+880…)
     const cleanPhones = phones.map(p => normalizePhone(p)).filter(Boolean);
     if (!name) { showToast('Name is required', 'err'); return; }
-    if (!cleanPhones.length) { showToast('A valid phone number is required (e.g. +8801XXXXXXXXX)', 'err'); return; }
+    // Only enforced where phones can actually be entered. On edit they are locked and
+    // echoed back from the lead, so validating them would let one legacy bad number
+    // block every other edit to that lead.
+    if (canEditPhone && !cleanPhones.length) { showToast('A valid phone number is required (e.g. +8801XXXXXXXXX)', 'err'); return; }
 
     const phone = cleanPhones[0];
     const email = emailRef.current.value.trim();
     const company = companyRef.current.value.trim();
-    const source = sourceRef.current.value;
     const prop = interest.trim();
-    const budget = budgetRef.current.value;
     const profession = profRef.current.value.trim();
     const city = cityRef.current.value.trim();
 
     if (isEdit && panLead) {
-      // Reject if any of the (possibly changed) numbers already belong to a DIFFERENT lead.
-      let clash = null;
-      for (const ph of cleanPhones) { const c = leadByPhone(ph); if (c && c.id !== panLead) { clash = c; break; } }
-      if (clash) {
-        showToast(`Number already exists on lead ${leadCode(clash)} (${clash.assignedToName || '—'}). Change rejected — contact your admin to swap.`, 'err');
-        return;
-      }
+      // No duplicate-phone check here: phones are locked on edit, so they cannot clash
+      // with another lead. Running it anyway would let a pre-existing duplicate
+      // elsewhere in the DB block unrelated edits (e.g. fixing a typo in the name).
       const old = getLead(panLead);
       const changes = [];
       if (old.name !== name) changes.push(`Name: "${old.name}" → "${name}"`);
-      if (old.phone !== phone) changes.push(`Phone: ${old.phone} → ${phone}`);
       if ((old.email || '') !== email) changes.push(`Email: ${old.email || '—'} → ${email || '—'}`);
       if ((old.company || '—') !== (company || '—')) changes.push(`Company: ${old.company || '—'} → ${company || '—'}`);
-      if (old.source !== source) changes.push(`Source: ${SRC_LABELS[old.source] || old.source} → ${SRC_LABELS[source] || source}`);
       if ((old.propertyInterest || '') !== prop) changes.push(`Property: ${old.propertyInterest || '—'} → ${prop || '—'}`);
-      if ((old.budget || 0) !== (parseFloat(budget) || 0)) changes.push(`Budget: ${old.budget || 0} → ${parseFloat(budget) || 0}`);
       if ((old.profession || '') !== profession) changes.push(`Profession: ${old.profession || '—'} → ${profession || '—'}`);
       if ((old.city || '') !== city) changes.push(`Location: ${old.city || '—'} → ${city || '—'}`);
-      updLead(panLead, { name, phone, phones: cleanPhones, email, company: company || '—', source, propertyInterest: prop, budget: parseFloat(budget) || 0, profession, city });
+      // `phone`, `phones` and `source` are deliberately absent: all three are locked on
+      // edit, so they are never written back.
+      updLead(panLead, { name, email, company: company || '—', propertyInterest: prop, profession, city });
       if (changes.length > 0) addAct(panLead, { type: 'NOTE', description: 'Lead updated — ' + changes.join(', '), userId: user.id, userName: user.name, durationSeconds: 0 });
       closeModal(); refreshDB(); showToast('Lead updated', 'ok');
     } else {
@@ -114,14 +113,20 @@ export default function AddLeadModal() {
         }
         // number already exists → update it, and alert which agent owns it
         const owner = dup.assignedToName || '—';
-        updLead(dup.id, { name, phones: cleanPhones, email, company: company || '—', source, propertyInterest: prop, budget: parseFloat(budget) || 0, profession, city });
+        // `phones` and `source` are deliberately absent. This branch is reached from the
+        // Add form, where both fields are editable, so writing them here would be a way
+        // to mutate a locked field on an existing lead just by re-submitting its number.
+        // Writing `phones` was also destructive: it replaced the whole array, so a
+        // re-submit carrying only the primary silently dropped the lead's secondaries.
+        // Source stays put too — the channel that first produced the lead earned it.
+        updLead(dup.id, { name, email, company: company || '—', propertyInterest: prop, profession, city });
         addAct(dup.id, { type: 'NOTE', description: `Re-submitted ${phone} — record updated (already handled by ${owner})`, userId: user.id, userName: user.name, durationSeconds: 0 });
         closeModal(); refreshDB();
         showToast(`Number ${phone} already exists — handled by ${owner}. Record updated.`, 'warn');
         setTimeout(() => setPanLead(dup.id), 150);
         return;
       }
-      const id = addLeadFn(name, phone, cleanPhones, email, [], company, source, prop, budget, profession, city, user);
+      const id = addLeadFn(name, phone, cleanPhones, email, [], company, source, prop, profession, city, user);
       closeModal(); refreshDB(); showToast('Lead added', 'ok');
       setTimeout(() => setPanLead(id), 150);
     }
@@ -140,7 +145,7 @@ export default function AddLeadModal() {
             <input className="fi" ref={nameRef} type="text" placeholder="e.g. Rahim Ahmed" />
           </div>
 
-          {/* Phone numbers — editable only for Admin / Management / Team Lead */}
+          {/* Phone numbers — entered at creation, read-only once the lead exists. */}
           <div className="fg">
             <label style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
               Phone Number(s){canEditPhone ? ' *' : ''}
@@ -194,10 +199,19 @@ export default function AddLeadModal() {
             <div className="fg"><label>Profession</label><input className="fi" ref={profRef} type="text" placeholder="e.g. Business Owner" /></div>
           </div>
           <div className="fg-row">
-            <div className="fg"><label>Source</label>
-              <select className="fi" ref={sourceRef} defaultValue={defaultSource}>
-                {sourceOpts.map(s => <option key={s} value={s}>{SRC_LABELS[s] || s}</option>)}
-              </select>
+            <div className="fg">
+              <label style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                Source
+                {!canEditSource && <Mi style={{ fontSize: '14px', color: 'var(--t3)' }}>lock</Mi>}
+              </label>
+              {canEditSource ? (
+                <select className="fi" value={source} onChange={e => setSource(e.target.value)}>
+                  {sourceOpts.map(s => <option key={s} value={s}>{SRC_LABELS[s] || s}</option>)}
+                </select>
+              ) : (
+                // Read-only: source is stamped at creation and never changes.
+                <div className="ro-value"><Mi className="ro-lock">lock</Mi>{SRC_LABELS[source] || source || '—'}</div>
+              )}
             </div>
             <div className="fg"><label>Customer Location</label><input className="fi" ref={cityRef} type="text" placeholder="e.g. Dhaka, Chattogram" /></div>
           </div>
@@ -205,7 +219,6 @@ export default function AddLeadModal() {
             <label>Project Interest <span className="fg-hint">— add one or more</span></label>
             <ProjectInterestPicker value={interest} onChange={setInterest} />
           </div>
-          <div className="fg"><label>Budget (BDT)</label><input className="fi" ref={budgetRef} type="number" min="0" placeholder="e.g. 850000" /></div>
         </div>
         <div className="m-ft">
           <button className="btn btn-g" onClick={closeModal}>Cancel</button>

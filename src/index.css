@@ -11504,6 +11504,10 @@ textarea.fi {
 .ro-phone { font-size: 14px; font-weight: 600; color: var(--t1); padding: 9px 11px; background: var(--surf2); border: 1px solid var(--bd); border-radius: var(--r-sm); letter-spacing: .2px; }
 .ro-phone { display: flex; align-items: center; gap: 8px; }
 .ro-phone .ro-lock { font-size: 15px; color: var(--t3); flex-shrink: 0; }
+/* Locked single-value field (Source). Mirrors .fi metrics — padding, border width
+   and radius — so it lines up with the editable input beside it in a .fg-row. */
+.ro-value { display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 600; color: var(--t1); padding: 10px 12px; background: var(--surf2); border: 1.5px solid var(--bd); border-radius: var(--r); letter-spacing: .2px; }
+.ro-value .ro-lock { font-size: 15px; color: var(--t3); flex-shrink: 0; }
 
 /* Profile completeness bar (Initial Agent, lead detail) */
 .ld-prof { margin: 2px 0 4px; }

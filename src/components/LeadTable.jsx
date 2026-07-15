@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import Mi from './Mi.jsx';
 import Pagination from './Pagination.jsx';
-import { fmtDateTimeAP, fmtBDT, leadDisplayStatus } from '../lib/helpers.js';
+import { fmtDateTimeAP, leadDisplayStatus } from '../lib/helpers.js';
 import { SRC_LABELS, STATUS_LABELS, ROLES } from '../lib/constants.js';
 import { useApp } from '../context/AppContext.jsx';
 import { bulkDeleteLeads } from '../lib/db.js';
@@ -113,7 +113,6 @@ export default function LeadTable({ leads }) {
             <div className="lt-cell lt-cell-prop">
               <div style={{ minWidth: 0 }}>
                 <div className="lt-prop">{l.propertyInterest || '—'}</div>
-                <div className="lt-sub">{l.budget ? fmtBDT(l.budget) : ''}</div>
               </div>
             </div>
             <div className="lt-cell lt-cell-status">
