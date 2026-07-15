@@ -3,12 +3,7 @@
 //   Initial Agent  → sourcing + first contact (calls, qualify, hand to Meeting Agent)
 //   Meeting Agent  → meetings + site visits (schedule, run, hand to Team Lead)
 //   Team Lead      → negotiation + closing (offers, deals won/lost, revenue)
-import { ROLES } from './constants.js';
-
-const CLOSED_LOST = ['DEAL_CLOSED_LOST', 'NOT_INTERESTED'];
-const PAST_CONTACT = ['CONTACTED', 'INTERESTED', 'MEETING_SET', 'SITE_VISIT_SCHEDULED', 'SITE_VISIT_DONE', 'NEGOTIATING', 'DEAL_CLOSED_WON', 'DEAL_CLOSED_LOST'];
-const PAST_QUALIFY = ['INTERESTED', 'MEETING_SET', 'SITE_VISIT_SCHEDULED', 'SITE_VISIT_DONE', 'NEGOTIATING', 'DEAL_CLOSED_WON', 'DEAL_CLOSED_LOST'];
-const REACHED_MEETING = ['MEETING_SET', 'SITE_VISIT_SCHEDULED', 'SITE_VISIT_DONE', 'NEGOTIATING', 'DEAL_CLOSED_WON', 'DEAL_CLOSED_LOST'];
+import { ROLES, CLOSED_LOST, PAST_CONTACT, PAST_QUALIFY, REACHED_MEETING } from './constants.js';
 
 const ts = (s) => (s ? new Date(s).getTime() : 0);
 const firstOwner = (l) => (l.previousAssignees && l.previousAssignees[0]) || l.assignedTo;

@@ -6,9 +6,11 @@ import KpiSheet from '../KpiSheet.jsx';
 import TargetCard from './TargetCard.jsx';
 import DashGreeting from './DashGreeting.jsx';
 import SuccessGauge from '../SuccessGauge.jsx';
+import ConversionPanel from './ConversionPanel.jsx';
 import Mi from '../Mi.jsx';
-import { scoreLead, scoreLabel } from '../../lib/helpers.js';
-import { STATUS_LABELS, SRC_LABELS } from '../../lib/constants.js';
+import { scoreLead, scoreLabel, periodLabel } from '../../lib/helpers.js';
+import { STATUS_LABELS, SRC_LABELS, PAST_CONTACT } from '../../lib/constants.js';
+import { panelConfigFor } from '../../lib/funnel.js';
 
 const CLOSED = ['DEAL_CLOSED_WON', 'DEAL_CLOSED_LOST', 'NOT_INTERESTED'];
 
@@ -59,8 +61,17 @@ export default function InitialAgentDash() {
       .sort((a, b) => new Date(a.nextFollowup) - new Date(b.nextFollowup));
 
     // ── Totals for the selected date range (leads received in the period) ──
-    const periodLeads = getLeads(user, { involved: true }).filter(l => inWin(l.createdAt));
-    const connectedLeads = periodLeads.filter(l => (l.callCount || 0) > 0 || l.status !== 'NEW');
+    // Unfiltered — the conversion panel applies its own cohort filter, and its
+    // trend is dated by event so it must see leads created before the window.
+    const involvedLeads = getLeads(user, { involved: true });
+    const periodLeads = involvedLeads.filter(l => inWin(l.createdAt));
+    // Reached CONTACTED or beyond, or we have talk-time proving a real conversation.
+    // NOT callCount > 0: logNoAnswer increments that on a FAILED attempt, so the old
+    // rule counted 7 unanswered calls as "connected".
+    const connectedLeads = periodLeads.filter(l =>
+      PAST_CONTACT.includes(l.status) ||
+      (acts[l.id] || []).some(a => a.type === 'CALL' && (a.durationSeconds || 0) > 0)
+    );
     const interestedLeads = periodLeads.filter(l => l.status === 'INTERESTED');
     const notInterestedLeads = periodLeads.filter(l => l.status === 'NOT_INTERESTED');
     // Qualification conversion: of the leads we connected with, how many turned interested.
@@ -75,19 +86,15 @@ export default function InitialAgentDash() {
     const followPending = active.filter(l => l.nextFollowup).sort((a, b) => new Date(a.nextFollowup) - new Date(b.nextFollowup));
 
     const totals = { leads: periodLeads.length, connected: connectedLeads.length, interested: interestedLeads.length, notInterested: notInterestedLeads.length, conversionRate };
-    const sets = { leads: periodLeads, connected: connectedLeads, interested: interestedLeads, notInterested: notInterestedLeads, untouched: untouchedByAge, meetings: meetingLeads, followPending };
+    const sets = { leads: periodLeads, involved: involvedLeads, connected: connectedLeads, interested: interestedLeads, notInterested: notInterestedLeads, untouched: untouchedByAge, meetings: meetingLeads, followPending };
 
     return { now, todayStart, queue, untouched: untouchedByAge, oldestUntouchedAt, followPending, meetingsToday, active, followToday, totals, sets };
   }, [leads, db, user.id, dbVersion, dateRange]);
 
   const QUEUE_CAP = 8;
   const shown = view.queue.slice(0, QUEUE_CAP);
-  const PERIOD_LABELS = {
-    today: 'today', yesterday: 'yesterday', last7: 'last 7 days', last28: 'last 28 days',
-    last30: 'last 30 days', thisMonth: 'this month', lastMonth: 'last month', last90: 'last 90 days',
-    qtd: 'quarter to date', thisYear: 'this year', lastYear: 'last year', allTime: 'all time', custom: 'selected range',
-  };
-  const periodSub = PERIOD_LABELS[dateRange?.preset] || (dateRange?.range ? 'selected range' : 'all time');
+  const periodSub = periodLabel(dateRange);
+  const panelCfg = panelConfigFor(user.role);
 
   return (
     <>
@@ -118,6 +125,16 @@ export default function InitialAgentDash() {
         <StatCard val={view.followPending.length} label="Follow-Up Pending" tone={view.followPending.length ? 'accent' : ''} sub="scheduled in pipeline" onClick={() => setDetail({ title: 'Follow-Up Pending', leads: view.followPending })} />
         <StatCard val={view.meetingsToday} label="Meetings Set" tone={view.meetingsToday ? 'good' : ''} sub={periodSub} onClick={() => setDetail({ title: 'Meetings Set', leads: view.sets.meetings })} />
       </div>
+
+      {/* Where leads drop off, and the last 30 days of stage events */}
+      <ConversionPanel
+        leads={view.sets.involved}
+        activities={db.activities || {}}
+        dateRange={dateRange}
+        stages={panelCfg.stages}
+        seriesKeys={panelCfg.seriesKeys}
+        title={panelCfg.title}
+      />
 
       {/* Follow-ups due today — task list */}
       <div className="iad-fu">

@@ -110,6 +110,17 @@ export function curMonth() {
   return d.getFullYear() + '-' + (d.getMonth() + 1).toString().padStart(2, '0');
 }
 
+// Human label for the global date filter, e.g. "last 7 days" — used as a card
+// sub so a filtered number always says what period it covers.
+const PERIOD_LABELS = {
+  today: 'today', yesterday: 'yesterday', last7: 'last 7 days', last28: 'last 28 days',
+  last30: 'last 30 days', thisMonth: 'this month', lastMonth: 'last month', last90: 'last 90 days',
+  qtd: 'quarter to date', thisYear: 'this year', lastYear: 'last year', allTime: 'all time', custom: 'selected range',
+};
+export function periodLabel(dateRange) {
+  return PERIOD_LABELS[dateRange?.preset] || (dateRange?.range ? 'selected range' : 'all time');
+}
+
 export function rlabel(r) {
   const m = {
     INITIAL_AGENT: 'Initial Agent',

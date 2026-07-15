@@ -11,7 +11,6 @@ import { canSee, ROLES } from '../lib/constants.js';
 const SECTIONS = [
   { label: null, keys: ['dashboard', 'companies', 'reports', 'agentperf', 'requests'] },
   { label: 'Sales Team', keys: ['leads', 'calendar', 'properties'] },
-  { label: 'Marketing', keys: ['campaigns'] },
   { label: 'Admin', keys: ['team', 'users', 'accounts', 'carpool'] },
 ];
 
@@ -37,7 +36,6 @@ export default function Sidebar() {
     agentperf: { ico: 'leaderboard', lbl: 'Performance' },
     requests: { ico: 'inbox', lbl: 'Requests' },
     properties: { ico: 'folder', lbl: 'Projects' },
-    campaigns: { ico: 'campaign', lbl: 'Campaigns' },
     team: { ico: 'groups', lbl: 'Team' },
     users: { ico: 'manage_accounts', lbl: 'Users' },
     accounts: { ico: 'group_add', lbl: 'Accounts' },

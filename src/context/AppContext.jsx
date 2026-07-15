@@ -19,9 +19,6 @@ export function AppProvider({ children }) {
   const [propSel, setPropSel] = useState(null);   // property id for detail view
   const [propEdit, setPropEdit] = useState(null);  // property obj for edit, {} for new
   const [bookSel, setBookSel] = useState(null);    // booking id for detail modal
-  const [campSel, setCampSel] = useState(null);    // campaign id being drilled into (ads list)
-  const [campEdit, setCampEdit] = useState(null);  // campaign obj for edit, {} for new
-  const [adEdit, setAdEdit] = useState(null);      // ad obj for edit, {} for new
   const [createUserRoles, setCreateUserRoles] = useState([]);
   const [editUser, setEditUser] = useState(null);   // agent obj for edit-agent modal
   const [deleteUserId, setDeleteUserId] = useState(null);
@@ -73,7 +70,6 @@ export function AppProvider({ children }) {
     setSearch('');
     setAgentFilter(null);
     setTeamFilter(null);
-    setCampSel(null);
     setSidebarOpen(false);
   }, []);
 
@@ -95,9 +91,6 @@ export function AppProvider({ children }) {
     propSel, setPropSel,
     propEdit, setPropEdit,
     bookSel, setBookSel,
-    campSel, setCampSel,
-    campEdit, setCampEdit,
-    adEdit, setAdEdit,
     createUserRoles, setCreateUserRoles,
     editUser, setEditUser,
     deleteUserId, setDeleteUserId,

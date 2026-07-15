@@ -6285,6 +6285,149 @@ textarea.fi {
   flex-shrink: 0
 }
 
+/* ── TREND CHART (multi-series line + hover tooltip) ──
+   The wrapper is pinned to the SVG's aspect ratio so "meet" letterboxes by
+   exactly zero — that's what lets the tooltip be positioned as a % of the
+   wrapper and still line up with the plotted point. */
+.chart-trend {
+  display: flex;
+  flex-direction: column;
+  gap: 8px
+}
+
+.ct-plot {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 560 / 200
+}
+
+.ct-svg {
+  display: block;
+  width: 100%;
+  height: 100%
+}
+
+.ct-grid {
+  stroke: var(--bd);
+  stroke-width: 1
+}
+
+.ct-axis {
+  font-size: 9px;
+  font-weight: 600;
+  fill: var(--t3)
+}
+
+.ct-line {
+  fill: none;
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+  vector-effect: non-scaling-stroke
+}
+
+.ct-dot {
+  r: 3
+}
+
+.ct-vline {
+  stroke: var(--t3);
+  stroke-width: 1;
+  stroke-dasharray: 3 3
+}
+
+.ct-tip {
+  position: absolute;
+  transform: translate(-50%, -100%);
+  background: var(--surf);
+  border: 1px solid var(--bd);
+  border-radius: 8px;
+  padding: 7px 9px;
+  pointer-events: none;
+  box-shadow: var(--sh);
+  white-space: nowrap;
+  z-index: 2
+}
+
+.ct-tip-d {
+  font-size: 11px;
+  font-weight: 800;
+  color: var(--t1);
+  margin-bottom: 4px
+}
+
+.ct-tip-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  line-height: 1.7
+}
+
+.ct-tip-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0
+}
+
+.ct-tip-l {
+  color: var(--t2)
+}
+
+.ct-tip-v {
+  margin-left: auto;
+  font-weight: 800;
+  color: var(--t1);
+  font-variant-numeric: tabular-nums
+}
+
+.ct-legend {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  flex-wrap: wrap
+}
+
+.ct-lg-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--t3)
+}
+
+.ct-lg-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%
+}
+
+.ct-empty,
+.cp-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 26px 12px;
+  font-size: 13px;
+  color: var(--t3)
+}
+
+/* ── CONVERSION PANEL (funnel + trend, on the role dashboards) ── */
+.conv-panel {
+  margin-top: 4px;
+  align-items: start
+}
+
+.cp-note {
+  font-size: 11px;
+  color: var(--t3);
+  margin-bottom: 12px;
+  line-height: 1.4
+}
+
 .chart-head {
   display: flex;
   align-items: center;
@@ -7149,155 +7292,6 @@ textarea.fi {
   .prop-row.with-cb .lt-cell:has(.lt-n) { flex-basis: calc(100% - 36px); }
   .prop-row .lt-n { font-size: 14px; }
   .prop-row .lt-src, .prop-row .lt-date { font-size: 12px; color: var(--t2); }
-}
-
-/* ── MARKETING (campaigns & ads) ─────────── */
-.lt-hdr.cm-row,
-.lt-row.cm-row {
-  grid-template-columns: minmax(180px, 1.8fr) 110px 120px 116px 84px 124px 44px
-}
-
-.lt-hdr.ad-row,
-.lt-row.ad-row {
-  grid-template-columns: minmax(180px, 2fr) 120px minmax(120px, 1fr) 84px 44px
-}
-
-.lt-hdr.al-row,
-.lt-row.al-row {
-  grid-template-columns: minmax(160px, 1.5fr) minmax(160px, 1.2fr) 120px 44px
-}
-
-.cm-acts {
-  justify-content: flex-end
-}
-
-.cm-ico-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 30px;
-  height: 30px;
-  border: none;
-  border-radius: 8px;
-  background: var(--surf2);
-  color: var(--t2);
-  cursor: pointer;
-  flex-shrink: 0;
-  transition: all var(--tr)
-}
-
-.cm-ico-btn:hover {
-  background: var(--blue-l);
-  color: var(--blue)
-}
-
-.cm-ico-btn .mi {
-  font-size: 17px
-}
-
-.cm-danger:hover {
-  background: var(--red-l);
-  color: var(--red)
-}
-
-.cm-detail-hd {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-  margin-bottom: 12px
-}
-
-.cm-detail-acts {
-  display: flex;
-  gap: 8px;
-  margin-left: auto;
-  flex-wrap: wrap
-}
-
-.cm-title-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex-wrap: wrap;
-  margin-bottom: 18px
-}
-
-.cm-title {
-  font-family: var(--font-display);
-  font-size: 26px;
-  font-weight: 800;
-  color: var(--t1);
-  letter-spacing: -.5px;
-  margin: 0
-}
-
-.cm-sec-lbl {
-  font-size: 11px;
-  font-weight: 800;
-  text-transform: uppercase;
-  letter-spacing: .13em;
-  color: var(--t3);
-  margin: 0 0 10px 2px
-}
-
-/* Inline ad picker inside a lead row — sized to the cell, not the toolbar. */
-.cm-sel {
-  height: 32px;
-  max-width: 100%;
-  font-size: 12px;
-  padding: 0 30px 0 10px
-}
-
-.cm-clip {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap
-}
-
-.cm-attach {
-  margin-bottom: 22px
-}
-
-.cm-attach-row {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 10px 14px;
-  border: 1px solid var(--bd);
-  border-radius: 12px;
-  background: var(--surf);
-  margin-bottom: 6px
-}
-
-.cm-attach-row > div {
-  flex: 1
-}
-
-.cm-attach-empty {
-  font-size: 13px;
-  color: var(--t3);
-  padding: 4px 2px
-}
-
-/* Mobile: campaign/ad rows stack like the project cards. */
-@media(max-width:760px) {
-  .lt-hdr.cm-row, .lt-hdr.ad-row, .lt-hdr.al-row { display: none }
-
-  .lt-row.cm-row, .lt-row.ad-row, .lt-row.al-row {
-    display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px;
-    min-width: 0; padding: 13px 14px
-  }
-
-  .cm-row .lt-cell, .ad-row .lt-cell, .al-row .lt-cell {
-    flex: 0 0 auto; min-width: 0; display: flex; align-items: center
-  }
-
-  .cm-row .lt-cell:has(.lt-n),
-  .ad-row .lt-cell:has(.lt-n),
-  .al-row .lt-cell:has(.lt-n) { flex: 1 1 100% }
-
-  .cm-acts { margin-left: auto }
 }
 
 /* Inventory summary + grouped catalog */
@@ -11538,17 +11532,15 @@ textarea.fi {
 
 /* Summary cards */
 .cal-cards { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
-@media (min-width: 900px) { .cal-cards { grid-template-columns: repeat(4, 1fr); } }
+@media (min-width: 900px) { .cal-cards { grid-template-columns: repeat(3, 1fr); } }
 .cal-card { border: 1px solid var(--bd); border-radius: 12px; padding: 14px 16px; background: var(--surf); display: flex; flex-direction: column; gap: 10px; }
 .cal-card-green { background: var(--green-l); border-color: var(--green-b); }
 .cal-card-neutral { background: var(--surf2); }
 .cal-card-amber { background: var(--orange-l); border-color: rgba(240, 169, 43, .34); }
-.cal-card-red { background: var(--red-l); border-color: rgba(248, 113, 113, .34); }
 .cal-card-top { display: flex; align-items: center; gap: 8px; }
 .cal-card-ico { display: flex; align-items: center; justify-content: center; color: var(--t2); flex-shrink: 0; }
 .cal-card-green .cal-card-ico { color: var(--green); }
 .cal-card-amber .cal-card-ico { color: var(--orange); }
-.cal-card-red .cal-card-ico { color: var(--red); }
 .cal-card-l { font-size: 11.5px; font-weight: 700; color: var(--t2); text-transform: uppercase; letter-spacing: .06em; }
 .cal-card-v { font-family: var(--font-display); font-size: 28px; font-weight: 800; color: var(--t1); line-height: 1; font-variant-numeric: tabular-nums; }
 

@@ -2,7 +2,7 @@ import { useEffect } from 'react';
 import Mi from './Mi.jsx';
 import { useApp } from '../context/AppContext.jsx';
 import LogCall from './LogCall.jsx';
-import { getLead, getActs, changeStatus, doneVisit, deleteLead, updLead, addAct, logNoAnswer, attendMeeting, createCarpoolRequest, getCampaign, getAd } from '../lib/db.js';
+import { getLead, getActs, changeStatus, doneVisit, deleteLead, updLead, addAct, logNoAnswer, attendMeeting, createCarpoolRequest } from '../lib/db.js';
 import { fmtD, fmtDT, fmtBDT, rlabel, scoreLead, scoreLabel, leadDisplayStatus, fmtDateTimeAP } from '../lib/helpers.js';
 import ActivityTimeline from './ActivityTimeline.jsx';
 import { ROLES, STATUS_LABELS, SRC_LABELS } from '../lib/constants.js';
@@ -48,12 +48,6 @@ function LeadInfo({ l }) {
   if (l.meetingDate) specs.push(['Site visit', fmtDT(l.meetingDate) + (l.meetingLocation ? ' · ' + l.meetingLocation : '')]);
   if (l.visitProjects?.length) specs.push(['Visit projects', l.visitProjects.map(p => p.name).join(', ')]);
   if (l.city || l.profession) specs.push(['Location', [l.city, l.profession].filter(Boolean).join(' · ')]);
-  // Marketing attribution — edited via the Edit Customer modal / Campaigns view.
-  const campaign = l.campaignId ? getCampaign(l.campaignId) : null;
-  const ad = l.adId ? getAd(l.adId) : null;
-  if (campaign || ad) {
-    specs.push(['Campaign', [campaign?.name, ad && (ad.title || ad.adId)].filter(Boolean).join(' · ')]);
-  }
   if (l.priority) specs.push(['Priority', l.priority + (l.preferredTime ? ' · ' + l.preferredTime : '')]);
   if (l.nextFollowup) specs.push(['Follow-up', fmtD(l.nextFollowup)]);
   specs.push(['Lead ID', leadCode(l) + (l.materialSent ? ' · Material: ' + l.materialSent : '')]);

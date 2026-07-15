@@ -6,10 +6,12 @@ import KpiSheet from '../KpiSheet.jsx';
 import TargetCard from './TargetCard.jsx';
 import DashGreeting from './DashGreeting.jsx';
 import SuccessGauge from '../SuccessGauge.jsx';
+import ConversionPanel from './ConversionPanel.jsx';
 import Mi from '../Mi.jsx';
 import { fmtBDT, scoreLead, scoreLabel, fmtAgo } from '../../lib/helpers.js';
 import { STATUS_LABELS, SRC_LABELS, ROLES } from '../../lib/constants.js';
-import { Donut, Funnel, Ring } from '../charts/Charts.jsx';
+import { panelConfigFor } from '../../lib/funnel.js';
+import { Donut, Ring } from '../charts/Charts.jsx';
 
 function ScoredPipeline({ leads, db, onOpen }) {
   if (!leads.length) return <div className="iad-q-empty"><Mi>check_circle</Mi><b>Nothing to close</b><span>No deals in negotiation or ready to close.</span></div>;
@@ -90,14 +92,10 @@ export default function TeamLeadDash() {
     .sort((a, b) => b.won - a.won || b.rev - a.rev)
     .slice(0, 5);
 
-  // Chart data (team)
-  const sc = {}; leads.forEach(l => { sc[l.status] = (sc[l.status] || 0) + 1; });
-  const FUN = [
-    ['NEW', 'New', '#FFFFFF'], ['CONTACTED', 'Contacted', '#D4D4D8'], ['INTERESTED', 'Interested', '#DDB948'],
-    ['MEETING_SET', 'Meeting Set', '#F0A92B'], ['SITE_VISIT_DONE', 'Visit Done', '#2DD4BF'],
-    ['NEGOTIATING', 'Negotiating', '#34D399'], ['DEAL_CLOSED_WON', 'Won', '#34D399'],
-  ];
-  const funnelData = FUN.map(([k, l, c]) => ({ label: l, value: sc[k] || 0, color: c }));
+  // Chart data (team). The old current-status funnel lived here; it's replaced by
+  // ConversionPanel's cumulative one, which reads as a real funnel (a Won lead now
+  // also counts as Contacted, so the bars only ever descend).
+  const panelCfg = panelConfigFor(user.role);
   const srcC = {}; leads.forEach(l => { srcC[l.source] = (srcC[l.source] || 0) + 1; });
   const srcColors = { META_ADS: '#FFFFFF', WHATSAPP_ADS: '#34D399', LINKEDIN: '#DDB948', HOTLINE: '#F0A92B', PERSONAL: '#2DD4BF', WEBSITE: '#F87171' };
   const srcData = Object.entries(srcC).sort((a, b) => b[1] - a[1]).map(([s, c]) => ({ label: SRC_LABELS[s] || s, value: c, color: srcColors[s] || '#9CA3AF' }));
@@ -122,6 +120,16 @@ export default function TeamLeadDash() {
         <StatCard val={offersSent} label="Proposals Sent" sub="offers" onClick={() => setDetail({ title: 'Proposals Sent', rows: offerRows })} />
         <StatCard val={talkMins + ' min'} label="Team Talk Time" sub="on calls" onClick={() => setDetail({ title: 'Team Calls', rows: callRows })} />
       </div>
+
+      {/* Where the team's leads drop off, and the last 30 days of stage events */}
+      <ConversionPanel
+        leads={leads}
+        activities={db.activities || {}}
+        dateRange={dateRange}
+        stages={panelCfg.stages}
+        seriesKeys={panelCfg.seriesKeys}
+        title={panelCfg.title}
+      />
 
       <div className="iad-layout">
         {/* Primary: deals to close */}
@@ -163,11 +171,7 @@ export default function TeamLeadDash() {
       </div>
 
       {/* Team analytics */}
-      <div className="grid-3" style={{ marginTop: '4px' }}>
-        <div className="analytics-card">
-          <div className="ac-hd"><Mi>filter_alt</Mi>Team Funnel</div>
-          <div className="ac-body"><Funnel stages={funnelData} /></div>
-        </div>
+      <div className="grid-2" style={{ marginTop: '4px' }}>
         <div className="analytics-card">
           <div className="ac-hd"><Mi>donut_large</Mi>Leads by Source</div>
           <div className="ac-body"><Donut data={srcData} centerVal={leads.length} centerSub="leads" /></div>

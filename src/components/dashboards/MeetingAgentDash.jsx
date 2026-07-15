@@ -6,15 +6,21 @@ import KpiSheet from '../KpiSheet.jsx';
 import TargetCard from './TargetCard.jsx';
 import DashGreeting from './DashGreeting.jsx';
 import SuccessGauge from '../SuccessGauge.jsx';
+import ConversionPanel from './ConversionPanel.jsx';
 import Mi from '../Mi.jsx';
 import { scoreLead, scoreLabel } from '../../lib/helpers.js';
 import { STATUS_LABELS, ROLES } from '../../lib/constants.js';
+import { panelConfigFor } from '../../lib/funnel.js';
 
 export default function MeetingAgentDash() {
-  const { user, dbVersion, setPanLead, nav } = useApp();
+  const { user, dbVersion, setPanLead, nav, dateRange } = useApp();
   void dbVersion;
   const db = getDB();
   const leads = getLeads(user);
+  // Separate set for the funnel: forwarding a lead to a Team Lead drops it out of
+  // getLeads(user), which would permanently zero the MA's Won bar. Kept apart from
+  // `leads` so the existing stage tiles below keep their current scoping.
+  const panelLeads = getLeads(user, { involved: true });
   const [detail, setDetail] = useState(null);
 
   const view = useMemo(() => {
@@ -73,6 +79,21 @@ export default function MeetingAgentDash() {
         <StatCard val={view.overdue.length} label="Overdue Visits" tone={view.overdue.length ? 'danger' : ''} sub="past due" onClick={() => setDetail({ title: 'Overdue Visits', leads: view.overdue })} />
         <StatCard val={view.unqualified.length} label="Unqualified" tone={view.unqualified.length ? 'danger' : ''} sub="not interested" onClick={() => setDetail({ title: 'Unqualified', leads: view.unqualified })} />
       </div>
+
+      {/* Starts at Meeting Set: a Meeting Agent only ever receives leads that far along. */}
+      {(() => {
+        const cfg = panelConfigFor(user.role);
+        return (
+          <ConversionPanel
+            leads={panelLeads}
+            activities={db.activities || {}}
+            dateRange={dateRange}
+            stages={cfg.stages}
+            seriesKeys={cfg.seriesKeys}
+            title={cfg.title}
+          />
+        );
+      })()}
 
       <div className="iad-layout">
         {/* Primary: today's scheduled visits only */}

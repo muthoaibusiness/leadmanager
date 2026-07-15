@@ -20,7 +20,6 @@ export const NAV_SCOPES = {
   agentperf: ['MANAGEMENT', 'TEAM_LEAD'],
   requests: ['MANAGEMENT'],
   carpool: ['MANAGEMENT'],
-  campaigns: ['MANAGEMENT'],
   team: ['TEAM_LEAD'],
   users: ['MANAGEMENT'],
   accounts: ['MANAGEMENT'],
@@ -39,10 +38,10 @@ export const canSee = (user, key) => {
 
 // Features an admin can grant/revoke per user, in display order (nav features only;
 // 'companies' is master-only overview and 'profile' is always-on, so both excluded).
-export const FEATURE_KEYS = ['dashboard', 'leads', 'add_customer', 'calendar', 'pipeline', 'properties', 'campaigns', 'reports', 'agentperf', 'requests', 'carpool', 'team', 'users', 'accounts'];
+export const FEATURE_KEYS = ['dashboard', 'leads', 'add_customer', 'calendar', 'pipeline', 'properties', 'reports', 'agentperf', 'requests', 'carpool', 'team', 'users', 'accounts'];
 export const FEATURE_LABELS = {
   dashboard: 'Home', leads: 'Leads', add_customer: 'Add Customer', calendar: 'Calendar', pipeline: 'Pipeline', properties: 'Projects',
-  campaigns: 'Marketing', reports: 'Reports', agentperf: 'Performance', requests: 'Requests', carpool: 'Carpool', team: 'Team',
+  reports: 'Reports', agentperf: 'Performance', requests: 'Requests', carpool: 'Carpool', team: 'Team',
   users: 'Users', accounts: 'Accounts',
 };
 // Default features for a standard role (from NAV_SCOPES). Executive resolves to none.
@@ -56,17 +55,6 @@ export const PROPERTY_STATUS = {
   SOLD_OUT: 'Sold Out',
   UPCOMING: 'Upcoming',
 };
-
-// Marketing campaigns & ads
-export const CAMPAIGN_PLATFORMS = ['Meta', 'WhatsApp', 'Google', 'YouTube', 'LinkedIn', 'TikTok', 'Billboard', 'Print', 'Event', 'Other'];
-export const CAMPAIGN_STATUS = {
-  DRAFT: 'Draft',
-  ACTIVE: 'Active',
-  PAUSED: 'Paused',
-  COMPLETED: 'Completed',
-};
-// Where an ad runs — free text is allowed, these are just the quick picks.
-export const AD_SOURCE_APPS = ['Facebook', 'Instagram', 'WhatsApp', 'Messenger', 'Google', 'YouTube', 'LinkedIn', 'TikTok', 'Website', 'Other'];
 
 export const SRC_LABELS = {
   META_ADS: 'Meta',
@@ -96,6 +84,31 @@ export const STATUS_LABELS = {
   DEAL_CLOSED_LOST: 'Deal Lost',
   NOT_INTERESTED: 'Not Interested',
 };
+
+// ── Lead lifecycle ladder ────────────────────────────────────────────────────
+// The happy path a lead walks, in order. Everything downstream (funnels,
+// "has this lead reached stage X?") derives from this one array so the stage
+// vocabulary lives in exactly one place.
+export const STATUS_FLOW = [
+  'NEW', 'CONTACTED', 'INTERESTED', 'MEETING_SET',
+  'SITE_VISIT_SCHEDULED', 'SITE_VISIT_DONE', 'NEGOTIATING', 'DEAL_CLOSED_WON',
+];
+
+// Statuses that mean a lead reached `from` or went past it. DEAL_CLOSED_LOST is
+// appended because a lost deal still walked the ladder to get there — it is not
+// on STATUS_FLOW since it's an exit, not a rung.
+// NOT_INTERESTED is deliberately absent: it's reachable straight from NEW (an
+// agent disqualifies, or logNoAnswer auto-disqualifies after 7 unanswered
+// calls), so it proves nothing about how far the lead actually got.
+export const reachedFrom = (from) =>
+  [...STATUS_FLOW.slice(STATUS_FLOW.indexOf(from)), 'DEAL_CLOSED_LOST'];
+
+export const PAST_CONTACT = reachedFrom('CONTACTED');
+export const PAST_QUALIFY = reachedFrom('INTERESTED');
+export const REACHED_MEETING = reachedFrom('MEETING_SET');
+
+// Both ways a lead can die. Distinct from the ladder above.
+export const CLOSED_LOST = ['DEAL_CLOSED_LOST', 'NOT_INTERESTED'];
 
 export const AVC = ['#2563EB', '#0891B2', '#7C3AED', '#D97706', '#DC2626', '#059669', '#0F172A', '#9333EA'];
 
