@@ -253,12 +253,18 @@ export function rToA(r) {
   return { id: r.id, type: r.type, description: r.description || '', userId: r.user_id, userName: r.user_name, durationSeconds: r.duration_seconds || 0, timestamp: r.timestamp };
 }
 
+// allowed_features / projects use ?? (not ||) on the way out so an EMPTY array is
+// preserved: [] means "this user may see nothing", which is a real setting for an
+// Executive and must not collapse to null.
 export function uToR(u) {
-  return { id: u.id, name: u.name, email: u.email, password: u.password, phone: u.phone || '', role: u.role, team_id: u.teamId || null, company_id: u.companyId ?? null, is_active: u.isActive !== false, avatar: u.avatar || null, projects: u.projects ?? null };
+  return { id: u.id, name: u.name, email: u.email, password: u.password, phone: u.phone || '', role: u.role, team_id: u.teamId || null, company_id: u.companyId ?? null, is_active: u.isActive !== false, avatar: u.avatar || null, projects: u.projects ?? null, allowed_features: u.allowedFeatures ?? null };
 }
 
+// ...and back to undefined (never []) when the column is null, because canSee()
+// keys off Array.isArray(allowedFeatures): an array means "this list is the whole
+// truth". Turning a null into [] would lock the user out of everything.
 export function rToU(r) {
-  return { id: r.id, name: r.name, email: r.email, password: r.password, phone: r.phone || '', role: r.role, teamId: r.team_id, companyId: r.company_id ?? null, isActive: r.is_active, avatar: r.avatar || '', projects: r.projects ?? undefined };
+  return { id: r.id, name: r.name, email: r.email, password: r.password, phone: r.phone || '', role: r.role, teamId: r.team_id, companyId: r.company_id ?? null, isActive: r.is_active, avatar: r.avatar || '', projects: r.projects ?? undefined, allowedFeatures: r.allowed_features ?? undefined };
 }
 
 export function tToR(t) { return { id: t.id, name: t.name, lead_id: t.leadId, company_id: t.companyId || null }; }

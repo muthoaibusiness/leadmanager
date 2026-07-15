@@ -391,10 +391,14 @@ export function usersByRole(role) { return getDB().users.filter(u => u.role === 
 // Update an agent's editable fields (name/phone) and project assignment.
 // projects: 'ALL' (all projects) | array of property ids | [] (none).
 export function updateAgent(userId, fields) {
+  let updated;
   mutate(db => {
     const u = db.users.find(x => x.id === userId);
-    if (u) Object.assign(u, fields);
+    if (u) { Object.assign(u, fields); updated = u; }
   });
+  // Push to the cloud too. Without this the edit lives only in localStorage and
+  // the next reload wipes it: sbLoad + mergeDB take the remote snapshot wholesale.
+  if (updated) sbUpdate('users', userId, uToR(updated));
 }
 
 // Resolve the projects an agent may deal on ('ALL' or array of ids).
