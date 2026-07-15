@@ -1,6 +1,6 @@
 import { ROLES, STATUS_LABELS, SRC_LABELS } from './constants.js';
 import { uid, now_, fmtBDT, fmtDT, curMonth, startOfMonth, rlabel } from './helpers.js';
-import { sbUpdate, sbInsert, sbUpsert, sbMarkRead, sbDelete, sbDeleteLeads, lToR, rToL, uToR, rToU, tToR, rToT, aToR, rToA, nToR, rToN, tgToR, rToTg, pToR, rToP, bkToR, rToBk, cToR, rToC, hrToR, rToHr, sbUpsertNotifs } from './supabase.js';
+import { sbUpdate, sbInsert, sbUpsert, sbMarkRead, sbDelete, sbDeleteLeads, lToR, rToL, uToR, rToU, tToR, rToT, aToR, rToA, rToN, tgToR, rToTg, pToR, rToP, bkToR, rToBk, cToR, rToC, hrToR, rToHr, sbUpsertNotifs } from './supabase.js';
 export const KEY = 'propcrm_v1';
 export let _DB = null;
 
@@ -943,6 +943,7 @@ export function createHoldRequest(payload, user) {
     ...payload, agentId: user.id, agentName: user.name,
   };
   mutate(db => { db.holdRequests = db.holdRequests || []; db.holdRequests.unshift(req); });
+  sbInsert('hold_requests', hrToR(req));
   const mgmt = getDB().users.filter(u => u.role === ROLES.MGMT && sameCompany(u.companyId, user.companyId)).map(u => u.id);
   addNotifs(mgmt.map(uid2 => ({
     userId: uid2, type: 'HOLD_REQUEST', leadId: null,
@@ -965,6 +966,7 @@ export function decideHoldRequest(id, approve, user, days = 2) {
     req = { ...r };
   });
   if (req) {
+    sbUpdate('hold_requests', req.id, hrToR(req));
     const until = req.holdUntil ? new Date(req.holdUntil).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' }) : '';
     addNotifs([{
       userId: req.agentId, type: approve ? 'HOLD_APPROVED' : 'HOLD_REJECTED', leadId: null,
@@ -1064,14 +1066,19 @@ export function addNote(leadId, txt, user) {
 
 export function setTargetFn(userId, val) {
   const mo = curMonth();
+  let saved;
   mutate(db => {
     const i = db.targets.findIndex(t => t.userId === userId && t.month === mo);
     const role = db.users.find(u => u.id === userId)?.role;
     const type = role === ROLES.IA ? 'MEETINGS_SET' : 'SITE_VISITS';
-    const entry = { id: 'tg' + uid(), userId, month: mo, type, value: parseInt(val) };
+    // Reuse the existing row's id when replacing, so the upsert updates that row
+    // rather than leaving an orphan behind under a fresh id.
+    const entry = { id: i >= 0 ? db.targets[i].id : 'tg' + uid(), userId, month: mo, type, value: parseInt(val) };
     if (i >= 0) db.targets[i] = entry;
     else db.targets.push(entry);
+    saved = entry;
   });
+  if (saved) sbUpsert('targets', [tgToR(saved)]);
 }
 
 export function createUserFn(name, email, password, phone, role, currentUser) {
@@ -1080,17 +1087,25 @@ export function createUserFn(name, email, password, phone, role, currentUser) {
   const stamp = now_();
   const baseUser = { id, name, email, password: password || '1234', phone: phone || '', role, teamId: currentUser.teamId, companyId, isActive: true, createdAt: stamp, updatedAt: stamp };
 
+  // mutate() only writes the in-memory copy and the localStorage cache — it does NOT
+  // reach Supabase. Every create has to push its own row, or the account exists on this
+  // browser only and is gone on the next machine (and on the next sbLoad).
   if (role === ROLES.TL) {
     const tid = 't' + uid();
+    const team = { id: tid, name: name + "'s Team", leadId: id, companyId, createdAt: stamp, updatedAt: stamp };
+    const tlUser = { ...baseUser, teamId: tid };
     mutate(db => {
       db.teams = db.teams || [];
-      db.teams.push({ id: tid, name: name + "'s Team", leadId: id, companyId, createdAt: stamp, updatedAt: stamp });
-      db.users.push({ ...baseUser, teamId: tid });
+      db.teams.push(team);
+      db.users.push(tlUser);
     });
+    // Team first: the user row's team_id points at it.
+    sbInsert('teams', tToR(team));
+    sbInsert('users', uToR(tlUser));
   } else {
-    mutate(db => {
-      db.users.push(role === ROLES.EXEC ? { ...baseUser, allowedFeatures: [] } : baseUser);
-    });
+    const newUser = role === ROLES.EXEC ? { ...baseUser, allowedFeatures: [] } : baseUser;
+    mutate(db => { db.users.push(newUser); });
+    sbInsert('users', uToR(newUser));
   }
   return id;
 }
@@ -1168,16 +1183,23 @@ export function createCompany({ name, plan, adminName, adminEmail, password, pho
   const aid = 'u' + uid();
   const exists = getDB().users.some(u => (u.email || '').toLowerCase() === (adminEmail || '').toLowerCase());
   if (exists) return { error: 'Admin email already in use' };
+  const company = { id: cid, name: name.trim(), plan: plan || 'Starter', createdAt: now_(), isActive: true };
+  const admin = { id: aid, name: (adminName || 'Admin').trim(), email: (adminEmail || '').trim(), password: password || '1234', phone: phone || '', role: ROLES.MGMT, teamId: null, companyId: cid, isActive: true };
   mutate(db => {
     db.companies = db.companies || [];
-    db.companies.push({ id: cid, name: name.trim(), plan: plan || 'Starter', createdAt: now_(), isActive: true });
-    db.users.push({ id: aid, name: (adminName || 'Admin').trim(), email: (adminEmail || '').trim(), password: password || '1234', phone: phone || '', role: ROLES.MGMT, teamId: null, companyId: cid, isActive: true });
+    db.companies.push(company);
+    db.users.push(admin);
   });
+  // Company first: the admin row's company_id points at it.
+  sbInsert('companies', cToR(company));
+  sbInsert('users', uToR(admin));
   return { companyId: cid, adminId: aid, adminEmail: (adminEmail || '').trim(), password: password || '1234' };
 }
 
 export function setCompanyActive(cid, active) {
-  mutate(db => { const c = (db.companies || []).find(x => x.id === cid); if (c) c.isActive = active; });
+  let updated;
+  mutate(db => { const c = (db.companies || []).find(x => x.id === cid); if (c) { c.isActive = active; updated = { ...c }; } });
+  if (updated) sbUpdate('companies', cid, cToR(updated));
 }
 
 // Provision many accounts in one pass. `rows`: [{name,email,phone,role,password,teamId}].
@@ -1208,18 +1230,26 @@ export function bulkCreateUsers(rows, currentUser) {
     seen.add(email.toLowerCase());
 
     const companyId = r.companyId || currentUser.companyId; // new accounts join the admin's company
+    // As in createUserFn: mutate() is local-only, so each row is pushed to Supabase too.
+    const stamp = now_();
     if (role === ROLES.TL) {
       const tid = 't' + uid();
+      const team = { id: tid, name: name + "'s Team", leadId: id, companyId };
+      const u = { id, name, email, password: pass, phone, role, teamId: tid, companyId, isActive: true, createdAt: stamp, updatedAt: stamp };
       mutate(db => {
         db.teams = db.teams || [];
-        db.teams.push({ id: tid, name: name + "'s Team", leadId: id, companyId });
-        db.users.push({ id, name, email, password: pass, phone, role, teamId: tid, companyId });
+        db.teams.push(team);
+        db.users.push(u);
       });
-    } else if (role === ROLES.MGMT) {
-      mutate(db => { db.users.push({ id, name, email, password: pass, phone, role, companyId }); });
+      sbInsert('teams', tToR(team));
+      sbInsert('users', uToR(u));
     } else {
-      const teamId = r.teamId || currentUser.teamId;
-      mutate(db => { db.users.push({ id, name, email, password: pass, phone, role, teamId, companyId }); });
+      // Management rows carry no team; everyone else inherits the admin's (or the
+      // team picked on the row).
+      const teamId = role === ROLES.MGMT ? undefined : (r.teamId || currentUser.teamId);
+      const u = { id, name, email, password: pass, phone, role, teamId, companyId, isActive: true, createdAt: stamp, updatedAt: stamp };
+      mutate(db => { db.users.push(u); });
+      sbInsert('users', uToR(u));
     }
     created.push({ id, name, email, pass, role, roleLabel: rlabel(role) });
   });
