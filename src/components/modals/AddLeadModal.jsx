@@ -34,9 +34,13 @@ export default function AddLeadModal() {
   const [interest, setInterest] = useState(''); // multi project-interest tags (comma-joined)
   // State, not a ref: the locked view renders no <select> for a ref to hang off.
   const [source, setSource] = useState(defaultSource);
+  // Guards against double-submit while the cloud write is in flight (adding a lead
+  // now awaits the server before confirming — see addLeadFn).
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     if (!isOpen) return;
+    setSaving(false); // never reopen stuck in a saving state
     if (isEdit && panLead) {
       const l = getLead(panLead);
       if (!l) return;
@@ -67,7 +71,8 @@ export default function AddLeadModal() {
   const addPhone = () => setPhones(p => [...p, '']);
   const removePhone = (i) => setPhones(p => p.filter((_, j) => j !== i));
 
-  const submit = () => {
+  const submit = async () => {
+    if (saving) return; // in-flight guard — no double submit
     const name = nameRef.current.value.trim();
     const cleanPhones = phones.map(p => normalizePhone(p)).filter(Boolean);
     if (!name) { showToast('Name is required', 'err'); return; }
@@ -126,9 +131,22 @@ export default function AddLeadModal() {
         setTimeout(() => setPanLead(dup.id), 150);
         return;
       }
-      const id = addLeadFn(name, phone, cleanPhones, email, [], company, source, prop, profession, city, user);
+      // Strict-block: addLeadFn writes to the cloud first and only reports ok:true
+      // once it persisted (or sync is disabled). On a genuine failure we keep the
+      // modal open and surface the error instead of a false "Lead added".
+      setSaving(true);
+      let res;
+      try {
+        res = await addLeadFn(name, phone, cleanPhones, email, [], company, source, prop, profession, city, user);
+      } finally {
+        setSaving(false);
+      }
+      if (!res || !res.ok) {
+        showToast('Could not save customer — check your connection and try again.', 'err');
+        return; // leave the modal open so the user can retry
+      }
       closeModal(); refreshDB(); showToast('Lead added', 'ok');
-      setTimeout(() => setPanLead(id), 150);
+      setTimeout(() => setPanLead(res.id), 150);
     }
   };
 
@@ -221,8 +239,10 @@ export default function AddLeadModal() {
           </div>
         </div>
         <div className="m-ft">
-          <button className="btn btn-g" onClick={closeModal}>Cancel</button>
-          <button className="btn btn-p" onClick={submit}><Mi>save</Mi>Save</button>
+          <button className="btn btn-g" onClick={closeModal} disabled={saving}>Cancel</button>
+          <button className="btn btn-p" onClick={submit} disabled={saving}>
+            <Mi>{saving ? 'hourglass_empty' : 'save'}</Mi>{saving ? 'Saving…' : 'Save'}
+          </button>
         </div>
       </div>
     </div>

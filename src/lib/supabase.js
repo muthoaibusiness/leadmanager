@@ -99,25 +99,70 @@ export async function sbUpsert(table, rows) {
   return { ok: false };
 }
 
+// Self-healing insert — mirrors sbUpsert's recovery so a single row insert isn't
+// lost the moment the remote schema lags the client:
+// - PGRST204 (unknown column): strip that column and retry, so a new lead still
+//   inserts before a migration adds columns like meeting_at (null on creation, so
+//   dropping them loses nothing).
+// - PGRST205 (missing table): skip quietly for the rest of the session.
+// Returns { ok, status, body, skipped, stripped } so callers can distinguish a
+// genuine failure (surface to the UI) from a recoverable/skipped one.
 export async function sbInsert(table, row) {
   if (_missingTables.has(table)) return { ok: false, skipped: true };
-  try {
-    const r = await fetch(`${SB_URL}/rest/v1/${table}`, {
-      method: 'POST',
-      headers: { ...SB_H, Prefer: 'return=minimal' },
-      body: JSON.stringify(row),
-    });
-    if (!r.ok) {
-      let b = ''; try { b = await r.text(); } catch {}
-      console.error(`Supabase Insert Error [${table}] HTTP ${r.status}:`, b);
-      return { ok: false };
+  let payload = { ...row };
+  const stripped = [];
+
+  for (let attempt = 0; attempt < 12; attempt++) {
+    let r;
+    try {
+      r = await fetch(`${SB_URL}/rest/v1/${table}`, {
+        method: 'POST',
+        headers: { ...SB_H, Prefer: 'return=minimal' },
+        body: JSON.stringify(payload),
+      });
+    } catch (e) {
+      checkNetworkError(e);
+      console.error(`Supabase Insert network error [${table}]:`, e);
+      return { ok: false, error: e };
     }
-    return { ok: true };
-  } catch (e) {
-    checkNetworkError(e);
-    console.error(`Supabase Insert network error [${table}]:`, e);
-    return { ok: false };
+
+    if (r.ok) {
+      if (stripped.length) {
+        console.warn(`Supabase: inserted '${table}' after dropping unknown column(s): ${stripped.join(', ')}. Run the schema migration to persist them.`);
+      }
+      return { ok: true, stripped };
+    }
+
+    let body = '';
+    try { body = await r.text(); } catch {}
+    let j = {};
+    try { j = JSON.parse(body); } catch {}
+
+    // Missing table → skip for the rest of the session
+    if (j.code === 'PGRST205') {
+      _missingTables.add(table);
+      console.warn(`Supabase: table '${table}' not found — skipping cloud sync until migration is applied.`);
+      return { ok: false, skipped: true };
+    }
+
+    // Unknown column → drop it and retry
+    if (j.code === 'PGRST204') {
+      const m = /Could not find the '([^']+)' column/.exec(j.message || '');
+      const col = m && m[1];
+      if (col) {
+        stripped.push(col);
+        delete payload[col];
+        continue;
+      }
+    }
+
+    // Anything else (RLS denial, duplicate, bad request) → real failure
+    console.error(`Supabase Insert Error [${table}] HTTP ${r.status}:`, body);
+    return { ok: false, status: r.status, body };
   }
+
+  console.error(`Supabase Insert [${table}]: gave up after stripping ${stripped.join(', ')}`);
+  return { ok: false };
 }
 
 export async function sbUpdate(table, id, updates) {

@@ -30,9 +30,68 @@ export function getDB() {
 export function mergeDB(remote, local) {
   const r = remote || {};
   const l = local || {};
+  const ts = (x) => new Date(x?.updatedAt || x?.createdAt || 0).getTime();
+  const mergeArr = (rem = [], loc = []) => {
+    const m = new Map();
+    rem.forEach(x => x && x.id != null && m.set(x.id, x));
+    loc.forEach(x => {
+      if (!x || x.id == null) return;
+      const ex = m.get(x.id);
+      if (!ex || ts(x) >= ts(ex)) m.set(x.id, x); // local edits / newer win
+    });
+    return [...m.values()];
+  };
+  // activities: keyed by leadId → union activity arrays by activity id
+  const mergeActs = (rem = {}, loc = {}) => {
+    const out = {};
+    new Set([...Object.keys(rem), ...Object.keys(loc)]).forEach(k => {
+      const m = new Map();
+      (rem[k] || []).forEach(a => a && m.set(a.id, a));
+      (loc[k] || []).forEach(a => a && m.set(a.id, a));
+      out[k] = [...m.values()];
+    });
+    return out;
+  };
+  // notifications: keyed by userId → union by notif id
+  const mergeNotifs = (rem = {}, loc = {}) => {
+    const out = {};
+    new Set([...Object.keys(rem), ...Object.keys(loc)]).forEach(k => {
+      const m = new Map();
+      (rem[k] || []).forEach(n => n && m.set(n.id, n));
+      (loc[k] || []).forEach(n => n && m.set(n.id, n));
+      out[k] = [...m.values()];
+    });
+    return out;
+  };
+  // tombstones: ids deleted locally must never be resurrected from the cloud
+  const tomb = (l.deletionLog || []).slice(-8000); // cap growth
+  const deleted = new Set(tomb.map(d => d.id));
+  // Leads: the CLOUD is the source of truth (so every browser shows the same set).
+  // We only keep a local-only lead if it's genuinely fresh (created/updated very
+  // recently and not yet synced). Stale local-only leads = ones deleted on another
+  // browser, so they are dropped. This stops per-browser divergence (e.g. 36 vs 51).
+  const GRACE_MS = 6 * 60 * 60 * 1000;
+  const nowMs = Date.now();
+  const remoteIds = new Set((r.leads || []).map(x => x.id));
+  const cloudLeads = (r.leads || []).filter(x => !deleted.has(x.id));
+  const freshLocal = (l.leads || []).filter(x =>
+    !remoteIds.has(x.id) && !deleted.has(x.id) &&
+    (nowMs - new Date(x.updatedAt || x.createdAt || 0).getTime() < GRACE_MS)
+  );
+  const leads = [...cloudLeads, ...freshLocal];
   return {
-    ...r,
-    deletionLog: l.deletionLog || []
+    companies: mergeArr(r.companies, l.companies),
+    // users/teams: union cloud+local but never resurrect a tombstoned (deleted) id
+    users: mergeArr(r.users, l.users).filter(u => !deleted.has(u.id)),
+    teams: mergeArr(r.teams, l.teams).filter(t => !deleted.has(t.id)),
+    leads,
+    targets: mergeArr(r.targets, l.targets),
+    deletionLog: tomb,
+    properties: mergeArr(r.properties, l.properties).filter(p => !deleted.has(p.id)),
+    bookings: mergeArr(r.bookings, l.bookings),
+    holdRequests: mergeArr(r.holdRequests, l.holdRequests),
+    activities: mergeActs(r.activities, l.activities),
+    notifications: mergeNotifs(r.notifications, l.notifications),
   };
 }
 
@@ -1288,11 +1347,20 @@ export function leadByPhone(phone) {
   return getDB().leads.find(l => normalizePhone(l.phone) === n) || null;
 }
 
-export function addLeadFn(name, phone, phones, email, emails, company, source, prop, profession, city, user) {
+// Create a lead. Strict-block: the record is written to the cloud FIRST and the
+// local DB is only mutated once the server confirms, so the UI never reports
+// success for a lead that didn't persist (previously the optimistic local write +
+// unchecked sbInsert made a rejected insert look like a success and then vanish on
+// reload). Async — callers must await the { ok, id } result.
+//   ok:true            → saved (cloud + local). `id` is the new/existing lead id.
+//   ok:false, skipped  → cloud sync unavailable (no config / table missing); saved
+//                        locally only, still a success from the user's view.
+//   ok:false           → genuine server rejection (RLS/network/HTTP); nothing saved.
+export async function addLeadFn(name, phone, phones, email, emails, company, source, prop, profession, city, user) {
   const norm = normalizePhone(phone);
-  if (!norm) return null;            // never create a lead without a valid phone
+  if (!norm) return { ok: false, invalid: true }; // never create a lead without a valid phone
   const dup = leadByPhone(norm);
-  if (dup) return dup.id;            // never create a duplicate-phone lead — return the existing one
+  if (dup) return { ok: true, id: dup.id };        // never create a duplicate-phone lead — return the existing one
   phone = norm;
   // Keep every valid number the caller supplied, primary first and de-duped.
   // Phone is immutable once the lead exists, so creation is the only chance to
@@ -1316,14 +1384,21 @@ export function addLeadFn(name, phone, phones, email, emails, company, source, p
     callCount: 0, smsCount: 0, whatsappCount: 0, visitCount: 0,
     meetingDate: null, meetingLocation: '',
   };
+
+  // Cloud write first. A recoverable outcome (ok, or skipped = sync disabled)
+  // lets the local write proceed; a genuine rejection blocks it so the UI can
+  // report the failure instead of silently losing the lead on the next reload.
+  const res = await sbInsert('leads', lToR(lead));
+  if (!res.ok && !res.skipped) return { ok: false, status: res.status, body: res.body, error: res.error };
+
+  const activity = { id: 'a' + uid(), type: 'CREATED', description: 'Lead created from ' + SRC_LABELS[source], userId: user.id, userName: user.name, timestamp: now_(), durationSeconds: 0 };
   mutate(db => {
     db.leads.unshift(lead);
-    db.activities[id] = [{ id: 'a' + uid(), type: 'CREATED', description: 'Lead created from ' + SRC_LABELS[source], userId: user.id, userName: user.name, timestamp: now_(), durationSeconds: 0 }];
+    db.activities[id] = [activity];
   });
-  sbInsert('leads', lToR(lead));
-  sbInsert('activities', aToR(getDB().activities[id][0], id));
+  sbInsert('activities', aToR(activity, id));
   addNotifs([{ userId: user.id, type: 'ASSIGNED', message: 'New lead added to your list: ' + name, leadId: id }], null);
-  return id;
+  return { ok: true, id, skipped: res.skipped };
 }
 
 // ── CSV Import ──
