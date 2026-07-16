@@ -217,6 +217,13 @@ export function lToR(l) {
     meeting_set_by: l.meetingSetBy || null, meeting_set_date: l.meetingSetDate || null,
     site_visit_done_by: l.siteVisitDoneBy || null, site_visit_done_date: l.siteVisitDoneDate || null,
     meeting_date: l.meetingDate || null, meeting_location: l.meetingLocation || '',
+    // Meeting hand-off (IA → MA) + site-visit / deal-project fields. Without these
+    // columns the meeting never reaches the MA's calendar — see 0005 migration.
+    meeting_at: l.meetingAt || null, meeting_type: l.meetingType || null,
+    meeting_link: l.meetingLink || '', meeting_shared: l.meetingShared || null,
+    meeting_attended: l.meetingAttended || false, meeting_attended_at: l.meetingAttendedAt || null,
+    visit_projects: l.visitProjects || null,
+    deal_project_id: l.dealProjectId || null, deal_project_name: l.dealProjectName || null,
     call_count: l.callCount || 0, sms_count: l.smsCount || 0,
     whatsapp_count: l.whatsappCount || 0, visit_count: l.visitCount || 0,
     notes: l.notes || '', external_id: l.externalId || null, priority: l.priority || null,
@@ -236,6 +243,12 @@ export function rToL(r) {
     meetingSetBy: r.meeting_set_by || null, meetingSetDate: r.meeting_set_date || null,
     siteVisitDoneBy: r.site_visit_done_by || null, siteVisitDoneDate: r.site_visit_done_date || null,
     meetingDate: r.meeting_date || null, meetingLocation: r.meeting_location || '',
+    // Read back as arrays (not null) so the calendar / panel can iterate them safely.
+    meetingAt: r.meeting_at || null, meetingType: r.meeting_type || null,
+    meetingLink: r.meeting_link || '', meetingShared: r.meeting_shared || [],
+    meetingAttended: r.meeting_attended || false, meetingAttendedAt: r.meeting_attended_at || null,
+    visitProjects: r.visit_projects || [],
+    dealProjectId: r.deal_project_id || null, dealProjectName: r.deal_project_name || null,
     callCount: r.call_count || 0, smsCount: r.sms_count || 0,
     whatsappCount: r.whatsapp_count || 0, visitCount: r.visit_count || 0,
     notes: r.notes || '', externalId: r.external_id || null, priority: r.priority || null,
