@@ -2,7 +2,7 @@ import { useEffect } from 'react';
 import Mi from './Mi.jsx';
 import { useApp } from '../context/AppContext.jsx';
 import LogCall from './LogCall.jsx';
-import { getLead, getActs, changeStatus, doneVisit, deleteLead, updLead, addAct, logNoAnswer, attendMeeting, createCarpoolRequest } from '../lib/db.js';
+import { getLead, getActs, changeStatus, doneVisit, deleteLead, updLead, addAct, logNoAnswer, noAnswerLock, attendMeeting, createCarpoolRequest } from '../lib/db.js';
 import { fmtD, fmtDT, fmtBDT, rlabel, scoreLead, scoreLabel, leadDisplayStatus, fmtDateTimeAP } from '../lib/helpers.js';
 import ActivityTimeline from './ActivityTimeline.jsx';
 import { ROLES, STATUS_LABELS, SRC_LABELS } from '../lib/constants.js';
@@ -137,7 +137,9 @@ function Actions({ l }) {
   const doNoAnswer = () => {
     const res = logNoAnswer(l.id, user);
     refreshDB();
-    if (res.hitCap) showToast('No answer 7× — moved to Not Interested', 'warn');
+    const retry = res.lockUntil ? new Date(res.lockUntil).toLocaleString('en-GB', { weekday: 'short', day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : '';
+    if (res.locked) showToast(`Locked — 7 attempts used. Try again after ${retry}`, 'warn');
+    else if (res.hitCap) showToast(`7 attempts reached — locked for 24h, retry after ${retry}`, 'warn');
     else showToast(`No Answer logged (${res.attempts}/7) · follow-up set for tomorrow`, '');
   };
 
@@ -158,6 +160,26 @@ function Actions({ l }) {
     refreshDB();
     showToast('Carpool requested — pending admin approval', 'ok');
   };
+
+  // A lead that has burned through its 7 attempts is locked for 24h: the entire
+  // action set is frozen for the agent (IA/MA) until the cool-off lifts. Only the
+  // attempting roles are locked — supervisors (TL/MGMT) are never blocked.
+  const lockUntil = (r === ROLES.IA || r === ROLES.MA) ? noAnswerLock(l) : null;
+  if (lockUntil) {
+    const retry = lockUntil.toLocaleString('en-GB', { weekday: 'short', day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
+    return (
+      <div className="act-card">
+        <div className="act-ttl">Actions</div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '14px', borderRadius: '8px', background: 'var(--orange-l)', color: 'var(--orange)' }}>
+          <Mi>lock</Mi>
+          <div style={{ display: 'flex', flexDirection: 'column', lineHeight: 1.35 }}>
+            <b>Locked — 7 attempts used</b>
+            <span style={{ fontSize: '12px' }}>No answer after 7 attempts. Try again after {retry}.</span>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   const btns = [];
 
@@ -187,9 +209,12 @@ function Actions({ l }) {
     // Attempt — neutral grey outcome: logs a 0-min call attempt, books a next-day
     // follow-up, keeps current status. Available while chasing first contact (NEW),
     // after connecting (CONTACTED), and once interested (3rd stage, confirming
-    // before hand-off). Counter restarts each stage; 7 in a stage → auto Not Interested.
+    // before hand-off). Counter restarts each stage; 7 in a stage → the lead is
+    // locked for 24h (status unchanged), then a fresh batch of 7 is granted.
     if (['NEW', 'CONTACTED', 'INTERESTED'].includes(l.status)) {
-      const att = l.noAnswerCount || 0;
+      // A lapsed lock (noAnswerLockUntil in the past) means the next attempt starts
+      // a fresh batch, so show no count until then.
+      const att = l.noAnswerLockUntil ? 0 : (l.noAnswerCount || 0);
       btns.push(
         <button key="noans" className="btn btn-neutral btn-full" onClick={doNoAnswer}>
           <Mi>phone_missed</Mi>Attempt{att > 0 ? ` (${att}/7)` : ''}
@@ -237,9 +262,9 @@ function Actions({ l }) {
         : <button key="carpool" className="btn btn-full" style={{ background: 'var(--orange-l)', color: 'var(--orange)' }} onClick={doCarpool}><Mi>directions_car</Mi>Request Carpool</button>
     );
     // Attempt — couldn't reach the client; logs an attempt + next-day follow-up.
-    // 7 attempts in a stage → auto Not Interested. Disqualified leads come from here.
+    // 7 attempts in a stage → lead locked for 24h (status unchanged), then reset.
     if (['MEETING_SET', 'SITE_VISIT_SCHEDULED'].includes(l.status)) {
-      const att = l.noAnswerCount || 0;
+      const att = l.noAnswerLockUntil ? 0 : (l.noAnswerCount || 0);
       btns.push(
         <button key="ma-attempt" className="btn btn-neutral btn-full" onClick={doNoAnswer}>
           <Mi>phone_missed</Mi>Attempt{att > 0 ? ` (${att}/7)` : ''}

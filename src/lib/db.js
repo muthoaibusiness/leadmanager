@@ -832,9 +832,9 @@ export function getDeletionLog() {
 }
 
 export function changeStatus(leadId, status, user) {
-  // Advancing a stage restarts the "No Answer" attempt counter — each stage gets
-  // its own fresh 7-attempt budget.
-  updLead(leadId, { status, noAnswerCount: 0 });
+  // Advancing a stage restarts the "No Answer" attempt counter and clears any
+  // active lock — each stage gets its own fresh 7-attempt budget.
+  updLead(leadId, { status, noAnswerCount: 0, noAnswerLockUntil: null });
   addAct(leadId, { type: 'STATUS_CHANGE', description: 'Status → ' + (STATUS_LABELS[status] || status), userId: user.id, userName: user.name, durationSeconds: 0 });
 }
 
@@ -917,23 +917,52 @@ export function setFollowUpAt(leadId, iso, user) {
   addAct(leadId, { type: 'FOLLOW_UP', description: 'Follow-up scheduled for ' + when, userId: user.id, userName: user.name, durationSeconds: 0 });
 }
 
-// Phase-1 "No Answer": log a 0-min call attempt, auto-schedule a same-time follow-up
-// for tomorrow, keep status NEW. After `maxAttempts` no-answers, auto-disqualify the
-// lead to Not Interested. Returns { attempts, hitCap }.
+// 24h cool-off applied once an agent burns through a batch of attempts.
+const NO_ANSWER_LOCK_MS = 24 * 60 * 60 * 1000;
+
+// Returns the active lock expiry (a Date in the future) if the lead is currently
+// locked for no-answer, else null. A lock whose time has passed reads as null —
+// the lead is free again and the next attempt starts a fresh batch.
+export function noAnswerLock(lead) {
+  const until = lead?.noAnswerLockUntil ? new Date(lead.noAnswerLockUntil) : null;
+  return until && until > new Date() ? until : null;
+}
+
+// Phase-1 "No Answer": log a 0-min call attempt and auto-schedule a same-time
+// follow-up for tomorrow, keeping status unchanged. After `maxAttempts` no-answers
+// the lead is LOCKED for 24h — its status is NOT changed (no auto-disqualify);
+// once the lock lifts the agent is granted a fresh batch of attempts. Calling
+// while still locked is a no-op that returns { locked: true, lockUntil }.
+// Returns { attempts, hitCap, locked, lockUntil }.
 export function logNoAnswer(leadId, user, maxAttempts = 7) {
   const lead = getLead(leadId);
-  if (!lead) return { attempts: 0, hitCap: false };
-  const attempts = (lead.noAnswerCount || 0) + 1;
+  if (!lead) return { attempts: 0, hitCap: false, locked: false };
+
+  const now = new Date();
+  const lockUntil = lead.noAnswerLockUntil ? new Date(lead.noAnswerLockUntil) : null;
+
+  // Still inside the 24h cool-off → refuse; the lead is locked.
+  if (lockUntil && lockUntil > now) {
+    return { attempts: lead.noAnswerCount || 0, hitCap: true, locked: true, lockUntil: lockUntil.toISOString() };
+  }
+
+  // A lapsed lock means the cool-off elapsed → start a fresh batch of attempts.
+  const prior = lockUntil ? 0 : (lead.noAnswerCount || 0);
+  const attempts = prior + 1;
   const callTotal = (lead.callCount || 0) + 1;
   const hitCap = attempts >= maxAttempts;
 
-  // Tomorrow, same time of day.
-  const next = new Date(); next.setDate(next.getDate() + 1);
-  const iso = next.toISOString();
-
   const patch = { noAnswerCount: attempts, callCount: callTotal };
-  if (hitCap) { patch.status = 'NOT_INTERESTED'; patch.nextFollowup = null; }
-  else patch.nextFollowup = iso;
+  if (hitCap) {
+    // Lock for 24h without touching status; resurface via a follow-up when it lifts.
+    const until = new Date(now.getTime() + NO_ANSWER_LOCK_MS);
+    patch.noAnswerLockUntil = until.toISOString();
+    patch.nextFollowup = until.toISOString();
+  } else {
+    patch.noAnswerLockUntil = null;
+    const next = new Date(); next.setDate(next.getDate() + 1);
+    patch.nextFollowup = next.toISOString();
+  }
   updLead(leadId, patch);
 
   addAct(leadId, {
@@ -941,21 +970,15 @@ export function logNoAnswer(leadId, user, maxAttempts = 7) {
     description: 'Call attempt · No Answer (' + attempts + '/' + maxAttempts + ')',
     userId: user.id, userName: user.name,
   });
-  if (hitCap) {
-    addAct(leadId, {
-      type: 'STATUS_CHANGE', durationSeconds: 0,
-      description: 'Auto Not Interested — no answer after ' + maxAttempts + ' attempts',
-      userId: user.id, userName: user.name,
-    });
-  } else {
-    const when = new Date(iso).toLocaleString('en-GB', { weekday: 'short', day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
-    addAct(leadId, {
-      type: 'FOLLOW_UP', durationSeconds: 0,
-      description: 'Auto follow-up next day — ' + when,
-      userId: user.id, userName: user.name,
-    });
-  }
-  return { attempts, hitCap };
+  const when = new Date(patch.nextFollowup).toLocaleString('en-GB', { weekday: 'short', day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
+  addAct(leadId, {
+    type: 'FOLLOW_UP', durationSeconds: 0,
+    description: hitCap
+      ? maxAttempts + ' attempts reached — locked 24h, retry after ' + when
+      : 'Auto follow-up next day — ' + when,
+    userId: user.id, userName: user.name,
+  });
+  return { attempts, hitCap, locked: false, lockUntil: hitCap ? patch.noAnswerLockUntil : null };
 }
 
 // Meeting Agent attended the scheduled meeting — flag it + log to the timeline.
