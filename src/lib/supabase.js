@@ -31,6 +31,31 @@ export async function sbGet(path) {
   } catch { return []; }
 }
 
+// Paginated fetch. PostgREST caps every response at 1000 rows, so a plain sbGet
+// on a large table silently returns only the first page — e.g. `activities`
+// (2000+ rows) ordered timestamp.asc dropped everything after the oldest 1000,
+// so a recently-active agent's whole timeline was missing. This walks pages with
+// Range headers until a short page proves we've reached the end.
+export async function sbGetAll(path, pageSize = 1000) {
+  const out = [];
+  const sep = path.includes('?') ? '&' : '?';
+  for (let from = 0; ; from += pageSize) {
+    const to = from + pageSize - 1;
+    let rows;
+    try {
+      const r = await fetch(`${SB_URL}/rest/v1/${path}${sep}limit=${pageSize}&offset=${from}`, {
+        headers: { ...SB_H, Range: `${from}-${to}` },
+      });
+      if (!r.ok) break;
+      rows = await r.json();
+    } catch { break; }
+    if (!Array.isArray(rows) || rows.length === 0) break;
+    out.push(...rows);
+    if (rows.length < pageSize) break; // last page
+  }
+  return out;
+}
+
 // Tables whose absence (PGRST205) should be skipped silently rather than logged
 // as an error — they only exist after the schema migration is applied.
 const _missingTables = new Set();
@@ -520,9 +545,9 @@ export function rToP(r) {
 export async function sbLoad() {
   try {
     const [users, teams, leads, acts, notifs, targets, properties, bookings, companies, holdReqs] = await Promise.all([
-      sbGet('users'), sbGet('teams'), sbGet('leads'),
-      sbGet('activities?order=timestamp.asc'),
-      sbGet('notifications?order=created_at.desc'),
+      sbGet('users'), sbGet('teams'), sbGetAll('leads'),
+      sbGetAll('activities?order=timestamp.asc'),
+      sbGetAll('notifications?order=created_at.desc'),
       sbGet('targets'),
       sbGet('properties?order=created_at.desc'),
       sbGet('bookings?order=created_at.desc'),
