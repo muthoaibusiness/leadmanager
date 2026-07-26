@@ -388,7 +388,7 @@ function OfferCard({ acts }) {
   );
 }
 
-function Timeline({ acts }) {
+function Timeline({ acts, lead }) {
   const items = acts.map(a => ({
     id: a.id,
     type: a.type,
@@ -396,6 +396,10 @@ function Timeline({ acts }) {
     description: a.description,
     sub: a.durationSeconds > 0 ? `${Math.floor(a.durationSeconds / 60)}m ${a.durationSeconds % 60}s · ${fmtDT(a.timestamp)}` : fmtDT(a.timestamp),
   }));
+  // Surface the lead's persistent notes (Message logs) as a pinned timeline entry.
+  if (lead?.notes && lead.notes.trim()) {
+    items.unshift({ id: 'lead-notes', type: 'NOTE', actor: 'Customer message logs', description: lead.notes });
+  }
   return (
     <div className="tl">
       <div className="tl-ttl">Activity Timeline</div>
@@ -458,7 +462,7 @@ export default function LeadPanel() {
               <ScoreCard l={l} acts={acts} />
               <Actions l={l} />
               <OfferCard acts={acts} />
-              <Timeline acts={acts} />
+              <Timeline acts={acts} lead={l} />
             </>
           )}
         </div>
