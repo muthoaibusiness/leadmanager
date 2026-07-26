@@ -36,6 +36,22 @@ export const canSee = (user, key) => {
   return (NAV_SCOPES[key] || []).includes(user.role);
 };
 
+// Behavioural role — decides which dashboard and which lead-action set a user
+// gets. EXECUTIVE is a blank-canvas role with no dashboard/actions of its own, so
+// it operates as whichever front-line agent role its granted features imply:
+// add_customer ⇒ Initial Agent (sources & works new leads), else calendar ⇒
+// Meeting Agent (handles meetings/visits), else Initial Agent. It never resolves
+// to a supervisory role, so an Executive can't gain TL/MGMT-only powers
+// (deal-closing, transfer, delete) by accident. Every other role is itself.
+export const effectiveRole = (user) => {
+  if (!user) return null;
+  if (user.role !== ROLES.EXEC) return user.role;
+  const f = Array.isArray(user.allowedFeatures) ? user.allowedFeatures : [];
+  if (f.includes('add_customer')) return ROLES.IA;
+  if (f.includes('calendar')) return ROLES.MA;
+  return ROLES.IA;
+};
+
 // Features an admin can grant/revoke per user, in display order (nav features only;
 // 'companies' is master-only overview and 'profile' is always-on, so both excluded).
 export const FEATURE_KEYS = ['dashboard', 'leads', 'add_customer', 'calendar', 'pipeline', 'properties', 'reports', 'agentperf', 'requests', 'carpool', 'team', 'users', 'accounts'];

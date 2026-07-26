@@ -51,7 +51,11 @@ export default function InitialAgentDash() {
       .filter(x => x.r)
       .sort((a, b) => a.r.prio - b.r.prio || b.score - a.score || new Date(a.l.createdAt) - new Date(b.l.createdAt));
 
-    const untouched = active.filter(l => !touched(l));
+    // Untouched = brand-new lead nobody has worked yet: status still NEW and no
+    // real activity logged. Every lead is born with an auto 'CREATED' entry, so
+    // that one doesn't count — any other activity type means it's been touched.
+    const untouched = active.filter(l =>
+      l.status === 'NEW' && !(acts[l.id] || []).some(a => a.type !== 'CREATED'));
     const meetingLeads = db.leads.filter(l => l.meetingSetBy === user.id && inWin(l.meetingSetDate));
     const meetingsToday = meetingLeads.length;
 

@@ -5,7 +5,7 @@ import { seedDB, SEED_PROPERTIES, DEMO_PROPERTIES } from './lib/seed.js';
 import { sbLoad, sbSubscribeAll } from './lib/supabase.js';
 import { pushNotify, requestNotifyPermission } from './lib/pushNotify.js';
 import { avc, ini, rlabel } from './lib/helpers.js';
-import { ROLES, canSee, FEATURE_KEYS } from './lib/constants.js';
+import { ROLES, canSee, FEATURE_KEYS, effectiveRole } from './lib/constants.js';
 
 import Mi from './components/Mi.jsx';
 import { SignIn1 } from './components/ui/modern-stunning-sign-in.jsx';
@@ -230,11 +230,13 @@ function PageBody() {
 
   if (user.role === ROLES.MASTER && view !== 'profile') return <MasterDash />; // master sees the company-wise overview
   if (view === 'dashboard') {
-    if (user.role === ROLES.IA) return <InitialAgentDash />;
-    if (user.role === ROLES.MA) return <MeetingAgentDash />;
-    if (user.role === ROLES.TL) return <TeamLeadDash />;
-    if (user.role === ROLES.MGMT) return <ManagementDash />;
-    return null; // Executive / custom-access users have no role dashboard
+    // Executives operate as the agent role their granted features imply.
+    const er = effectiveRole(user);
+    if (er === ROLES.IA) return <InitialAgentDash />;
+    if (er === ROLES.MA) return <MeetingAgentDash />;
+    if (er === ROLES.TL) return <TeamLeadDash />;
+    if (er === ROLES.MGMT) return <ManagementDash />;
+    return null; // no dashboard resolved
   }
   if (view === 'leads') return <LeadsView />;
   if (view === 'calendar') return <CalendarView />;

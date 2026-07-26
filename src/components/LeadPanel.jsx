@@ -5,7 +5,7 @@ import LogCall from './LogCall.jsx';
 import { getLead, getActs, changeStatus, doneVisit, deleteLead, updLead, addAct, logNoAnswer, noAnswerLock, attendMeeting, createCarpoolRequest } from '../lib/db.js';
 import { fmtD, fmtDT, fmtBDT, rlabel, scoreLead, scoreLabel, leadDisplayStatus, fmtDateTimeAP } from '../lib/helpers.js';
 import ActivityTimeline from './ActivityTimeline.jsx';
-import { ROLES, STATUS_LABELS, SRC_LABELS } from '../lib/constants.js';
+import { ROLES, STATUS_LABELS, SRC_LABELS, effectiveRole } from '../lib/constants.js';
 
 function sclass(s) { return 's-' + (s || '').toLowerCase(); }
 const leadCode = (l) => l.externalId || ('#' + String(l.id || '').slice(-6).toUpperCase());
@@ -64,7 +64,7 @@ function LeadInfo({ l }) {
           {(() => { const ds = leadDisplayStatus(l); return <span className={`bdg ${ds.cls}`}>{ds.label}</span>; })()}
           {l.nextFollowup && ['NEW', 'CONTACTED', 'INTERESTED'].includes(l.status) &&
             <span className="bdg s-follow_up"><Mi>alarm</Mi>{fmtDT(l.nextFollowup)}</span>}
-          {user?.role === ROLES.IA &&
+          {effectiveRole(user) === ROLES.IA &&
             <span className="ld-prof-tag" style={{ color: prof.color, marginLeft: 'auto' }}>{prof.label}</span>}
         </div>
       </div>
@@ -120,7 +120,9 @@ function LeadInfo({ l }) {
 
 function Actions({ l }) {
   const { user, openModal, setFwdTarget, setPanLead, refreshDB, showToast } = useApp();
-  const r = user?.role;
+  // Behavioural role: an Executive works leads with the action set its features
+  // imply (e.g. add_customer ⇒ Initial Agent). Delete stays on the raw role below.
+  const r = effectiveRole(user);
 
   const doStatus = (s) => {
     changeStatus(l.id, s, user);
