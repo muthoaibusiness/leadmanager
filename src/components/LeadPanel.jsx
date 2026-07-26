@@ -398,7 +398,7 @@ function Timeline({ acts, lead }) {
   }));
   // Surface the lead's persistent notes (Message logs) as a pinned timeline entry.
   if (lead?.notes && lead.notes.trim()) {
-    items.unshift({ id: 'lead-notes', type: 'NOTE', actor: 'Customer message logs', description: lead.notes });
+    items.unshift({ id: 'lead-notes', type: 'NOTE', actor: 'Customer message logs', description: lead.notes, sub: fmtDT(lead.createdAt) });
   }
   return (
     <div className="tl">
