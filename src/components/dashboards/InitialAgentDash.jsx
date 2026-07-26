@@ -14,6 +14,9 @@ import { panelConfigFor } from '../../lib/funnel.js';
 
 const CLOSED = ['DEAL_CLOSED_WON', 'DEAL_CLOSED_LOST', 'NOT_INTERESTED'];
 
+// Mirrors agentPerf: a lead's originator is the first name in its assignee chain.
+const firstOwner = (l) => (l.previousAssignees && l.previousAssignees[0]) || l.assignedTo;
+
 // Why a lead needs a touch now + its priority. 0 overdue · 1 never called · 2 due today
 function queueReason(lead, touched, todayStart, todayEnd) {
   const fu = lead.nextFollowup ? new Date(lead.nextFollowup) : null;
@@ -78,8 +81,17 @@ export default function InitialAgentDash() {
     );
     const interestedLeads = periodLeads.filter(l => l.status === 'INTERESTED');
     const notInterestedLeads = periodLeads.filter(l => l.status === 'NOT_INTERESTED');
-    // Qualification conversion: of the leads we connected with, how many turned interested.
-    const conversionRate = connectedLeads.length ? Math.round(interestedLeads.length / connectedLeads.length * 100) : 0;
+    // ── Conversion Rate — the SAME metric the Team Lead sees in Agent Performance ──
+    // "Conversion by agent" there is contactRate = contacted ÷ sourced (a lead she
+    // originated that reached CONTACTED+ or has a logged call). We recompute it with
+    // the identical definition and date window so the agent's dashboard matches their
+    // scorecard, instead of the old interested ÷ connected ratio that read far lower
+    // and confused agents. contacted counts callCount>0 (same as agentPerf).
+    const isContacted = (l) => PAST_CONTACT.includes(l.status) || (l.callCount || 0) > 0;
+    const sourcedLeads = involvedLeads.filter(l => firstOwner(l) === user.id && inWin(l.createdAt));
+    const contactRate = sourcedLeads.length ? Math.round(sourcedLeads.filter(isContacted).length / sourcedLeads.length * 100) : 0;
+    // Drill-down base: her sourced leads, the ones that count as contacted first.
+    const sourcedByContact = [...sourcedLeads].sort((a, b) => isContacted(b) - isContacted(a));
 
     // Oldest never-called lead (pipeline-wide, not date-scoped) — urgency signal.
     const untouchedByAge = [...untouched].sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
@@ -89,8 +101,8 @@ export default function InitialAgentDash() {
     // Total follow-ups scheduled across the pipeline (every open lead with a date), not just today.
     const followPending = active.filter(l => l.nextFollowup).sort((a, b) => new Date(a.nextFollowup) - new Date(b.nextFollowup));
 
-    const totals = { leads: periodLeads.length, connected: connectedLeads.length, interested: interestedLeads.length, notInterested: notInterestedLeads.length, conversionRate };
-    const sets = { leads: periodLeads, involved: involvedLeads, connected: connectedLeads, interested: interestedLeads, notInterested: notInterestedLeads, untouched: untouchedByAge, meetings: meetingLeads, followPending };
+    const totals = { leads: periodLeads.length, connected: connectedLeads.length, interested: interestedLeads.length, notInterested: notInterestedLeads.length, contactRate };
+    const sets = { leads: periodLeads, involved: involvedLeads, connected: connectedLeads, interested: interestedLeads, notInterested: notInterestedLeads, untouched: untouchedByAge, meetings: meetingLeads, followPending, sourced: sourcedByContact };
 
     return { now, todayStart, queue, untouched: untouchedByAge, oldestUntouchedAt, followPending, meetingsToday, active, followToday, totals, sets };
   }, [leads, db, user.id, dbVersion, dateRange]);
@@ -118,7 +130,7 @@ export default function InitialAgentDash() {
 
       {/* Performance + workload — every card tells the agent what to do or how they're doing */}
       <div className="grid-4">
-        <StatCard val={view.totals.conversionRate + '%'} label="Conversion Rate" tone={view.totals.conversionRate >= 30 ? 'good' : view.totals.conversionRate ? 'accent' : ''} sub="interested ÷ connected" onClick={() => setDetail({ title: 'Interested (conversion)', leads: view.sets.interested })} />
+        <StatCard val={view.totals.contactRate + '%'} label="Conversion Rate" tone={view.totals.contactRate >= 50 ? 'good' : view.totals.contactRate >= 25 ? 'accent' : ''} sub="contacted ÷ sourced" onClick={() => setDetail({ title: 'Conversion · sourced leads', leads: view.sets.sourced })} />
         <StatCard
           val={view.untouched.length}
           label="Untouched"
