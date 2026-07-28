@@ -1,6 +1,6 @@
 import { useState, useRef } from 'react';
 import { useApp } from '../../context/AppContext.jsx';
-import { getDB, mutate, getTarget } from '../../lib/db.js';
+import { getDB, getTarget, updateAgent } from '../../lib/db.js';
 import { avc, ini, fmtBDT, rlabel, startOfMonth, curMonth } from '../../lib/helpers.js';
 import { ROLES } from '../../lib/constants.js';
 import Mi from '../Mi.jsx';
@@ -142,16 +142,13 @@ export default function ProfileView() {
     if (!name.trim() || !email.trim()) { showToast('Name and email required', 'err'); return; }
     if (pw && pw !== pw2) { showToast('Passwords do not match', 'err'); return; }
     setBusy(true);
-    mutate(d => {
-      const u = d.users.find(x => x.id === fresh.id);
-      if (!u) return;
-      u.name = name.trim();
-      u.email = email.trim();
-      u.phone = phone.trim();
-      u.avatar = avatar;
-      if (pw) u.password = pw;
-    });
-    setUser({ ...fresh, name: name.trim(), email: email.trim(), phone: phone.trim(), avatar, ...(pw ? { password: pw } : {}) });
+    const fields = { name: name.trim(), email: email.trim(), phone: phone.trim(), avatar };
+    if (pw) fields.password = pw;
+    // Persist locally AND push to the cloud — updateAgent does both. The old code
+    // only mutated localStorage, so the edit never reached the DB and (now that
+    // users merge cloud-first) got reverted on the next sync.
+    updateAgent(fresh.id, fields);
+    setUser({ ...fresh, ...fields });
     refreshDB();
     setBusy(false);
     setDirty(false);
