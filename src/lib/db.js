@@ -458,6 +458,16 @@ export function achievement(userId, role) {
 
 export function usersByRole(role) { return getDB().users.filter(u => u.role === role); }
 
+// Live display name for a userId, resolved from the cloud-authoritative users
+// list. Activities and leads store a NAME SNAPSHOT (userName / assignedToName)
+// that goes stale when a user is renamed — always resolve by id so the current
+// name shows everywhere, falling back to the stored snapshot if the id is gone.
+export function userNameById(userId, fallback = null) {
+  if (!userId || userId === 'system') return fallback;
+  const u = getDB().users.find(x => x.id === userId);
+  return (u && u.name) || fallback;
+}
+
 // Update an agent's editable fields (name/phone) and project assignment.
 // projects: 'ALL' (all projects) | array of property ids | [] (none).
 export function updateAgent(userId, fields) {

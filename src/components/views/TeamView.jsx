@@ -1,5 +1,5 @@
 import { useApp } from '../../context/AppContext.jsx';
-import { getLeads, getDB } from '../../lib/db.js';
+import { getLeads, getDB, userNameById } from '../../lib/db.js';
 import AgentCard from '../dashboards/AgentCard.jsx';
 import ActivityTimeline from '../ActivityTimeline.jsx';
 import UserRow from '../UserRow.jsx';
@@ -47,7 +47,7 @@ export default function TeamView() {
       <div className="sec-hd"><div className="sec-t"><Mi>history</Mi>Team Activity</div></div>
       <div className="tl">
         <div className="tl-ttl">Recent Actions</div>
-        <ActivityTimeline items={actFeed.map(a => ({ id: a.id, type: a.type, actor: a.userName, description: a.description, sub: `${a.leadName} · ${fmtAgo(a.timestamp)}` }))} />
+        <ActivityTimeline items={actFeed.map(a => ({ id: a.id, type: a.type, actor: userNameById(a.userId, a.userName), description: a.description, sub: `${a.leadName} · ${fmtAgo(a.timestamp)}` }))} />
       </div>
     </div>
   );

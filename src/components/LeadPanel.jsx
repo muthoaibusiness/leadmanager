@@ -2,7 +2,7 @@ import { useEffect } from 'react';
 import Mi from './Mi.jsx';
 import { useApp } from '../context/AppContext.jsx';
 import LogCall from './LogCall.jsx';
-import { getLead, getActs, changeStatus, doneVisit, deleteLead, updLead, addAct, logNoAnswer, noAnswerLock, attendMeeting, createCarpoolRequest } from '../lib/db.js';
+import { getLead, getActs, changeStatus, doneVisit, deleteLead, updLead, addAct, logNoAnswer, noAnswerLock, attendMeeting, createCarpoolRequest, userNameById } from '../lib/db.js';
 import { fmtD, fmtDT, fmtBDT, rlabel, scoreLead, scoreLabel, leadDisplayStatus, fmtDateTimeAP } from '../lib/helpers.js';
 import ActivityTimeline from './ActivityTimeline.jsx';
 import { ROLES, STATUS_LABELS, SRC_LABELS, effectiveRole } from '../lib/constants.js';
@@ -87,7 +87,7 @@ function LeadInfo({ l }) {
       <div className="ld-agent">
         <div className="ld-ag-cell">
           <Mi>person</Mi>
-          <div className="ld-ag-tx"><div className="ld-ag-l">Assigned</div><div className="ld-ag-v">{l.assignedToName || 'Unassigned'}</div></div>
+          <div className="ld-ag-tx"><div className="ld-ag-l">Assigned</div><div className="ld-ag-v">{userNameById(l.assignedTo, l.assignedToName) || 'Unassigned'}</div></div>
         </div>
         <div className="ld-ag-cell">
           <Mi>badge</Mi>
@@ -383,7 +383,7 @@ function OfferCard({ acts }) {
         <div className="offer-row offer-pipeline"><span className="offer-lbl">Pipeline Value</span><strong>{fmtBDT(data.pipelineValue)}</strong></div>
       )}
       {data.notes && <div className="offer-notes">{data.notes}</div>}
-      <div className="offer-by">Submitted by {offer.userName}</div>
+      <div className="offer-by">Submitted by {userNameById(offer.userId, offer.userName)}</div>
     </div>
   );
 }
@@ -392,7 +392,7 @@ function Timeline({ acts, lead }) {
   const items = acts.map(a => ({
     id: a.id,
     type: a.type,
-    actor: (a.userName && a.userName !== 'system') ? a.userName : null,
+    actor: userNameById(a.userId, (a.userName && a.userName !== 'system') ? a.userName : null),
     description: a.description,
     sub: a.durationSeconds > 0 ? `${Math.floor(a.durationSeconds / 60)}m ${a.durationSeconds % 60}s · ${fmtDT(a.timestamp)}` : fmtDT(a.timestamp),
   }));
