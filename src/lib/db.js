@@ -52,6 +52,16 @@ export function mergeDB(remote, local) {
     });
     return out;
   };
+  // Users/teams carry NO updatedAt, so the generic mergeArr (local wins when
+  // ts >= remote) makes ts always 0 → a browser's STALE local copy overrides a
+  // remote rename forever. User/team edits always push to the cloud via sbUpdate,
+  // so the cloud is authoritative: take every remote row, then keep only local-only
+  // rows (created offline, not yet synced) on top. Fixes edits not propagating.
+  const mergeCloudFirst = (rem = [], loc = []) => {
+    const remIds = new Set(rem.filter(x => x && x.id != null).map(x => x.id));
+    const localOnly = loc.filter(x => x && x.id != null && !remIds.has(x.id));
+    return [...rem.filter(x => x && x.id != null), ...localOnly];
+  };
   // notifications: keyed by userId → union by notif id
   const mergeNotifs = (rem = {}, loc = {}) => {
     const out = {};
@@ -81,9 +91,10 @@ export function mergeDB(remote, local) {
   const leads = [...cloudLeads, ...freshLocal];
   return {
     companies: mergeArr(r.companies, l.companies),
-    // users/teams: union cloud+local but never resurrect a tombstoned (deleted) id
-    users: mergeArr(r.users, l.users).filter(u => !deleted.has(u.id)),
-    teams: mergeArr(r.teams, l.teams).filter(t => !deleted.has(t.id)),
+    // users/teams: cloud-authoritative (no updatedAt to compare), never resurrect
+    // a tombstoned (deleted) id.
+    users: mergeCloudFirst(r.users, l.users).filter(u => !deleted.has(u.id)),
+    teams: mergeCloudFirst(r.teams, l.teams).filter(t => !deleted.has(t.id)),
     leads,
     targets: mergeArr(r.targets, l.targets),
     deletionLog: tomb,
