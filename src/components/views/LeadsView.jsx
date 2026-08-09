@@ -46,30 +46,31 @@ export default function LeadsView() {
   if (isAgent) leads = tab === 'fwd' ? leads.filter(myFwd) : leads.filter(l => l.assignedTo === user.id);
   const fwdCount = isAgent ? getLeads(user, { involved: true }).filter(myFwd).length : 0;
 
-  // A Team Lead's Leads page is their own hand-off queue, not the whole team's
-  // book: only leads that reached them by a forward. That is the lead they hold
-  // now (fwdLead sets assignedTo) plus the ones they have since forwarded on
-  // (they stay in previousAssignees), so a lead does not vanish after the TL
-  // passes it to a closing agent. Other TL views keep the team-wide list.
-  if (isTL) {
-    leads = leads.filter(l => l.assignedTo === user.id || (l.previousAssignees || []).includes(user.id));
-  }
-  // Snapshot before the agent filter narrows the list, so the agent select keeps
-  // offering every option instead of collapsing to the one just chosen.
+  // Snapshot of the whole team book before the agent filter narrows it, so the
+  // agent select keeps offering every option instead of collapsing to the one
+  // just chosen.
   const tlLeads = isTL ? leads : [];
-  // Only offer agents who actually hold one of the leads this TL can see — now
-  // that the list is the TL's own forwards, a full team roster would mostly
-  // select nothing. The TL themselves is always offered and sits first, and is
-  // the default: this page is their own hand-off queue, so "leads I still hold"
-  // is the view they want on arrival. A previously picked agent that drops out
-  // falls back to the TL rather than to ALL.
+  // Only offer agents who actually hold one of the team's leads — a full roster
+  // would list people the filter then selects nothing for. The TL themselves is
+  // listed separately (always, and first), and is the default pick: their own
+  // hand-off queue is the view they want on arrival. A previously picked agent
+  // that drops out falls back to the TL rather than to ALL.
   const teamUsers = isTL
     ? (db.users || []).filter(u => u.teamId === user.teamId && u.id !== user.id && tlLeads.some(l => l.assignedTo === u.id))
     : [];
   const activeAgent = agentFilter === 'ALL' || teamUsers.some(u => u.id === agentFilter) ? agentFilter : user.id;
 
-  if (isTL && activeAgent !== 'ALL') {
-    leads = leads.filter(l => l.assignedTo === activeAgent);
+  // The TL's own entry is their hand-off queue, not the whole team's book: the
+  // lead they hold now (fwdLead sets assignedTo) plus the ones they have since
+  // forwarded on (they stay in previousAssignees), so a lead does not vanish
+  // after the TL passes it to a closing agent. "All agents" is the full team
+  // book; any other pick is that agent's current leads.
+  if (isTL) {
+    if (activeAgent === user.id) {
+      leads = leads.filter(l => l.assignedTo === user.id || (l.previousAssignees || []).includes(user.id));
+    } else if (activeAgent !== 'ALL') {
+      leads = leads.filter(l => l.assignedTo === activeAgent);
+    }
   }
 
   // Project options come from the leads themselves, not the project catalog: the
