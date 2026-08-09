@@ -26,7 +26,7 @@ export default function LeadsView() {
   const isMgmt = user.role === ROLES.MGMT;
   
   const [tab, setTab] = useState('mine');
-  const [agentFilter, setAgentFilter] = useState('ALL');
+  const [agentFilter, setAgentFilter] = useState(user.id);
   const [projectFilter, setProjectFilter] = useState('ALL');
 
   let leads = getLeads(user, { involved: true }); // include forwarded leads so status filters (e.g. Meeting Set) show them
@@ -45,9 +45,31 @@ export default function LeadsView() {
   const myFwd = (l) => (l.previousAssignees || []).includes(user.id) && l.assignedTo !== user.id;
   if (isAgent) leads = tab === 'fwd' ? leads.filter(myFwd) : leads.filter(l => l.assignedTo === user.id);
   const fwdCount = isAgent ? getLeads(user, { involved: true }).filter(myFwd).length : 0;
-  
-  if (isTL && agentFilter !== 'ALL') {
-    leads = leads.filter(l => l.assignedTo === agentFilter);
+
+  // A Team Lead's Leads page is their own hand-off queue, not the whole team's
+  // book: only leads that reached them by a forward. That is the lead they hold
+  // now (fwdLead sets assignedTo) plus the ones they have since forwarded on
+  // (they stay in previousAssignees), so a lead does not vanish after the TL
+  // passes it to a closing agent. Other TL views keep the team-wide list.
+  if (isTL) {
+    leads = leads.filter(l => l.assignedTo === user.id || (l.previousAssignees || []).includes(user.id));
+  }
+  // Snapshot before the agent filter narrows the list, so the agent select keeps
+  // offering every option instead of collapsing to the one just chosen.
+  const tlLeads = isTL ? leads : [];
+  // Only offer agents who actually hold one of the leads this TL can see — now
+  // that the list is the TL's own forwards, a full team roster would mostly
+  // select nothing. The TL themselves is always offered and sits first, and is
+  // the default: this page is their own hand-off queue, so "leads I still hold"
+  // is the view they want on arrival. A previously picked agent that drops out
+  // falls back to the TL rather than to ALL.
+  const teamUsers = isTL
+    ? (db.users || []).filter(u => u.teamId === user.teamId && u.id !== user.id && tlLeads.some(l => l.assignedTo === u.id))
+    : [];
+  const activeAgent = agentFilter === 'ALL' || teamUsers.some(u => u.id === agentFilter) ? agentFilter : user.id;
+
+  if (isTL && activeAgent !== 'ALL') {
+    leads = leads.filter(l => l.assignedTo === activeAgent);
   }
 
   // Project options come from the leads themselves, not the project catalog: the
@@ -84,8 +106,6 @@ export default function LeadsView() {
     ? (db.teams || []).filter(t => !user.companyId || !t.companyId || t.companyId === user.companyId)
     : [];
     
-  const teamUsers = isTL ? (db.users || []).filter(u => u.teamId === user.teamId) : [];
-
   return (
     <>
       {isAgent && (
@@ -131,7 +151,8 @@ export default function LeadsView() {
           </select>
         )}
         {isTL && (
-          <select className="fsel fsel-team" value={agentFilter} onChange={e => setAgentFilter(e.target.value)} title="Show leads for a specific agent">
+          <select className="fsel fsel-team" value={activeAgent} onChange={e => setAgentFilter(e.target.value)} title="Show leads for a specific agent">
+            <option value={user.id}>{user.name}</option>
             <option value="ALL">All agents</option>
             {teamUsers.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
           </select>
