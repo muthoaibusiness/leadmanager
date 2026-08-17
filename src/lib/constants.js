@@ -13,6 +13,9 @@ export const NAV_SCOPES = {
   dashboard: ALL_ROLES,
   leads: ALL_ROLES,
   add_customer: ['INITIAL_AGENT', 'TEAM_LEAD'],
+  // WhatsApp chat is never granted by role — access comes from the allow-list in
+  // wa_settings (or an explicit allowedFeatures grant). See waCanChat() in wa.js.
+  conversations: [],
   calendar: ['MEETING_AGENT', 'TEAM_LEAD', 'MANAGEMENT'],
   pipeline: ALL_ROLES,
   properties: ALL_ROLES,
@@ -54,9 +57,9 @@ export const effectiveRole = (user) => {
 
 // Features an admin can grant/revoke per user, in display order (nav features only;
 // 'companies' is master-only overview and 'profile' is always-on, so both excluded).
-export const FEATURE_KEYS = ['dashboard', 'leads', 'add_customer', 'calendar', 'pipeline', 'properties', 'reports', 'agentperf', 'requests', 'carpool', 'team', 'users', 'accounts'];
+export const FEATURE_KEYS = ['dashboard', 'leads', 'add_customer', 'conversations', 'calendar', 'pipeline', 'properties', 'reports', 'agentperf', 'requests', 'carpool', 'team', 'users', 'accounts'];
 export const FEATURE_LABELS = {
-  dashboard: 'Home', leads: 'Leads', add_customer: 'Add Customer', calendar: 'Calendar', pipeline: 'Pipeline', properties: 'Projects',
+  dashboard: 'Home', leads: 'Leads', add_customer: 'Add Customer', conversations: 'Conversations', calendar: 'Calendar', pipeline: 'Pipeline', properties: 'Projects',
   reports: 'Reports', agentperf: 'Performance', requests: 'Requests', carpool: 'Carpool', team: 'Team',
   users: 'Users', accounts: 'Accounts',
 };

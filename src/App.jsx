@@ -3,6 +3,7 @@ import { useApp } from './context/AppContext.jsx';
 import { getDB, getSession, setSession, tryLogin, saveDB, checkFollowUpReminders, getLeads, getProperties, expireHolds, migrateTenancy, mergeDB, purgeDemoSeed, dedupeLeads, reconcileDeletions, applyRealtimeEvent } from './lib/db.js';
 import { seedDB, SEED_PROPERTIES, DEMO_PROPERTIES } from './lib/seed.js';
 import { sbLoad, sbSubscribeAll } from './lib/supabase.js';
+import { waLoadSettings } from './lib/wa.js';
 import { pushNotify, requestNotifyPermission } from './lib/pushNotify.js';
 import { avc, ini, rlabel } from './lib/helpers.js';
 import { ROLES, canSee, FEATURE_KEYS, effectiveRole } from './lib/constants.js';
@@ -38,6 +39,7 @@ import PipelineView from './components/views/PipelineView.jsx';
 import ClientsView from './components/views/ClientsView.jsx';
 import ReportsView from './components/views/ReportsView.jsx';
 import AgentPerformanceView from './components/views/AgentPerformanceView.jsx';
+import ConversationsView from './components/views/ConversationsView.jsx';
 
 import AddLeadModal from './components/modals/AddLeadModal.jsx';
 import ForwardModal from './components/modals/ForwardModal.jsx';
@@ -61,6 +63,7 @@ import PropertyFormModal from './components/modals/PropertyFormModal.jsx';
 import UnitBookingModal from './components/modals/UnitBookingModal.jsx';
 import BookingModal from './components/modals/BookingModal.jsx';
 import TransferLeadModal from './components/modals/TransferLeadModal.jsx';
+import ChatSettingsModal from './components/modals/ChatSettingsModal.jsx';
 
 // ── Loading screen ──────────────────────────────────────────────────────────
 function LoadingScreen({ visible }) {
@@ -151,6 +154,7 @@ function PageHero() {
   if (!user) return null;
   // Every dashboard now has its own greeting header — skip the generic hero.
   if (view === 'dashboard') return null;
+  if (view === 'conversations') return null; // chat ships its own compact bar
   if (user.role === ROLES.MASTER && view === 'companies') return null;
   const db = getDB();
 
@@ -239,6 +243,7 @@ function PageBody() {
     return null; // no dashboard resolved
   }
   if (view === 'leads') return <LeadsView />;
+  if (view === 'conversations') return <ConversationsView />;
   if (view === 'calendar') return <CalendarView />;
   if (view === 'pipeline') return <PipelineView />;
   if (view === 'clients') return <ClientsView />;
@@ -258,7 +263,7 @@ function PageBody() {
 // ── App shell ───────────────────────────────────────────────────────────────
 function AppShell() {
   const { view } = useApp();
-  const wide = view === 'pipeline'; // kanban needs the full canvas
+  const wide = view === 'pipeline' || view === 'conversations'; // kanban + chat need the full canvas
   return (
     <div id="app">
       <Sidebar />
@@ -273,7 +278,7 @@ function AppShell() {
 
 // ── Root App ─────────────────────────────────────────────────────────────────
 export default function App() {
-  const { user, setUser, view, setView, refreshDB, searchRef, panLead, setPanLead, closeModal, modal, setSearch, notifOpen } = useApp();
+  const { user, setUser, view, setView, refreshDB, searchRef, panLead, setPanLead, closeModal, modal, setSearch, notifOpen, setWaSettings, chatOk } = useApp();
   const [loading, setLoading] = useState(true);
   const [loadVisible, setLoadVisible] = useState(true);
   const [showLogin, setShowLogin] = useState(false); // landing → login gate
@@ -328,11 +333,25 @@ export default function App() {
   // dashboard land on their first granted feature instead of a forbidden page).
   useEffect(() => {
     if (!user || !view) return;
+    // Conversations is granted by the chat allow-list, not by NAV_SCOPES, so it
+    // has to be exempted from the role-based redirect.
+    if (view === 'conversations' && chatOk) return;
     if (!canSee(user, view)) {
       const first = FEATURE_KEYS.find(k => canSee(user, k)) || 'profile';
       setView(first);
     }
-  }, [user?.id, view, user?.allowedFeatures]);
+  }, [user?.id, view, user?.allowedFeatures, chatOk]);
+
+  // Chat config drives both sidebar visibility and the relay URL. Load it once
+  // per signed-in account; a missing table just leaves chat switched off.
+  useEffect(() => {
+    if (!user) { setWaSettings(null); return; }
+    let alive = true;
+    waLoadSettings()
+      .then(s => { if (alive) setWaSettings(s); })
+      .catch(() => { if (alive) setWaSettings(null); });
+    return () => { alive = false; };
+  }, [user?.id, setWaSettings]);
 
   useEffect(() => {
     function onKey(e) {
@@ -433,6 +452,7 @@ export default function App() {
       <UnitBookingModal />
       <BookingModal />
       <TransferLeadModal />
+      <ChatSettingsModal />
       <Toast />
     </>
   );
