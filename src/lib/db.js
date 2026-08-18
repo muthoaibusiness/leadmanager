@@ -1,6 +1,6 @@
 import { ROLES, STATUS_LABELS, SRC_LABELS } from './constants.js';
 import { uid, now_, fmtBDT, fmtDT, curMonth, startOfMonth, rlabel } from './helpers.js';
-import { sbUpdate, sbInsert, sbUpsert, sbMarkRead, sbDelete, sbDeleteLeads, lToR, rToL, uToR, rToU, tToR, rToT, aToR, rToA, rToN, tgToR, rToTg, pToR, rToP, bkToR, rToBk, cToR, rToC, hrToR, rToHr, sbUpsertNotifs } from './supabase.js';
+import { sbGet, sbUpdate, sbInsert, sbUpsert, sbMarkRead, sbDelete, sbDeleteLeads, lToR, rToL, uToR, rToU, tToR, rToT, aToR, rToA, rToN, tgToR, rToTg, pToR, rToP, bkToR, rToBk, cToR, rToC, hrToR, rToHr, sbUpsertNotifs } from './supabase.js';
 export const KEY = 'propcrm_v1';
 export let _DB = null;
 
@@ -244,6 +244,20 @@ export function saveDB(db) {
   persistLocal(db);    // best-effort local cache (never throws)
 }
 
+// Same as saveDB, but the localStorage write waits for an idle frame.
+// persistLocal stringifies the entire dataset (and retries up to four times on
+// QuotaExceededError), which is tens to hundreds of ms of blocked main thread —
+// too expensive to run inline during boot. The in-memory assignment stays
+// synchronous because refreshDB and every reader downstream depend on it.
+const _idle = (fn) => (typeof requestIdleCallback === 'function'
+  ? requestIdleCallback(fn, { timeout: 2000 })
+  : setTimeout(fn, 0));
+
+export function saveDBDeferred(db) {
+  _DB = db;
+  _idle(() => persistLocal(db));
+}
+
 // localStorage is ~5MB; the full dataset (esp. activities + property media) can
 // exceed it and setItem would THROW, crashing whatever triggered the save (even
 // navigation). Persist best-effort: full snapshot, then progressively trimmed
@@ -277,6 +291,51 @@ export function mutate(fn) {
 export function tryLogin(email, pass) {
   const db = getDB();
   return db.users.find(u => u.email.toLowerCase() === email.toLowerCase() && u.password === pass) || null;
+}
+
+// Columns login needs. Deliberately explicit: the bulk load must NOT ship
+// `password`, and this filtered lookup is the only place it is fetched.
+const LOGIN_COLS = 'id,name,email,password,phone,role,team_id,company_id,is_active,avatar,projects,allowed_features';
+
+// Login against the cloud without needing the whole `users` table in memory.
+// Tries the cached DB first (keeps working offline / on a warm cache), then
+// falls back to a single filtered row.
+//
+// `ilike` — not `eq` — because tryLogin's cached comparison is case-insensitive
+// while PostgREST's `eq` is not, so `eq` would reject on a cold cache the exact
+// logins that succeed on a warm one. `ilike` treats `_` (common in emails) and
+// `%` as wildcards, so it can over-match; the match below re-checks the address
+// exactly, making the server-side filter a narrowing hint rather than the test.
+export async function loginRemote(email, pass) {
+  const local = tryLogin(email, pass);
+  if (local) return local;
+  const wanted = String(email).trim().toLowerCase();
+  const rows = await sbGet(`users?email=ilike.${encodeURIComponent(wanted)}&select=${LOGIN_COLS}`);
+  const hit = (rows || []).map(rToU)
+    .find(u => u.email && u.email.toLowerCase() === wanted && u.password === pass);
+  if (hit) return hit;
+
+  // Bootstrap escape hatch. migrateTenancy mints the built-in master account
+  // when no user exists anywhere; it used to run on every cold boot, but that
+  // boot now happens after login, so a brand-new deployment (empty cache AND
+  // empty cloud) would have nothing to sign in with. Only fires when the whole
+  // dataset is empty, so it cannot resurrect a deleted master.
+  const db = getDB();
+  if (!db.users.length && !(rows || []).length) {
+    migrateTenancy(db);
+    saveDB(db);
+    return tryLogin(email, pass);
+  }
+  return null;
+}
+
+// Cheap "is there a session at all" probe. getSession() resolves the stored id
+// against getDB().users, so on a cold visit with an empty cache it returns null
+// even when a valid session exists — it cannot be used to decide whether to
+// skip the initial load.
+export function hasSessionId() {
+  try { return !!JSON.parse(localStorage.getItem('pcrm_sess') || 'null')?.id; }
+  catch { return false; }
 }
 
 export function getSession() {

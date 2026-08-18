@@ -544,10 +544,33 @@ export function rToP(r) {
   };
 }
 
+// The bulk load deliberately does NOT request `password`. Every logged-in
+// browser was being handed every user's plaintext credentials for no reason —
+// login now fetches the one row it needs via loginRemote(). Safe to omit on
+// write-back too: rToU leaves the field `undefined` when it isn't selected, and
+// JSON.stringify drops undefined keys, so sbUpdate's PATCH never touches the
+// column rather than nulling it.
+//
+// NOTE: only `users` gets an explicit column list. The same trick on
+// `properties`/`bookings` would be a data-loss bug, because rToP/rToBk default
+// missing jsonb to []/{} rather than undefined, and expireHolds() PATCHes
+// `{ units: p.units }` for every property — a blob-stripped load plus one hold
+// expiry would wipe every property's units in the cloud.
+const USER_COLS = 'id,name,email,phone,role,team_id,company_id,is_active,avatar,projects,allowed_features';
+
+// Explicit selects 400 on a column the table doesn't have, and sbGet turns any
+// non-ok response into []. Falling back to `*` keeps a schema drift from
+// silently emptying the users table (which would look like "everyone logged out").
+async function sbGetUsers() {
+  const rows = await sbGet(`users?select=${USER_COLS}`);
+  if (rows && rows.length) return rows;
+  return sbGet('users');
+}
+
 export async function sbLoad() {
   try {
     const [users, teams, leads, acts, notifs, targets, properties, bookings, companies, holdReqs] = await Promise.all([
-      sbGet('users'), sbGet('teams'), sbGetAll('leads'),
+      sbGetUsers(), sbGet('teams'), sbGetAll('leads'),
       sbGetAll('activities?order=timestamp.asc'),
       sbGetAll('notifications?order=created_at.desc'),
       sbGet('targets'),

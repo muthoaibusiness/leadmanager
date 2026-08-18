@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useApp } from './context/AppContext.jsx';
-import { getDB, getSession, setSession, tryLogin, saveDB, checkFollowUpReminders, getLeads, getProperties, expireHolds, migrateTenancy, mergeDB, purgeDemoSeed, dedupeLeads, reconcileDeletions, applyRealtimeEvent } from './lib/db.js';
+import { getDB, getSession, setSession, loginRemote, hasSessionId, saveDBDeferred, checkFollowUpReminders, getLeads, getProperties, expireHolds, migrateTenancy, mergeDB, purgeDemoSeed, dedupeLeads, reconcileDeletions, applyRealtimeEvent } from './lib/db.js';
 import { seedDB, SEED_PROPERTIES, DEMO_PROPERTIES } from './lib/seed.js';
 import { sbLoad, sbSubscribeAll } from './lib/supabase.js';
 import { pushNotify, requestNotifyPermission } from './lib/pushNotify.js';
@@ -88,17 +88,17 @@ function LoginPage({ onLogin, onBack }) {
   const [err, setErr] = useState('');
   const [loading, setLoading] = useState(false);
 
-  const doLogin = () => {
+  const doLogin = async () => {
     if (!email || !pw) { setErr('Enter email and password.'); return; }
     setLoading(true);
     setErr('');
-    setTimeout(() => {
-      const u = tryLogin(email, pw);
-      setLoading(false);
-      if (!u) { setErr('Incorrect email or password.'); return; }
-      setSession(u);
-      onLogin(u);
-    }, 500);
+    // loginRemote checks the cached DB first, then falls back to a single
+    // filtered row — so nothing has to be downloaded before this screen paints.
+    const u = await loginRemote(email, pw);
+    setLoading(false);
+    if (!u) { setErr('Incorrect email or password.'); return; }
+    setSession(u);
+    onLogin(u);
   };
 
   const handleKey = (e) => { if (e.key === 'Enter') doLogin(); };
@@ -271,50 +271,130 @@ function AppShell() {
   );
 }
 
+// True only when a session id is stored but the cached DB cannot resolve it
+// (cleared storage, new device, or a snapshot trimmed by persistLocal's quota
+// fallback) — the single boot path that has to wait on the network.
+const needsBootFetch = () => hasSessionId() && !getSession();
+
 // ── Root App ─────────────────────────────────────────────────────────────────
 export default function App() {
   const { user, setUser, view, setView, refreshDB, searchRef, panLead, setPanLead, closeModal, modal, setSearch, notifOpen } = useApp();
-  const [loading, setLoading] = useState(true);
-  const [loadVisible, setLoadVisible] = useState(true);
+  // The loader is only for the one case that genuinely has nothing to render:
+  // a stored session id whose user is NOT in the local cache. An anonymous
+  // visitor gets Landing/Login and a returning user gets the shell, both on the
+  // very first render — no loading state, no cascade, and no network.
+  const [loading, setLoading] = useState(needsBootFetch);
+  const [loadVisible, setLoadVisible] = useState(needsBootFetch);
   const [showLogin, setShowLogin] = useState(false); // landing → login gate
   const [entering, setEntering] = useState(false);    // brief loader after login
   const initialized = useRef(false);
   const notifOpenRef = useRef(false);
   notifOpenRef.current = notifOpen; // live value for the (stable) realtime callback
 
-  // Show the post-login loader for a beat, then reveal the app
-  const enterApp = (u) => {
-    setUser(u);
-    if (u.role === ROLES.MASTER) setView('companies');
+  // Pull the cloud snapshot, reconcile it against the local cache, and run the
+  // one-time migrations. Deliberately NOT on the first-paint path: the shell
+  // renders from the localStorage cache and this refreshes it underneath.
+  const hydrateFromCloud = async () => {
+    // Load from Supabase, then MERGE with local so records created locally but
+    // not yet synced (e.g. a fresh import) survive the reload instead of being
+    // clobbered by the cloud snapshot. Fall back to local/seed if cloud empty.
+    const sbData = await sbLoad();
+    const local = getDB();
+    let freshDB;
+    if (sbData && sbData.users && sbData.users.length) {
+      freshDB = (local && local.users && local.users.length) ? mergeDB(sbData, local) : sbData;
+    } else {
+      freshDB = (local.users && local.users.length) ? local : seedDB();
+    }
+    if (!freshDB.notifications) freshDB.notifications = {};
+    // Seed the WECON project catalog ONCE (never resurrect deleted projects)
+    if (!freshDB.properties) freshDB.properties = [];
+    if (!freshDB.properties.length && !localStorage.getItem('wecon_props_seeded')) {
+      freshDB.properties = SEED_PROPERTIES.map(p => ({ ...p }));
+    }
+    localStorage.setItem('wecon_props_seeded', '1');
+    // Safety net: an empty catalog always gets the 6 demo projects so the view is never blank
+    if (!freshDB.properties.length) {
+      freshDB.properties = DEMO_PROPERTIES.map(p => ({ ...p, units: p.units.map(u => ({ ...u })) }));
+    }
+    // Re-purge from the cloud any tombstoned lead that crept back (other tab/device)
+    reconcileDeletions(freshDB, sbData && sbData.leads);
+    // Drop legacy demo seed accounts so they don't re-sync to the cloud
+    purgeDemoSeed(freshDB);
+    // Remove duplicate leads (keep newest) so the app stops re-uploading dupes
+    dedupeLeads(freshDB);
+    // Multi-tenant backfill: ensure companies + companyId on existing data, and a master account
+    migrateTenancy(freshDB);
+    migrateProjects(freshDB); // backfill storefront fields (variants/media/fastClose)
+    checkFollowUpReminders(freshDB);
+    saveDBDeferred(freshDB); // in-memory now, localStorage write on an idle frame
+    expireHolds(); // auto-release expired holds (saves internally if any)
     refreshDB();
-    requestNotifyPermission(); // ask for browser push permission on login
-    setEntering(true);
-    setTimeout(() => setEntering(false), 1100);
   };
 
-  // Real-time universal subscription
+  // #ld fades out over `transition: opacity .4s`; unmount once that finishes.
+  const revealApp = () => {
+    setLoading(false);
+    setTimeout(() => setLoadVisible(false), 400);
+  };
+
+  const signIn = (u) => {
+    setUser(u);
+    if (u.role === ROLES.MASTER) setView('companies');
+    requestNotifyPermission(); // ask for browser push permission on login
+  };
+
+  // Reveal the app as soon as there is something to show. A returning user has
+  // a warm cache and goes straight in; a first login on a new browser has no
+  // data at all, so the loader stays up for the real fetch rather than for a
+  // fixed timer.
+  const enterApp = (u) => {
+    signIn(u);
+    refreshDB();
+    const warm = (getDB().users || []).length > 1;
+    if (warm) {
+      hydrateFromCloud(); // refresh underneath, nothing blocks
+      return;
+    }
+    setEntering(true);
+    hydrateFromCloud().finally(() => setEntering(false));
+  };
+
+  // Real-time universal subscription. Deferred past first paint: this opens a
+  // socket across 10 unfiltered tables and would otherwise contend with
+  // hydrateFromCloud for the connection while the shell is still painting.
   useEffect(() => {
     if (!user) return;
-    const unsub = sbSubscribeAll((table, type, record, oldRecord) => {
-      console.log(`[Realtime] ${type} ${table}`, record || oldRecord);
-      const changed = applyRealtimeEvent(table, type, record, oldRecord);
-      if (changed) {
-        refreshDB();
-        // Trigger browser push if it's a new notification meant for this user
-        if (table === 'notifications' && type === 'INSERT' && record.user_id === user.id) {
-          const db = getDB();
-          const newNotif = (db.notifications[user.id] || []).find(n => n.id === record.id);
-          if (newNotif) {
-            const suppress = notifOpenRef.current && document.visibilityState === 'visible';
-            pushNotify(newNotif, {
-              suppress,
-              onClick: (n) => { if (n.leadId) setPanLead(n.leadId); },
-            });
+    let unsub = null;
+    let cancelled = false; // the effect can tear down before the idle callback runs
+
+    const open = () => {
+      if (cancelled) return;
+      unsub = sbSubscribeAll((table, type, record, oldRecord) => {
+        console.log(`[Realtime] ${type} ${table}`, record || oldRecord);
+        const changed = applyRealtimeEvent(table, type, record, oldRecord);
+        if (changed) {
+          refreshDB();
+          // Trigger browser push if it's a new notification meant for this user
+          if (table === 'notifications' && type === 'INSERT' && record.user_id === user.id) {
+            const db = getDB();
+            const newNotif = (db.notifications[user.id] || []).find(n => n.id === record.id);
+            if (newNotif) {
+              const suppress = notifOpenRef.current && document.visibilityState === 'visible';
+              pushNotify(newNotif, {
+                suppress,
+                onClick: (n) => { if (n.leadId) setPanLead(n.leadId); },
+              });
+            }
           }
         }
-      }
-    });
-    return unsub;
+      });
+    };
+
+    if (typeof requestIdleCallback === 'function') requestIdleCallback(open, { timeout: 2000 });
+    else setTimeout(open, 0);
+
+    return () => { cancelled = true; if (unsub) unsub(); };
   }, [user?.id]);
 
   // Auto-release expired unit holds every minute
@@ -356,51 +436,29 @@ export default function App() {
     if (initialized.current) return;
     initialized.current = true;
 
-    (async () => {
-      // Load from Supabase, then MERGE with local so records created locally but
-      // not yet synced (e.g. a fresh import) survive the reload instead of being
-      // clobbered by the cloud snapshot. Fall back to local/seed if cloud empty.
-      const sbData = await sbLoad();
-      const local = getDB();
-      let freshDB;
-      if (sbData && sbData.users && sbData.users.length) {
-        freshDB = (local && local.users && local.users.length) ? mergeDB(sbData, local) : sbData;
-      } else {
-        freshDB = (local.users && local.users.length) ? local : seedDB();
-      }
-      if (!freshDB.notifications) freshDB.notifications = {};
-      // Seed the WECON project catalog ONCE (never resurrect deleted projects)
-      if (!freshDB.properties) freshDB.properties = [];
-      if (!freshDB.properties.length && !localStorage.getItem('wecon_props_seeded')) {
-        freshDB.properties = SEED_PROPERTIES.map(p => ({ ...p }));
-      }
-      localStorage.setItem('wecon_props_seeded', '1');
-      // Safety net: an empty catalog always gets the 6 demo projects so the view is never blank
-      if (!freshDB.properties.length) {
-        freshDB.properties = DEMO_PROPERTIES.map(p => ({ ...p, units: p.units.map(u => ({ ...u })) }));
-      }
-      // Re-purge from the cloud any tombstoned lead that crept back (other tab/device)
-      reconcileDeletions(freshDB, sbData && sbData.leads);
-      // Drop legacy demo seed accounts so they don't re-sync to the cloud
-      purgeDemoSeed(freshDB);
-      // Remove duplicate leads (keep newest) so the app stops re-uploading dupes
-      dedupeLeads(freshDB);
-      // Multi-tenant backfill: ensure companies + companyId on existing data, and a master account
-      migrateTenancy(freshDB);
-      migrateProjects(freshDB); // backfill storefront fields (variants/media/fastClose)
-      checkFollowUpReminders(freshDB);
-      saveDB(freshDB);
-      expireHolds(); // auto-release expired holds (saves internally if any)
-      refreshDB();
+    // No session id: Landing/Login are already on screen via the seeded state
+    // above. Nothing is fetched until the user submits credentials — see
+    // loginRemote, which pulls a single filtered row instead of every user.
+    if (!hasSessionId()) return;
 
-      // Fade out loading screen
-      setLoading(false);
-      setTimeout(() => setLoadVisible(false), 400);
+    const cached = getSession(); // resolves the stored id against the cached users
+    if (cached) {
+      // Warm cache: the shell is already rendering from it (AppProvider seeded
+      // `user` from the same read). Just ask for push permission and refresh
+      // the data underneath.
+      requestNotifyPermission();
+      hydrateFromCloud();
+      return;
+    }
 
-      // Try to restore session
+    // Session id present but the cache is cold (cleared storage, new device, or
+    // a snapshot trimmed by persistLocal's quota fallback). The session cannot
+    // be resolved without the users table, so this is the one path that waits.
+    hydrateFromCloud().finally(() => {
       const u = getSession();
-      if (u) { setUser(u); if (u.role === ROLES.MASTER) setView('companies'); requestNotifyPermission(); }
-    })();
+      if (u) signIn(u);
+      revealApp();
+    });
   }, []);
 
   return (

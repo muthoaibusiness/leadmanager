@@ -1,11 +1,15 @@
 import { createContext, useContext, useState, useCallback, useRef } from 'react';
-import { getDB } from '../lib/db.js';
+import { getDB, getSession } from '../lib/db.js';
+import { ROLES } from '../lib/constants.js';
 
 const AppContext = createContext(null);
 
 export function AppProvider({ children }) {
-  const [user, setUser] = useState(null);
-  const [view, setView] = useState('dashboard');
+  // Seeded from the cached session (a synchronous localStorage read) so a
+  // returning user's shell renders on the first pass instead of after a
+  // round-trip. Lazy initialisers — these run once, not per render.
+  const [user, setUser] = useState(getSession);
+  const [view, setView] = useState(() => (getSession()?.role === ROLES.MASTER ? 'companies' : 'dashboard'));
   const [tab, setTab] = useState(0);
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [sortBy, setSortBy] = useState('updated');
