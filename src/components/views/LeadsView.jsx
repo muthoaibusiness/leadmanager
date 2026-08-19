@@ -95,7 +95,7 @@ export default function LeadsView() {
   if (statusFilter === 'FOLLOW_UP') disp = disp.filter(l => l.nextFollowup && FU_OVERLAY.includes(l.status));
   else if (statusFilter === 'FORWARDED') disp = disp.filter(l => (l.previousAssignees || []).length > 0);
   else if (statusFilter !== 'ALL') disp = disp.filter(l => l.status === statusFilter);
-  if (search) { const q = search.toLowerCase(); disp = disp.filter(l => l.name.toLowerCase().includes(q) || l.phone.includes(q) || (l.propertyInterest || '').toLowerCase().includes(q)); }
+  if (search) { const q = search.toLowerCase(); disp = disp.filter(l => (l.name || '').toLowerCase().includes(q) || String(l.phone || '').includes(q) || (l.propertyInterest || '').toLowerCase().includes(q)); }
   // Apply the global date filter (by createdAt) — except on the Forwarded tab,
   // which is a historical hand-off list and should always show every forwarded lead.
   if (dateRange?.range && !(isAgent && tab === 'fwd')) {

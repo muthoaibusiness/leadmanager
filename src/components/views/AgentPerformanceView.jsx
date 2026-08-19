@@ -82,8 +82,8 @@ export default function AgentPerformanceView() {
   const convBars = rows.slice().sort((a, b) => cfg.conv(b) - cfg.conv(a)).slice(0, 8);
 
   let list = rows;
-  if (q) { const s = q.toLowerCase(); list = list.filter(r => r.u.name.toLowerCase().includes(s)); }
-  list = list.slice().sort((a, b) => sort === 'alpha' ? a.u.name.localeCompare(b.u.name) : sort === 'worst' ? cfg.conv(a) - cfg.conv(b) : cfg.conv(b) - cfg.conv(a));
+  if (q) { const s = q.toLowerCase(); list = list.filter(r => (r.u.name || '').toLowerCase().includes(s)); }
+  list = list.slice().sort((a, b) => sort === 'alpha' ? (a.u.name || '').localeCompare(b.u.name || '') : sort === 'worst' ? cfg.conv(a) - cfg.conv(b) : cfg.conv(b) - cfg.conv(a));
 
   const insights = r => {
     const out = []; const f = view.funnel(r, FC);

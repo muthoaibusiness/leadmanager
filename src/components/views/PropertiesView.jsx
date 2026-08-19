@@ -27,7 +27,7 @@ export default function PropertiesView() {
   if (city !== 'ALL') props = props.filter(p => p.district === city);
   if (type !== 'ALL') props = props.filter(p => p.type === type);
   if (status !== 'ALL') props = props.filter(p => p.status === status);
-  if (q) { const s = q.toLowerCase(); props = props.filter(p => (p.name + ' ' + p.district + ' ' + (p.area || '') + ' ' + (p.address || '')).toLowerCase().includes(s)); }
+  if (q) { const s = q.toLowerCase(); props = props.filter(p => ((p.name || '') + ' ' + (p.district || '') + ' ' + (p.area || '') + ' ' + (p.address || '')).toLowerCase().includes(s)); }
 
   const allSelected = props.length > 0 && props.every(p => sel.has(p.id));
   const toggleAll = () => setSel(s => {

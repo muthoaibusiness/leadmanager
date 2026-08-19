@@ -99,7 +99,7 @@ export default function ProjectConsole() {
   // Offers can only go to an existing customer — search this user's leads.
   const myLeads = getLeads(user);
   const matches = cq.trim()
-    ? myLeads.filter(l => (l.name + ' ' + (l.phone || '')).toLowerCase().includes(cq.toLowerCase())).slice(0, 6)
+    ? myLeads.filter(l => ((l.name || '') + ' ' + (l.phone || '')).toLowerCase().includes(cq.toLowerCase())).slice(0, 6)
     : [];
 
   const setUnit = (u) => { if (!locked && u.status === 'available') setDeal(d => ({ ...d, unitId: u.id })); };

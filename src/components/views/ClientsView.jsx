@@ -23,7 +23,7 @@ export default function ClientsView() {
     return <div className="empty"><Mi>diversity_3</Mi><p>No clients yet — they appear here once a lead books a unit or a deal is won.</p></div>;
   }
 
-  const filtered = clients.filter(c => (c.name + ' ' + c.phone + ' ' + (c.email || '')).toLowerCase().includes(q.toLowerCase().trim()));
+  const filtered = clients.filter(c => ((c.name || '') + ' ' + (c.phone || '') + ' ' + (c.email || '')).toLowerCase().includes(q.toLowerCase().trim()));
 
   return (
     <div className="cl-page">

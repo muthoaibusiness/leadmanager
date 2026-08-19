@@ -22,7 +22,7 @@ export default function BookingsView() {
   }
 
   if (status !== 'ALL') bks = bks.filter(b => b.status === status);
-  if (q) { const s = q.toLowerCase(); bks = bks.filter(b => (b.leadName + ' ' + b.propertyName + ' ' + (b.unitNo || '')).toLowerCase().includes(s)); }
+  if (q) { const s = q.toLowerCase(); bks = bks.filter(b => ((b.leadName || '') + ' ' + (b.propertyName || '') + ' ' + (b.unitNo || '')).toLowerCase().includes(s)); }
 
   const contracted = bks.reduce((s, b) => s + (b.total || 0), 0);
   const collected = bks.reduce((s, b) => s + bookingPaid(b), 0);

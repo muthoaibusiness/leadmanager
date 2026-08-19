@@ -37,7 +37,7 @@ export default function UnitBookingModal() {
   // agent's own lead list (TL/MGMT get team/all)
   const myLeads = getLeads(user);
   const matches = cq.trim()
-    ? myLeads.filter(l => (l.name + ' ' + l.phone).toLowerCase().includes(cq.toLowerCase())).slice(0, 6)
+    ? myLeads.filter(l => ((l.name || '') + ' ' + (l.phone || '')).toLowerCase().includes(cq.toLowerCase())).slice(0, 6)
     : [];
 
   const num = v => parseFloat(v) || 0;

@@ -96,8 +96,8 @@ export default function AccountsView() {
     const term = q.trim().toLowerCase();
     return coUsers
       .filter(u => roleFilter === 'ALL' ? true : u.role === roleFilter)
-      .filter(u => !term || u.name.toLowerCase().includes(term) || (u.email || '').toLowerCase().includes(term))
-      .sort((a, b) => a.name.localeCompare(b.name));
+      .filter(u => !term || (u.name || '').toLowerCase().includes(term) || (u.email || '').toLowerCase().includes(term))
+      .sort((a, b) => (a.name || '').localeCompare(b.name || ''));
   }, [dbVersion, q, roleFilter]);
 
   return (

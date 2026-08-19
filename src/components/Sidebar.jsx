@@ -140,7 +140,7 @@ function UserMenu() {
         .sort((a, b) => (a.name || '').localeCompare(b.name || ''))
     : [];
   const ql = q.trim().toLowerCase();
-  const filtered = ql ? accounts.filter(u => (u.name || '').toLowerCase().includes(ql) || rlabel(u.role).toLowerCase().includes(ql)) : accounts;
+  const filtered = ql ? accounts.filter(u => (u.name || '').toLowerCase().includes(ql) || String(rlabel(u.role) || '').toLowerCase().includes(ql)) : accounts;
 
   const logout = () => { clearSession(); setUser(null); };
 
