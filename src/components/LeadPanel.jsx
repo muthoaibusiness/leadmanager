@@ -39,6 +39,7 @@ function LeadInfo({ l }) {
 
   // Spec sheet — label/value rows, shown only when there's a value.
   const specs = [];
+  if (l.company && l.company !== '—') specs.push(['Company', l.company]);
   if (l.propertyInterest) specs.push(['Property', l.propertyInterest]);
   if (l.dealValue > 0) specs.push(['Deal value', fmtBDT(l.dealValue)]);
   // Meeting hand-off info set by the Initial Agent (shown to the Meeting Agent).
