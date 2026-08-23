@@ -23,6 +23,9 @@ const STATUS_MAP: Record<string, string> = {
   failed: "FAILED", error: "FAILED",
 };
 
+// Status only ever moves forward, so a late receipt can't undo a later one.
+const STATUS_RANK: Record<string, number> = { PENDING: 0, SENT: 1, DELIVERED: 2, READ: 3, FAILED: 4 };
+
 // Pull the human-readable text out of the many shapes a WhatsApp message takes.
 function extractText(m: any): string {
   return (
@@ -33,6 +36,9 @@ function extractText(m: any): string {
     m?.documentMessage?.caption ??
     m?.buttonsResponseMessage?.selectedDisplayText ??
     m?.listResponseMessage?.title ??
+    // Wasender's flat shape puts the text straight on the message node.
+    m?.messageBody ??
+    m?.text ??
     ""
   );
 }
@@ -43,6 +49,12 @@ function extractMedia(m: any): { type: string; url?: string; mime?: string; name
   if (m?.audioMessage) return { type: "audio", url: m.audioMessage.url, mime: m.audioMessage.mimetype, name: "audio.ogg", size: Number(m.audioMessage.fileLength) || 0 };
   if (m?.documentMessage) return { type: "document", url: m.documentMessage.url, mime: m.documentMessage.mimetype, name: m.documentMessage.fileName || "document", size: Number(m.documentMessage.fileLength) || 0 };
   if (m?.stickerMessage) return { type: "sticker", url: m.stickerMessage.url, mime: m.stickerMessage.mimetype, name: "sticker.webp", size: 0 };
+  // Flat shape: messageType: "imageMessage" with the URL alongside it.
+  const flat = String(m?.messageType ?? "").replace(/Message$/, "").toLowerCase();
+  const flatUrl = m?.mediaUrl ?? m?.url ?? "";
+  if (flatUrl && ["image", "video", "audio", "document", "sticker"].includes(flat)) {
+    return { type: flat, url: flatUrl, mime: m.mimetype ?? "", name: m.fileName ?? flat, size: Number(m.fileLength) || 0 };
+  }
   return { type: "text" };
 }
 
@@ -136,8 +148,18 @@ Deno.serve(async (req) => {
     if (!fresh) return json({ ok: true, duplicate: true });
   }
 
+  // Extract up front: an event carrying a real body is a message, not a receipt.
+  // A reply typed on the phone arrives with fromMe true (often as message.sent)
+  // and has to land in the thread, not just patch a status.
+  const msgNode = data?.messages ?? data?.message ?? data;
+  const key = msgNode?.key ?? data?.key ?? {};
+  const inner = msgNode?.message ?? msgNode ?? {};
+  const text = extractText(inner);
+  const media = extractMedia(inner);
+  const hasContent = !!(text || media.type !== "text");
+
   // ── delivery receipts for our outbound messages ──────────────────────────
-  if (event.includes("update") || event.includes("receipt") || event === "message.sent") {
+  if (!hasContent && (event.includes("update") || event.includes("receipt") || event === "message.sent")) {
     const updates = Array.isArray(data) ? data : [data];
     for (const u of updates) {
       const id = u?.key?.id ?? u?.msgId ?? u?.id;
@@ -150,18 +172,23 @@ Deno.serve(async (req) => {
     return json({ ok: true });
   }
 
-  // ── inbound message ──────────────────────────────────────────────────────
-  const msgNode = data?.messages ?? data?.message ?? data;
-  const key = msgNode?.key ?? data?.key ?? {};
+  // ── message: inbound, or outbound typed on the phone (fromMe) ────────────
   const jid: string = key.remoteJid ?? msgNode?.remoteJid ?? data?.from ?? "";
   if (!jid || jid.endsWith("@g.us")) return json({ ok: true, skipped: "not a 1:1 chat" });
 
   const fromMe = !!key.fromMe;
   const msgId: string = key.id ?? msgNode?.id ?? crypto.randomUUID();
-  const phone = jidToPhone(jid);
-  const inner = msgNode?.message ?? msgNode ?? {};
-  const text = extractText(inner);
-  const media = extractMedia(inner);
+  // WhatsApp addresses some chats by LID (…@lid), whose digits are not a phone
+  // number — sending to them fails with "The provided JID does not exist on
+  // WhatsApp." The payload carries the real phone JID alongside, so prefer that
+  // for the phone column. senderPn is only the customer's when !fromMe.
+  const phoneJidCandidates: string[] = [
+    key.remoteJid, key.remoteJidAlt, msgNode?.remoteJidAlt, data?.remoteJidAlt,
+    ...(fromMe ? [] : [key.senderPn, key.participantPn, msgNode?.senderPn, data?.senderPn]),
+    data?.from,
+  ].filter(Boolean).map(String);
+  const phoneJid = phoneJidCandidates.find((j) => j.endsWith("@s.whatsapp.net")) ?? "";
+  const phone = jidToPhone(phoneJid || jid);
   const ad = extractAd(inner, data);
   const pushName: string = msgNode?.pushName ?? data?.pushName ?? "";
   const tsSeconds = Number(msgNode?.messageTimestamp ?? data?.timestamp ?? 0);
@@ -174,10 +201,12 @@ Deno.serve(async (req) => {
   const existing = await sbSelect(`wa_conversations?id=eq.${encodeURIComponent(jid)}&select=id,name,lead_id,source`);
   const leadId = existing?.[0]?.lead_id ?? (await findLeadId(phone));
 
+  // pushName on a fromMe message is our own WhatsApp profile name, not the
+  // customer's — it must never overwrite the thread title.
   const convRow: Record<string, unknown> = {
     id: jid,
     phone,
-    name: pushName || existing?.[0]?.name || phone,
+    name: (fromMe ? "" : pushName) || existing?.[0]?.name || phone,
     lead_id: leadId,
   };
   // Only stamp the ad payload once — the referral arrives on the first message
@@ -186,6 +215,14 @@ Deno.serve(async (req) => {
   else if (!existing?.length) { convRow.source = "WHATSAPP"; }
 
   await sbUpsert("wa_conversations", [convRow]);
+
+  // A receipt may already have advanced this row past SENT; don't drag it back.
+  let status = fromMe ? "SENT" : "DELIVERED";
+  if (fromMe) {
+    const prevRows = await sbSelect(`wa_messages?id=eq.${encodeURIComponent(msgId)}&select=status`);
+    const prev: string | undefined = prevRows?.[0]?.status;
+    if (prev && (STATUS_RANK[prev] ?? 0) > STATUS_RANK.SENT) status = prev;
+  }
 
   const preview = text || media.name || media.type;
   await sbUpsert("wa_messages", [{
@@ -201,8 +238,8 @@ Deno.serve(async (req) => {
     media_mime: media.mime ?? "",
     media_name: media.name ?? "",
     media_size: media.size ?? 0,
-    status: fromMe ? "SENT" : "DELIVERED",
-    sender_name: pushName,
+    status,
+    sender_name: fromMe ? "" : pushName,
     wa_timestamp: at,
   }]);
 

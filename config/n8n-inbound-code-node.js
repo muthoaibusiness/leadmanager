@@ -32,6 +32,53 @@ const H = {
   'Content-Type': 'application/json',
 };
 
+// The Code sandbox has no global fetch on Node 16 / older n8n builds, so route
+// requests through this.helpers.httpRequest and hand back a fetch-shaped object.
+const NATIVE_FETCH = typeof fetch === 'function' ? fetch : null;
+const HELPER_REQUEST =
+  (typeof this !== 'undefined' && this && this.helpers && this.helpers.httpRequest)
+    ? this.helpers.httpRequest.bind(this.helpers)
+    : (typeof $helpers !== 'undefined' && $helpers && $helpers.httpRequest)
+      ? $helpers.httpRequest.bind($helpers)
+      : null;
+
+if (!NATIVE_FETCH && !HELPER_REQUEST) {
+  throw new Error('No HTTP client in this Code node: run n8n on Node 18+ or a build that exposes this.helpers.httpRequest.');
+}
+
+function wrapResponse(res) {
+  const status = res.statusCode ?? 0;
+  const raw = res.body;
+  return {
+    ok: status >= 200 && status < 300,
+    status,
+    text: async () => (typeof raw === 'string' ? raw : Buffer.from(raw ?? '').toString('utf8')),
+    json: async () => {
+      if (raw && typeof raw === 'object' && !Buffer.isBuffer(raw)) return raw;
+      try { return JSON.parse(typeof raw === 'string' ? (raw || 'null') : Buffer.from(raw ?? '').toString('utf8')); }
+      catch { return null; }
+    },
+    arrayBuffer: async () => Buffer.from(raw ?? ''),
+  };
+}
+
+// `binary: true` pulls the raw bytes instead of a decoded string.
+async function http(url, init = {}) {
+  if (NATIVE_FETCH) return NATIVE_FETCH(url, init);
+  const res = await HELPER_REQUEST({
+    method: init.method || 'GET',
+    url,
+    headers: init.headers || {},
+    ...(init.body === undefined ? {} : { body: init.body }),
+    json: false,
+    ...(init.binary ? { encoding: 'arraybuffer' } : {}),
+    returnFullResponse: true,
+    ignoreHttpStatusErrors: true,
+    timeout: 30000,
+  });
+  return wrapResponse(res);
+}
+
 // Wasender status strings → the CRM's ladder.
 const STATUS_MAP = {
   pending: 'PENDING', sent: 'SENT', server_ack: 'SENT',
@@ -40,10 +87,13 @@ const STATUS_MAP = {
   failed: 'FAILED', error: 'FAILED',
 };
 
+// Status only ever moves forward, so a late receipt can't undo a later one.
+const STATUS_RANK = { PENDING: 0, SENT: 1, DELIVERED: 2, READ: 3, FAILED: 4 };
+
 const jidToPhone = (jid) => String(jid || '').split('@')[0].split(':')[0].replace(/\D/g, '');
 
 async function sbFetch(path, init) {
-  const r = await fetch(`${SUPABASE_URL}${path}`, init);
+  const r = await http(`${SUPABASE_URL}${path}`, init);
   if (!r.ok) {
     const body = await r.text().catch(() => '');
     console.log(`[wa] ${init?.method || 'GET'} ${path} → ${r.status} ${body.slice(0, 300)}`);
@@ -67,7 +117,7 @@ const patch = (table, filter, body) =>
 
 // Insert-once guard. false = this delivery was already processed.
 async function claimEvent(id, eventType) {
-  const r = await fetch(`${SUPABASE_URL}/rest/v1/wa_webhook_events`, {
+  const r = await http(`${SUPABASE_URL}/rest/v1/wa_webhook_events`, {
     method: 'POST',
     headers: { ...H, Prefer: 'return=minimal' },
     body: JSON.stringify([{ id, event_type: eventType }]),
@@ -85,6 +135,9 @@ const extractText = (m) =>
   m?.documentMessage?.caption ??
   m?.buttonsResponseMessage?.selectedDisplayText ??
   m?.listResponseMessage?.title ??
+  // Wasender's flat shape puts the text straight on the message node.
+  m?.messageBody ??
+  m?.text ??
   '';
 
 function extractMedia(m) {
@@ -93,6 +146,12 @@ function extractMedia(m) {
   if (m?.audioMessage)    return { type: 'audio',    url: m.audioMessage.url,    mime: m.audioMessage.mimetype,    name: 'audio.ogg',    size: Number(m.audioMessage.fileLength) || 0 };
   if (m?.documentMessage) return { type: 'document', url: m.documentMessage.url, mime: m.documentMessage.mimetype, name: m.documentMessage.fileName || 'document', size: Number(m.documentMessage.fileLength) || 0 };
   if (m?.stickerMessage)  return { type: 'sticker',  url: m.stickerMessage.url,  mime: m.stickerMessage.mimetype,  name: 'sticker.webp', size: 0 };
+  // Flat shape: messageType: 'imageMessage' with the URL alongside it.
+  const flat = String(m?.messageType || '').replace(/Message$/, '').toLowerCase();
+  const flatUrl = m?.mediaUrl ?? m?.url ?? '';
+  if (flatUrl && ['image', 'video', 'audio', 'document', 'sticker'].includes(flat)) {
+    return { type: flat, url: flatUrl, mime: m.mimetype || '', name: m.fileName || flat, size: Number(m.fileLength) || 0 };
+  }
   return { type: 'text' };
 }
 
@@ -122,12 +181,12 @@ function extractAd(msg, data) {
 // keep the durable public URL. Failure is non-fatal — the message still lands.
 async function mirrorMedia(url, name, mime) {
   try {
-    const res = await fetch(url);
+    const res = await http(url, { binary: true });
     if (!res.ok) return '';
     const buf = Buffer.from(await res.arrayBuffer());
     const safe = String(name || 'file').replace(/[^\w.-]/g, '_');
     const path = `in/${Date.now()}_${Math.random().toString(36).slice(2, 10)}_${safe}`;
-    const up = await fetch(`${SUPABASE_URL}/storage/v1/object/${BUCKET}/${path}`, {
+    const up = await http(`${SUPABASE_URL}/storage/v1/object/${BUCKET}/${path}`, {
       method: 'POST',
       headers: { apikey: SERVICE_KEY, Authorization: `Bearer ${SERVICE_KEY}`, 'Content-Type': mime || 'application/octet-stream' },
       body: buf,
@@ -166,8 +225,18 @@ for (const item of $input.all()) {
     continue;
   }
 
+  // Extract up front: an event that carries a real body is a message, not a
+  // receipt. A reply typed on the phone arrives with fromMe true (often as
+  // message.sent) and has to land in the thread, not just patch a status.
+  const msgNode = data?.messages ?? data?.message ?? data;
+  const key = msgNode?.key ?? data?.key ?? {};
+  const inner = msgNode?.message ?? msgNode ?? {};
+  const text = extractText(inner);
+  const media = extractMedia(inner);
+  const hasContent = !!(text || media.type !== 'text');
+
   // Delivery receipts for messages the CRM sent.
-  if (event.includes('update') || event.includes('receipt') || event === 'message.sent') {
+  if (!hasContent && (event.includes('update') || event.includes('receipt') || event === 'message.sent')) {
     const updates = Array.isArray(data) ? data : [data];
     for (const u of updates) {
       const id = u?.key?.id ?? u?.msgId ?? u?.id;
@@ -178,9 +247,7 @@ for (const item of $input.all()) {
     continue;
   }
 
-  // Inbound message.
-  const msgNode = data?.messages ?? data?.message ?? data;
-  const key = msgNode?.key ?? data?.key ?? {};
+  // Message: inbound, or outbound typed on the phone (fromMe).
   const jid = key.remoteJid ?? msgNode?.remoteJid ?? data?.from ?? '';
 
   if (!jid || String(jid).endsWith('@g.us')) {
@@ -190,10 +257,17 @@ for (const item of $input.all()) {
 
   const fromMe = !!key.fromMe;
   const msgId = key.id ?? msgNode?.id ?? `gen-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-  const phone = jidToPhone(jid);
-  const inner = msgNode?.message ?? msgNode ?? {};
-  const text = extractText(inner);
-  const media = extractMedia(inner);
+  // WhatsApp addresses some chats by LID (…@lid), whose digits are not a phone
+  // number — sending to them fails with "The provided JID does not exist on
+  // WhatsApp." The payload carries the real phone JID alongside, so prefer that
+  // for the phone column. senderPn is only the customer's when !fromMe.
+  const phoneJidCandidates = [
+    key.remoteJid, key.remoteJidAlt, msgNode?.remoteJidAlt, data?.remoteJidAlt,
+    ...(fromMe ? [] : [key.senderPn, key.participantPn, msgNode?.senderPn, data?.senderPn]),
+    data?.from,
+  ].filter(Boolean).map(String);
+  const phoneJid = phoneJidCandidates.find((j) => j.endsWith('@s.whatsapp.net')) ?? '';
+  const phone = jidToPhone(phoneJid || jid);
   const ad = extractAd(inner, data);
   const pushName = msgNode?.pushName ?? data?.pushName ?? '';
   const ts = Number(msgNode?.messageTimestamp ?? data?.timestamp ?? 0);
@@ -206,10 +280,12 @@ for (const item of $input.all()) {
   const existing = existingRes.ok ? await existingRes.json().catch(() => []) : [];
   const leadId = existing?.[0]?.lead_id ?? (await findLeadId(phone));
 
+  // pushName on a fromMe message is our own WhatsApp profile name, not the
+  // customer's — it must never overwrite the thread title.
   const conv = {
     id: jid,
     phone,
-    name: pushName || existing?.[0]?.name || phone,
+    name: (fromMe ? '' : pushName) || existing?.[0]?.name || phone,
     lead_id: leadId,
   };
   // Stamp the ad payload once — it arrives on the first message and must not be
@@ -218,6 +294,15 @@ for (const item of $input.all()) {
   else if (!existing?.length) { conv.source = 'WHATSAPP'; }
 
   await upsert('wa_conversations', [conv]);
+
+  // A receipt may already have advanced this row past SENT; don't drag it back.
+  let status = fromMe ? 'SENT' : 'DELIVERED';
+  if (fromMe) {
+    const prevRes = await sbFetch(`/rest/v1/wa_messages?id=eq.${encodeURIComponent(msgId)}&select=status`, { headers: H });
+    const prevRows = prevRes.ok ? await prevRes.json().catch(() => []) : [];
+    const prev = prevRows?.[0]?.status;
+    if (prev && (STATUS_RANK[prev] ?? 0) > STATUS_RANK.SENT) status = prev;
+  }
 
   await upsert('wa_messages', [{
     id: msgId,
@@ -232,8 +317,8 @@ for (const item of $input.all()) {
     media_mime: media.mime ?? '',
     media_name: media.name ?? '',
     media_size: media.size ?? 0,
-    status: fromMe ? 'SENT' : 'DELIVERED',
-    sender_name: pushName,
+    status,
+    sender_name: fromMe ? '' : pushName,
     wa_timestamp: at,
   }]);
 

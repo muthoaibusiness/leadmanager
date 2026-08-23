@@ -191,6 +191,18 @@ export async function waLinkLead(conversationId, leadId) {
 
 export const waClientRef = () => 'c' + Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
 
+// What Wasender should address the message to. A LID thread (…@lid) carries an
+// internal identity, not a phone number, and the API rejects those digits with
+// "The provided JID does not exist on WhatsApp." Such a thread is only sendable
+// once the webhook has learned the real number from a later message.
+export function waSendTarget(conversation) {
+  const id = String(conversation?.id || '');
+  const idDigits = id.split('@')[0].split(':')[0].replace(/\D/g, '');
+  const phone = String(conversation?.phone || '').replace(/\D/g, '');
+  if (id.endsWith('@lid') && (!phone || phone === idDigits)) return '';
+  return phone || idDigits;
+}
+
 // Upload an outbound attachment to Supabase Storage and return its public URL.
 // Wasender takes a URL for media, so the file never round-trips through the relay.
 export async function waUploadMedia(file, onProgress) {
@@ -248,13 +260,20 @@ export async function waSendMessage(settings, { conversation, user, type = 'text
     return { ok: false, optimistic, error: 'No relay URL configured.' };
   }
 
+  const to = waSendTarget(conversation);
+  if (!to) {
+    const reason = 'No phone number on this thread yet — WhatsApp identified it by LID. It becomes sendable after the next message arrives.';
+    await waFailMessage(clientRef, reason);
+    return { ok: false, optimistic, error: reason };
+  }
+
   try {
     const r = await fetch(settings.relayUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         action: 'send',
-        to: conversation.phone,
+        to,
         conversationId: conversation.id,
         clientRef,
         type,
