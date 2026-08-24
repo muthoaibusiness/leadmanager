@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useApp } from './context/AppContext.jsx';
-import { getDB, getSession, setSession, loginRemote, hasSessionId, saveDBDeferred, checkFollowUpReminders, getLeads, getProperties, expireHolds, migrateTenancy, mergeDB, purgeDemoSeed, dedupeLeads, reconcileDeletions, applyRealtimeEvent } from './lib/db.js';
+import { getDB, getSession, setSession, loginRemote, hasSessionId, saveDBDeferred, checkFollowUpReminders, getLeads, getProperties, expireHolds, migrateTenancy, mergeDB, purgeDemoSeed, dedupeLeads, reconcileDeletions, applyRealtimeEvent, clearLocalDB, cacheBelongsTo, fetchSessionUser } from './lib/db.js';
 import { seedDB, SEED_PROPERTIES, DEMO_PROPERTIES } from './lib/seed.js';
 import { sbLoad, sbSubscribeAll } from './lib/supabase.js';
 import { pushNotify, requestNotifyPermission } from './lib/pushNotify.js';
@@ -294,11 +294,21 @@ export default function App() {
   // Pull the cloud snapshot, reconcile it against the local cache, and run the
   // one-time migrations. Deliberately NOT on the first-paint path: the shell
   // renders from the localStorage cache and this refreshes it underneath.
-  const hydrateFromCloud = async () => {
+  // `who` is the account to load for. The cloud read is scoped to that user's
+  // company (sbLoad), so it MUST be known before fetching — passing nothing
+  // falls back to the old unfiltered load, which is what MASTER gets.
+  const hydrateFromCloud = async (who) => {
+    const forUser = who || user || getSession();
+    // The cached snapshot now holds one company's rows. Handing it to a
+    // different account is a leak, not a head start: mergeDB unions local into
+    // remote and mergeCloudFirst keeps local-only users/teams forever, so every
+    // row of the previous tenant would survive the next login. clearSession
+    // covers a deliberate sign-out; this covers a closed browser or a crash.
+    if (forUser && !cacheBelongsTo(forUser.id)) clearLocalDB();
     // Load from Supabase, then MERGE with local so records created locally but
     // not yet synced (e.g. a fresh import) survive the reload instead of being
     // clobbered by the cloud snapshot. Fall back to local/seed if cloud empty.
-    const sbData = await sbLoad();
+    const sbData = await sbLoad(forUser);
     const local = getDB();
     let freshDB;
     if (sbData && sbData.users && sbData.users.length) {
@@ -323,8 +333,10 @@ export default function App() {
     purgeDemoSeed(freshDB);
     // Remove duplicate leads (keep newest) so the app stops re-uploading dupes
     dedupeLeads(freshDB);
-    // Multi-tenant backfill: ensure companies + companyId on existing data, and a master account
-    migrateTenancy(freshDB);
+    // Multi-tenant backfill: ensure companies + companyId on existing data, and a master account.
+    // Passing the user keeps it from inventing a 'c1' company or a master account
+    // out of a snapshot that only ever contained one company — see migrateTenancy.
+    migrateTenancy(freshDB, forUser);
     migrateProjects(freshDB); // backfill storefront fields (variants/media/fastClose)
     checkFollowUpReminders(freshDB);
     saveDBDeferred(freshDB); // in-memory now, localStorage write on an idle frame
@@ -350,19 +362,27 @@ export default function App() {
   // fixed timer.
   const enterApp = (u) => {
     signIn(u);
+    // A cache belonging to somebody else is not a warm cache — it is the
+    // previous tenant's data, and rendering from it would flash their rows.
+    if (!cacheBelongsTo(u.id)) clearLocalDB();
     refreshDB();
-    const warm = (getDB().users || []).length > 1;
+    // "Warm" used to mean "the cache holds more than one user". Under per-account
+    // scoping an agent's snapshot holds exactly ONE user — their own — so that
+    // test is now always false and every login would sit behind the loader.
+    // Leads are the real signal that there is something to render.
+    const warm = (getDB().leads || []).length > 0;
     if (warm) {
-      hydrateFromCloud(); // refresh underneath, nothing blocks
+      hydrateFromCloud(u); // refresh underneath, nothing blocks
       return;
     }
     setEntering(true);
-    hydrateFromCloud().finally(() => setEntering(false));
+    hydrateFromCloud(u).finally(() => setEntering(false));
   };
 
-  // Real-time universal subscription. Deferred past first paint: this opens a
-  // socket across 10 unfiltered tables and would otherwise contend with
-  // hydrateFromCloud for the connection while the shell is still painting.
+  // Real-time subscription, scoped to the signed-in account's company (MASTER
+  // stays unfiltered). Deferred past first paint: it opens a socket across 10
+  // tables and would otherwise contend with hydrateFromCloud for the connection
+  // while the shell is still painting.
   useEffect(() => {
     if (!user) return;
     let unsub = null;
@@ -371,8 +391,10 @@ export default function App() {
     const open = () => {
       if (cancelled) return;
       unsub = sbSubscribeAll((table, type, record, oldRecord) => {
-        console.log(`[Realtime] ${type} ${table}`, record || oldRecord);
-        const changed = applyRealtimeEvent(table, type, record, oldRecord);
+        if (import.meta.env.DEV) console.log(`[Realtime] ${type} ${table}`, record || oldRecord);
+        // applyRealtimeEvent re-checks the tenant client-side: the server filter
+        // covers INSERT/UPDATE only, since DELETE is subscribed unfiltered.
+        const changed = applyRealtimeEvent(table, type, record, oldRecord, user);
         if (changed) {
           refreshDB();
           // Trigger browser push if it's a new notification meant for this user
@@ -388,7 +410,7 @@ export default function App() {
             }
           }
         }
-      });
+      }, user);
     };
 
     if (typeof requestIdleCallback === 'function') requestIdleCallback(open, { timeout: 2000 });
@@ -447,18 +469,26 @@ export default function App() {
       // `user` from the same read). Just ask for push permission and refresh
       // the data underneath.
       requestNotifyPermission();
-      hydrateFromCloud();
+      hydrateFromCloud(cached);
       return;
     }
 
     // Session id present but the cache is cold (cleared storage, new device, or
     // a snapshot trimmed by persistLocal's quota fallback). The session cannot
     // be resolved without the users table, so this is the one path that waits.
-    hydrateFromCloud().finally(() => {
+    //
+    // The load is scoped by company, so it needs the user before it can build
+    // its filters — and the cache is exactly what cannot supply one here. Fetch
+    // that single row by primary key first; falling back to the unfiltered load
+    // if it fails keeps a broken network from locking anyone out.
+    (async () => {
+      const sid = JSON.parse(localStorage.getItem('pcrm_sess') || 'null')?.id;
+      const who = await fetchSessionUser(sid);
+      await hydrateFromCloud(who);
       const u = getSession();
       if (u) signIn(u);
       revealApp();
-    });
+    })();
   }, []);
 
   return (

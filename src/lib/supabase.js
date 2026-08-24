@@ -330,12 +330,15 @@ export function rToL(r) {
   };
 }
 
+// company_id on activities/notifications/targets exists purely so the load can be
+// scoped to one tenant in the query (see sbLoad). It is derived from the parent
+// lead or the acting user at write time; migration 0009 backfills the history.
 export function aToR(a, leadId) {
-  return { id: a.id, lead_id: leadId, type: a.type, description: a.description || '', user_id: a.userId, user_name: a.userName, duration_seconds: a.durationSeconds || 0, timestamp: a.timestamp };
+  return { id: a.id, lead_id: leadId, type: a.type, description: a.description || '', user_id: a.userId, user_name: a.userName, duration_seconds: a.durationSeconds || 0, timestamp: a.timestamp, company_id: a.companyId ?? null };
 }
 
 export function rToA(r) {
-  return { id: r.id, type: r.type, description: r.description || '', userId: r.user_id, userName: r.user_name, durationSeconds: r.duration_seconds || 0, timestamp: r.timestamp };
+  return { id: r.id, type: r.type, description: r.description || '', userId: r.user_id, userName: r.user_name, durationSeconds: r.duration_seconds || 0, timestamp: r.timestamp, companyId: r.company_id ?? null };
 }
 
 // allowed_features / projects use ?? (not ||) on the way out so an EMPTY array is
@@ -379,17 +382,41 @@ export function cToR(c) { return { id: c.id, name: c.name, plan: c.plan || 'Star
 export function rToC(r) { return { id: r.id, name: r.name, plan: r.plan || 'Starter', isActive: r.is_active !== false, createdAt: r.created_at }; }
 
 export function nToR(n) {
-  return { id: n.id, user_id: n.userId, type: n.type, message: n.message, lead_id: n.leadId || null, is_read: n.read || false, created_at: n.timestamp || new Date().toISOString() };
+  return { id: n.id, user_id: n.userId, type: n.type, message: n.message, lead_id: n.leadId || null, is_read: n.read || false, created_at: n.timestamp || new Date().toISOString(), company_id: n.companyId ?? null };
 }
 
 export function rToN(r) {
-  return { id: r.id, userId: r.user_id, type: r.type, message: r.message, leadId: r.lead_id, read: r.is_read || false, timestamp: r.created_at };
+  return { id: r.id, userId: r.user_id, type: r.type, message: r.message, leadId: r.lead_id, read: r.is_read || false, timestamp: r.created_at, companyId: r.company_id ?? null };
 }
 
 // Flat array of notification objects (each has userId) → upsert to Supabase
 export async function sbUpsertNotifs(notifs) {
   if (!notifs || !notifs.length) return;
   await sbUpsert('notifications', notifs.map(nToR));
+}
+
+// Which of these email addresses already belong to a user account, anywhere.
+//
+// The client-side duplicate check (CreateUserModal, bulkCreateUsers) compares
+// against db.users, and db.users now holds one company only — so it went blind
+// to the other tenants exactly when the scoped load landed. Two accounts sharing
+// an address is an auth bug, not just untidy data: loginRemote matches on
+// `email=ilike.<addr>` and signs in whichever row's password matches.
+// Migration 0009 adds a unique index as the backstop; this is the readable error.
+//
+// ilike (not eq) because addresses are stored with whatever case they were typed
+// in. Returns a lower-cased Set; an empty Set on a network failure, so a create
+// is never blocked by being offline — the unique index still catches it.
+export async function sbEmailsInUse(emails) {
+  const list = [...new Set((emails || []).map(e => String(e || '').trim().toLowerCase()).filter(Boolean))];
+  const hits = new Set();
+  for (let i = 0; i < list.length; i += 40) {
+    const chunk = list.slice(i, i + 40);
+    const or = chunk.map(e => `email.ilike.${encodeURIComponent(e)}`).join(',');
+    const rows = await sbGet(`users?select=email&or=(${or})`);
+    (rows || []).forEach(r => r.email && hits.add(r.email.trim().toLowerCase()));
+  }
+  return hits;
 }
 
 // Mark specific notification ids as read in Supabase
@@ -441,12 +468,66 @@ export function sbSubscribeNotifs(userId, onNew) {
   return () => { dead = true; clearInterval(hbTimer); clearTimeout(reconnTimer); try { ws?.close(); } catch {} };
 }
 
-export function sbSubscribeAll(onEvent) {
+const RT_TABLES = ['users', 'teams', 'leads', 'activities', 'notifications', 'targets', 'companies', 'properties', 'bookings', 'hold_requests'];
+
+// Build the postgres_changes config. Unscoped (MASTER) is the original: one
+// wildcard spec per table. Scoped splits each table in two, because a realtime
+// `filter` cannot serve both cases:
+//
+//   INSERT/UPDATE - filtered where a single `col=eq.val` can express the scope.
+//   DELETE        - never filtered. Under the default replica identity a delete
+//     payload carries only the primary key, so ANY filter would drop every
+//     delete event and rows would linger in the cache forever. Letting them all
+//     through is safe: applyRealtimeEvent removes by id, a no-op when the row
+//     was never in this browser's snapshot, and an id is all that leaks.
+//
+// A realtime filter accepts exactly one clause -- there is no `or` -- so the
+// tables whose scope needs more than that are subscribed on a WIDER clause and
+// narrowed by inScope() in db.js. Named explicitly rather than left implicit:
+//
+//   leads       - agent scope is "assigned to me OR previously assigned to me";
+//                 only the first half fits, so subscribe on the company.
+//   activities  - scope is "on a lead I hold", which is a set, not a value.
+//   targets     - company-wide, narrowed to the visible user set client-side.
+//
+// Rows with a null company_id do not stream on the company clause. The initial
+// load still tolerates them (see coFilter); migration 0009 backfills them away.
+function rtConfig(user) {
+  if (isUnscoped(user)) return RT_TABLES.map(table => ({ event: '*', schema: 'public', table }));
+  const cid = user.companyId;
+  const isMgmt = user.role === 'MANAGEMENT';
+  const isTL = user.role === 'TEAM_LEAD';
+  const co = `company_id=eq.${cid}`;
+
+  return RT_TABLES.flatMap(table => {
+    let filter = co;
+    if (table === 'companies') filter = `id=eq.${cid}`;
+    // notifications track the recipient, not the tenant -- the load fetches only
+    // this user's, so the socket must match or the cache fills with rows no view
+    // ever reads.
+    else if (table === 'notifications') filter = `user_id=eq.${user.id}`;
+    else if (table === 'users') filter = isMgmt ? co : (isTL && user.teamId ? `team_id=eq.${user.teamId}` : `id=eq.${user.id}`);
+    else if (table === 'teams') filter = isMgmt ? co : (user.teamId ? `id=eq.${user.teamId}` : co);
+    // activities has no company_id until migration 0009, and filtering on a
+    // column that does not exist drops every event for the table.
+    else if (table === 'activities' && _hasCompanyCol.activities !== true) {
+      return [{ event: '*', schema: 'public', table }];
+    }
+
+    return [
+      { event: 'INSERT', schema: 'public', table, filter },
+      { event: 'UPDATE', schema: 'public', table, filter },
+      { event: 'DELETE', schema: 'public', table },
+    ];
+  });
+}
+
+export function sbSubscribeAll(onEvent, user) {
   const wsUrl = `${SB_URL.replace('https://', 'wss://')}/realtime/v1/websocket?apikey=${SB_KEY}&vsn=1.0.0`;
   let ws, hbTimer, reconnTimer;
   let dead = false;
-  
-  const tables = ['users', 'teams', 'leads', 'activities', 'notifications', 'targets', 'companies', 'properties', 'bookings', 'hold_requests'];
+
+  const config = rtConfig(user);
 
   function connect() {
     try { ws = new WebSocket(wsUrl); } catch { return; }
@@ -454,11 +535,7 @@ export function sbSubscribeAll(onEvent) {
       ws.send(JSON.stringify({
         topic: `realtime:public`,
         event: 'phx_join',
-        payload: { 
-          config: { 
-            postgres_changes: tables.map(table => ({ event: '*', schema: 'public', table }))
-          } 
-        },
+        payload: { config: { postgres_changes: config } },
         ref: '1',
       }));
       hbTimer = setInterval(() => {
@@ -504,8 +581,8 @@ export function rToBk(r) {
   };
 }
 
-export function tgToR(t) { return { id: t.id, user_id: t.userId, month: t.month, type: t.type, value: t.value }; }
-export function rToTg(r) { return { id: r.id, userId: r.user_id, month: r.month, type: r.type, value: r.value }; }
+export function tgToR(t) { return { id: t.id, user_id: t.userId, month: t.month, type: t.type, value: t.value, company_id: t.companyId ?? null }; }
+export function rToTg(r) { return { id: r.id, userId: r.user_id, month: r.month, type: r.type, value: r.value, companyId: r.company_id ?? null }; }
 
 export function pToR(p) {
   return {
@@ -561,28 +638,207 @@ const USER_COLS = 'id,name,email,phone,role,team_id,company_id,is_active,avatar,
 // Explicit selects 400 on a column the table doesn't have, and sbGet turns any
 // non-ok response into []. Falling back to `*` keeps a schema drift from
 // silently emptying the users table (which would look like "everyone logged out").
-async function sbGetUsers() {
-  const rows = await sbGet(`users?select=${USER_COLS}`);
+async function sbGetUsers(path) {
+  const rows = await sbGet(path);
   if (rows && rows.length) return rows;
-  return sbGet('users');
+  // Drop only the select, keep the filter -- a fallback that also dropped the
+  // scoping would quietly hand this browser every user in the database.
+  return sbGet(path.replace(`select=${USER_COLS}&`, '').replace(`?select=${USER_COLS}`, '?'));
 }
 
-export async function sbLoad() {
+// -- Per-account scoping -----------------------------------------------------
+// Every read below used to be unfiltered: each browser downloaded the whole
+// database and the filter was applied afterwards, in memory (getLeads /
+// sameCompany in db.js). These build the same predicate as a query instead, so
+// the rows never leave the server.
+//
+// The tiers mirror getLeads(user) exactly -- one source of truth for "what may
+// this account see", now expressed twice: once as SQL here, once as the
+// client-side filter there. Keep them in step.
+//
+//   agent (IA/MA/EXEC) - self only. One user row, one team row, the leads
+//                        assigned to them (plus ones they forwarded on), and
+//                        the activities on those leads.
+//   TEAM_LEAD          - their team: its members, its team row, its leads.
+//   MANAGEMENT         - their company.
+//   MASTER             - everything; it oversees all companies and its own row
+//                        carries no companyId, so it keeps the unfiltered load.
+//
+// NOTE this is a payload/correctness change, NOT access control: the anon key
+// is baked into the bundle and the RLS policies that exist are `using (true)`,
+// so the REST endpoint still answers an unfiltered request from anyone who
+// asks. Real isolation needs Supabase Auth + JWT claims + per-table RLS.
+//
+// The `company_id.is.null` arm reproduces sameCompany()'s null tolerance so no
+// row visible today disappears. Migration 0009 backfills those nulls; once that
+// is verified in production, flip SCOPE_STRICT and the filter becomes exact.
+const SCOPE_STRICT = false;
+const coFilter = (cid) => (SCOPE_STRICT ? `company_id=eq.${cid}` : `or=(company_id.eq.${cid},company_id.is.null)`);
+
+export const isUnscoped = (user) => !user || user.role === 'MASTER' || !user.companyId;
+
+// previous_assignees is JSONB (verified against the live schema -- it is NOT a
+// text[], so the array operators `ov.{...}` and `cs.{...}` both fail). JSON
+// containment is the operator, and the brackets and quotes must be encoded to
+// survive being nested inside `or=(...)`.
+const prevAssignee = (id) => `previous_assignees.cs.${encodeURIComponent(JSON.stringify([id]))}`;
+
+// PostgREST `in.(...)` list, quoted and encoded.
+const inList = (ids) => `in.(${encodeURIComponent(ids.map(i => `"${i}"`).join(','))})`;
+
+// Does this table have a company_id column yet?
+//
+// activities only gets one from migration 0009, and PostgREST answers a filter
+// on an unknown column with 400 -- which sbGet turns into []. So if this code
+// shipped before the migration ran, the table would load EMPTY and look like
+// data loss rather than a missing column. Probe once per session and fall back
+// to the unfiltered read, in the same self-healing spirit as sbUpsert's
+// PGRST204 handling.
+const _hasCompanyCol = {};
+async function hasCompanyCol(table) {
+  if (_hasCompanyCol[table] !== undefined) return _hasCompanyCol[table];
+  let ok;
   try {
-    const [users, teams, leads, acts, notifs, targets, properties, bookings, companies, holdReqs] = await Promise.all([
-      sbGetUsers(), sbGet('teams'), sbGetAll('leads'),
-      sbGetAll('activities?order=timestamp.asc'),
-      sbGetAll('notifications?order=created_at.desc'),
-      sbGet('targets'),
-      sbGet('properties?order=created_at.desc'),
-      sbGet('bookings?order=created_at.desc'),
-      sbGet('companies'),
-      sbGet('hold_requests?order=created_at.desc'),
-    ]);
+    const r = await fetch(`${SB_URL}/rest/v1/${table}?select=company_id&limit=1`, { headers: SB_H });
+    ok = r.ok;
+  } catch { ok = false; }
+  if (!ok) console.warn(`[scope] ${table}.company_id missing - loading it UNFILTERED. Apply supabase/migrations/0009_tenant_scoping.sql.`);
+  _hasCompanyCol[table] = ok;
+  return ok;
+}
+
+// Fetch rows for a set of ids, in chunks, so the URL cannot blow up.
+//
+// Ids are 17 chars (helpers.js uid) or 36-char uuids; inside `in.("a","b")`
+// each costs its length plus 9 bytes of encoding. 50 uuids is a ~2.1 KB URL --
+// comfortably under the 8 KB request line Kong accepts, and sbDeleteLeads
+// already batches at 40. Each chunk goes through sbGetAll because a chunk of 50
+// leads can easily hold more than PostgREST's 1000-row page.
+async function sbGetByIds(makePath, ids, chunk = 50) {
+  const out = [];
+  for (let i = 0; i < ids.length; i += chunk) {
+    out.push(...await sbGetAll(makePath(inList(ids.slice(i, i + chunk)))));
+  }
+  return out;
+}
+
+// Small column set for looking other people up on demand. db.users no longer
+// holds the whole company, so the flows that legitimately need someone else --
+// forwarding a lead, addressing a notification to management -- ask the server
+// instead of scanning a local array that no longer contains them.
+const USER_LITE = 'id,name,email,phone,role,team_id,company_id,is_active,avatar';
+export async function sbGetUsersLite(filter) {
+  return sbGet(`users?select=${USER_LITE}&${filter}`);
+}
+
+// Ids of every active user with `role`, within a company and optionally a team.
+export async function sbUserIdsByRole(role, { companyId, teamId } = {}) {
+  let f = `role=eq.${role}&is_active=not.eq.false`;
+  if (companyId) f += `&or=(company_id.eq.${companyId},company_id.is.null)`;
+  if (teamId) f += `&team_id=eq.${teamId}`;
+  const rows = await sbGet(`users?select=id&${f}`);
+  return (rows || []).map(r => r.id);
+}
+
+// `user` is the signed-in account. Passing nothing keeps the old unfiltered
+// behaviour, which is what MASTER gets.
+export async function sbLoad(user) {
+  try {
+    const cid = user && user.companyId;
+    const tid = user && user.teamId;
+    const role = user && user.role;
+    const open = isUnscoped(user);
+    const co = open ? '' : coFilter(cid);
+    const and = co ? `&${co}` : '';
+    const isMgmt = role === 'MANAGEMENT';
+    const isTL = role === 'TEAM_LEAD';
+
+    // -- users / teams ------------------------------------------------------
+    // An agent gets exactly its own row and its own team row. `id.eq.self` is
+    // not optional anywhere: getSession() (db.js) resolves the stored session id
+    // against getDB().users, so an account missing from its own snapshot boots
+    // signed out.
+    let usersPath, teamsPath;
+    if (open) {
+      usersPath = `users?select=${USER_COLS}`;
+      teamsPath = 'teams';
+    } else if (isMgmt) {
+      usersPath = `users?select=${USER_COLS}&${SCOPE_STRICT ? `or=(company_id.eq.${cid},id.eq.${user.id})` : `or=(company_id.eq.${cid},company_id.is.null,id.eq.${user.id})`}`;
+      teamsPath = `teams?${co}`;
+    } else if (isTL && tid) {
+      usersPath = `users?select=${USER_COLS}&or=(team_id.eq.${tid},id.eq.${user.id})`;
+      teamsPath = `teams?id=eq.${tid}`;
+    } else {
+      usersPath = `users?select=${USER_COLS}&id=eq.${user.id}`;
+      teamsPath = tid ? `teams?id=eq.${tid}` : 'teams?id=is.null';
+    }
+
+    const [users, teams] = await Promise.all([sbGetUsers(usersPath), sbGet(teamsPath)]);
     if (!users || !users.length) return null;
+    const userIds = users.map(u => u.id);
+
+    // -- leads --------------------------------------------------------------
+    // Mirrors getLeads(user, { involved: true }) -- the SUPERSET, deliberately:
+    // getLeads narrows to assigned-only when opts.involved is not set, but
+    // MeetingAgentDash reads db.leads previousAssignees directly, bypassing it.
+    // Fetching the superset keeps both paths correct.
+    let leadsPath;
+    if (open) leadsPath = 'leads';
+    else if (isMgmt) leadsPath = `leads?${co}`;
+    else if (isTL && tid) {
+      const terms = [`team_id.eq.${tid}`, `assigned_to.${inList(userIds)}`, ...userIds.map(prevAssignee)];
+      leadsPath = `leads?or=(${terms.join(',')})`;
+    } else {
+      leadsPath = `leads?or=(assigned_to.eq.${user.id},${prevAssignee(user.id)})`;
+    }
+
+    // targets are keyed by user_id, so the loaded user set IS the filter -- no
+    // company_id needed, which means no dependency on migration 0009 here.
+    const targetsPath = open ? 'targets' : `targets?user_id=${inList(userIds)}`;
+
+    const [leads, targets, properties, bookings, companies, holdReqs, notifs] = await Promise.all([
+      sbGetAll(leadsPath),
+      sbGet(targetsPath),
+      sbGet(`properties?order=created_at.desc${and}`),
+      sbGet(`bookings?order=created_at.desc${and}`),
+      sbGet(open ? 'companies' : `companies?id=eq.${cid}`),
+      sbGet(`hold_requests?order=created_at.desc${and}`),
+      // notifications are read ONLY for the signed-in user -- getNotifs(user.id)
+      // and getUnreadCount(user.id) in db.js, and db.notifications[user.id] in
+      // App.jsx's push handler. Nothing reads another user's key, so loading
+      // every user's was pure waste: 158k rows, paginated 1000 at a time on
+      // every single login. Capped at 200 because NotifBell renders
+      // .slice(0, 50) and addNotifs trims the local list to 60.
+      //
+      // Behaviour change: while impersonating (AppContext.impersonate) the bell
+      // reads an empty list, since only the real account's were fetched.
+      user && user.id
+        ? sbGet(`notifications?user_id=eq.${user.id}&order=created_at.desc&limit=200`)
+        : sbGetAll('notifications?order=created_at.desc'),
+    ]);
+
+    // -- activities ---------------------------------------------------------
+    // Chained to the lead set rather than filtered independently, so
+    // _DB.activities and _DB.leads cannot disagree. An agent with 89 leads is
+    // two requests. MANAGEMENT holds the whole company, so it uses the
+    // company_id column instead of ~24 chunks -- falling back to unfiltered
+    // until migration 0009 has been applied.
+    let acts;
+    if (open) {
+      acts = await sbGetAll('activities?order=timestamp.asc');
+    } else if (isMgmt) {
+      const scopable = await hasCompanyCol('activities');
+      acts = await sbGetAll(`activities?order=timestamp.asc${scopable ? and : ''}`);
+    } else {
+      const leadIds = (leads || []).map(l => l.id);
+      acts = leadIds.length
+        ? await sbGetByIds(op => `activities?order=timestamp.asc&lead_id=${op}`, leadIds)
+        : [];
+    }
+
     const actsMap = {};
     (acts || []).forEach(r => { if (!actsMap[r.lead_id]) actsMap[r.lead_id] = []; actsMap[r.lead_id].push(rToA(r)); });
-    // Convert flat notifications array → map keyed by userId
+    // Convert flat notifications array into a map keyed by userId
     const notifsMap = {};
     (notifs || []).forEach(r => {
       const n = rToN(r);
@@ -604,6 +860,13 @@ export async function sbLoad() {
   } catch (e) { console.warn('Supabase load failed:', e); return null; }
 }
 
+// UNUSED — nothing in src/ calls this; every cloud write goes through
+// sbInsert/sbUpdate/sbUpsert per row. Do not wire it up: the local snapshot is
+// now one company's slice AND persistLocal() progressively trims it under
+// storage pressure (activities, then property images/media, then whole tables),
+// while rToP/rToBk default missing jsonb to []/{} rather than undefined — so a
+// trimmed snapshot pushed through here would blank every property's media in
+// the cloud. Kept only because it documents the table list.
 let _sbSaveTimer = null;
 export function sbSave(db) {
   clearTimeout(_sbSaveTimer);

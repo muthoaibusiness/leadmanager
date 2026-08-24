@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import Mi from '../Mi.jsx';
 import { useApp } from '../../context/AppContext.jsx';
 import { getDB, fwdLead, getProperties, updLead } from '../../lib/db.js';
+import { sbGetUsersLite, rToU } from '../../lib/supabase.js';
 import { avc, ini, rlabel, fmtBDT } from '../../lib/helpers.js';
 import { ROLES } from '../../lib/constants.js';
 
@@ -33,6 +34,10 @@ export default function ForwardModal() {
   const [meetingAt, setMeetingAt] = useState('');
   const [meetingLink, setMeetingLink] = useState('');
   const [shared, setShared] = useState([]);
+  // Who this lead can be forwarded to. Fetched, not filtered from db.users: an
+  // agent's snapshot holds only its own user row since the load became
+  // per-account, so its teammates are simply not in it.
+  const [targets, setTargets] = useState([]);
 
   const targetRole = isMA ? ROLES.MA : ROLES.TL;
   const toggleShared = (k) => setShared(s => s.includes(k) ? s.filter(x => x !== k) : [...s, k]);
@@ -40,12 +45,19 @@ export default function ForwardModal() {
   useEffect(() => {
     if (isOpen) {
       setSelected(null); setStep(1); setProjectId(''); setOurOffer(''); setClientOffer(''); setTotalSft(''); setOfferNotes('');
-      setMeetingType('ONLINE'); setMeetingAt(''); setMeetingLink(''); setShared([]);
+      setMeetingType('ONLINE'); setMeetingAt(''); setMeetingLink(''); setShared([]); setTargets([]);
     }
   }, [isOpen]);
 
   const db = getDB();
-  const targets = db.users.filter(u => u.role === targetRole && u.teamId === user?.teamId);
+
+  useEffect(() => {
+    if (!isOpen || !user?.teamId) return;
+    let live = true;
+    sbGetUsersLite(`role=eq.${targetRole}&team_id=eq.${user.teamId}&is_active=not.eq.false`)
+      .then(rows => { if (live) setTargets((rows || []).map(rToU)); });
+    return () => { live = false; };
+  }, [isOpen, targetRole, user?.teamId]);
 
   // Project catalog + live demand (how many leads already interested in each project)
   const projects = [...getProperties()].sort((a, b) => a.name.localeCompare(b.name));
@@ -57,7 +69,7 @@ export default function ForwardModal() {
 
   const submit = () => {
     if (!selected || !panLead) return;
-    const toUser = db.users.find(u => u.id === selected);
+    const toUser = targets.find(u => u.id === selected);
     if (!toUser) return;
 
     // MA hand-off: require a meeting time inside the working-hour window for the type.
@@ -87,7 +99,7 @@ export default function ForwardModal() {
     showToast('Lead forwarded to ' + toUser.name, 'ok');
   };
 
-  const selectedUser = selected ? db.users.find(u => u.id === selected) : null;
+  const selectedUser = selected ? targets.find(u => u.id === selected) : null;
 
   return (
     <div className={`mov${isOpen ? ' on' : ''}`} onClick={e => { if (e.target === e.currentTarget) closeModal(); }}>

@@ -66,10 +66,12 @@ export default function AccountsView() {
   };
 
   // ── create all ──
-  const createAll = () => {
+  const createAll = async () => {
     const filled = rows.filter(r => r.name.trim() || r.email.trim());
     if (!filled.length) { showToast('Add at least one account', 'warn'); return; }
-    const res = bulkCreateUsers(filled, user);
+    // async: bulkCreateUsers now asks the server about duplicate emails, because
+    // db.users only holds this company since the load became tenant-scoped.
+    const res = await bulkCreateUsers(filled, user);
     setResult(res);
     if (res.created.length) {
       // notify management + relevant TLs

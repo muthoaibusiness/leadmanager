@@ -1,7 +1,15 @@
 import { ROLES, STATUS_LABELS, SRC_LABELS } from './constants.js';
 import { uid, now_, fmtBDT, fmtDT, curMonth, startOfMonth, rlabel } from './helpers.js';
-import { sbGet, sbUpdate, sbInsert, sbUpsert, sbMarkRead, sbDelete, sbDeleteLeads, lToR, rToL, uToR, rToU, tToR, rToT, aToR, rToA, rToN, tgToR, rToTg, pToR, rToP, bkToR, rToBk, cToR, rToC, hrToR, rToHr, sbUpsertNotifs } from './supabase.js';
-export const KEY = 'propcrm_v1';
+import { sbGet, sbUpdate, sbInsert, sbUpsert, sbMarkRead, sbDelete, sbDeleteLeads, sbEmailsInUse, sbUserIdsByRole, lToR, rToL, uToR, rToU, tToR, rToT, aToR, rToA, rToN, tgToR, rToTg, pToR, rToP, bkToR, rToBk, cToR, rToC, hrToR, rToHr, sbUpsertNotifs } from './supabase.js';
+// Bumped from propcrm_v1 when the cloud load became tenant-scoped: every
+// existing browser is carrying a full multi-tenant snapshot under the old key,
+// and mergeDB would happily fold it back in on top of the scoped one. A new key
+// makes every client start cold exactly once.
+export const KEY = 'propcrm_v2';
+// Which account the cached snapshot belongs to. The snapshot only holds one
+// company now, so handing it to a different account is a data leak, not a
+// head start — see hydrateFromCloud.
+export const OWNER_KEY = 'propcrm_owner';
 export let _DB = null;
 
 export function getDB() {
@@ -137,30 +145,118 @@ export function purgeDemoSeed(db) {
   return changed;
 }
 
-export function migrateTenancy(db) {
+// `user` is the signed-in account. When the cloud load was tenant-scoped, this
+// function is looking at ONE company's slice, and two of its branches become
+// actively wrong:
+//   - the 'c1' mint would invent a company that already exists under another id,
+//     and then stamp it onto every untagged row, merging two tenants;
+//   - the master mint would fire on EVERY scoped login, because a MASTER row
+//     (companyId null) is never in a scoped users list — silently recreating a
+//     plaintext super-admin account in every agent's browser.
+// So under a scoped load it only backfills, using the user's own company id.
+export function migrateTenancy(db, user) {
   if (!db.companies) db.companies = [];
   let changed = false;
+  const scoped = !!(user && user.role !== ROLES.MASTER && user.companyId);
   if (!db.companies.length) {
-    const name = (db.users.find(u => u.role === ROLES.MGMT)?.name) ? 'My Company' : 'My Company';
-    db.companies.push({ id: 'c1', name, plan: 'Growth', createdAt: now_(), isActive: true });
+    if (scoped) {
+      // The company row exists in the cloud; this snapshot just didn't get it
+      // (offline, or a failed request). Stand one in locally under the RIGHT id
+      // so nothing downstream defaults to 'c1'. Never pushed to the cloud.
+      db.companies.push({ id: user.companyId, name: 'My Company', plan: 'Growth', createdAt: now_(), isActive: true });
+    } else {
+      db.companies.push({ id: 'c1', name: 'My Company', plan: 'Growth', createdAt: now_(), isActive: true });
+    }
     changed = true;
   }
-  const defCid = db.companies[0].id;
+  const defCid = scoped ? user.companyId : db.companies[0].id;
   (db.users || []).forEach(u => { if (u.role !== ROLES.MASTER && !u.companyId) { u.companyId = defCid; changed = true; } });
   (db.teams || []).forEach(t => { if (!t.companyId) { t.companyId = defCid; changed = true; } });
   (db.leads || []).forEach(l => { if (!l.companyId) { l.companyId = defCid; changed = true; } });
   (db.properties || []).forEach(p => { if (!p.companyId) { p.companyId = defCid; changed = true; } });
   (db.bookings || []).forEach(b => { if (!b.companyId) { b.companyId = defCid; changed = true; } });
-  // ensure a master account exists so the company-wise view is reachable
-  if (!db.users.some(u => u.role === ROLES.MASTER)) {
+  // Ensure a master account exists so the company-wise view is reachable.
+  // Skipped under a scoped load: MASTER carries no companyId, so it is never in
+  // a scoped users list and "missing" here proves nothing.
+  if (!scoped && !db.users.some(u => u.role === ROLES.MASTER)) {
     db.users.push({ id: 'u0', name: 'Master Admin', email: 'master@wepro.com', password: '1234', role: ROLES.MASTER, teamId: null, companyId: null, phone: '', isActive: true });
     changed = true;
   }
   return changed;
 }
 
-export function applyRealtimeEvent(table, eventType, record, oldRecord) {
+// Second line of defence for the scoped realtime socket, and the thing that
+// makes the socket's limitations survivable. A realtime `filter` can express
+// exactly one `col=eq.val`, so it cannot encode "leads assigned to me OR
+// previously assigned to me", and it cannot filter activities by a lead set at
+// all — those tables are subscribed loosely and narrowed here instead.
+//
+// DELETE is always allowed through by the caller: a delete payload carries only
+// the primary key under the default replica identity, so scope cannot be
+// evaluated. Removing an id this browser does not hold is a no-op, whereas
+// blocking it would strand deleted rows in the cache forever.
+//
+// The tiers must mirror sbLoad's query tiers and getLeads() — if this is looser
+// than the load, realtime slowly fills the cache with rows the next reload
+// throws away; if it is tighter, live updates go missing.
+export function inScope(table, record, user) {
+  if (!user || user.role === ROLES.MASTER || !user.companyId) return true;
+  if (!record) return true;
+  const db = _DB || {};
+  const isMgmt = user.role === ROLES.MGMT;
+  const isTL = user.role === ROLES.TL;
+  const sameCo = sameCompany(record.company_id ?? null, user.companyId);
+
+  switch (table) {
+    case 'companies':
+      return !record.id || record.id === user.companyId;
+    // Only the signed-in user's notifications are ever read (getNotifs /
+    // getUnreadCount), and that is all sbLoad fetches. company_id is not the
+    // test: it is null on every pre-0009 row, which sameCompany waves through.
+    case 'notifications':
+      return record.user_id === user.id;
+    case 'targets':
+      return isMgmt ? sameCo : (db.users || []).some(u => u.id === record.user_id);
+    case 'users':
+      if (isMgmt) return sameCo;
+      if (isTL) return record.team_id === user.teamId || record.id === user.id;
+      return record.id === user.id;
+    case 'teams':
+      return isMgmt ? sameCo : record.id === user.teamId;
+    case 'leads': {
+      if (isMgmt) return sameCo;
+      const prev = Array.isArray(record.previous_assignees) ? record.previous_assignees : [];
+      if (isTL) {
+        const team = new Set((db.users || []).filter(u => u.teamId === user.teamId).map(u => u.id));
+        return record.team_id === user.teamId || team.has(record.assigned_to) || prev.some(id => team.has(id));
+      }
+      return record.assigned_to === user.id || prev.includes(user.id);
+    }
+    // Activities cannot be filtered server-side by a lead set, so every one in
+    // the company arrives. Keep only those on a lead this browser actually
+    // holds — otherwise _DB.activities fills with orphan keys that no view can
+    // reach and mergeActs then carries forward forever.
+    case 'activities':
+      return (db.leads || []).some(l => l.id === record.lead_id);
+    default:
+      return sameCo;
+  }
+}
+
+// Notify every active holder of `role` within a scope. db.users no longer holds
+// the whole company (an agent's snapshot is a single row), so the recipient list
+// has to come from the server rather than from a local filter that would return
+// an empty array and drop the notification silently.
+export async function addNotifsToRole(role, scope, make, currentUser) {
+  try {
+    const ids = await sbUserIdsByRole(role, scope);
+    if (ids.length) addNotifs(ids.map(make), currentUser);
+  } catch (e) { console.warn('notify ' + role + ' failed:', e); }
+}
+
+export function applyRealtimeEvent(table, eventType, record, oldRecord, user) {
   if (!_DB) return false;
+  if (eventType !== 'DELETE' && !inScope(table, record, user)) return false;
   let changed = false;
   
   const handleArrayEvent = (arrName, converter) => {
@@ -271,7 +367,12 @@ function persistLocal(db) {
     () => JSON.stringify({ ...db, activities: {}, notifications: {}, properties: [], bookings: [] }),
   ];
   for (const make of attempts) {
-    try { localStorage.setItem(KEY, make()); return true; }
+    try {
+      localStorage.setItem(KEY, make());
+      const sid = JSON.parse(localStorage.getItem('pcrm_sess') || 'null')?.id;
+      if (sid) localStorage.setItem(OWNER_KEY, sid);
+      return true;
+    }
     catch (e) {
       if (e && e.name === 'QuotaExceededError') continue; // shrink and retry
       console.warn('saveDB: local persist failed —', e); return false;
@@ -346,8 +447,41 @@ export function getSession() {
   } catch { return null; }
 }
 
+// Deliberately does NOT stamp OWNER_KEY. The session is set at login, BEFORE
+// the old tenant's snapshot has been cleared, so stamping here would mark the
+// outgoing user's cache as belonging to the incoming one and cacheBelongsTo
+// would wave it through. Only persistLocal stamps, once the data is actually
+// this account's.
 export function setSession(u) { localStorage.setItem('pcrm_sess', JSON.stringify({ id: u.id })); }
-export function clearSession() { localStorage.removeItem('pcrm_sess'); }
+
+// Drop the cached snapshot AND the in-memory singleton. Since the snapshot now
+// only ever holds one company's rows, leaving it behind for the next account to
+// merge into is how another tenant's data ends up on screen.
+export function clearLocalDB() {
+  try { localStorage.removeItem(KEY); localStorage.removeItem(OWNER_KEY); } catch { /* private mode / storage disabled */ }
+  _DB = null;
+}
+
+export function clearSession() {
+  localStorage.removeItem('pcrm_sess');
+  clearLocalDB();
+}
+
+// True when the cached snapshot was built for a different account. Covers the
+// path clearSession cannot: the browser was closed without signing out, or the
+// tab crashed, and someone else signs in.
+export function cacheBelongsTo(userId) {
+  try { return localStorage.getItem(OWNER_KEY) === userId; } catch { return false; }
+}
+
+// Fetch one user row by id, without needing the users table in memory. Session
+// restore on a cold cache has a stored id but no user, and the scoped load needs
+// the user (for companyId) before it can build its filters — chicken and egg.
+export async function fetchSessionUser(id) {
+  if (!id) return null;
+  const rows = await sbGet(`users?id=eq.${encodeURIComponent(id)}&select=${LOGIN_COLS}`);
+  return (rows && rows[0]) ? rToU(rows[0]) : null;
+}
 
 // ── Queries ──
 // A lead belongs to the user's company when its companyId matches OR is missing
@@ -835,6 +969,9 @@ export function cartStage(leadId, stage, user, value) {
 export function addAct(leadId, act) {
   const newAct = { ...act, id: 'a' + uid(), timestamp: now_() };
   mutate(db => {
+    // activities.company_id exists so the load can be tenant-scoped in the
+    // query (migration 0009). Inherit it from the lead the activity belongs to.
+    if (newAct.companyId == null) newAct.companyId = db.leads.find(l => l.id === leadId)?.companyId ?? null;
     if (!db.activities[leadId]) db.activities[leadId] = [];
     db.activities[leadId].unshift(newAct);
   });
@@ -961,12 +1098,11 @@ export function doneVisit(leadId, user) {
   addAct(leadId, { type: 'STATUS_CHANGE', description: 'Status → Site Visit Done', userId: user.id, userName: user.name, durationSeconds: 0 });
   const l = getLead(leadId);
   const iaId = l.previousAssignees[0];
-  const db = getDB();
-  const tlIds = db.users.filter(u => u.role === ROLES.TL && u.teamId === l.teamId).map(u => u.id);
-  const notifList = [];
-  if (iaId) notifList.push({ userId: iaId, type: 'VISIT_DONE', message: 'Site visit completed: ' + l.name, leadId });
-  tlIds.forEach(uid2 => notifList.push({ userId: uid2, type: 'VISIT_DONE', message: 'Site visit done — ready to close: ' + l.name, leadId }));
-  addNotifs(notifList, user);
+  if (iaId) addNotifs([{ userId: iaId, type: 'VISIT_DONE', message: 'Site visit completed: ' + l.name, leadId }], user);
+  // The lead's Team Leads are not in this browser's snapshot when a Meeting
+  // Agent marks the visit done — an agent loads only its own user row.
+  addNotifsToRole(ROLES.TL, { companyId: user.companyId, teamId: l.teamId },
+    (userId) => ({ userId, type: 'VISIT_DONE', message: 'Site visit done — ready to close: ' + l.name, leadId }), user);
 }
 
 export function closeDealFn(leadId, won, val, user) {
@@ -976,10 +1112,12 @@ export function closeDealFn(leadId, won, val, user) {
   const l = getLead(leadId);
   const msg = won ? 'Deal WON: ' + l.name + (val ? ' — ' + fmtBDT(val) : '') : 'Deal lost: ' + l.name;
   const type = won ? 'DEAL_WON' : 'DEAL_LOST';
-  const db = getDB();
-  const mgmtIds = db.users.filter(u => u.role === ROLES.MGMT).map(u => u.id);
-  const involved = [...new Set([...l.previousAssignees, ...mgmtIds])];
-  addNotifs(involved.map(userId => ({ userId, type, message: msg, leadId })), user);
+  addNotifs([...new Set(l.previousAssignees)].map(userId => ({ userId, type, message: msg, leadId })), user);
+  // MANAGEMENT is resolved server-side: this used to read db.users, which held
+  // every tenant (so it notified all of them) and now holds only the signed-in
+  // agent (so it would notify nobody).
+  addNotifsToRole(ROLES.MGMT, { companyId: user.companyId },
+    (userId) => ({ userId, type, message: msg, leadId }), user);
 }
 
 export function setFollowUpFn(leadId, days, user) {
@@ -1106,11 +1244,10 @@ export function createHoldRequest(payload, user) {
   };
   mutate(db => { db.holdRequests = db.holdRequests || []; db.holdRequests.unshift(req); });
   sbInsert('hold_requests', hrToR(req));
-  const mgmt = getDB().users.filter(u => u.role === ROLES.MGMT && sameCompany(u.companyId, user.companyId)).map(u => u.id);
-  addNotifs(mgmt.map(uid2 => ({
-    userId: uid2, type: 'HOLD_REQUEST', leadId: null,
+  addNotifsToRole(ROLES.MGMT, { companyId: user.companyId }, (userId) => ({
+    userId, type: 'HOLD_REQUEST', leadId: null,
     message: `${user.name} requested a hold on ${payload.propertyName} · Unit ${payload.unitId} for ${payload.clientName}`,
-  })), user);
+  }), user);
   return id;
 }
 
@@ -1156,11 +1293,10 @@ export function createCarpoolRequest(payload, user) {
   };
   mutate(db => { db.carpoolRequests = db.carpoolRequests || []; db.carpoolRequests.unshift(req); });
   if (payload.leadId) updLead(payload.leadId, { carpoolRequested: true });
-  const mgmt = getDB().users.filter(u => u.role === ROLES.MGMT && sameCompany(u.companyId, user.companyId)).map(u => u.id);
-  addNotifs(mgmt.map(uid2 => ({
-    userId: uid2, type: 'CARPOOL_REQUEST', leadId: payload.leadId || null,
+  addNotifsToRole(ROLES.MGMT, { companyId: user.companyId }, (userId) => ({
+    userId, type: 'CARPOOL_REQUEST', leadId: payload.leadId || null,
     message: `${user.name} requested a carpool${payload.clientName ? ' for ' + payload.clientName : ''}`,
-  })), user);
+  }), user);
   return id;
 }
 
@@ -1191,10 +1327,9 @@ export function markLostFn(leadId, reason, user) {
   addAct(leadId, { type: 'DEAL', description: 'Deal LOST', userId: user.id, userName: user.name, durationSeconds: 0 });
   if (reason) addAct(leadId, { type: 'LOST_REASON', description: reason, userId: user.id, userName: user.name, durationSeconds: 0 });
   const l = getLead(leadId);
-  const db = getDB();
-  const mgmtIds = db.users.filter(u => u.role === ROLES.MGMT).map(u => u.id);
-  const involved = [...new Set([...l.previousAssignees, ...mgmtIds])];
-  addNotifs(involved.map(userId => ({ userId, type: 'DEAL_LOST', message: 'Deal lost: ' + l.name, leadId })), user);
+  addNotifs([...new Set(l.previousAssignees)].map(userId => ({ userId, type: 'DEAL_LOST', message: 'Deal lost: ' + l.name, leadId })), user);
+  addNotifsToRole(ROLES.MGMT, { companyId: user.companyId },
+    (userId) => ({ userId, type: 'DEAL_LOST', message: 'Deal lost: ' + l.name, leadId }), user);
 }
 
 export function checkFollowUpReminders(db) {
@@ -1213,7 +1348,8 @@ export function checkFollowUpReminders(db) {
     const ts = now_();
     notifList.forEach(({ userId, type, message, leadId }) => {
       if (!db.notifications[userId]) db.notifications[userId] = [];
-      const n = { id: 'n' + uid(), type, message, leadId, timestamp: ts, read: false, userId };
+      const companyId = db.users.find(u => u.id === userId)?.companyId ?? null;
+      const n = { id: 'n' + uid(), type, message, leadId, timestamp: ts, read: false, userId, companyId };
       db.notifications[userId].unshift(n);
     });
     sbUpsertNotifs(notifList.map(({ userId, type, message, leadId }) => ({
@@ -1235,7 +1371,7 @@ export function setTargetFn(userId, val) {
     const type = role === ROLES.IA ? 'MEETINGS_SET' : 'SITE_VISITS';
     // Reuse the existing row's id when replacing, so the upsert updates that row
     // rather than leaving an orphan behind under a fresh id.
-    const entry = { id: i >= 0 ? db.targets[i].id : 'tg' + uid(), userId, month: mo, type, value: parseInt(val) };
+    const entry = { id: i >= 0 ? db.targets[i].id : 'tg' + uid(), userId, month: mo, type, value: parseInt(val), companyId: db.users.find(u => u.id === userId)?.companyId ?? null };
     if (i >= 0) db.targets[i] = entry;
     else db.targets.push(entry);
     saved = entry;
@@ -1368,11 +1504,16 @@ export function setCompanyActive(cid, active) {
 // Validates each row (name+email required, valid+unique email incl. within the batch),
 // creates Team Leads with their own team, and agents under the chosen/owner team.
 // Returns { created:[{name,email,pass,roleLabel,role}], errors:[{line,name,reason}] }.
-export function bulkCreateUsers(rows, currentUser) {
+// Async since the cloud load became tenant-scoped: getDB().users holds one
+// company, so a purely local duplicate-email check can no longer see the other
+// tenants. The server is asked about this batch's addresses first.
+export async function bulkCreateUsers(rows, currentUser) {
   const created = [];
   const errors = [];
-  const seen = new Set(getDB().users.map(u => (u.email || '').toLowerCase()));
   const emailRe = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
+  const candidates = (rows || []).map(r => (r.email || '').trim()).filter(e => emailRe.test(e));
+  const remote = await sbEmailsInUse(candidates);
+  const seen = new Set([...getDB().users.map(u => (u.email || '').toLowerCase()), ...remote]);
 
   rows.forEach((r, i) => {
     const line = i + 1;
@@ -1716,7 +1857,10 @@ export function addNotifs(list, currentUser) {
     if (!db.notifications) db.notifications = {};
     list.forEach(({ userId, type, message, leadId }) => {
       if (!userId || (currentUser && userId === currentUser.id)) return;
-      const n = { id: 'n' + uid(), type, message, leadId, timestamp: ts, read: false, userId };
+      // Same reason as addAct: notifications.company_id is what makes the load
+      // scopable. Take it from the recipient, falling back to the sender.
+      const companyId = db.users.find(u => u.id === userId)?.companyId ?? currentUser?.companyId ?? null;
+      const n = { id: 'n' + uid(), type, message, leadId, timestamp: ts, read: false, userId, companyId };
       if (!db.notifications[userId]) db.notifications[userId] = [];
       db.notifications[userId].unshift(n);
       if (db.notifications[userId].length > 60) db.notifications[userId].length = 60;
