@@ -11718,3 +11718,107 @@ input[type="time"]::-webkit-calendar-picker-indicator { opacity: .9; cursor: poi
   color: var(--accent);
   text-decoration: underline
 }
+
+/* ── Inline loading indicators (components/Spinner.jsx) ──────────────────
+   The small counterpart to .lr (the full-screen radar): used wherever data is
+   fetched after first paint. Accent green, so it reads as the same system as
+   the rest of the brand, and it degrades to a static ring under
+   prefers-reduced-motion rather than disappearing. */
+.spin {
+  display: inline-block;
+  box-sizing: border-box;
+  border-style: solid;
+  border-color: currentColor;
+  /* One transparent edge is what makes the ring read as a rotating arc rather
+     than a pulsing circle. */
+  border-top-color: transparent;
+  border-radius: 50%;
+  vertical-align: -.15em;
+  animation: spin-rot .7s linear infinite
+}
+
+.spin-accent {
+  border-color: var(--accent);
+  border-top-color: transparent
+}
+
+@keyframes spin-rot {
+  to { transform: rotate(360deg) }
+}
+
+.spin-block {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  min-height: 90px;
+  color: var(--t3)
+}
+
+.spin-lbl {
+  font-size: 12.5px;
+  font-weight: 600;
+  letter-spacing: .01em
+}
+
+/* Indeterminate sliver for a region that is refreshing content it already has.
+   Absolutely positioned so it never reflows what is underneath. */
+.spin-bar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  overflow: hidden;
+  border-radius: 2px;
+  background: var(--green-l);
+  z-index: 5
+}
+
+.spin-bar::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 38%;
+  background: var(--accent);
+  border-radius: 2px;
+  animation: spin-slide 1.05s ease-in-out infinite
+}
+
+@keyframes spin-slide {
+  0%   { left: -40% }
+  100% { left: 100% }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spin { animation: none; border-top-color: var(--bd2) }
+  .spin-bar::after { animation: none; width: 100%; left: 0; opacity: .5 }
+}
+
+/* Positioning contexts for .spin-bar, which overlays rather than inserts. */
+.lt-wrap,
+.kpi-list {
+  position: relative
+}
+
+/* The list keeps its rows while the next page arrives; dimming plus the bar
+   says "refreshing" without collapsing the sheet to an empty state. */
+.kpi-busy .kpi-row {
+  opacity: .5;
+  pointer-events: none;
+  transition: opacity .12s ease
+}
+
+/* The app-wide variant of .spin-bar: pinned to the very top of the viewport,
+   above every overlay, and click-through so it can never block the UI. */
+.spin-bar-fixed {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 9999;
+  pointer-events: none;
+  background: transparent
+}

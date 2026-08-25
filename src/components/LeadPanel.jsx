@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import Mi from './Mi.jsx';
+import { LoadingBlock } from './Spinner.jsx';
 import { useApp } from '../context/AppContext.jsx';
 import LogCall from './LogCall.jsx';
 import { getLead, getActs, ensureLead, ensureLeadActs, hasFullActs, changeStatus, doneVisit, deleteLead, updLead, addAct, logNoAnswer, noAnswerLock, attendMeeting, createCarpoolRequest, userNameById } from '../lib/db.js';
@@ -481,7 +482,7 @@ export default function LeadPanel() {
               <Actions l={l} />
               <OfferCard acts={acts} />
               {actsLoading
-                ? <div className="tl"><div className="tl-ttl">Activity Timeline</div><div className="tl-load">Loading activity…</div></div>
+                ? <div className="tl"><div className="tl-ttl">Activity Timeline</div><LoadingBlock label="Loading activity…" pad={18} /></div>
                 : <Timeline acts={acts} lead={l} />}
             </>
           )}

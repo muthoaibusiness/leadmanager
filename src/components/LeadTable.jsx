@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import Mi from './Mi.jsx';
+import { LoadingBlock, LoadingBar } from './Spinner.jsx';
 import Pagination from './Pagination.jsx';
 import { fmtDateTimeAP, leadDisplayStatus } from '../lib/helpers.js';
 import { SRC_LABELS, STATUS_LABELS, ROLES } from '../lib/constants.js';
@@ -87,7 +88,7 @@ export default function LeadTable({ leads, total = null, page: pageProp, onPage,
             {canSelect && <div className="lt-cb-col" />}
             <div>Lead ID</div><div>Customer Name</div><div>Source</div><div>Property</div><div>Status</div><div>Create date</div>
           </div>
-          <div className="empty"><Mi>hourglass_empty</Mi><p>Loading customers…</p></div>
+          <LoadingBlock label="Loading customers…" pad={40} />
         </div>
       );
     }
@@ -113,7 +114,8 @@ export default function LeadTable({ leads, total = null, page: pageProp, onPage,
           <button className="btn btn-g btn-sm" onClick={() => setSelected(new Set())}>Clear</button>
         </div>
       )}
-      <div className={`lt${canSelect ? ' lt-with-cb' : ''}${loading ? ' lt-busy' : ''}`}>
+      <div className={`lt lt-wrap${canSelect ? ' lt-with-cb' : ''}${loading ? ' lt-busy' : ''}`}>
+        {loading && <LoadingBar />}
         <div className="lt-hdr">
           {canSelect && (
             <div className="lt-cb-col" onClick={toggleAll} title={allSelected ? 'Clear all' : 'Select all'}>

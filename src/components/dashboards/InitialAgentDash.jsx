@@ -8,6 +8,7 @@ import DashGreeting from './DashGreeting.jsx';
 import SuccessGauge from '../SuccessGauge.jsx';
 import ConversionPanel from './ConversionPanel.jsx';
 import Mi from '../Mi.jsx';
+import { LoadingBlock } from '../Spinner.jsx';
 import { scoreLead, scoreLabel, periodLabel } from '../../lib/helpers.js';
 import { STATUS_LABELS, SRC_LABELS, PAST_CONTACT } from '../../lib/constants.js';
 import { or, and, KPI } from '../../lib/leadQuery.js';
@@ -225,21 +226,13 @@ export default function InitialAgentDash() {
               <span className="iad-q-ttl">Today's call list</span>
               {view.queue.length > 0 && <span className="iad-q-ct">{view.queue.length}</span>}
             </div>
-            {shown.length === 0 ? (
+            {!bookReady ? (
+              <LoadingBlock label="Building your call list…" />
+            ) : shown.length === 0 ? (
               <div className="iad-q-empty">
-                {bookReady ? (
-                  <>
-                    <Mi>check_circle</Mi>
-                    <b>All caught up</b>
-                    <span>No leads waiting to be called.</span>
-                  </>
-                ) : (
-                  <>
-                    <Mi>hourglass_empty</Mi>
-                    <b>Building your call list</b>
-                    <span>Ranking your open leads…</span>
-                  </>
-                )}
+                <Mi>check_circle</Mi>
+                <b>All caught up</b>
+                <span>No leads waiting to be called.</span>
               </div>
             ) : (
               <div className="iad-q-list">

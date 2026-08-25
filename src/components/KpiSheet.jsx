@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import Mi from './Mi.jsx';
+import { LoadingBlock, LoadingBar } from './Spinner.jsx';
 import Pagination from './Pagination.jsx';
 import { queryLeads } from '../lib/db.js';
 import { leadDisplayStatus, fmtDT } from '../lib/helpers.js';
@@ -62,6 +63,7 @@ export default function KpiSheet({ detail, onClose, onLead }) {
           <button className="kpi-x" onClick={onClose}><Mi>close</Mi></button>
         </div>
         <div className={`kpi-list${loading ? ' kpi-busy' : ''}`}>
+          {loading && rows.length > 0 && <LoadingBar />}
           {rows.length ? rows.map((it, i) => (
             <button key={it.leadId || i} className="kpi-row" onClick={() => it.leadId && onLead && onLead(it.leadId)}>
               {it.icon && <span className="kpi-ic"><Mi>{it.icon}</Mi></span>}
@@ -72,7 +74,7 @@ export default function KpiSheet({ detail, onClose, onLead }) {
               {it.badge ? <span className={`bdg ${it.badge.cls}`}>{it.badge.label}</span>
                 : it.right ? <span className="kpi-rt">{it.right}</span> : null}
             </button>
-          )) : <div className="kpi-empty">{loading ? 'Loading…' : 'Nothing here yet.'}</div>}
+          )) : loading ? <LoadingBlock /> : <div className="kpi-empty">Nothing here yet.</div>}
         </div>
         {paged && <Pagination page={page} total={total} pageSize={PAGE_SIZE} onChange={setPage} />}
       </div>

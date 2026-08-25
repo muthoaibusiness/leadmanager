@@ -8,6 +8,7 @@ import DashGreeting from './DashGreeting.jsx';
 import SuccessGauge from '../SuccessGauge.jsx';
 import ConversionPanel from './ConversionPanel.jsx';
 import Mi from '../Mi.jsx';
+import Spinner, { LoadingBlock } from '../Spinner.jsx';
 import { scoreLead, scoreLabel } from '../../lib/helpers.js';
 import { STATUS_LABELS, ROLES } from '../../lib/constants.js';
 import { panelConfigFor } from '../../lib/funnel.js';
@@ -48,7 +49,9 @@ export default function MeetingAgentDash() {
     };
   }, [user]);
   const counts = useLeadCounts(cardQ);
-  const n = (k) => (counts[k] == null ? '—' : counts[k]);
+  // null while the count is in flight — StatCard and the stage tiles below
+  // render a spinner for it rather than a placeholder that looks like data.
+  const n = (k) => counts[k];
 
   // -- The visit lists -----------------------------------------------------
   // The tiles above are counts; these two panels need the rows themselves, so
@@ -106,7 +109,9 @@ export default function MeetingAgentDash() {
         {STAGES.map((s, i) => (
           <button key={s.key} className="mpipe-seg" onClick={() => setDetail({ title: s.label, query: cardQ[s.key], total: counts[s.key] })}>
             <span className="mpipe-step">Step {i + 1}</span>
-            <span className="mpipe-num" style={counts[s.key] && s.color ? { color: s.color } : undefined}>{n(s.key)}</span>
+            <span className="mpipe-num" style={counts[s.key] && s.color ? { color: s.color } : undefined}>
+              {counts[s.key] == null ? <Spinner size={16} /> : counts[s.key]}
+            </span>
             <span className="mpipe-lbl">{s.label}</span>
             <span className="mpipe-bar" style={{ background: s.color || 'var(--t3)' }} />
           </button>
@@ -141,7 +146,9 @@ export default function MeetingAgentDash() {
               <span className="iad-q-ttl">Today's visits</span>
               {view.todayVisits.length > 0 && <span className="iad-q-ct">{view.todayVisits.length}</span>}
             </div>
-            {view.todayVisits.length === 0 ? (
+            {visitRows === null ? (
+              <LoadingBlock label="Loading today's visits…" />
+            ) : view.todayVisits.length === 0 ? (
               <div className="iad-q-empty">
                 <Mi>event_available</Mi>
                 <b>No visits today</b>

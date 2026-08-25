@@ -62,6 +62,7 @@ import UnitBookingModal from './components/modals/UnitBookingModal.jsx';
 import BookingModal from './components/modals/BookingModal.jsx';
 import TransferLeadModal from './components/modals/TransferLeadModal.jsx';
 import useLeadCounts from './hooks/useLeadCounts.js';
+import GlobalLoadingBar from './components/GlobalLoadingBar.jsx';
 
 // ── Loading screen ──────────────────────────────────────────────────────────
 function LoadingScreen({ visible }) {
@@ -513,6 +514,8 @@ export default function App() {
 
   return (
     <>
+      {/* Speaks for every fetch in the app — see GlobalLoadingBar / netActivity. */}
+      <GlobalLoadingBar />
       {loadVisible && <LoadingScreen visible={loading} />}
       {!user && !loading && !showLogin && <LandingPage onEnter={() => setShowLogin(true)} />}
       {!user && !loading && showLogin && <LoginPage onLogin={enterApp} onBack={() => setShowLogin(false)} />}

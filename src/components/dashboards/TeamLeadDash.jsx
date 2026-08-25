@@ -8,6 +8,7 @@ import DashGreeting from './DashGreeting.jsx';
 import SuccessGauge from '../SuccessGauge.jsx';
 import ConversionPanel from './ConversionPanel.jsx';
 import Mi from '../Mi.jsx';
+import { LoadingBlock } from '../Spinner.jsx';
 import { fmtBDT, scoreLead, scoreLabel, fmtAgo } from '../../lib/helpers.js';
 import { STATUS_LABELS, SRC_LABELS, ROLES } from '../../lib/constants.js';
 import { panelConfigFor } from '../../lib/funnel.js';
@@ -19,7 +20,8 @@ import { useEffect, useMemo } from 'react';
 import { queryLeads } from '../../lib/db.js';
 import { eq, or } from '../../lib/leadQuery.js';
 
-function ScoredPipeline({ leads, db, onOpen }) {
+function ScoredPipeline({ leads, db, onOpen, loading }) {
+  if (loading) return <LoadingBlock label="Loading deals…" />;
   if (!leads.length) return <div className="iad-q-empty"><Mi>check_circle</Mi><b>Nothing to close</b><span>No deals in negotiation or ready to close.</span></div>;
   const scored = leads
     .map(l => ({ l, score: scoreLead(l, db.activities?.[l.id] || []) }))
@@ -202,7 +204,7 @@ export default function TeamLeadDash() {
               <span className="iad-q-ttl">Deals to close</span>
               {closing.length > 0 && <span className="iad-q-ct">{closing.length}</span>}
             </div>
-            <ScoredPipeline leads={closing} db={db} onOpen={setPanLead} />
+            <ScoredPipeline leads={closing} db={db} onOpen={setPanLead} loading={!needBook && closingRows === null} />
           </div>
         </div>
 

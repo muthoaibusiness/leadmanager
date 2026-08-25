@@ -1,5 +1,7 @@
 // Supabase config — loaded from environment (Vite exposes VITE_* on import.meta.env).
 // Set these in a local .env file (see .env.example). Never hardcode credentials here.
+import { begin, end } from './netActivity.js';
+
 export const SB_URL = import.meta.env.VITE_SUPABASE_URL;
 export const SB_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
@@ -10,6 +12,15 @@ if (!SB_URL || !SB_KEY) {
     [!SB_URL && 'VITE_SUPABASE_URL', !SB_KEY && 'VITE_SUPABASE_ANON_KEY'].filter(Boolean).join(', ') +
     '. Create a .env file in the project root (copy .env.example). Cloud sync is disabled until set.'
   );
+}
+
+// Every request in this module goes through sbFetch rather than fetch, so the
+// in-flight count that drives the global loading bar (netActivity.js) cannot
+// drift out of step with the requests it describes. finally() runs on failure
+// and on abort too — a counter that only decrements on success would stick.
+function sbFetch(input, init) {
+  begin();
+  return fetch(input, init).finally(end);
 }
 
 export const SB_H = { apikey: SB_KEY, Authorization: 'Bearer ' + SB_KEY, 'Content-Type': 'application/json' };
@@ -25,7 +36,7 @@ function checkNetworkError(e) {
 
 export async function sbGet(path) {
   try {
-    const r = await fetch(`${SB_URL}/rest/v1/${path}`, { headers: SB_H });
+    const r = await sbFetch(`${SB_URL}/rest/v1/${path}`, { headers: SB_H });
     if (!r.ok) return [];
     return r.json();
   } catch { return []; }
@@ -43,7 +54,7 @@ export async function sbGetAll(path, pageSize = 1000) {
     const to = from + pageSize - 1;
     let rows;
     try {
-      const r = await fetch(`${SB_URL}/rest/v1/${path}${sep}limit=${pageSize}&offset=${from}`, {
+      const r = await sbFetch(`${SB_URL}/rest/v1/${path}${sep}limit=${pageSize}&offset=${from}`, {
         headers: { ...SB_H, Range: `${from}-${to}` },
       });
       if (!r.ok) break;
@@ -73,7 +84,7 @@ export async function sbUpsert(table, rows) {
   for (let attempt = 0; attempt < 12; attempt++) {
     let r;
     try {
-      r = await fetch(`${SB_URL}/rest/v1/${table}`, {
+      r = await sbFetch(`${SB_URL}/rest/v1/${table}`, {
         method: 'POST',
         headers: { ...SB_H, Prefer: 'resolution=merge-duplicates' },
         body: JSON.stringify(payload),
@@ -140,7 +151,7 @@ export async function sbInsert(table, row) {
   for (let attempt = 0; attempt < 12; attempt++) {
     let r;
     try {
-      r = await fetch(`${SB_URL}/rest/v1/${table}`, {
+      r = await sbFetch(`${SB_URL}/rest/v1/${table}`, {
         method: 'POST',
         headers: { ...SB_H, Prefer: 'return=minimal' },
         body: JSON.stringify(payload),
@@ -198,7 +209,7 @@ export async function sbUpdate(table, id, updates) {
   for (let attempt = 0; attempt < 12; attempt++) {
     let r;
     try {
-      r = await fetch(`${SB_URL}/rest/v1/${table}?id=eq.${id}`, {
+      r = await sbFetch(`${SB_URL}/rest/v1/${table}?id=eq.${id}`, {
         method: 'PATCH',
         headers: { ...SB_H, Prefer: 'return=minimal' },
         body: JSON.stringify(payload),
@@ -249,7 +260,7 @@ export async function sbUpdate(table, id, updates) {
 // Raw REST DELETE with a filter (e.g. "leads?id=in.(...)"). Logs non-2xx.
 async function sbDeleteRaw(path) {
   try {
-    const r = await fetch(`${SB_URL}/rest/v1/${path}`, { method: 'DELETE', headers: { ...SB_H, Prefer: 'return=minimal' } });
+    const r = await sbFetch(`${SB_URL}/rest/v1/${path}`, { method: 'DELETE', headers: { ...SB_H, Prefer: 'return=minimal' } });
     if (!r.ok) { let b = ''; try { b = await r.text(); } catch {} console.error(`Supabase Delete Error [${path}] HTTP ${r.status}:`, b); }
     return r.ok;
   } catch (e) { console.error(`Supabase Delete network error [${path}]:`, e); return false; }
@@ -423,7 +434,7 @@ export async function sbEmailsInUse(emails) {
 export async function sbMarkRead(ids) {
   if (!ids || !ids.length) return;
   const filter = ids.map(id => `id.eq.${id}`).join(',');
-  await fetch(`${SB_URL}/rest/v1/notifications?or=(${filter})`, {
+  await sbFetch(`${SB_URL}/rest/v1/notifications?or=(${filter})`, {
     method: 'PATCH',
     headers: { ...SB_H, Prefer: 'return=minimal' },
     body: JSON.stringify({ is_read: true }),
@@ -700,7 +711,7 @@ export async function hasColumn(table, col, hint = '') {
   if (_hasCol[k] !== undefined) return _hasCol[k];
   let ok;
   try {
-    const r = await fetch(`${SB_URL}/rest/v1/${table}?select=${col}&limit=1`, { headers: SB_H });
+    const r = await sbFetch(`${SB_URL}/rest/v1/${table}?select=${col}&limit=1`, { headers: SB_H });
     ok = r.ok;
   } catch { ok = false; }
   if (!ok) console.warn(`[schema] ${k} missing.${hint ? ' ' + hint : ''}`);
@@ -728,7 +739,7 @@ export const rpcMissing = (fn) => _missingRpc.has(fn);
 export async function sbRpc(fn, args = {}) {
   if (_missingRpc.has(fn)) return null;
   try {
-    const r = await fetch(`${SB_URL}/rest/v1/rpc/${fn}`, {
+    const r = await sbFetch(`${SB_URL}/rest/v1/rpc/${fn}`, {
       method: 'POST',
       headers: SB_H,
       body: JSON.stringify(args),
@@ -770,7 +781,7 @@ function totalFromRange(r, fallback) {
 export async function sbCount(path) {
   try {
     const sep = path.includes('?') ? '&' : '?';
-    const r = await fetch(`${SB_URL}/rest/v1/${path}${sep}select=id`, {
+    const r = await sbFetch(`${SB_URL}/rest/v1/${path}${sep}select=id`, {
       method: 'HEAD',
       headers: { ...SB_H, Prefer: 'count=exact', Range: '0-0' },
     });
@@ -787,7 +798,7 @@ export async function sbPage(path, { page = 0, size = 15 } = {}) {
   try {
     const offset = page * size;
     const sep = path.includes('?') ? '&' : '?';
-    const r = await fetch(`${SB_URL}/rest/v1/${path}${sep}limit=${size}&offset=${offset}`, {
+    const r = await sbFetch(`${SB_URL}/rest/v1/${path}${sep}limit=${size}&offset=${offset}`, {
       headers: { ...SB_H, Prefer: 'count=exact', Range: `${offset}-${offset + size - 1}` },
     });
     // 416 = the offset is past the end (the page count shrank under a filter
