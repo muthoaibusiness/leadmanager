@@ -11,10 +11,14 @@ import { fmtBDT, fmtDT, startOfMonth, slabel } from '../../lib/helpers.js';
 import { ROLES, STATUS_LABELS, SRC_LABELS } from '../../lib/constants.js';
 import { Funnel } from '../charts/Charts.jsx';
 import StatTrend from '../StatTrend.jsx';
+import useActWindow from '../../hooks/useActWindow.js';
+import useLeadBook from '../../hooks/useLeadBook.js';
 
 function sclass(s) { return 's-' + (s || '').toLowerCase(); }
 
 export default function ManagementDash() {
+  useLeadBook(); // this view reduces over every lead; leads are not in the boot load
+  useActWindow(); // pull the recent-activity window; activities are not in the boot load
   const { user, setView, setTeamFilter, setAgentFilter, setTab, setSearch, setPropSel, openModal, dateRange, dbVersion, setPanLead } = useApp();
   const [activeTab, setActiveTab] = useState(0);
   const [detail, setDetail] = useState(null);

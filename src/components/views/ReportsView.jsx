@@ -3,6 +3,7 @@ import { useApp } from '../../context/AppContext.jsx';
 import { getLeads, getProperties, getBookings, bookingPaid, bookingDue } from '../../lib/db.js';
 import { fmtBDT, srclabel } from '../../lib/helpers.js';
 import { Donut, HBars, CHART_COLORS } from '../charts/Charts.jsx';
+import useLeadBook from '../../hooks/useLeadBook.js';
 
 function MoneyBars({ data }) {
   const max = Math.max(...data.map(d => d.value), 1);
@@ -21,6 +22,7 @@ function MoneyBars({ data }) {
 }
 
 export default function ReportsView() {
+  useLeadBook(); // this view reduces over every lead; leads are not in the boot load
   const { user } = useApp();
   const leads = getLeads(user);
   const props = getProperties();

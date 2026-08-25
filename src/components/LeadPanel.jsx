@@ -2,7 +2,7 @@ import { useEffect } from 'react';
 import Mi from './Mi.jsx';
 import { useApp } from '../context/AppContext.jsx';
 import LogCall from './LogCall.jsx';
-import { getLead, getActs, changeStatus, doneVisit, deleteLead, updLead, addAct, logNoAnswer, noAnswerLock, attendMeeting, createCarpoolRequest, userNameById } from '../lib/db.js';
+import { getLead, getActs, ensureLead, ensureLeadActs, hasFullActs, changeStatus, doneVisit, deleteLead, updLead, addAct, logNoAnswer, noAnswerLock, attendMeeting, createCarpoolRequest, userNameById } from '../lib/db.js';
 import { fmtD, fmtDT, fmtBDT, rlabel, scoreLead, scoreLabel, leadDisplayStatus, fmtDateTimeAP } from '../lib/helpers.js';
 import ActivityTimeline from './ActivityTimeline.jsx';
 import { ROLES, STATUS_LABELS, SRC_LABELS, effectiveRole } from '../lib/constants.js';
@@ -428,6 +428,23 @@ export default function LeadPanel() {
   const l = panLead ? getLead(panLead) : null;
   const acts = panLead ? getActs(panLead) : [];
 
+  // Activities are no longer part of the boot snapshot (see ensureLeadActs in
+  // db.js) -- this panel is what pulls them, for the ONE lead being opened.
+  // Cache-first: whatever is already in memory renders immediately and the
+  // fetch refreshes underneath, so reopening a lead never flashes a spinner.
+  // The spinner below is only for a lead nothing has ever loaded.
+  useEffect(() => {
+    if (!panLead) return;
+    let alive = true;
+    // The lead row itself may not be cached either — a notification or a
+    // carpool request opens the panel from an id alone, and db.leads only holds
+    // what has been listed so far.
+    ensureLead(panLead).then(changed => { if (alive && changed) refreshDB(); });
+    ensureLeadActs(panLead).then(changed => { if (alive && changed) refreshDB(); });
+    return () => { alive = false; };
+  }, [panLead, refreshDB]);
+
+  const actsLoading = !!panLead && !hasFullActs(panLead) && !acts.length;
 
   useEffect(() => {
     const handleKey = (e) => {
@@ -463,7 +480,9 @@ export default function LeadPanel() {
               <ScoreCard l={l} acts={acts} />
               <Actions l={l} />
               <OfferCard acts={acts} />
-              <Timeline acts={acts} lead={l} />
+              {actsLoading
+                ? <div className="tl"><div className="tl-ttl">Activity Timeline</div><div className="tl-load">Loading activity…</div></div>
+                : <Timeline acts={acts} lead={l} />}
             </>
           )}
         </div>

@@ -3,10 +3,12 @@ import Mi from '../Mi.jsx';
 import { useApp } from '../../context/AppContext.jsx';
 import { getLeads, getBookings } from '../../lib/db.js';
 import { fmtBDT, fmtD, ini, avc } from '../../lib/helpers.js';
+import useLeadBook from '../../hooks/useLeadBook.js';
 
 // Clients = leads that booked a unit or closed won. Clicking one opens the
 // shared LeadPanel customer detail (same design used everywhere).
 export default function ClientsView() {
+  useLeadBook(); // this view reduces over every lead; leads are not in the boot load
   const { user, setPanLead, dbVersion } = useApp();
   void dbVersion;
   const [q, setQ] = useState('');

@@ -6,15 +6,27 @@ import { SRC_LABELS, STATUS_LABELS, ROLES } from '../lib/constants.js';
 import { useApp } from '../context/AppContext.jsx';
 import { bulkDeleteLeads } from '../lib/db.js';
 
-const PAGE_SIZE = 15;
+export const PAGE_SIZE = 15;
 
 function sclass(s) { return 's-' + (s || '').toLowerCase(); }
 function srcclass(s) { return 'src-' + (s || '').toLowerCase(); }
 function leadCode(l) { return l.externalId || ('#' + String(l.id || '').slice(-6).toUpperCase()); }
 
-export default function LeadTable({ leads }) {
+// Two modes, one table.
+//
+//   client  (default)  `leads` is the complete result set; sort and slice here.
+//                      Used by the drill-downs that already hold their rows.
+//   server  (`total` given)  `leads` is ONE PAGE the server already sorted and
+//                      sliced, and `total` is how many match overall. Sorting
+//                      and slicing here would reorder 15 rows out of thousands
+//                      and produce a wrong page, so both are skipped and the
+//                      pager reports up to the caller.
+export default function LeadTable({ leads, total = null, page: pageProp, onPage, loading = false }) {
   const { setPanLead, user, refreshDB, showToast, sortBy } = useApp();
-  const [page, setPage] = useState(0);
+  const server = total != null;
+  const [ownPage, setOwnPage] = useState(0);
+  const page = server ? (pageProp || 0) : ownPage;
+  const setPage = server ? (onPage || (() => {})) : setOwnPage;
   const [selected, setSelected] = useState(new Set());
   // Multi-select bulk delete is Management / Master (admin) only. Real agents —
   // Initial Agent, Meeting Agent, Team Lead — cannot select or delete leads.
@@ -26,11 +38,17 @@ export default function LeadTable({ leads }) {
     updated: (a, b) => new Date(b.updatedAt || b.createdAt) - new Date(a.updatedAt || a.createdAt),
     name: (a, b) => (a.name || '').localeCompare(b.name || ''),
   };
-  const sorted = [...leads].sort(CMP[sortBy] || CMP.newest);
+  const sorted = server ? leads : [...leads].sort(CMP[sortBy] || CMP.newest);
 
-  useEffect(() => { setPage(0); setSelected(new Set()); }, [leads.length, leads.map(l => l.id).join()]);
+  // Server mode owns its own page state (the query changes it), so only the
+  // selection is cleared here. Resetting the page from inside would fight the
+  // caller and bounce the user back to page 1 on every fetch.
+  useEffect(() => {
+    if (!server) setOwnPage(0);
+    setSelected(new Set());
+  }, [server, leads.length, leads.map(l => l.id).join()]);
 
-  const slice = sorted.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
+  const slice = server ? sorted : sorted.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
 
   // select-all applies to the CURRENT page only
   const allSelected = slice.length > 0 && slice.every(l => selected.has(l.id));
@@ -59,6 +77,20 @@ export default function LeadTable({ leads }) {
   }
 
   if (!leads.length) {
+    // A loading page and an empty result look identical otherwise — one says
+    // "wait", the other says "nothing matches", and showing the wrong one reads
+    // as data loss.
+    if (loading) {
+      return (
+        <div className={`lt${canSelect ? ' lt-with-cb' : ''}`}>
+          <div className="lt-hdr">
+            {canSelect && <div className="lt-cb-col" />}
+            <div>Lead ID</div><div>Customer Name</div><div>Source</div><div>Property</div><div>Status</div><div>Create date</div>
+          </div>
+          <div className="empty"><Mi>hourglass_empty</Mi><p>Loading customers…</p></div>
+        </div>
+      );
+    }
     return (
       <div className={`lt${canSelect ? ' lt-with-cb' : ''}`}>
         <div className="lt-hdr">
@@ -81,7 +113,7 @@ export default function LeadTable({ leads }) {
           <button className="btn btn-g btn-sm" onClick={() => setSelected(new Set())}>Clear</button>
         </div>
       )}
-      <div className={`lt${canSelect ? ' lt-with-cb' : ''}`}>
+      <div className={`lt${canSelect ? ' lt-with-cb' : ''}${loading ? ' lt-busy' : ''}`}>
         <div className="lt-hdr">
           {canSelect && (
             <div className="lt-cb-col" onClick={toggleAll} title={allSelected ? 'Clear all' : 'Select all'}>
@@ -124,7 +156,7 @@ export default function LeadTable({ leads }) {
           </div>
         ))}
       </div>
-      <Pagination page={page} total={leads.length} pageSize={PAGE_SIZE} onChange={setPage} />
+      <Pagination page={page} total={server ? total : leads.length} pageSize={PAGE_SIZE} onChange={setPage} />
     </div>
   );
 }

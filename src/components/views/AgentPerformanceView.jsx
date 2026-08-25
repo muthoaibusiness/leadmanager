@@ -4,6 +4,7 @@ import { getDB } from '../../lib/db.js';
 import { ROLES } from '../../lib/constants.js';
 import { buildAgentPerf, ROLE_VIEWS } from '../../lib/agentPerf.js';
 import { fmtBDT, ini } from '../../lib/helpers.js';
+import useLeadBook from '../../hooks/useLeadBook.js';
 
 // "Minimal Intelligence" redesign — purple palette, scoped under .mip (see index.css).
 const FC = ['#2E7D27', '#3E9A33', '#4AA838', '#54B848', '#6BC95A'];
@@ -34,6 +35,7 @@ function Spark({ pts }) {
 }
 
 export default function AgentPerformanceView() {
+  useLeadBook(); // this view reduces over every lead; leads are not in the boot load
   const { user, dbVersion, dateRange } = useApp();
   void dbVersion;
   const db = getDB();

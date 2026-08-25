@@ -694,17 +694,109 @@ const inList = (ids) => `in.(${encodeURIComponent(ids.map(i => `"${i}"`).join(',
 // data loss rather than a missing column. Probe once per session and fall back
 // to the unfiltered read, in the same self-healing spirit as sbUpsert's
 // PGRST204 handling.
-const _hasCompanyCol = {};
-async function hasCompanyCol(table) {
-  if (_hasCompanyCol[table] !== undefined) return _hasCompanyCol[table];
+const _hasCol = {};
+export async function hasColumn(table, col, hint = '') {
+  const k = `${table}.${col}`;
+  if (_hasCol[k] !== undefined) return _hasCol[k];
   let ok;
   try {
-    const r = await fetch(`${SB_URL}/rest/v1/${table}?select=company_id&limit=1`, { headers: SB_H });
+    const r = await fetch(`${SB_URL}/rest/v1/${table}?select=${col}&limit=1`, { headers: SB_H });
     ok = r.ok;
   } catch { ok = false; }
-  if (!ok) console.warn(`[scope] ${table}.company_id missing - loading it UNFILTERED. Apply supabase/migrations/0009_tenant_scoping.sql.`);
-  _hasCompanyCol[table] = ok;
+  if (!ok) console.warn(`[schema] ${k} missing.${hint ? ' ' + hint : ''}`);
+  _hasCol[k] = ok;
   return ok;
+}
+
+const hasCompanyCol = (table) =>
+  hasColumn(table, 'company_id', `Loading ${table} UNFILTERED. Apply supabase/migrations/0009_tenant_scoping.sql.`);
+
+// ── Stored-procedure calls ────────────────────────────────────────────────
+//
+// The dashboards that aggregate (sums, group-by, per-agent leaderboards) cannot
+// be expressed through PostgREST on this project -- aggregate functions are
+// disabled and there is no GROUP BY -- so migration 0011 moves those reductions
+// into Postgres. See the header of 0011_dashboard_rollups.sql.
+//
+// A MISSING function is a first-class outcome, not an error: the migration may
+// not have been applied, and every caller has a whole-book fallback. PostgREST
+// answers an unknown function with PGRST202, which is remembered for the
+// session so the fallback path costs one probe, not one per render.
+const _missingRpc = new Set();
+export const rpcMissing = (fn) => _missingRpc.has(fn);
+
+export async function sbRpc(fn, args = {}) {
+  if (_missingRpc.has(fn)) return null;
+  try {
+    const r = await fetch(`${SB_URL}/rest/v1/rpc/${fn}`, {
+      method: 'POST',
+      headers: SB_H,
+      body: JSON.stringify(args),
+    });
+    if (r.ok) return r.json();
+    let j = {};
+    try { j = JSON.parse(await r.text()); } catch { /* non-JSON error body */ }
+    // PGRST202: no such function. 404 covers the same case on older gateways.
+    if (j.code === 'PGRST202' || r.status === 404) {
+      _missingRpc.add(fn);
+      console.warn(`[rpc] ${fn} not found - falling back to the in-browser rollup. Apply supabase/migrations/0011_dashboard_rollups.sql.`);
+      return null;
+    }
+    console.warn(`[rpc] ${fn} -> HTTP ${r.status}`, j.message || '');
+    return null;
+  } catch (e) { console.warn(`[rpc] ${fn} failed:`, e); return null; }
+}
+
+// ── Counted / paged reads ─────────────────────────────────────────────────
+//
+// Everything above fetches whole result sets. These two fetch a PAGE and the
+// TOTAL, which is what lets a list render 15 rows without the other 4985
+// crossing the wire. PostgREST reports the total in Content-Range when asked
+// with `Prefer: count=exact` -- "0-14/268" for a page, "*/268" for a HEAD.
+//
+// count=exact is a real COUNT(*) on the server. That is fine at this scale and
+// is the only variant that can drive an accurate page count; switch to
+// planned/estimated only if a table grows past what a count can scan cheaply.
+function totalFromRange(r, fallback) {
+  const cr = r.headers.get('content-range') || '';
+  const n = Number(cr.split('/')[1]);
+  return Number.isFinite(n) ? n : fallback;
+}
+
+// Row count only -- no body. Used for the dashboard KPI cards, which need the
+// number but not the leads behind it until the card is clicked.
+// Returns null (not 0) on failure, so callers can tell "none" from "unknown"
+// and fall back to counting what is in memory.
+export async function sbCount(path) {
+  try {
+    const sep = path.includes('?') ? '&' : '?';
+    const r = await fetch(`${SB_URL}/rest/v1/${path}${sep}select=id`, {
+      method: 'HEAD',
+      headers: { ...SB_H, Prefer: 'count=exact', Range: '0-0' },
+    });
+    if (!r.ok) { console.warn(`[count] ${path} -> HTTP ${r.status}`); return null; }
+    const n = totalFromRange(r, null);
+    return n == null ? null : n;
+  } catch (e) { console.warn('count failed:', e); return null; }
+}
+
+// One page of rows plus the total. `page` is 0-based.
+// Returns { rows, total } -- or null when the request fails, so the caller can
+// keep whatever it was already showing rather than blanking the list.
+export async function sbPage(path, { page = 0, size = 15 } = {}) {
+  try {
+    const offset = page * size;
+    const sep = path.includes('?') ? '&' : '?';
+    const r = await fetch(`${SB_URL}/rest/v1/${path}${sep}limit=${size}&offset=${offset}`, {
+      headers: { ...SB_H, Prefer: 'count=exact', Range: `${offset}-${offset + size - 1}` },
+    });
+    // 416 = the offset is past the end (the page count shrank under a filter
+    // change). An empty page is the honest answer, not an error.
+    if (r.status === 416) return { rows: [], total: totalFromRange(r, 0) };
+    if (!r.ok) { console.warn(`[page] ${path} -> HTTP ${r.status}`); return null; }
+    const rows = await r.json();
+    return { rows: Array.isArray(rows) ? rows : [], total: totalFromRange(r, (rows || []).length) };
+  } catch (e) { console.warn('page failed:', e); return null; }
 }
 
 // Fetch rows for a set of ids, in chunks, so the URL cannot blow up.
@@ -778,26 +870,21 @@ export async function sbLoad(user) {
     const userIds = users.map(u => u.id);
 
     // -- leads --------------------------------------------------------------
-    // Mirrors getLeads(user, { involved: true }) -- the SUPERSET, deliberately:
-    // getLeads narrows to assigned-only when opts.involved is not set, but
-    // MeetingAgentDash reads db.leads previousAssignees directly, bypassing it.
-    // Fetching the superset keeps both paths correct.
-    let leadsPath;
-    if (open) leadsPath = 'leads';
-    else if (isMgmt) leadsPath = `leads?${co}`;
-    else if (isTL && tid) {
-      const terms = [`team_id.eq.${tid}`, `assigned_to.${inList(userIds)}`, ...userIds.map(prevAssignee)];
-      leadsPath = `leads?or=(${terms.join(',')})`;
-    } else {
-      leadsPath = `leads?or=(assigned_to.eq.${user.id},${prevAssignee(user.id)})`;
-    }
+    // NOT loaded here either, for the same reason activities are not: it is the
+    // other table that grows without bound, and the first screen needs eight
+    // NUMBERS from it, not the rows. Those numbers are count queries now
+    // (countLeads in db.js) and the lists are paged (queryLeads / LeadsView),
+    // so a lead row is fetched only when something is about to show it.
+    //
+    // db.leads is therefore a cache of what has been looked at. The views that
+    // genuinely aggregate over the whole book -- pipeline, reports, calendar,
+    // agent performance -- pull it on mount via ensureLeadBook().
 
     // targets are keyed by user_id, so the loaded user set IS the filter -- no
     // company_id needed, which means no dependency on migration 0009 here.
     const targetsPath = open ? 'targets' : `targets?user_id=${inList(userIds)}`;
 
-    const [leads, targets, properties, bookings, companies, holdReqs, notifs] = await Promise.all([
-      sbGetAll(leadsPath),
+    const [targets, properties, bookings, companies, holdReqs, notifs] = await Promise.all([
       sbGet(targetsPath),
       sbGet(`properties?order=created_at.desc${and}`),
       sbGet(`bookings?order=created_at.desc${and}`),
@@ -818,26 +905,23 @@ export async function sbLoad(user) {
     ]);
 
     // -- activities ---------------------------------------------------------
-    // Chained to the lead set rather than filtered independently, so
-    // _DB.activities and _DB.leads cannot disagree. An agent with 89 leads is
-    // two requests. MANAGEMENT holds the whole company, so it uses the
-    // company_id column instead of ~24 chunks -- falling back to unfiltered
-    // until migration 0009 has been applied.
-    let acts;
-    if (open) {
-      acts = await sbGetAll('activities?order=timestamp.asc');
-    } else if (isMgmt) {
-      const scopable = await hasCompanyCol('activities');
-      acts = await sbGetAll(`activities?order=timestamp.asc${scopable ? and : ''}`);
-    } else {
-      const leadIds = (leads || []).map(l => l.id);
-      acts = leadIds.length
-        ? await sbGetByIds(op => `activities?order=timestamp.asc&lead_id=${op}`, leadIds)
-        : [];
-    }
-
+    // NOT loaded here. It is by far the biggest table (one row per call, note,
+    // status change, ... on every lead) and the boot payload was dominated by
+    // rows nothing on the first screen reads. Two on-demand loads replace it:
+    //
+    //   sbActsForLead(leadId)     - the FULL history of ONE lead, fetched when
+    //                               the lead detail panel opens. Only ever one
+    //                               lead's worth in flight.
+    //   sbLoadActWindow(...)      - a recent-only slice for the views that
+    //                               aggregate (funnel / agent perf / feeds),
+    //                               fetched when such a view first mounts.
+    //
+    // Both merge into _DB.activities by id (db.js), so the two can overlap
+    // freely and neither can clobber the other.
+    //
+    // Realtime still delivers new activity rows live; inScope() drops any whose
+    // lead this browser does not hold, exactly as before.
     const actsMap = {};
-    (acts || []).forEach(r => { if (!actsMap[r.lead_id]) actsMap[r.lead_id] = []; actsMap[r.lead_id].push(rToA(r)); });
     // Convert flat notifications array into a map keyed by userId
     const notifsMap = {};
     (notifs || []).forEach(r => {
@@ -849,7 +933,11 @@ export async function sbLoad(user) {
       companies: (companies || []).map(rToC),
       users: (users || []).map(rToU),
       teams: (teams || []).map(rToT),
-      leads: (leads || []).map(rToL),
+      // The key is deliberately ABSENT, not empty. mergeDB reads "no leads key"
+      // as "the cloud was not asked about leads, keep what is cached" -- an
+      // empty array would mean "the cloud says there are none" and would wipe
+      // whatever ensureLeadBook had already fetched, since this load and that
+      // one race on every login.
       activities: actsMap,
       notifications: notifsMap,
       targets: (targets || []).map(rToTg),
@@ -858,6 +946,63 @@ export async function sbLoad(user) {
       holdRequests: (holdReqs || []).map(rToHr),
     };
   } catch (e) { console.warn('Supabase load failed:', e); return null; }
+}
+
+// Full activity history for ONE lead. This is the lead-detail read: the panel
+// wants every entry ever logged, so it is deliberately unwindowed -- but it is
+// also a single lead, so the row count is bounded by that lead's own history.
+// sbGetAll (not sbGet) because a long-running lead can exceed PostgREST's
+// 1000-row page.
+export async function sbActsForLead(leadId) {
+  if (!leadId) return [];
+  const rows = await sbGetAll(`activities?order=timestamp.asc&lead_id=eq.${encodeURIComponent(leadId)}`);
+  return (rows || []).map(rToA);
+}
+
+// How far back the aggregate views look. buildAgentPerf defaults to a 30-day
+// window and buildStageTrend to 30 days, so 60 covers both with room for the
+// date filter to be widened a little without a refetch. Raising this raises the
+// payload roughly linearly -- it is the one number that trades dashboard depth
+// against load time.
+export const ACT_WINDOW_DAYS = 60;
+
+// Recent activities across the whole visible lead set, for the views that
+// aggregate rather than read one lead: funnel stages, per-agent call/talk-time
+// rollups, and the activity feeds.
+//
+// Scoping mirrors sbLoad's tiers exactly (see the comment above sbLoad). Agents
+// and Team Leads have no usable server-side predicate other than their lead
+// set, so ids are chunked; MANAGEMENT and MASTER filter on company_id, falling
+// back to unfiltered until migration 0009 has been applied.
+//
+// `leadIds` comes from the caller (db.js) rather than from a query here, so the
+// window can never contain a lead this browser does not hold.
+export async function sbLoadActWindow(user, leadIds, days = ACT_WINDOW_DAYS) {
+  try {
+    const since = new Date(Date.now() - days * 864e5).toISOString();
+    const from = `timestamp=gte.${encodeURIComponent(since)}`;
+    const open = isUnscoped(user);
+    const isMgmt = user && user.role === 'MANAGEMENT';
+    let rows;
+    if (open) {
+      rows = await sbGetAll(`activities?order=timestamp.asc&${from}`);
+    } else if (isMgmt) {
+      const scopable = await hasCompanyCol('activities');
+      const co = scopable ? `&${coFilter(user.companyId)}` : '';
+      rows = await sbGetAll(`activities?order=timestamp.asc&${from}${co}`);
+    } else {
+      const ids = leadIds || [];
+      rows = ids.length
+        ? await sbGetByIds(op => `activities?order=timestamp.asc&${from}&lead_id=${op}`, ids)
+        : [];
+    }
+    const map = {};
+    (rows || []).forEach(r => {
+      if (!r || !r.lead_id) return;
+      (map[r.lead_id] = map[r.lead_id] || []).push(rToA(r));
+    });
+    return map;
+  } catch (e) { console.warn('Supabase activity window load failed:', e); return null; }
 }
 
 // UNUSED — nothing in src/ calls this; every cloud write goes through

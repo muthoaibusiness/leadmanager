@@ -1,115 +1,118 @@
-import { useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useApp } from '../../context/AppContext.jsx';
-import { getLeads } from '../../lib/db.js';
+import { queryLeads, countLeads, fetchLeadProjects } from '../../lib/db.js';
+import { selfInvolved } from '../../lib/leadQuery.js';
 import { STATUS_LABELS, ROLES } from '../../lib/constants.js';
-import LeadTable from '../LeadTable.jsx';
+import LeadTable, { PAGE_SIZE } from '../LeadTable.jsx';
 import SearchBox from '../SearchBox.jsx';
 
-const FU_OVERLAY = ['NEW', 'CONTACTED', 'INTERESTED'];
-
-// A lead's projects, as a list. `propertyInterest` is a single string holding one or
-// more project names, and the writers disagree on the separator: ProjectInterestPicker
-// and schedVisit join with ', ', CSV import joins with ' · '. Split on both. Matching
-// whole names (rather than a substring of the raw string) keeps "Lake" from also
-// selecting every "Lake View" lead.
-const projectsOf = (l) => (l.propertyInterest || '').split(/[,·]/).map(s => s.trim()).filter(Boolean);
-
+// This view no longer filters an in-memory array — it asks the server for one
+// page of 15 and the total that matches. Every control below is therefore an
+// input to a QUERY (see leadQuery.js), not to an Array.filter, and changing any
+// of them refetches page 1.
 export default function LeadsView() {
   const {
     user, search, statusFilter, setStatusFilter,
-    teamFilter, setTeamFilter, dbVersion, dateRange, db,
+    teamFilter, setTeamFilter, agentFilter: drillAgent, dbVersion, dateRange, db, sortBy,
   } = useApp();
 
   // Initial/Meeting agents get a My Leads ↔ Forwarded toggle.
   const isAgent = [ROLES.IA, ROLES.MA].includes(user.role);
   const isTL = user.role === ROLES.TL;
   const isMgmt = user.role === ROLES.MGMT;
-  
+
   const [tab, setTab] = useState('mine');
+  // The Team Lead's own agent picker. Distinct from `drillAgent`, the app-wide
+  // drill-down set by clicking a person on a dashboard (AgentCard) — that one
+  // wins when present, because it is an explicit "show me THIS person's book".
   const [agentFilter, setAgentFilter] = useState(user.id);
   const [projectFilter, setProjectFilter] = useState('ALL');
+  const [projectOptions, setProjectOptions] = useState([]);
+  const [page, setPage] = useState(0);
+  const [result, setResult] = useState({ rows: [], total: 0 });
+  const [loading, setLoading] = useState(true);
+  const [fwdCount, setFwdCount] = useState(0);
 
-  let leads = getLeads(user, { involved: true }); // include forwarded leads so status filters (e.g. Meeting Set) show them
-  if (teamFilter) {
-    const teamMemberIds = new Set(
-      (db.users || []).filter(u => u.teamId === teamFilter).map(u => u.id)
-    );
-    leads = leads.filter(l =>
-      l.teamId === teamFilter ||
-      teamMemberIds.has(l.assignedTo) ||
-      (l.previousAssignees || []).some(id => teamMemberIds.has(id))
-    );
-  }
+  useEffect(() => { fetchLeadProjects(user).then(setProjectOptions); }, [user]);
 
-  // Agent tabs: "mine" = leads they currently hold; "fwd" = leads they forwarded on.
-  const myFwd = (l) => (l.previousAssignees || []).includes(user.id) && l.assignedTo !== user.id;
-  if (isAgent) leads = tab === 'fwd' ? leads.filter(myFwd) : leads.filter(l => l.assignedTo === user.id);
-  const fwdCount = isAgent ? getLeads(user, { involved: true }).filter(myFwd).length : 0;
-
-  // Snapshot of the whole team book before the agent filter narrows it, so the
-  // agent select keeps offering every option instead of collapsing to the one
-  // just chosen.
-  const tlLeads = isTL ? leads : [];
-  // Only offer agents who actually hold one of the team's leads — a full roster
-  // would list people the filter then selects nothing for. The TL themselves is
-  // listed separately (always, and first), and is the default pick: their own
-  // hand-off queue is the view they want on arrival. A previously picked agent
-  // that drops out falls back to the TL rather than to ALL.
-  const teamUsers = isTL
-    ? (db.users || []).filter(u => u.teamId === user.teamId && u.id !== user.id && tlLeads.some(l => l.assignedTo === u.id))
-    : [];
-  const activeAgent = agentFilter === 'ALL' || teamUsers.some(u => u.id === agentFilter) ? agentFilter : user.id;
-
-  // The TL's own entry is their hand-off queue, not the whole team's book: the
-  // lead they hold now (fwdLead sets assignedTo) plus the ones they have since
-  // forwarded on (they stay in previousAssignees), so a lead does not vanish
-  // after the TL passes it to a closing agent. "All agents" is the full team
-  // book; any other pick is that agent's current leads.
-  if (isTL) {
-    if (activeAgent === user.id) {
-      leads = leads.filter(l => l.assignedTo === user.id || (l.previousAssignees || []).includes(user.id));
-    } else if (activeAgent !== 'ALL') {
-      leads = leads.filter(l => l.assignedTo === activeAgent);
-    }
-  }
-
-  // Project options come from the leads themselves, not the project catalog: the
-  // interest picker accepts free text and CSV import brings its own names, so a
-  // catalog-driven list would both miss real values and offer dead ones. Built from
-  // `leads` (before the filters below) so picking a project doesn't collapse the list
-  // to the one option just chosen. Deduped case-insensitively to match how the filter
-  // compares — otherwise "Sky Villa" and "sky villa" list twice and select the same
-  // leads — keeping the first spelling seen.
-  const projectSeen = new Map();
-  for (const p of leads.flatMap(projectsOf)) {
-    const k = p.toLowerCase();
-    if (!projectSeen.has(k)) projectSeen.set(k, p);
-  }
-  const projectOptions = [...projectSeen.values()].sort((a, b) => a.localeCompare(b));
-  // Changing tab/team can retire the chosen project; fall back rather than leave the
-  // select rendering blank on a value that is no longer an option.
+  // Changing tab/team can retire the chosen project; fall back rather than leave
+  // the select rendering blank on a value that is no longer an option.
   const activeProject = projectOptions.includes(projectFilter) ? projectFilter : 'ALL';
 
-  let disp = leads;
-  if (activeProject !== 'ALL') disp = disp.filter(l => projectsOf(l).some(p => p.toLowerCase() === activeProject.toLowerCase()));
-  if (statusFilter === 'FOLLOW_UP') disp = disp.filter(l => l.nextFollowup && FU_OVERLAY.includes(l.status));
-  else if (statusFilter === 'FORWARDED') disp = disp.filter(l => (l.previousAssignees || []).length > 0);
-  else if (statusFilter !== 'ALL') disp = disp.filter(l => l.status === statusFilter);
-  if (search) { const q = search.toLowerCase(); disp = disp.filter(l => (l.name || '').toLowerCase().includes(q) || String(l.phone || '').includes(q) || (l.propertyInterest || '').toLowerCase().includes(q)); }
-  // Apply the global date filter (by createdAt) — except on the Forwarded tab,
-  // which is a historical hand-off list and should always show every forwarded lead.
-  if (dateRange?.range && !(isAgent && tab === 'fwd')) {
-    const { start, end } = dateRange.range;
-    disp = disp.filter(l => { const d = new Date(l.createdAt); return d >= start && d <= end; });
-  }
+  // A Team Lead picks between their own hand-off queue (the default), one team
+  // member, or the whole team book. The roster comes from db.users, which for a
+  // TL is exactly their team (see sbLoad's tiers).
+  const teamUsers = useMemo(
+    () => (isTL ? (db.users || []).filter(u => u.teamId === user.teamId && u.id !== user.id) : []),
+    [isTL, db.users, user.teamId],
+  );
+  const activeAgent = agentFilter === 'ALL' || teamUsers.some(u => u.id === agentFilter) ? agentFilter : user.id;
+
+  // Everything the query depends on, in one object. Held in a memo so the fetch
+  // effect fires on a real change rather than on every render.
+  const q = useMemo(() => ({
+    user,
+    involved: true,
+    // A drill-down on somebody else's book overrides the viewer's own tabs.
+    ownTab: !drillAgent && isAgent ? tab : undefined,
+    // A TL viewing their own row wants their hand-off queue — the leads they
+    // hold now plus the ones they have since forwarded on. Their scope is the
+    // whole team, so it takes an explicit narrowing term. Any other pick is
+    // that agent's current leads; ALL leaves the team scope untouched.
+    extra: !drillAgent && isTL && activeAgent === user.id ? [selfInvolved(user.id)] : [],
+    // Drilling into one person means their CURRENT book — the same set
+    // AgentCard counts with getLeads(agent) — so it maps to assigned_to.
+    agentId: drillAgent
+      || (isTL && activeAgent !== 'ALL' && activeAgent !== user.id ? activeAgent : undefined),
+    teamId: isMgmt ? teamFilter || undefined : undefined,
+    status: statusFilter,
+    project: activeProject,
+    search,
+    // The Forwarded tab is a historical hand-off list and always shows every
+    // forwarded lead, so the global date filter is deliberately not applied there.
+    start: dateRange?.range && !(isAgent && tab === 'fwd') ? dateRange.range.start : undefined,
+    end: dateRange?.range && !(isAgent && tab === 'fwd') ? dateRange.range.end : undefined,
+  }), [user, isAgent, isTL, isMgmt, tab, activeAgent, drillAgent, teamFilter, statusFilter, activeProject, search, dateRange]);
+
+  const query = q;
+
+  // Any filter change invalidates the page number: page 4 of the old result set
+  // is meaningless in the new one.
+  const qKey = JSON.stringify({ ...query, user: user.id });
+  const lastKey = useRef(qKey);
+  if (lastKey.current !== qKey) { lastKey.current = qKey; if (page !== 0) setPage(0); }
+
+  // The fetch. `seq` guards against out-of-order responses: typing in the search
+  // box fires several, and a slow early one must not overwrite a fast later one.
+  const seq = useRef(0);
+  useEffect(() => {
+    const mine = ++seq.current;
+    setLoading(true);
+    queryLeads(query, { page, size: PAGE_SIZE, sort: sortBy })
+      .then(res => {
+        if (mine !== seq.current) return;
+        // null = the request failed. Keep whatever is on screen rather than
+        // blanking the table and claiming there are no customers.
+        if (res) setResult(res);
+        setLoading(false);
+      });
+  }, [qKey, page, sortBy, dbVersion, query]);
+
+  // The Forwarded tab's badge is a count, so it costs a count query, not rows.
+  useEffect(() => {
+    if (!isAgent) { setFwdCount(0); return; }
+    let alive = true;
+    countLeads({ user, involved: true, ownTab: 'fwd' }).then(n => { if (alive && n != null) setFwdCount(n); });
+    return () => { alive = false; };
+  }, [isAgent, user, dbVersion]);
 
   const teamOptions = isMgmt
     ? (db.teams || []).filter(t => !user.companyId || !t.companyId || t.companyId === user.companyId)
     : [];
-    
+
   return (
     <>
-      {isAgent && (
+      {isAgent && !drillAgent && (
         <div className="ftabs" style={{ marginBottom: 12 }}>
           <button className={`ftab${tab === 'mine' ? ' on' : ''}`} onClick={() => setTab('mine')}>My Leads</button>
           <button className={`ftab${tab === 'fwd' ? ' on' : ''}`} onClick={() => setTab('fwd')}>
@@ -159,7 +162,7 @@ export default function LeadsView() {
           </select>
         )}
       </div>
-      <LeadTable leads={disp} />
+      <LeadTable leads={result.rows} total={result.total} page={page} onPage={setPage} loading={loading} />
     </>
   );
 }

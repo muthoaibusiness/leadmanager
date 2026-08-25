@@ -5010,6 +5010,15 @@ a {
   margin: 12px 0 6px
 }
 
+/* Placeholder while a lead's activities are being fetched on demand — the
+   timeline is the only part of the panel that is not in the boot snapshot. */
+.tl-load {
+  font-size: 13px;
+  color: var(--t3);
+  padding: 14px 0 18px;
+  border-top: 1px solid var(--bd)
+}
+
 /* Shared activity timeline — flat rows, minimal outline-icon badge, chevron (funnel concept) */
 .atl {
   display: flex;
@@ -11684,3 +11693,28 @@ input[type="time"]::-webkit-calendar-picker-indicator { opacity: .9; cursor: poi
 .feat-chip.on { border-color: var(--accent); color: var(--t1); background: var(--blue-l); }
 .feat-chip.on .mi { color: var(--accent); }
 @media (max-width: 767px) { .feat-grid { grid-template-columns: 1fr; } }
+
+/* Dimmed while the next page is being fetched — the rows stay put so the table
+   does not collapse and reflow between pages. */
+.lt-busy {
+  opacity: .55;
+  pointer-events: none;
+  transition: opacity .12s ease
+}
+
+/* A person's name in a roster row opens their customers. Styled as text, not as
+   a button, so the roster still reads as a list. */
+.ui-link {
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer
+}
+
+.ui-link:hover {
+  color: var(--accent);
+  text-decoration: underline
+}

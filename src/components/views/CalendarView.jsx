@@ -5,12 +5,14 @@ import MonthCalendar from './calendar/MonthCalendar.jsx';
 import DaySchedule from './calendar/DaySchedule.jsx';
 import UpcomingList from './calendar/UpcomingList.jsx';
 import { buildEvents, groupByDay, dayKey, startOfDay } from './calendar/events.js';
+import useLeadBook from '../../hooks/useLeadBook.js';
 
 // Dashboard-style calendar: day metrics, month grid + day schedule, then a
 // 30-day look-ahead. `cursor` (selected day) lives here and flows down; `month`
 // tracks which month the grid is browsing so paging away doesn't move the
 // selection.
 export default function CalendarView() {
+  useLeadBook(); // this view reduces over every lead; leads are not in the boot load
   const { user, setPanLead, dbVersion } = useApp();
   const [cursor, setCursor] = useState(() => startOfDay(new Date()));
   const [month, setMonth] = useState(() => { const d = new Date(); return new Date(d.getFullYear(), d.getMonth(), 1); });

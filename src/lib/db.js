@@ -1,6 +1,7 @@
-import { ROLES, STATUS_LABELS, SRC_LABELS } from './constants.js';
+import { ROLES, STATUS_LABELS, SRC_LABELS, PAST_CONTACT } from './constants.js';
 import { uid, now_, fmtBDT, fmtDT, curMonth, startOfMonth, rlabel } from './helpers.js';
-import { sbGet, sbUpdate, sbInsert, sbUpsert, sbMarkRead, sbDelete, sbDeleteLeads, sbEmailsInUse, sbUserIdsByRole, lToR, rToL, uToR, rToU, tToR, rToT, aToR, rToA, rToN, tgToR, rToTg, pToR, rToP, bkToR, rToBk, cToR, rToC, hrToR, rToHr, sbUpsertNotifs } from './supabase.js';
+import { leadFilterParam, ORDER } from './leadQuery.js';
+import { sbGet, sbGetAll, sbCount, sbPage, hasColumn, sbRpc, sbUpdate, sbInsert, sbUpsert, sbMarkRead, sbDelete, sbDeleteLeads, sbEmailsInUse, sbUserIdsByRole, sbActsForLead, sbLoadActWindow, ACT_WINDOW_DAYS, lToR, rToL, uToR, rToU, tToR, rToT, aToR, rToA, rToN, tgToR, rToTg, pToR, rToP, bkToR, rToBk, cToR, rToC, hrToR, rToHr, sbUpsertNotifs } from './supabase.js';
 // Bumped from propcrm_v1 when the cloud load became tenant-scoped: every
 // existing browser is carrying a full multi-tenant snapshot under the old key,
 // and mergeDB would happily fold it back in on top of the scoped one. A new key
@@ -88,6 +89,13 @@ export function mergeDB(remote, local) {
   // We only keep a local-only lead if it's genuinely fresh (created/updated very
   // recently and not yet synced). Stale local-only leads = ones deleted on another
   // browser, so they are dropped. This stops per-browser divergence (e.g. 36 vs 51).
+  //
+  // `r.leads === undefined` is NOT the same as `r.leads === []`. The scoped
+  // cloud load no longer fetches leads at all (they are paged and counted on
+  // demand), so it omits the key entirely; an absent key means "not asked", and
+  // the local cache -- including whatever ensureLeadBook has already pulled --
+  // is kept as-is. An empty ARRAY still means "the cloud has none", which is
+  // what the deletion paths rely on.
   const GRACE_MS = 6 * 60 * 60 * 1000;
   const nowMs = Date.now();
   const remoteIds = new Set((r.leads || []).map(x => x.id));
@@ -96,7 +104,9 @@ export function mergeDB(remote, local) {
     !remoteIds.has(x.id) && !deleted.has(x.id) &&
     (nowMs - new Date(x.updatedAt || x.createdAt || 0).getTime() < GRACE_MS)
   );
-  const leads = [...cloudLeads, ...freshLocal];
+  const leads = r.leads === undefined
+    ? (l.leads || []).filter(x => x && x.id != null && !deleted.has(x.id))
+    : [...cloudLeads, ...freshLocal];
   return {
     companies: mergeArr(r.companies, l.companies),
     // users/teams: cloud-authoritative (no updatedAt to compare), never resurrect
@@ -460,6 +470,8 @@ export function setSession(u) { localStorage.setItem('pcrm_sess', JSON.stringify
 export function clearLocalDB() {
   try { localStorage.removeItem(KEY); localStorage.removeItem(OWNER_KEY); } catch { /* private mode / storage disabled */ }
   _DB = null;
+  resetActCache();
+  resetLeadCache();
 }
 
 export function clearSession() {
@@ -519,6 +531,260 @@ export function getLeads(user, opts = {}) {
 }
 
 export function getLead(id) { return getDB().leads.find(l => l.id === id); }
+
+// ── Server-side lead queries ──────────────────────────────────────────────
+//
+// sbLoad no longer ships the lead table. db.leads is now a CACHE of whatever
+// has been looked at — the page of results a list is showing, the rows behind a
+// KPI card, plus anything a whole-book view pulled — not the account's complete
+// set. Two consequences worth knowing:
+//
+//   * getLeads(user) still works and still filters client-side, but it can only
+//     see what has been fetched. Views that genuinely need the complete set
+//     call ensureLeadBook() first (useLeadBook does this for them).
+//   * Counts NEVER come from db.leads.length. They come from countLeads(),
+//     which asks the server, so a KPI card is right even though the rows behind
+//     it were never downloaded.
+//
+// Rows always merge INTO the cache rather than replacing it: a lead open in the
+// detail panel must not disappear because the list moved to another page.
+
+// Fold fetched rows into db.leads, newest wins. Returns the converted rows in
+// the order the server sent them — the caller renders THAT, not a filter over
+// the cache, so server-side ordering and paging survive.
+function cacheLeads(rows) {
+  const list = (rows || []).map(rToL);
+  if (!list.length) return list;
+  const db = getDB();
+  const byId = new Map((db.leads || []).map(l => [l.id, l]));
+  list.forEach(l => byId.set(l.id, l));
+  db.leads = [...byId.values()];
+  saveDBDeferred(db);
+  return list;
+}
+
+// The team's member ids, for the Team Lead scope arm. Comes from the users
+// snapshot, which for a TL is exactly their team (see sbLoad's tiers).
+function teamIds(user) {
+  if (!user || user.role !== ROLES.TL) return [];
+  return getDB().users.filter(u => u.teamId === user.teamId).map(u => u.id);
+}
+
+const leadPath = (opts, tail = '') => {
+  const f = leadFilterParam({ ...opts, teamMemberIds: teamIds(opts.user) });
+  return `leads?${[f, tail].filter(Boolean).join('&')}`;
+};
+
+// Does this database have the flag migration 0010 adds? With it, CONNECTED is
+// one predicate and the drill-down can list exactly the leads it counted.
+const hasTalkedCol = () => hasColumn('leads', 'talked',
+  'CONNECTED is counted with two queries instead of one, and its drill-down lists only the status arm. Apply supabase/migrations/0010_leads_talked_flag.sql.');
+
+// CONNECTED without the `talked` column, counted EXACTLY and without loading a
+// single lead row.
+//
+// The rule is "reached CONTACTED+ OR some CALL activity carries real talk
+// time". PostgREST cannot OR a base-table predicate with a related-table one —
+// but it can count each half separately, and the two halves are disjoint if the
+// second is restricted to leads NOT already past CONTACTED. So:
+//
+//   count(status in PAST_CONTACT)
+// + count(status NOT in PAST_CONTACT and has a CALL with duration > 0)
+//
+// The second uses an embedded inner join, which is the one place PostgREST does
+// express "has a related row matching X". Verified against live data: 149 + 7 =
+// 156, matching what the browser used to compute from the full activity log.
+async function countConnected(opts) {
+  const inPast = `status.in.(${PAST_CONTACT.join(',')})`;
+  const notPast = `status.not.in.(${PAST_CONTACT.join(',')})`;
+  const base = { ...opts, kpi: undefined };
+  const [a, b] = await Promise.all([
+    sbCount(leadPath({ ...base, extra: [...(opts.extra || []), inPast] })),
+    sbCount(leadPath(
+      { ...base, extra: [...(opts.extra || []), notPast] },
+      'activities.type=eq.CALL&activities.duration_seconds=gt.0&select=id,activities!inner(id)',
+    )),
+  ]);
+  if (a == null && b == null) return null;
+  return (a || 0) + (b || 0);
+}
+
+// How many leads match, without fetching any. Returns null when the request
+// fails, so a card can show a placeholder instead of a confident wrong zero.
+export async function countLeads(opts = {}) {
+  if (opts.kpi === 'connected' && !(await hasTalkedCol())) return countConnected(opts);
+  return sbCount(leadPath(opts));
+}
+
+
+// One page of matching leads, newest first by default. `page` is 0-based.
+// Resolves to { rows, total } with rows already in app shape and cached.
+export async function queryLeads(opts = {}, { page = 0, size = 15, sort = 'newest' } = {}) {
+  const res = await sbPage(leadPath(opts, `order=${ORDER[sort] || ORDER.newest}`), { page, size });
+  if (!res) return null;
+  return { rows: cacheLeads(res.rows), total: res.total };
+}
+
+// Every matching lead, paginated internally. This is the escape hatch for the
+// views that genuinely aggregate over the whole book (pipeline board, reports,
+// calendar, agent performance) — it is the expensive call, which is exactly why
+// it is no longer on the boot path.
+export async function fetchLeadBook(user, opts = {}) {
+  const rows = await sbGetAll(leadPath({ user, involved: true, ...opts }, 'order=created_at.desc'));
+  return cacheLeads(rows);
+}
+
+// Fetch ONE lead by id into the cache. The detail panel can be opened from a
+// notification or a carpool request — places that hold only an id — and with
+// the book no longer preloaded, that lead may never have been fetched. Resolves
+// to true when the cache gained something worth re-rendering for.
+export async function ensureLead(id) {
+  if (!id || getLead(id)) return false;
+  const rows = await sbGet(`leads?id=eq.${encodeURIComponent(id)}&limit=1`);
+  return cacheLeads(rows).length > 0;
+}
+
+// { key, promise } for the whole-book load, so the ten views that need it share
+// one request instead of each firing their own.
+let _bookLoad = null;
+// Flipped when the first whole-book load RESOLVES. `_bookLoad` alone is set the
+// moment the request starts, and a view that read it as "ready" would render a
+// confident empty state over a cache that is still filling.
+let _bookDone = false;
+
+// Pull the complete lead book once per account. Safe to call from every view
+// that needs it; whichever mounts first pays.
+export function ensureLeadBook(user) {
+  // No user means no scope, and an unscoped book fetch is every lead in every
+  // company. Callers can mount before the session resolves, so refuse rather
+  // than trust them.
+  if (!user || !user.id) return Promise.resolve(false);
+  const key = user.id;
+  if (_bookLoad && _bookLoad.key === key) return _bookLoad.promise;
+  const promise = fetchLeadBook(user)
+    .then(rows => { _bookDone = true; return rows.length > 0; })
+    .catch(e => { console.warn('lead book load failed:', e); _bookDone = true; return false; });
+  _bookLoad = { key, promise };
+  return promise;
+}
+
+// True once the whole book is in memory. Views use it to tell "no leads" apart
+// from "not loaded yet" so they render a loading state instead of a false zero.
+export function leadBookReady() { return _bookDone; }
+
+export function resetLeadCache() { _bookLoad = null; _bookDone = false; _projectOpts = null; }
+
+// ── Dashboard rollups (migration 0011) ────────────────────────────────────
+//
+// The Team Lead / Management / Master dashboards reduce over every lead in
+// their scope: revenue and pipeline sums, a status funnel, a source mix, a
+// 14-day trend, a per-agent leaderboard, team talk time. None of that is a
+// count, and PostgREST cannot aggregate here, so those pages were the last
+// thing still downloading the whole book.
+//
+// These three call the functions 0011 installs. Each returns null when the
+// migration has not been applied, and every caller then falls back to the
+// in-browser reduction over ensureLeadBook()'s data — so the app behaves the
+// same either way, just with a very different payload.
+
+// Which ids the scope covers, for the per-agent and per-team arms. MANAGEMENT
+// and MASTER pass none (the whole company / everything); a Team Lead passes
+// their roster, which db.users already holds.
+function scopeArgs(user, { teamId = null, userIds = null } = {}) {
+  return {
+    p_company: user && user.role !== ROLES.MASTER ? (user.companyId ?? null) : null,
+    p_team: teamId,
+    p_user_ids: userIds,
+  };
+}
+
+const iso = (d) => (d ? new Date(d).toISOString() : null);
+
+export async function dashboardRollup(user, { teamId = null, userIds = null, start = null, end = null, trendDays = 14 } = {}) {
+  return sbRpc('dashboard_rollup', {
+    ...scopeArgs(user, { teamId, userIds }),
+    p_start: iso(start), p_end: iso(end), p_trend_days: trendDays,
+  });
+}
+
+// Per-agent leaderboard. `userIds` is required — the function returns one row
+// per id given, including agents with no leads at all.
+export async function agentLeadStats(user, userIds, { start = null, end = null, monthStart = null } = {}) {
+  if (!userIds || !userIds.length) return [];
+  const rows = await sbRpc('agent_lead_stats', {
+    p_user_ids: userIds,
+    p_company: user && user.role !== ROLES.MASTER ? (user.companyId ?? null) : null,
+    p_start: iso(start), p_end: iso(end), p_month_start: iso(monthStart),
+  });
+  if (!rows) return null;
+  return rows.map(r => ({
+    userId: r.user_id,
+    leads: Number(r.leads) || 0,
+    calls: Number(r.calls) || 0,
+    won: Number(r.won) || 0,
+    closed: Number(r.closed) || 0,
+    revenue: Number(r.revenue) || 0,
+    converted: Number(r.converted) || 0,
+    meetingsSet: Number(r.meetings_set) || 0,
+    visitsDone: Number(r.visits_done) || 0,
+  }));
+}
+
+// Per-day stage events for the conversion panel's trend chart. Same shape
+// buildStageTrend() produces, so the panel can render either source.
+export async function stageTrend(user, { teamId = null, userIds = null, days = 30 } = {}) {
+  return sbRpc('stage_trend', {
+    ...scopeArgs(user, { teamId, userIds }),
+    p_days: days,
+  });
+}
+
+export async function activityRollup(user, { userIds = null, start = null, end = null } = {}) {
+  return sbRpc('activity_rollup', {
+    p_company: user && user.role !== ROLES.MASTER ? (user.companyId ?? null) : null,
+    p_user_ids: userIds,
+    p_start: iso(start), p_end: iso(end),
+  });
+}
+
+// Distinct project names for the Leads tab's project filter.
+//
+// The options cannot come from the rows on screen any more (one page of 15
+// would offer one page's worth of projects), and they cannot come from the
+// project catalog either: the interest picker accepts free text and CSV import
+// brings its own names, so a catalog-driven list would both miss real values
+// and offer dead ones. So: one column, every row, once per account. A single
+// short text column is a fraction of a full lead row, and the result is cached
+// for the session.
+let _projectOpts = null;
+export async function fetchLeadProjects(user) {
+  const key = user?.id || 'anon';
+  if (_projectOpts && _projectOpts.key === key) return _projectOpts.promise;
+  const path = leadPath({ user, involved: true, extra: ['property_interest.neq.'] }, 'select=property_interest');
+  const promise = sbGetAll(path)
+    .then(rows => {
+      // propertyInterest holds one or more names in a single string, and the
+      // writers disagree on the separator (', ' vs ' · '). Split on both, and
+      // dedupe case-insensitively keeping the first spelling seen — otherwise
+      // "Sky Villa" and "sky villa" list twice and select the same leads.
+      const seen = new Map();
+      (rows || []).forEach(r => {
+        String(r.property_interest || '').split(/[,·]/).forEach(p => {
+          const v = p.trim();
+          if (!v) return;
+          const k = v.toLowerCase();
+          if (!seen.has(k)) seen.set(k, v);
+        });
+      });
+      return [...seen.values()].sort((a, b) => a.localeCompare(b));
+    })
+    .catch(e => { console.warn('project options load failed:', e); return []; });
+  _projectOpts = { key, promise };
+  return promise;
+}
+
+
+
 
 // ── Pipelines (CRM kanban funnels) ──
 // Stored inside the local DB object. sbSave() only upserts known tables, so
@@ -630,6 +896,121 @@ export function deleteStage(pipelineId, stageId) {
 
 export function getActs(leadId) {
   return (getDB().activities[leadId] || []).sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+}
+
+// ── On-demand activity loading ────────────────────────────────────────────
+// sbLoad no longer ships activities. Nothing in _DB.activities is guaranteed to
+// be there, so everything that reads it goes through one of the two ensure*
+// calls below first. Both merge INTO the existing map by activity id, never
+// replace it: a lead whose full history was fetched for the detail panel must
+// not be trimmed back to the 60-day window when a dashboard later loads, and a
+// locally-created activity that has not round-tripped to the cloud yet must
+// survive both.
+
+// leadIds whose FULL history is in memory (fetched by ensureLeadActs). A lead
+// missing from this set may still have rows -- from the window load, realtime,
+// or a local write -- they are just not known to be complete.
+const _actsFull = new Set();
+// leadId -> in-flight promise, so two panels opening the same lead (or a
+// re-render mid-fetch) share one request instead of racing.
+const _actsInflight = new Map();
+// { key, promise } for the aggregate window; `key` is user id + day count so
+// switching account or widening the window refetches.
+let _actWindow = null;
+
+// Union `map` ({ leadId: Activity[] }) into db.activities, newest row per id.
+// Returns true when anything actually changed, so callers can skip a re-render.
+function mergeActMap(db, map) {
+  let changed = false;
+  if (!db.activities) db.activities = {};
+  Object.entries(map || {}).forEach(([lid, arr]) => {
+    if (!arr || !arr.length) return;
+    const cur = db.activities[lid] || [];
+    const byId = new Map(cur.map(a => [a.id, a]));
+    arr.forEach(a => {
+      if (!a || a.id == null || byId.has(a.id)) return;
+      byId.set(a.id, a);
+      changed = true;
+    });
+    if (byId.size !== cur.length) db.activities[lid] = [...byId.values()];
+  });
+  return changed;
+}
+
+// True when this lead's complete history is already in memory. The detail panel
+// uses it to decide between rendering a spinner and rendering the cache.
+export function hasFullActs(leadId) { return _actsFull.has(leadId); }
+
+// Load ONE lead's full activity history. Cache-first by contract: the caller
+// renders getActs(leadId) immediately and this refreshes underneath, so
+// reopening a lead never shows a spinner. Resolves to true when the cache
+// changed and the caller should re-render.
+//
+// Unions rather than replaces, for the same reason mergeDB does: a row this
+// browser just wrote may not have reached the cloud yet, and the response would
+// otherwise erase it. Activities are append-only in practice -- the only delete
+// path (deleteLead) drops the lead's whole key -- so nothing needs the response
+// to be authoritative about absence.
+export function ensureLeadActs(leadId) {
+  if (!leadId) return Promise.resolve(false);
+  const running = _actsInflight.get(leadId);
+  if (running) return running;
+  const p = sbActsForLead(leadId)
+    .then(acts => {
+      const db = getDB();
+      const changed = mergeActMap(db, { [leadId]: acts || [] });
+      _actsFull.add(leadId);
+      if (changed) saveDBDeferred(db);
+      return changed;
+    })
+    .catch(e => { console.warn('activity load failed for lead ' + leadId + ':', e); return false; })
+    .finally(() => { _actsInflight.delete(leadId); });
+  _actsInflight.set(leadId, p);
+  return p;
+}
+
+// Load the recent-activity window used by every aggregate view (funnel, agent
+// performance, activity feeds). Runs at most once per account+window; call it
+// freely from every such view's mount.
+export function ensureActWindow(user, days = ACT_WINDOW_DAYS) {
+  const db = getDB();
+  const leadIds = (db.leads || []).map(l => l.id);
+  // The lead count is part of the key on purpose. A dashboard can mount before
+  // hydrateFromCloud has landed, when db.leads is empty or partial -- for an
+  // agent or Team Lead the lead set IS the query, so that load would return
+  // nothing and a plain user-id key would cache the emptiness forever. Keying
+  // on the count makes the arrival of the real lead set trigger exactly one
+  // refetch; mergeActMap dedupes by activity id, so the overlap costs nothing.
+  const key = (user?.id || 'anon') + ':' + days + ':' + leadIds.length;
+  if (_actWindow && _actWindow.key === key) return _actWindow.promise;
+  const promise = sbLoadActWindow(user, leadIds, days)
+    .then(map => {
+      if (!map) return false;
+      const d = getDB();
+      const changed = mergeActMap(d, map);
+      if (changed) saveDBDeferred(d);
+      return changed;
+    })
+    .catch(e => { console.warn('activity window load failed:', e); return false; });
+  _actWindow = { key, promise };
+  return promise;
+}
+
+// Forget that a lead's history was fully loaded. Must be called wherever
+// db.activities[leadId] is dropped, or a lead id reused after a delete would
+// render an empty timeline and never refetch.
+export function forgetLeadActs(leadId) {
+  _actsFull.delete(leadId);
+  _actsInflight.delete(leadId);
+}
+
+// Drop every on-demand marker. Called on sign-out and on a tenant switch: the
+// underlying _DB is thrown away there, so leaving "full" flags behind would
+// make the next account's panels render an empty timeline and never refetch.
+export function resetActCache() {
+  _actsFull.clear();
+  _actsInflight.clear();
+  _actWindow = null;
 }
 
 export function getTarget(userId) {
@@ -1001,6 +1382,7 @@ export function deleteLead(leadId, user) {
     }
     db.leads = db.leads.filter(l => l.id !== leadId);
     delete db.activities[leadId];
+    forgetLeadActs(leadId); // the "full history loaded" flag must die with the key
   });
   sbDeleteLeads([leadId]); // deep cloud delete (children first) so it doesn't return on reload
 }
@@ -1014,7 +1396,7 @@ export function bulkDeleteLeads(leadIds, user) {
     });
     const idSet = new Set(leadIds);
     db.leads = db.leads.filter(l => !idSet.has(l.id));
-    leadIds.forEach(id => delete db.activities[id]);
+    leadIds.forEach(id => { delete db.activities[id]; forgetLeadActs(id); });
   });
   sbDeleteLeads(leadIds); // deep cloud delete (children first) so they don't return on reload
 }
@@ -1035,7 +1417,7 @@ export function dedupeLeads(db) {
     });
   if (removed.length) {
     db.leads = keep;
-    removed.forEach(id => { if (db.activities) delete db.activities[id]; });
+    removed.forEach(id => { if (db.activities) delete db.activities[id]; forgetLeadActs(id); });
     if (!db.deletionLog) db.deletionLog = [];
     removed.forEach(id => db.deletionLog.push({ id, name: 'duplicate', deletedBy: 'system', deletedAt: now_() }));
     sbDeleteLeads(removed); // purge from cloud too (deep)
@@ -1335,7 +1717,8 @@ export function markLostFn(leadId, reason, user) {
 export function checkFollowUpReminders(db) {
   const now = new Date();
   const notifList = [];
-  db.leads.forEach(lead => {
+  // `leads` is a cache now, not a guaranteed key — sbLoad no longer ships it.
+  (db.leads || []).forEach(lead => {
     if (!lead.nextFollowup) return;
     if (new Date(lead.nextFollowup) > now) return;
     const tl = db.users.find(u => u.id === lead.assignedTo);

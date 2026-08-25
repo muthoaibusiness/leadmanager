@@ -1,6 +1,6 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { useApp } from './context/AppContext.jsx';
-import { getDB, getSession, setSession, loginRemote, hasSessionId, saveDBDeferred, checkFollowUpReminders, getLeads, getProperties, expireHolds, migrateTenancy, mergeDB, purgeDemoSeed, dedupeLeads, reconcileDeletions, applyRealtimeEvent, clearLocalDB, cacheBelongsTo, fetchSessionUser } from './lib/db.js';
+import { getDB, getSession, setSession, loginRemote, hasSessionId, saveDBDeferred, checkFollowUpReminders, getProperties, expireHolds, migrateTenancy, mergeDB, purgeDemoSeed, dedupeLeads, reconcileDeletions, applyRealtimeEvent, clearLocalDB, cacheBelongsTo, fetchSessionUser } from './lib/db.js';
 import { seedDB, SEED_PROPERTIES, DEMO_PROPERTIES } from './lib/seed.js';
 import { sbLoad, sbSubscribeAll } from './lib/supabase.js';
 import { pushNotify, requestNotifyPermission } from './lib/pushNotify.js';
@@ -61,6 +61,7 @@ import PropertyFormModal from './components/modals/PropertyFormModal.jsx';
 import UnitBookingModal from './components/modals/UnitBookingModal.jsx';
 import BookingModal from './components/modals/BookingModal.jsx';
 import TransferLeadModal from './components/modals/TransferLeadModal.jsx';
+import useLeadCounts from './hooks/useLeadCounts.js';
 
 // ── Loading screen ──────────────────────────────────────────────────────────
 function LoadingScreen({ visible }) {
@@ -148,6 +149,22 @@ function PageHeader() {
 // ── In-body hero header (eyebrow + big title + subtitle + actions) ───────────
 function PageHero() {
   const { user, view, agentFilter, teamFilter, setAgentFilter, setTeamFilter, setTab, setStatusFilter, setSearch, openModal, setCreateUserRoles, setPropEdit, setPropSel, setConsoleAdmin, dbVersion, dateRange } = useApp();
+
+  // Header count follows the global date filter so it matches the filtered list.
+  // Counted on the server: db.leads is a cache of what has been looked at, not
+  // the account's whole book, so counting it here would under-report.
+  //
+  // Declared before the early returns below — hooks must run in the same order
+  // on every render. An empty spec set makes it a no-op when there is no user
+  // or the header is not showing a lead count.
+  const _dr = dateRange?.range;
+  const wantCounts = !!user && view === 'leads';
+  const headerQ = useMemo(() => (wantCounts ? {
+    total: { user, involved: false, start: _dr?.start, end: _dr?.end },
+    active: { user, involved: false, kpi: 'active', start: _dr?.start, end: _dr?.end },
+  } : {}), [wantCounts, user, _dr?.start, _dr?.end]);
+  const headCounts = useLeadCounts(headerQ);
+
   if (!user) return null;
   // Every dashboard now has its own greeting header — skip the generic hero.
   if (view === 'dashboard') return null;
@@ -160,19 +177,13 @@ function PageHero() {
   const clearDrill = () => { setAgentFilter(null); setTeamFilter(null); setTab(0); setStatusFilter('ALL'); setSearch(''); };
 
   // eyebrow / title / subtitle per view
-  // Header count follows the global date filter so it matches the filtered list.
-  const _dr = dateRange?.range;
-  const myLeads = _dr
-    ? getLeads(user).filter(l => { const d = new Date(l.createdAt); return d >= _dr.start && d <= _dr.end; })
-    : getLeads(user);
-  const activeLeads = myLeads.filter(l => !['DEAL_CLOSED_WON', 'DEAL_CLOSED_LOST', 'NOT_INTERESTED'].includes(l.status)).length;
   const props = getProperties();
   const propAvail = props.filter(p => p.status !== 'SOLD_OUT').length;
   const teamAgents = db.users.filter(u => (u.role === ROLES.IA || u.role === ROLES.MA) && u.teamId === user.teamId).length;
 
   const META = {
     dashboard: { eyebrow: rlabel(user.role), title: 'Dashboard', sub: '' },
-    leads: { eyebrow: 'Pipeline', title: 'Customers', sub: `${myLeads.length} customers · ${activeLeads} active` },
+    leads: { eyebrow: 'Pipeline', title: 'Customers', sub: headCounts.total == null ? 'Counting…' : `${headCounts.total} customers · ${headCounts.active ?? 0} active` },
     calendar: { eyebrow: 'Schedule', title: 'Calendar', sub: 'Your scheduled meetings' },
     pipeline: { eyebrow: 'Sales', title: 'Pipeline', sub: 'Drag deals across stages' },
     clients: { eyebrow: 'Relationships', title: 'Contacts', sub: '360° customer view' },
@@ -316,6 +327,15 @@ export default function App() {
     } else {
       freshDB = (local.users && local.users.length) ? local : seedDB();
     }
+    // sbLoad deliberately OMITS `leads` (see the note there) so mergeDB can tell
+    // "the cloud was not asked" from "the cloud says none". On a cold cache the
+    // merge is skipped entirely and sbData is used raw — which would leave
+    // freshDB.leads undefined and take down everything downstream that iterates
+    // it. checkFollowUpReminders did exactly that, and because the whole
+    // hydrate is one async function, the throw silently skipped the save: the
+    // users and teams it had just fetched never reached the store, which is why
+    // the admin account switcher and the Users / Accounts tabs came up empty.
+    if (!freshDB.leads) freshDB.leads = local.leads || [];
     if (!freshDB.notifications) freshDB.notifications = {};
     // Seed the WECON project catalog ONCE (never resurrect deleted projects)
     if (!freshDB.properties) freshDB.properties = [];

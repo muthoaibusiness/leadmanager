@@ -4,6 +4,8 @@ import { getDB, getTarget, updateAgent } from '../../lib/db.js';
 import { avc, ini, fmtBDT, rlabel, startOfMonth, curMonth } from '../../lib/helpers.js';
 import { ROLES } from '../../lib/constants.js';
 import Mi from '../Mi.jsx';
+import useActWindow from '../../hooks/useActWindow.js';
+import useLeadBook from '../../hooks/useLeadBook.js';
 
 // Downscale + compress an uploaded photo to a small square JPEG data URL so it
 // stays under the storage quota (full-res phone photos would blow it).
@@ -48,6 +50,8 @@ function KpiBox({ ico, val, label, color, sub }) {
 }
 
 export default function ProfileView() {
+  useLeadBook(); // this view reduces over every lead; leads are not in the boot load
+  useActWindow(); // pull the recent-activity window; activities are not in the boot load
   const { user, setUser, refreshDB, showToast } = useApp();
   const fileRef = useRef(null);
 

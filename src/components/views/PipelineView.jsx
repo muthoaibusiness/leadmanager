@@ -8,6 +8,8 @@ import {
 import { fmtD, fmtBDT, scoreLead, scoreLabel } from '../../lib/helpers.js';
 import { successRate } from '../../lib/successRate.js';
 import { TickGauge } from '../SuccessGauge.jsx';
+import useActWindow from '../../hooks/useActWindow.js';
+import useLeadBook from '../../hooks/useLeadBook.js';
 
 // Deal value from a forwarded offer (OFFER activity), falling back to budget.
 function dealValueOf(lead, acts) {
@@ -20,6 +22,8 @@ function dealValueOf(lead, acts) {
 const HIDDEN = ['DEAL_CLOSED_LOST', 'NOT_INTERESTED'];
 
 export default function PipelineView() {
+  useLeadBook(); // this view reduces over every lead; leads are not in the boot load
+  useActWindow(); // pull the recent-activity window; activities are not in the boot load
   const { user, refreshDB, showToast, setPanLead, dbVersion, nav } = useApp();
   void dbVersion; // re-render when the DB changes
 

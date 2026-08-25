@@ -1,5 +1,7 @@
-import { getLeads } from '../lib/db.js';
-import { successRate } from '../lib/successRate.js';
+import { useMemo } from 'react';
+import { ROLES } from '../lib/constants.js';
+import { or, eq } from '../lib/leadQuery.js';
+import useLeadCounts from '../hooks/useLeadCounts.js';
 
 // Semicircle tick-mark gauge (speedometer style).
 export function TickGauge({ pct = 0, label }) {
@@ -23,15 +25,61 @@ export function TickGauge({ pct = 0, label }) {
   );
 }
 
+// The status sets successRate() measures each role against. Kept here rather
+// than imported from successRate.js because these are now query terms, not
+// Array.filter predicates — the numerator and denominator are two counts, so
+// the gauge no longer needs a single lead row in memory.
+const REACHED_MEETING = ['MEETING_SET', 'SITE_VISIT_SCHEDULED', 'SITE_VISIT_DONE', 'NEGOTIATING', 'DEAL_CLOSED_WON'];
+const REACHED_TL = ['NEGOTIATING', 'DEAL_CLOSED_WON', 'DEAL_CLOSED_LOST'];
+const inList = (col, vals) => `${col}.in.(${vals.join(',')})`;
+
+// Success rate is role-specific — each role is measured on its own objective,
+// as a share of every lead they handled.
+//   Initial Agent  → got a meeting set
+//   Meeting Agent  → forwarded the lead on to a Team Lead
+//   Team Lead      → closed the deal (won) out of the whole team's leads
+//   Management/…   → classic win rate on resolved deals
+//
+// `involved` (IA/MA) is the superset that keeps their credit after a hand-off;
+// TL and Management measure their own board scope.
+function specFor(user) {
+  const involved = { user, involved: true };
+  const mine = { user, involved: false };
+  if (user.role === ROLES.IA) {
+    return {
+      label: 'Meetings set',
+      num: { ...involved, extra: [or(eq('meeting_set_by', user.id), inList('status', REACHED_MEETING))] },
+      den: involved,
+    };
+  }
+  if (user.role === ROLES.MA) {
+    return {
+      label: 'Forwarded to TL',
+      num: { ...involved, extra: [or(eq('assigned_role', ROLES.TL), inList('status', REACHED_TL))] },
+      den: involved,
+    };
+  }
+  if (user.role === ROLES.TL) {
+    return { label: 'Deals won', num: { ...mine, extra: [eq('status', 'DEAL_CLOSED_WON')] }, den: mine };
+  }
+  return {
+    label: 'Successful deals',
+    num: { ...mine, extra: [eq('status', 'DEAL_CLOSED_WON')] },
+    den: { ...mine, extra: [inList('status', ['DEAL_CLOSED_WON', 'DEAL_CLOSED_LOST'])] },
+  };
+}
+
 // Role-aware success-rate card for dashboards — same metric as the pipeline strip.
 export default function SuccessGauge({ user }) {
-  const mine = getLeads(user);
-  const involved = getLeads(user, { involved: true });
-  const s = successRate(user, mine, involved);
+  const spec = useMemo(() => specFor(user), [user]);
+  const q = useMemo(() => ({ num: spec.num, den: spec.den }), [spec]);
+  const c = useLeadCounts(q);
+  const n = c.num, d = c.den;
+  const pct = d ? Math.round((n || 0) / d * 100) : 0;
   return (
     <div className="sg-card">
       <div className="sg-hd">Success rate</div>
-      <TickGauge pct={s.pct} label={`${s.label} · ${s.n}/${s.d}`} />
+      <TickGauge pct={pct} label={d == null ? spec.label : `${spec.label} · ${n ?? 0}/${d}`} />
     </div>
   );
 }

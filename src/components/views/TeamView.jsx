@@ -6,8 +6,12 @@ import UserRow from '../UserRow.jsx';
 import Mi from '../Mi.jsx';
 import { fmtAgo } from '../../lib/helpers.js';
 import { ROLES } from '../../lib/constants.js';
+import useActWindow from '../../hooks/useActWindow.js';
+import useLeadBook from '../../hooks/useLeadBook.js';
 
 export default function TeamView() {
+  useLeadBook(); // this view reduces over every lead; leads are not in the boot load
+  useActWindow(); // pull the recent-activity window; activities are not in the boot load
   const { user, dbVersion } = useApp();
   const db = getDB();
   const leads = getLeads(user);

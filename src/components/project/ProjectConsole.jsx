@@ -8,6 +8,7 @@ import ProjectCatalog from './ProjectCatalog.jsx';
 import ProjectInvoice from './ProjectInvoice.jsx';
 import { fmtBDT } from '../../lib/helpers.js';
 import { ROLES } from '../../lib/constants.js';
+import useLeadBook from '../../hooks/useLeadBook.js';
 
 const STAGES = [
   { key: 'offer', label: 'Offer' },
@@ -34,6 +35,9 @@ function useCountdown(targetMs) {
 export default function ProjectConsole() {
   const { modal, closeModal, propSel, user, refreshDB, showToast, dbVersion, consoleAdmin } = useApp();
   const isOpen = modal === 'project-console';
+  // Gated on isOpen — App.jsx mounts this on every page and it renders nothing
+  // until opened, so an ungated call pulled the whole lead book everywhere.
+  useLeadBook(isOpen);
   const isAdmin = user?.role === ROLES.MGMT;
 
   const [admin, setAdmin] = useState(false); // admin "back view" toggle

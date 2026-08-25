@@ -5,6 +5,7 @@ import { getDB, fwdLead, getProperties, updLead } from '../../lib/db.js';
 import { sbGetUsersLite, rToU } from '../../lib/supabase.js';
 import { avc, ini, rlabel, fmtBDT } from '../../lib/helpers.js';
 import { ROLES } from '../../lib/constants.js';
+import useLeadBook from '../../hooks/useLeadBook.js';
 
 // Things the Initial Agent may have already shared with the client (clickable).
 const SHARED_OPTS = [
@@ -21,6 +22,11 @@ export default function ForwardModal() {
   const isMA = modal === 'forward-ma';
   const isTL = modal === 'forward-tl';
   const isOpen = isMA || isTL;
+  // Gated on isOpen: this modal is mounted on every page (App.jsx renders it
+  // unconditionally and it returns null when closed), so an ungated call pulled
+  // the entire lead book on every screen in the app — including before login,
+  // where there is no user yet and the fetch came out unscoped.
+  useLeadBook(isOpen);
 
   const [step, setStep] = useState(1);
   const [selected, setSelected] = useState(null);

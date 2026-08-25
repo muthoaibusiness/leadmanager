@@ -4,12 +4,16 @@ import { useApp } from '../../context/AppContext.jsx';
 import { getProperty, genUnits, unitsFromCodes, setUnitStatus, getLeads } from '../../lib/db.js';
 import { fmtBDT } from '../../lib/helpers.js';
 import { ROLES } from '../../lib/constants.js';
+import useLeadBook from '../../hooks/useLeadBook.js';
 
 const LABEL = { available: 'Available', locked: 'On Hold', booked: 'Booked', sold: 'Sold' };
 
 export default function UnitBookingModal() {
   const { modal, closeModal, propSel, user, refreshDB, showToast, dbVersion } = useApp();
   const isOpen = modal === 'units';
+  // Gated — see the note in ForwardModal: always-mounted modals must not pull
+  // the lead book while they are closed.
+  useLeadBook(isOpen);
   const [sel, setSel] = useState(null);
   const [cq, setCq] = useState('');
   const [client, setClient] = useState(null);

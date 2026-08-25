@@ -1,6 +1,6 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useApp } from '../../context/AppContext.jsx';
-import { getLeads, getDB, getTarget } from '../../lib/db.js';
+import { getDB, getTarget, queryLeads } from '../../lib/db.js';
 import StatCard from '../StatCard.jsx';
 import KpiSheet from '../KpiSheet.jsx';
 import TargetCard from './TargetCard.jsx';
@@ -11,30 +11,68 @@ import Mi from '../Mi.jsx';
 import { scoreLead, scoreLabel } from '../../lib/helpers.js';
 import { STATUS_LABELS, ROLES } from '../../lib/constants.js';
 import { panelConfigFor } from '../../lib/funnel.js';
+import useActWindow from '../../hooks/useActWindow.js';
+import useLeadCounts from '../../hooks/useLeadCounts.js';
+import { eq, is, lt, or, forwardedToRole } from '../../lib/leadQuery.js';
 
 export default function MeetingAgentDash() {
+  useActWindow(); // pull the recent-activity window; activities are not in the boot load
   const { user, dbVersion, setPanLead, nav, dateRange } = useApp();
   void dbVersion;
   const db = getDB();
-  const leads = getLeads(user);
-  // Separate set for the funnel: forwarding a lead to a Team Lead drops it out of
-  // getLeads(user), which would permanently zero the MA's Won bar. Kept apart from
-  // `leads` so the existing stage tiles below keep their current scoping.
-  const panelLeads = getLeads(user, { involved: true });
   const [detail, setDetail] = useState(null);
+
+  // ── Stage tiles: counted on the server, listed only when clicked ────────
+  // Every one of these is a plain predicate on the lead row, so none of the
+  // numbers has to wait for the book (which this page still loads underneath,
+  // for the funnel and the ranked visit lists below).
+  //
+  // involved:false throughout — a Meeting Agent's pipeline is the leads they
+  // HOLD. The one exception is "Offer Sent", which is by definition a lead they
+  // no longer hold, so it needs the involved superset.
+  const cardQ = useMemo(() => {
+    const mine = { user, involved: false };
+    const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
+    return {
+      // NOT `meeting_attended.is.false`: the column is null on every lead written
+      // before it existed, and null is not false to Postgres — the old test was
+      // `!l.meetingAttended`, which treats both the same. Getting this wrong
+      // silently reads 0 instead of 16.
+      set: { ...mine, extra: [eq('status', 'MEETING_SET'), or(is('meeting_attended', 'false'), is('meeting_attended', 'null'))] },
+      att: { ...mine, extra: [eq('status', 'MEETING_SET'), is('meeting_attended', 'true')] },
+      sched: { ...mine, extra: [eq('status', 'SITE_VISIT_SCHEDULED')] },
+      done: { ...mine, extra: [eq('status', 'SITE_VISIT_DONE')] },
+      tl: { user, involved: true, extra: [forwardedToRole(user.id, ROLES.TL)] },
+      unqualified: { ...mine, extra: [eq('status', 'NOT_INTERESTED')] },
+      overdue: { ...mine, extra: [eq('status', 'SITE_VISIT_SCHEDULED'), lt('meeting_date', todayStart.toISOString())] },
+    };
+  }, [user]);
+  const counts = useLeadCounts(cardQ);
+  const n = (k) => (counts[k] == null ? '—' : counts[k]);
+
+  // -- The visit lists -----------------------------------------------------
+  // The tiles above are counts; these two panels need the rows themselves, so
+  // they come from ONE bounded query for scheduled visits rather than from a
+  // download of the agent's whole book. Splitting today / overdue / upcoming
+  // happens below, on that page of rows.
+  const VISITS_FETCH = 100;
+  const [visitRows, setVisitRows] = useState(null);
+  useEffect(() => {
+    let alive = true;
+    queryLeads({ user, involved: false, extra: [eq('status', 'SITE_VISIT_SCHEDULED')] },
+      { page: 0, size: VISITS_FETCH, sort: 'oldest' })
+      .then(res => { if (alive && res) setVisitRows(res.rows); });
+    return () => { alive = false; };
+  }, [user, dbVersion]);
 
   const view = useMemo(() => {
     const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
     const todayEnd = new Date(); todayEnd.setHours(23, 59, 59, 999);
 
-    // Pipeline stages (non-overlapping): Meeting Set → Attended → Visit Scheduled
-    // → Visit Done → Offer Sent. Unqualified is the drop-off.
-    const meetingSet = leads.filter(l => l.status === 'MEETING_SET' && !l.meetingAttended); // awaiting attend
-    const attended = leads.filter(l => l.status === 'MEETING_SET' && l.meetingAttended);    // attended, needs a visit
-    const sched = leads.filter(l => l.status === 'SITE_VISIT_SCHEDULED');
-    const done = leads.filter(l => l.status === 'SITE_VISIT_DONE');
-    const fwdTL = db.leads.filter(l => (l.previousAssignees || []).includes(user.id) && l.assignedRole === ROLES.TL);
-    const unqualified = leads.filter(l => l.status === 'NOT_INTERESTED');
+    // The stage tiles are server counts now (cardQ above). What is left here are
+    // the two LISTS the page renders — today's visits and what is coming up —
+    // which need the rows themselves, ranked by lead score.
+    const sched = visitRows || [];
 
     // Today's visits = ONLY visits scheduled for today (not all pending work).
     const todayVisits = sched
@@ -45,16 +83,16 @@ export default function MeetingAgentDash() {
       .filter(l => l.meetingDate && new Date(l.meetingDate) > todayEnd)
       .sort((a, b) => new Date(a.meetingDate) - new Date(b.meetingDate));
 
-    return { meetingSet, attended, sched, done, fwdTL, unqualified, todayVisits, overdue, upcoming };
-  }, [leads, db, user.id, dbVersion]);
+    return { todayVisits, overdue, upcoming };
+  }, [visitRows, dbVersion]);
 
   // The visual pipeline funnel (clickable stages).
   const STAGES = [
-    { key: 'set', label: 'Meeting Set', sub: 'to attend', val: view.meetingSet.length, leads: view.meetingSet, color: 'var(--orange)' },
-    { key: 'att', label: 'Meeting Attended', sub: 'needs a visit', val: view.attended.length, leads: view.attended, color: 'var(--accent)' },
-    { key: 'sched', label: 'Visit Scheduled', sub: 'upcoming', val: view.sched.length, leads: view.sched },
-    { key: 'done', label: 'Visit Done', sub: 'completed', val: view.done.length, leads: view.done, color: '#2DD4BF' },
-    { key: 'tl', label: 'Offer Sent', sub: 'handed off', val: view.fwdTL.length, leads: view.fwdTL, color: 'var(--accent)' },
+    { key: 'set', label: 'Meeting Set', sub: 'to attend', color: 'var(--orange)' },
+    { key: 'att', label: 'Meeting Attended', sub: 'needs a visit', color: 'var(--accent)' },
+    { key: 'sched', label: 'Visit Scheduled', sub: 'upcoming' },
+    { key: 'done', label: 'Visit Done', sub: 'completed', color: '#2DD4BF' },
+    { key: 'tl', label: 'Offer Sent', sub: 'handed off', color: 'var(--accent)' },
   ];
 
   return (
@@ -66,9 +104,9 @@ export default function MeetingAgentDash() {
       {/* Pipeline bar — Meeting Set → Attended → Visit Scheduled → Visit Done → Offer Sent */}
       <div className="mpipe">
         {STAGES.map((s, i) => (
-          <button key={s.key} className="mpipe-seg" onClick={() => setDetail({ title: s.label, leads: s.leads })}>
+          <button key={s.key} className="mpipe-seg" onClick={() => setDetail({ title: s.label, query: cardQ[s.key], total: counts[s.key] })}>
             <span className="mpipe-step">Step {i + 1}</span>
-            <span className="mpipe-num" style={s.val && s.color ? { color: s.color } : undefined}>{s.val}</span>
+            <span className="mpipe-num" style={counts[s.key] && s.color ? { color: s.color } : undefined}>{n(s.key)}</span>
             <span className="mpipe-lbl">{s.label}</span>
             <span className="mpipe-bar" style={{ background: s.color || 'var(--t3)' }} />
           </button>
@@ -76,8 +114,8 @@ export default function MeetingAgentDash() {
       </div>
 
       <div className="grid-2">
-        <StatCard val={view.overdue.length} label="Overdue Visits" tone={view.overdue.length ? 'danger' : ''} sub="past due" onClick={() => setDetail({ title: 'Overdue Visits', leads: view.overdue })} />
-        <StatCard val={view.unqualified.length} label="Unqualified" tone={view.unqualified.length ? 'danger' : ''} sub="not interested" onClick={() => setDetail({ title: 'Unqualified', leads: view.unqualified })} />
+        <StatCard val={n('overdue')} label="Overdue Visits" tone={counts.overdue ? 'danger' : ''} sub="past due" onClick={() => setDetail({ title: 'Overdue Visits', query: cardQ.overdue, total: counts.overdue })} />
+        <StatCard val={n('unqualified')} label="Unqualified" tone={counts.unqualified ? 'danger' : ''} sub="not interested" onClick={() => setDetail({ title: 'Unqualified', query: cardQ.unqualified, total: counts.unqualified })} />
       </div>
 
       {/* Starts at Meeting Set: a Meeting Agent only ever receives leads that far along. */}
@@ -85,7 +123,7 @@ export default function MeetingAgentDash() {
         const cfg = panelConfigFor(user.role);
         return (
           <ConversionPanel
-            leads={panelLeads}
+            leads={[]}
             activities={db.activities || {}}
             dateRange={dateRange}
             stages={cfg.stages}
