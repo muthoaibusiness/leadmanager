@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import Mi from './Mi.jsx';
 import { LoadingBlock } from './Spinner.jsx';
 import { useApp } from '../context/AppContext.jsx';
@@ -434,18 +434,33 @@ export default function LeadPanel() {
   // Cache-first: whatever is already in memory renders immediately and the
   // fetch refreshes underneath, so reopening a lead never flashes a spinner.
   // The spinner below is only for a lead nothing has ever loaded.
+  // Whether this lead's activities have finished loading. It has to be STATE:
+  // hasFullActs() is a module-level flag, and reading it during render only
+  // works if something re-renders after it flips. ensureLeadActs re-renders via
+  // refreshDB only when the cache actually CHANGED — so a lead with no activity
+  // at all resolved, changed nothing, never re-rendered, and sat on the spinner
+  // forever. Resolving is the signal, not changing.
+  const [actsReady, setActsReady] = useState(false);
+
   useEffect(() => {
     if (!panLead) return;
     let alive = true;
+    // A lead whose full history is already cached must not flash a spinner.
+    setActsReady(hasFullActs(panLead));
     // The lead row itself may not be cached either — a notification or a
     // carpool request opens the panel from an id alone, and db.leads only holds
     // what has been listed so far.
     ensureLead(panLead).then(changed => { if (alive && changed) refreshDB(); });
-    ensureLeadActs(panLead).then(changed => { if (alive && changed) refreshDB(); });
+    ensureLeadActs(panLead).then(changed => {
+      if (!alive) return;
+      // Done either way — including "done, and there were none".
+      setActsReady(true);
+      if (changed) refreshDB();
+    });
     return () => { alive = false; };
   }, [panLead, refreshDB]);
 
-  const actsLoading = !!panLead && !hasFullActs(panLead) && !acts.length;
+  const actsLoading = !!panLead && !actsReady && !acts.length;
 
   useEffect(() => {
     const handleKey = (e) => {
