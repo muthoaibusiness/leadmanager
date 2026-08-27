@@ -1004,6 +1004,31 @@ export function forgetLeadActs(leadId) {
   _actsInflight.delete(leadId);
 }
 
+// One person's recent activity, newest first — the Team Activity feed.
+//
+// Scoped to a SINGLE user on the server. The feed used to reduce over the whole
+// 60-day activity window for the entire team and then slice 30 rows off the
+// front, which meant downloading every teammate's history to show one column of
+// it. This asks for exactly the rows it renders.
+//
+// The lead's name comes back through the embedded relationship rather than from
+// a second round trip or from db.leads — the feed labels each row with it, and
+// the lead itself may not be cached at all now that leads load per page.
+export async function fetchUserActivity(userId, { limit = 40 } = {}) {
+  if (!userId) return [];
+  const rows = await sbGet(
+    `activities?select=id,type,description,timestamp,duration_seconds,user_id,user_name,lead_id,leads(name)`
+    + `&user_id=eq.${encodeURIComponent(userId)}&order=timestamp.desc&limit=${limit}`,
+  );
+  return (rows || []).map(r => ({
+    ...rToA(r),
+    leadId: r.lead_id,
+    // A deleted lead leaves its activities behind; label those rather than
+    // dropping them, so the feed does not silently lose entries.
+    leadName: r.leads?.name || 'Deleted customer',
+  }));
+}
+
 // Drop every on-demand marker. Called on sign-out and on a tenant switch: the
 // underlying _DB is thrown away there, so leaving "full" flags behind would
 // make the next account's panels render an empty timeline and never refetch.

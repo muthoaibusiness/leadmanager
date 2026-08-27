@@ -11822,3 +11822,18 @@ input[type="time"]::-webkit-calendar-picker-indicator { opacity: .9; cursor: poi
   pointer-events: none;
   background: transparent
 }
+
+/* An activity row that links to its customer (Team Activity feed). */
+.atl-click {
+  cursor: pointer;
+  transition: background var(--tr)
+}
+
+.atl-click:hover {
+  background: var(--surf2)
+}
+
+/* The whose-activity picker sits at the right of the section header. */
+.sec-hd .fsel {
+  max-width: 220px
+}
