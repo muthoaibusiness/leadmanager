@@ -1,19 +1,31 @@
 import { useState, useEffect } from 'react';
 import Mi from '../Mi.jsx';
 import { useApp } from '../../context/AppContext.jsx';
-import { getDB, updLead, addAct } from '../../lib/db.js';
+import { getDB, bulkTransferLeads } from '../../lib/db.js';
 import { ROLES } from '../../lib/constants.js';
 
-export default function TransferLeadModal() {
+// Two callers, one modal.
+//
+//   panel  (no props)   the lead open in LeadPanel, via context `panLead`.
+//   bulk   (props)      a selection from LeadTable — `leadIds` is the checked
+//                       set and the host owns open/close, so the table can clear
+//                       its checkboxes once the transfer actually lands.
+//
+// The picking UI and the write path are identical either way; only the count in
+// the button and the toast differ.
+export default function TransferLeadModal({ leadIds = null, open = null, onClose = null, onDone = null }) {
   const { modal, closeModal, panLead, user, refreshDB, showToast } = useApp();
-  const isOpen = modal === 'transfer-lead';
+  const bulk = leadIds != null;
+  const isOpen = bulk ? !!open : modal === 'transfer-lead';
+  const ids = bulk ? leadIds : (panLead ? [panLead] : []);
+  const close = onClose || closeModal;
 
   const [selectedTeamId, setSelectedTeamId] = useState('');
   const [selectedIA, setSelectedIA] = useState('');
   const [selectedMA, setSelectedMA] = useState('');
 
   const db = getDB();
-  
+
   // Find all available Teams and their Team Leads
   const teams = (db.teams || []).filter(t => !user?.companyId || !t.companyId || t.companyId === user?.companyId);
   const teamOptions = teams.map(t => {
@@ -25,7 +37,7 @@ export default function TransferLeadModal() {
   const iAgents = selectedTeamId
     ? (db.users || []).filter(u => u.teamId === selectedTeamId && u.role === ROLES.IA && u.isActive !== false).sort((a, b) => (a.name || '').localeCompare(b.name || ''))
     : [];
-    
+
   const mAgents = selectedTeamId
     ? (db.users || []).filter(u => u.teamId === selectedTeamId && u.role === ROLES.MA && u.isActive !== false).sort((a, b) => (a.name || '').localeCompare(b.name || ''))
     : [];
@@ -56,46 +68,37 @@ export default function TransferLeadModal() {
 
   const submit = () => {
     const selectedAgentId = selectedIA || selectedMA;
-    if (!selectedTeamId || !selectedAgentId || !panLead) return;
-    
+    if (!selectedTeamId || !selectedAgentId || !ids.length) return;
+
     const team = (db.teams || []).find(t => t.id === selectedTeamId);
     const tl = (db.users || []).find(u => u.id === team?.leadId);
     const newAgent = (db.users || []).find(u => u.id === selectedAgentId);
     if (!team || !newAgent) return;
 
-    // Update the lead
-    updLead(panLead, {
-      teamId: selectedTeamId,
-      assignedTo: selectedAgentId,
-      assignedToName: newAgent.name,
-      assignedRole: newAgent.role
-    });
+    const teamLabel = `${tl ? tl.name : 'Team ' + team.id}'s Team`;
+    const n = bulkTransferLeads(ids, { teamId: selectedTeamId, agent: newAgent, teamLabel }, user);
 
-    // Add activity log
-    const tlName = tl ? tl.name : 'Team ' + team.id;
-    addAct(panLead, {
-      type: 'NOTE',
-      description: `Lead transferred to ${tlName}'s Team (Assigned to: ${newAgent.name} - ${newAgent.role === ROLES.IA ? 'Initial Agent' : 'Meeting Agent'})`,
-      userId: user.id,
-      userName: user.name,
-      durationSeconds: 0
-    });
-
-    closeModal();
+    close();
+    onDone?.();
     refreshDB();
-    showToast('Lead transferred successfully', 'ok');
+    showToast(n > 1 ? `${n} leads transferred to ${newAgent.name}` : 'Lead transferred successfully', 'ok');
   };
 
   if (!user) return null;
 
   return (
-    <div className={`mov${isOpen ? ' on' : ''}`} onClick={e => { if (e.target === e.currentTarget) closeModal(); }}>
+    <div className={`mov${isOpen ? ' on' : ''}`} onClick={e => { if (e.target === e.currentTarget) close(); }}>
       <div className="modal">
         <div className="m-hd">
-          <div className="m-ttl">Transfer Lead</div>
-          <button className="m-x" onClick={closeModal}><Mi>close</Mi></button>
+          <div className="m-ttl">{ids.length > 1 ? `Transfer ${ids.length} Leads` : 'Transfer Lead'}</div>
+          <button className="m-x" onClick={close}><Mi>close</Mi></button>
         </div>
         <div className="m-body">
+          {ids.length > 1 && (
+            <div className="m-hint" style={{ marginBottom: '14px' }}>
+              <Mi>swap_horiz</Mi>All {ids.length} selected customers move to the agent you pick below.
+            </div>
+          )}
           <div className="fl">
             <label>Select Team (Team Lead)</label>
             <select className="finp" value={selectedTeamId} onChange={e => setSelectedTeamId(e.target.value)} style={{ backgroundColor: '#1a1a1a', color: '#ffffff' }}>
@@ -105,12 +108,12 @@ export default function TransferLeadModal() {
               ))}
             </select>
           </div>
-          
+
           <div className="fl" style={{ marginTop: '16px' }}>
             <label>Select Initial Agent</label>
-            <select 
-              className="finp" 
-              value={selectedIA} 
+            <select
+              className="finp"
+              value={selectedIA}
               onChange={e => handleIAChange(e.target.value)}
               disabled={!selectedTeamId || iAgents.length === 0}
             >
@@ -123,9 +126,9 @@ export default function TransferLeadModal() {
 
           <div className="fl" style={{ marginTop: '16px' }}>
             <label>Select Meeting Agent</label>
-            <select 
-              className="finp" 
-              value={selectedMA} 
+            <select
+              className="finp"
+              value={selectedMA}
               onChange={e => handleMAChange(e.target.value)}
               disabled={!selectedTeamId || mAgents.length === 0}
             >
@@ -137,8 +140,10 @@ export default function TransferLeadModal() {
           </div>
         </div>
         <div className="m-ft">
-          <button className="btn btn-g" onClick={closeModal}>Cancel</button>
-          <button className="btn btn-p" disabled={!selectedTeamId || (!selectedIA && !selectedMA)} onClick={submit}>Transfer</button>
+          <button className="btn btn-g" onClick={close}>Cancel</button>
+          <button className="btn btn-p" disabled={!selectedTeamId || (!selectedIA && !selectedMA) || !ids.length} onClick={submit}>
+            {ids.length > 1 ? `Transfer ${ids.length}` : 'Transfer'}
+          </button>
         </div>
       </div>
     </div>

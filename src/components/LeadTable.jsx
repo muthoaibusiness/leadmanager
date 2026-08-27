@@ -6,6 +6,7 @@ import { fmtDateTimeAP, leadDisplayStatus } from '../lib/helpers.js';
 import { SRC_LABELS, STATUS_LABELS, ROLES } from '../lib/constants.js';
 import { useApp } from '../context/AppContext.jsx';
 import { bulkDeleteLeads } from '../lib/db.js';
+import TransferLeadModal from './modals/TransferLeadModal.jsx';
 
 export const PAGE_SIZE = 15;
 
@@ -29,8 +30,12 @@ export default function LeadTable({ leads, total = null, page: pageProp, onPage,
   const page = server ? (pageProp || 0) : ownPage;
   const setPage = server ? (onPage || (() => {})) : setOwnPage;
   const [selected, setSelected] = useState(new Set());
-  // Multi-select bulk delete is Management / Master (admin) only. Real agents —
-  // Initial Agent, Meeting Agent, Team Lead — cannot select or delete leads.
+  // Bulk transfer reuses the panel's transfer modal, so the selection stays here
+  // and the modal only reports back when a transfer actually landed — cancelling
+  // must not wipe the checkboxes the admin just ticked.
+  const [xferOpen, setXferOpen] = useState(false);
+  // Multi-select bulk delete/transfer is Management / Master (admin) only. Real
+  // agents — Initial Agent, Meeting Agent, Team Lead — cannot select leads.
   const canSelect = user?.role === ROLES.MGMT || user?.role === ROLES.MASTER;
 
   const CMP = {
@@ -108,11 +113,22 @@ export default function LeadTable({ leads, total = null, page: pageProp, onPage,
       {canSelect && selected.size > 0 && (
         <div className="bulk-bar">
           <span className="bulk-ct">{selected.size} selected</span>
+          <button className="btn btn-purple btn-sm" onClick={() => setXferOpen(true)}>
+            <Mi>swap_horiz</Mi>Transfer Selected
+          </button>
           <button className="btn btn-sm" style={{ background: 'var(--red-l)', color: 'var(--red)' }} onClick={handleBulkDelete}>
             <Mi>delete</Mi>Delete Selected
           </button>
           <button className="btn btn-g btn-sm" onClick={() => setSelected(new Set())}>Clear</button>
         </div>
+      )}
+      {canSelect && (
+        <TransferLeadModal
+          leadIds={[...selected]}
+          open={xferOpen}
+          onClose={() => setXferOpen(false)}
+          onDone={() => setSelected(new Set())}
+        />
       )}
       <div className={`lt lt-wrap${canSelect ? ' lt-with-cb' : ''}${loading ? ' lt-busy' : ''}`}>
         {loading && <LoadingBar />}

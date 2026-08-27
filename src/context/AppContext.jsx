@@ -20,6 +20,12 @@ export function AppProvider({ children }) {
   const [tgtUser, setTgtUser] = useState(null);
   const [agentFilter, setAgentFilter] = useState(null);
   const [teamFilter, setTeamFilter] = useState(null);
+  // The Customers header used to run its own count query, which knew nothing
+  // about the filters on screen — so it reported the whole book while the table
+  // below it listed a filtered subset, and the two numbers disagreed. LeadsView
+  // owns the query, so it publishes its own totals here and the header just
+  // renders them. null = not counted yet.
+  const [leadCounts, setLeadCounts] = useState(null);
   const [propSel, setPropSel] = useState(null);   // property id for detail view
   const [propEdit, setPropEdit] = useState(null);  // property obj for edit, {} for new
   const [bookSel, setBookSel] = useState(null);    // booking id for detail modal
@@ -92,6 +98,7 @@ export function AppProvider({ children }) {
     tgtUser, setTgtUser,
     agentFilter, setAgentFilter,
     teamFilter, setTeamFilter,
+    leadCounts, setLeadCounts,
     propSel, setPropSel,
     propEdit, setPropEdit,
     bookSel, setBookSel,

@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useApp } from './context/AppContext.jsx';
 import { getDB, getSession, setSession, loginRemote, hasSessionId, saveDBDeferred, checkFollowUpReminders, getProperties, expireHolds, migrateTenancy, mergeDB, purgeDemoSeed, dedupeLeads, reconcileDeletions, applyRealtimeEvent, clearLocalDB, cacheBelongsTo, fetchSessionUser } from './lib/db.js';
 import { seedDB, SEED_PROPERTIES, DEMO_PROPERTIES } from './lib/seed.js';
@@ -61,7 +61,6 @@ import PropertyFormModal from './components/modals/PropertyFormModal.jsx';
 import UnitBookingModal from './components/modals/UnitBookingModal.jsx';
 import BookingModal from './components/modals/BookingModal.jsx';
 import TransferLeadModal from './components/modals/TransferLeadModal.jsx';
-import useLeadCounts from './hooks/useLeadCounts.js';
 import GlobalLoadingBar from './components/GlobalLoadingBar.jsx';
 
 // ── Loading screen ──────────────────────────────────────────────────────────
@@ -149,23 +148,13 @@ function PageHeader() {
 
 // ── In-body hero header (eyebrow + big title + subtitle + actions) ───────────
 function PageHero() {
-  const { user, view, agentFilter, teamFilter, setAgentFilter, setTeamFilter, setTab, setStatusFilter, setSearch, openModal, setCreateUserRoles, setPropEdit, setPropSel, setConsoleAdmin, dbVersion, dateRange } = useApp();
+  const { user, view, agentFilter, teamFilter, setAgentFilter, setTeamFilter, setTab, setStatusFilter, setSearch, openModal, setCreateUserRoles, setPropEdit, setPropSel, setConsoleAdmin, dbVersion, leadCounts } = useApp();
 
-  // Header count follows the global date filter so it matches the filtered list.
-  // Counted on the server: db.leads is a cache of what has been looked at, not
-  // the account's whole book, so counting it here would under-report.
-  //
-  // Declared before the early returns below — hooks must run in the same order
-  // on every render. An empty spec set makes it a no-op when there is no user
-  // or the header is not showing a lead count.
-  const _dr = dateRange?.range;
-  const wantCounts = !!user && view === 'leads';
-  const headerQ = useMemo(() => (wantCounts ? {
-    total: { user, involved: false, start: _dr?.start, end: _dr?.end },
-    active: { user, involved: false, kpi: 'active', start: _dr?.start, end: _dr?.end },
-  } : {}), [wantCounts, user, _dr?.start, _dr?.end]);
-  const headCounts = useLeadCounts(headerQ);
-
+  // The Customers count is NOT computed here. It has to agree with the table
+  // underneath it, and the table's query is built from filters this component
+  // cannot see — the Team Lead's agent picker, the admin's user picker, the
+  // agent's My Leads / Forwarded tab, status, project, search. LeadsView runs
+  // that query, so it publishes both numbers and this only renders them.
   if (!user) return null;
   // Every dashboard now has its own greeting header — skip the generic hero.
   if (view === 'dashboard') return null;
@@ -184,7 +173,7 @@ function PageHero() {
 
   const META = {
     dashboard: { eyebrow: rlabel(user.role), title: 'Dashboard', sub: '' },
-    leads: { eyebrow: 'Pipeline', title: 'Customers', sub: headCounts.total == null ? 'Counting…' : `${headCounts.total} customers · ${headCounts.active ?? 0} active` },
+    leads: { eyebrow: 'Pipeline', title: 'Customers', sub: leadCounts?.total == null ? 'Counting…' : `${leadCounts.total} customers · ${leadCounts.active ?? 0} active` },
     calendar: { eyebrow: 'Schedule', title: 'Calendar', sub: 'Your scheduled meetings' },
     pipeline: { eyebrow: 'Sales', title: 'Pipeline', sub: 'Drag deals across stages' },
     clients: { eyebrow: 'Relationships', title: 'Contacts', sub: '360° customer view' },
@@ -204,7 +193,9 @@ function PageHero() {
   if (user.role === ROLES.MASTER) ({ eyebrow, title, sub } = META.companies); // master only ever sees the company overview
   if (drilled) {
     title = agentFilter && agentName ? agentName : (tlUser?.name || 'Team') + "'s Team";
-    sub = 'Filtered customers';
+    // A drill-down is the case where the count matters most, and it is now the
+    // count of exactly what is listed below.
+    sub = view === 'leads' && leadCounts?.total != null ? `${leadCounts.total} filtered customers` : 'Filtered customers';
   }
 
   // actions

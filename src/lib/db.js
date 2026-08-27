@@ -1426,6 +1426,35 @@ export function bulkDeleteLeads(leadIds, user) {
   sbDeleteLeads(leadIds); // deep cloud delete (children first) so they don't return on reload
 }
 
+// Admin hand-off of one or many leads to another team's agent. The single-lead
+// transfer is just the one-element case, so both paths go through here and can
+// never log the move two different ways.
+//
+// Each lead is patched on its own: the leads are unrelated rows and there is no
+// bulk PATCH helper, so a batch of 15 is 15 updates plus 15 activity rows. That
+// is the same shape the panel's transfer already had, only repeated.
+export function bulkTransferLeads(leadIds, target, user) {
+  const { teamId, agent, teamLabel } = target;
+  if (!leadIds?.length || !teamId || !agent) return 0;
+  const roleName = agent.role === ROLES.IA ? 'Initial Agent' : agent.role === ROLES.MA ? 'Meeting Agent' : rlabel(agent.role);
+  leadIds.forEach(id => {
+    updLead(id, {
+      teamId,
+      assignedTo: agent.id,
+      assignedToName: agent.name,
+      assignedRole: agent.role,
+    });
+    addAct(id, {
+      type: 'NOTE',
+      description: `Lead transferred to ${teamLabel} (Assigned to: ${agent.name} - ${roleName})`,
+      userId: user.id,
+      userName: user.name,
+      durationSeconds: 0,
+    });
+  });
+  return leadIds.length;
+}
+
 // Remove duplicate leads from the DB (keep newest per phone / name+email). Used
 // as a one-shot cleanup on load so the app stops re-uploading dupes to the cloud.
 export function dedupeLeads(db) {

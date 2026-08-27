@@ -3,8 +3,13 @@ import { useApp } from '../../context/AppContext.jsx';
 import { queryLeads, countLeads, fetchLeadProjects } from '../../lib/db.js';
 import { selfInvolved } from '../../lib/leadQuery.js';
 import { STATUS_LABELS, ROLES } from '../../lib/constants.js';
+import { rlabel } from '../../lib/helpers.js';
 import LeadTable, { PAGE_SIZE } from '../LeadTable.jsx';
 import SearchBox from '../SearchBox.jsx';
+
+// Order the admin's people picker groups the way the pipeline runs, so the
+// dropdown reads top-down rather than alphabetically across mixed roles.
+const ROLE_ORDER = [ROLES.TL, ROLES.IA, ROLES.MA, ROLES.EXEC, ROLES.MGMT];
 
 // This view no longer filters an in-memory array — it asks the server for one
 // page of 15 and the total that matches. Every control below is therefore an
@@ -14,6 +19,7 @@ export default function LeadsView() {
   const {
     user, search, statusFilter, setStatusFilter,
     teamFilter, setTeamFilter, agentFilter: drillAgent, dbVersion, dateRange, db, sortBy,
+    setLeadCounts,
   } = useApp();
 
   // Initial/Meeting agents get a My Leads ↔ Forwarded toggle.
@@ -48,6 +54,21 @@ export default function LeadsView() {
   );
   const activeAgent = agentFilter === 'ALL' || teamUsers.some(u => u.id === agentFilter) ? agentFilter : user.id;
 
+  // Management's people picker. This replaced the team select: an admin asking
+  // "whose book is this" wants a person, and a team is reachable by picking its
+  // Team Lead. `teamFilter` survives as a drill-down input (a dashboard click
+  // still sets it) — it just has no control of its own in the bar any more.
+  const mgmtUsers = useMemo(() => (isMgmt
+    ? (db.users || [])
+      .filter(u => u.role !== ROLES.MASTER
+        && (!user.companyId || !u.companyId || u.companyId === user.companyId))
+      .sort((a, b) => (a.name || '').localeCompare(b.name || ''))
+    : []), [isMgmt, db.users, user.companyId, user.id]);
+  const [userFilter, setUserFilter] = useState('ALL');
+  // A roster change (someone deactivated, or a company switch) can retire the
+  // selection; fall back rather than render the select on a dead value.
+  const activeUser = userFilter === 'ALL' || mgmtUsers.some(u => u.id === userFilter) ? userFilter : 'ALL';
+
   // Everything the query depends on, in one object. Held in a memo so the fetch
   // effect fires on a real change rather than on every render.
   const q = useMemo(() => ({
@@ -63,7 +84,8 @@ export default function LeadsView() {
     // Drilling into one person means their CURRENT book — the same set
     // AgentCard counts with getLeads(agent) — so it maps to assigned_to.
     agentId: drillAgent
-      || (isTL && activeAgent !== 'ALL' && activeAgent !== user.id ? activeAgent : undefined),
+      || (isTL && activeAgent !== 'ALL' && activeAgent !== user.id ? activeAgent : undefined)
+      || (isMgmt && activeUser !== 'ALL' ? activeUser : undefined),
     teamId: isMgmt ? teamFilter || undefined : undefined,
     status: statusFilter,
     project: activeProject,
@@ -72,7 +94,7 @@ export default function LeadsView() {
     // forwarded lead, so the global date filter is deliberately not applied there.
     start: dateRange?.range && !(isAgent && tab === 'fwd') ? dateRange.range.start : undefined,
     end: dateRange?.range && !(isAgent && tab === 'fwd') ? dateRange.range.end : undefined,
-  }), [user, isAgent, isTL, isMgmt, tab, activeAgent, drillAgent, teamFilter, statusFilter, activeProject, search, dateRange]);
+  }), [user, isAgent, isTL, isMgmt, tab, activeAgent, activeUser, drillAgent, teamFilter, statusFilter, activeProject, search, dateRange]);
 
   const query = q;
 
@@ -98,6 +120,32 @@ export default function LeadsView() {
       });
   }, [qKey, page, sortBy, dbVersion, query]);
 
+  // ── The header's "N customers · M active" ────────────────────────────────
+  //
+  // Both halves describe THIS list. The header used to count on its own with a
+  // filter-free query, so it reported the whole book while the table below it
+  // showed a filtered subset — a Team Lead's own hand-off queue, an admin's
+  // one-user pick, any status/project/search — and the two numbers disagreed.
+  //
+  // `total` is the one the page fetch already returned, so it costs nothing;
+  // `active` is the same predicate plus the non-closed arm, so it costs one
+  // count query per filter change, the same as the header used to spend.
+  const [activeCount, setActiveCount] = useState(null);
+  useEffect(() => {
+    let alive = true;
+    setActiveCount(null);
+    countLeads({ ...query, kpi: 'active' }).then(n => { if (alive) setActiveCount(n); });
+    return () => { alive = false; };
+  }, [query, dbVersion]);
+
+  // Publish only once the rows have landed: mid-fetch the total on screen still
+  // belongs to the previous filter, and the header would state it as fact.
+  useEffect(() => {
+    setLeadCounts(loading ? null : { total: result.total, active: activeCount });
+  }, [loading, result.total, activeCount, setLeadCounts]);
+  // The header outlives this view — leave nothing behind for the next one.
+  useEffect(() => () => setLeadCounts(null), [setLeadCounts]);
+
   // The Forwarded tab's badge is a count, so it costs a count query, not rows.
   useEffect(() => {
     if (!isAgent) { setFwdCount(0); return; }
@@ -105,10 +153,6 @@ export default function LeadsView() {
     countLeads({ user, involved: true, ownTab: 'fwd' }).then(n => { if (alive && n != null) setFwdCount(n); });
     return () => { alive = false; };
   }, [isAgent, user, dbVersion]);
-
-  const teamOptions = isMgmt
-    ? (db.teams || []).filter(t => !user.companyId || !t.companyId || t.companyId === user.companyId)
-    : [];
 
   return (
     <>
@@ -143,14 +187,21 @@ export default function LeadsView() {
         {isMgmt && (
           <select
             className="fsel fsel-team"
-            value={teamFilter || ''}
-            onChange={e => setTeamFilter(e.target.value || null)}
-            title="Show leads for a specific team"
+            value={activeUser}
+            onChange={e => { setUserFilter(e.target.value); if (teamFilter) setTeamFilter(null); }}
+            title="Show leads for a specific user"
           >
-            <option value="">All teams</option>
-            {teamOptions.map(t => {
-              const tl = db.users?.find(u => u.id === t.leadId);
-              return <option key={t.id} value={t.id}>{tl ? tl.name : 'Team ' + t.id}</option>;
+            <option value="ALL">All users</option>
+            {ROLE_ORDER.map(r => {
+              const list = mgmtUsers.filter(u => u.role === r);
+              if (!list.length) return null;
+              return (
+                <optgroup key={r} label={rlabel(r)}>
+                  {list.map(u => (
+                    <option key={u.id} value={u.id}>{u.id === user.id ? `${u.name} (me)` : u.name}</option>
+                  ))}
+                </optgroup>
+              );
             })}
           </select>
         )}
