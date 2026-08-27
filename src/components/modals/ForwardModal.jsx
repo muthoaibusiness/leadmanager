@@ -1,10 +1,10 @@
 import { useState, useEffect } from 'react';
 import Mi from '../Mi.jsx';
 import { useApp } from '../../context/AppContext.jsx';
-import { getDB, fwdLead, getProperties, updLead } from '../../lib/db.js';
+import { getDB, fwdLead, getProperties, updLead, offerComplete } from '../../lib/db.js';
 import { sbGetUsersLite, rToU } from '../../lib/supabase.js';
 import { avc, ini, rlabel, fmtBDT } from '../../lib/helpers.js';
-import { ROLES } from '../../lib/constants.js';
+import { ROLES, OFFER_MAX } from '../../lib/constants.js';
 import useLeadBook from '../../hooks/useLeadBook.js';
 
 // Things the Initial Agent may have already shared with the client (clickable).
@@ -72,6 +72,11 @@ export default function ForwardModal() {
   const project = projects.find(p => p.id === projectId) || null;
 
   const pipelineValue = totalSft && clientOffer ? parseFloat(totalSft) * parseFloat(clientOffer) : 0;
+  const offerReady = offerComplete({ ourOffer: parseFloat(ourOffer) || 0, clientOffer: parseFloat(clientOffer) || 0, totalSft: parseFloat(totalSft) || 0 });
+  // Both prices are a rate per SFT, so a sixth digit is always a mistake — a
+  // total deal price typed into a per-SFT field. Refuse the keystroke rather
+  // than the submit, so the number on screen is the number that gets sent.
+  const onRate = (set) => (e) => { const v = e.target.value; if (v === '' || (/^\d{1,5}(\.\d*)?$/.test(v) && parseFloat(v) <= OFFER_MAX)) set(v); };
 
   const submit = () => {
     if (!selected || !panLead) return;
@@ -97,7 +102,17 @@ export default function ForwardModal() {
       projectName: project?.name || '',
       notes: offerNotes.trim(),
     } : null;
-    fwdLead(panLead, toUser, user, offerData);
+    // A Team Lead hand-off carries an offer or it does not happen: the closing
+    // pipeline only lists leads with one, so a lead forwarded without it would
+    // land nowhere. fwdLead enforces the same rule.
+    if (isTL && !offerComplete(offerData)) {
+      const overCap = offerData.ourOffer > OFFER_MAX || offerData.clientOffer > OFFER_MAX;
+      showToast(overCap
+        ? `Offer rates are per SFT — 5 digits at most (${OFFER_MAX})`
+        : 'Enter our rate, the client rate and total SFT before forwarding', 'err');
+      return;
+    }
+    if (!fwdLead(panLead, toUser, user, offerData)) { showToast('Could not forward this lead', 'err'); return; }
     if (isTL && project) updLead(panLead, { dealProjectId: project.id, dealProjectName: project.name, propertyInterest: project.name });
     if (isMA) updLead(panLead, { meetingType, meetingAt: new Date(meetingAt).toISOString(), meetingLink: meetingType === 'ONLINE' ? meetingLink.trim() : '', meetingShared: shared });
     closeModal();
@@ -147,7 +162,7 @@ export default function ForwardModal() {
           <>
             <div className="m-body">
               <div className="m-hint" style={{ marginBottom: '14px' }}>
-                <Mi>price_check</Mi>Enter offer details before forwarding to <strong>{selectedUser?.name}</strong>.
+                <Mi>price_check</Mi>An offer is required — <strong>{selectedUser?.name}</strong> only sees leads that carry one.
               </div>
               <div className="fl">
                 <label>Project</label>
@@ -166,17 +181,17 @@ export default function ForwardModal() {
                 )}
               </div>
               <div className="fl">
-                <label>Our Offer Price (BDT)</label>
-                <input className="finp" type="number" placeholder="e.g. 5000000" value={ourOffer} onChange={e => setOurOffer(e.target.value)} />
-                {ourOffer && <div className="fi-hint">{fmtBDT(parseFloat(ourOffer))}</div>}
+                <label>Our Offer Rate (BDT per SFT) *</label>
+                <input className="finp" type="number" max={OFFER_MAX} placeholder="e.g. 10500" value={ourOffer} onChange={onRate(setOurOffer)} />
+                <div className="fi-hint">{ourOffer ? `${fmtBDT(parseFloat(ourOffer))} per SFT` : `Per square foot · max 5 digits (${OFFER_MAX})`}</div>
               </div>
               <div className="fl">
-                <label>Client Offer Price (BDT)</label>
-                <input className="finp" type="number" placeholder="e.g. 4500000" value={clientOffer} onChange={e => setClientOffer(e.target.value)} />
-                {clientOffer && <div className="fi-hint">{fmtBDT(parseFloat(clientOffer))}</div>}
+                <label>Client Offer Rate (BDT per SFT) *</label>
+                <input className="finp" type="number" max={OFFER_MAX} placeholder="e.g. 9500" value={clientOffer} onChange={onRate(setClientOffer)} />
+                <div className="fi-hint">{clientOffer ? `${fmtBDT(parseFloat(clientOffer))} per SFT` : `Per square foot · max 5 digits (${OFFER_MAX})`}</div>
               </div>
               <div className="fl">
-                <label>Total SFT</label>
+                <label>Total SFT *</label>
                 <input className="finp" type="number" placeholder="e.g. 1200" value={totalSft} onChange={e => setTotalSft(e.target.value)} />
               </div>
               {pipelineValue > 0 && (
@@ -196,7 +211,7 @@ export default function ForwardModal() {
             </div>
             <div className="m-ft">
               <button className="btn btn-g" onClick={() => setStep(1)}>Back</button>
-              <button className="btn btn-p" onClick={submit}>Forward</button>
+              <button className="btn btn-p" disabled={!offerReady} onClick={submit}>Forward</button>
             </div>
           </>
         )}

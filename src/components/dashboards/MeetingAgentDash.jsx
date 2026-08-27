@@ -9,8 +9,8 @@ import SuccessGauge from '../SuccessGauge.jsx';
 import ConversionPanel from './ConversionPanel.jsx';
 import Mi from '../Mi.jsx';
 import Spinner, { LoadingBlock } from '../Spinner.jsx';
-import { scoreLead, scoreLabel } from '../../lib/helpers.js';
-import { STATUS_LABELS, ROLES } from '../../lib/constants.js';
+import { scoreLead, scoreLabel, leadDisplayStatus } from '../../lib/helpers.js';
+import { ROLES } from '../../lib/constants.js';
 import { panelConfigFor } from '../../lib/funnel.js';
 import useActWindow from '../../hooks/useActWindow.js';
 import useLeadCounts from '../../hooks/useLeadCounts.js';
@@ -196,7 +196,7 @@ export default function MeetingAgentDash() {
                     <div className="iad-mt-time">{new Date(l.meetingDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })}</div>
                     <div className="iad-q-info">
                       <div className="iad-q-name">{l.name}</div>
-                      <div className="iad-q-meta">{l.meetingLocation || 'Site visit'} · {STATUS_LABELS[l.status] || l.status}</div>
+                      <div className="iad-q-meta">{l.meetingLocation || 'Site visit'} · {leadDisplayStatus(l).label}</div>
                     </div>
                     <a className="iad-q-call" href={`tel:${l.phone}`} title="Call" onClick={e => e.stopPropagation()}><Mi>call</Mi></a>
                   </div>

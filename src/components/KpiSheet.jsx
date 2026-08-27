@@ -46,8 +46,10 @@ export default function KpiSheet({ detail, onClose, onLead }) {
   const { title } = detail;
 
   const source = query ? (fetched?.rows || []) : (detail.leads || []);
+  // `hasOffer` marks a list whose every row carries an offer (the Team Lead
+  // closing pipeline), for the badge overlay — see leadDisplayStatus.
   const rows = detail.rows || source.map(l => {
-    const ds = leadDisplayStatus(l);
+    const ds = leadDisplayStatus(l, detail.hasOffer ? { hasOffer: true } : {});
     return { leadId: l.id, title: l.name || 'Unnamed', sub: l.phone || '', badge: ds };
   });
   // Server mode knows the real total even before the rows arrive; local mode's

@@ -153,3 +153,9 @@ export const NOTIF_CLR = {
   HOLD_APPROVED: '#16A34A',
   HOLD_REJECTED: '#DC2626',
 };
+
+// Offer prices are PER SQUARE FOOT — pipelineValue is totalSft × clientOffer.
+// A five-digit ceiling is what keeps a total deal price out of a per-SFT field:
+// one lead was forwarded at 27,000,000/sft × 2850 sft and put 7,695 Cr into the
+// Team Lead's pipeline on its own. No real rate reaches six digits.
+export const OFFER_MAX = 99999;

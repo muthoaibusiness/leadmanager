@@ -1,4 +1,5 @@
-import { ROLES, STATUS_LABELS, SRC_LABELS, PAST_CONTACT } from './constants.js';
+import { ROLES, STATUS_LABELS, SRC_LABELS, PAST_CONTACT, OFFER_MAX } from './constants.js';
+import { setOfferResolver } from './offerRegistry.js';
 import { uid, now_, fmtBDT, fmtDT, curMonth, startOfMonth, rlabel } from './helpers.js';
 import { leadFilterParam, ORDER } from './leadQuery.js';
 import { sbGet, sbGetAll, sbCount, sbPage, hasColumn, sbRpc, sbUpdate, sbInsert, sbUpsert, sbMarkRead, sbDelete, sbDeleteLeads, sbEmailsInUse, sbUserIdsByRole, sbActsForLead, sbLoadActWindow, ACT_WINDOW_DAYS, lToR, rToL, uToR, rToU, tToR, rToT, aToR, rToA, rToN, tgToR, rToTg, pToR, rToP, bkToR, rToBk, cToR, rToC, hrToR, rToHr, sbUpsertNotifs } from './supabase.js';
@@ -51,12 +52,18 @@ export function mergeDB(remote, local) {
     return [...m.values()];
   };
   // activities: keyed by leadId → union activity arrays by activity id
+  // Local first, remote second, so the REMOTE copy wins for an id both hold --
+  // same reason as mergeCloudFirst below: activities carry no updatedAt, every
+  // one is pushed to the cloud as it is written, and an edit made there (or by
+  // another device) would otherwise be overwritten by this browser's stale copy
+  // on every load. Rows only this browser has -- written offline, not yet
+  // synced -- are still kept.
   const mergeActs = (rem = {}, loc = {}) => {
     const out = {};
     new Set([...Object.keys(rem), ...Object.keys(loc)]).forEach(k => {
       const m = new Map();
-      (rem[k] || []).forEach(a => a && m.set(a.id, a));
       (loc[k] || []).forEach(a => a && m.set(a.id, a));
+      (rem[k] || []).forEach(a => a && m.set(a.id, a));
       out[k] = [...m.values()];
     });
     return out;
@@ -928,11 +935,17 @@ function mergeActMap(db, map) {
     const cur = db.activities[lid] || [];
     const byId = new Map(cur.map(a => [a.id, a]));
     arr.forEach(a => {
-      if (!a || a.id == null || byId.has(a.id)) return;
+      if (!a || a.id == null) return;
+      const have = byId.get(a.id);
+      // The cloud row wins when it differs. Skipping ids already in the cache
+      // (which is what this did) meant an activity CORRECTED in the database --
+      // a mistyped offer, say -- stayed wrong in every browser that had already
+      // stored it, forever: nothing else ever rewrites that key.
+      if (have && JSON.stringify(have) === JSON.stringify(a)) return;
       byId.set(a.id, a);
       changed = true;
     });
-    if (byId.size !== cur.length) db.activities[lid] = [...byId.values()];
+    if (changed) db.activities[lid] = [...byId.values()];
   });
   return changed;
 }
@@ -1491,8 +1504,46 @@ export function changeStatus(leadId, status, user) {
   addAct(leadId, { type: 'STATUS_CHANGE', description: 'Status → ' + (STATUS_LABELS[status] || status), userId: user.id, userName: user.name, durationSeconds: 0 });
 }
 
+// An offer is what a Team Lead negotiates with, so a hand-off without one has
+// nothing for them to work: no price on the table, no pipeline value, nothing
+// the closing panel can rank. This is the single test for "an offer was sent",
+// shared by fwdLead's guard and the Forward modal's button.
+export function offerComplete(o) {
+  if (!o) return false;
+  const our = o.ourOffer || 0, client = o.clientOffer || 0;
+  // Both prices are per-SFT rates, capped at five digits — see OFFER_MAX.
+  if (our > OFFER_MAX || client > OFFER_MAX) return false;
+  return our > 0 && client > 0 && (o.totalSft || 0) > 0;
+}
+
+// Is leads.offer_sent_at there yet? The Team Lead pipeline filters on it
+// server-side when it is, and gates in memory when it is not — asking for a
+// column PostgREST does not know is a 400, which would empty the panel's list
+// AND its drill-down sheet. Cached after the first call, like hasTalkedCol.
+export const hasOfferCol = () => hasColumn('leads', 'offer_sent_at',
+  'Team Lead pipeline gating in memory. Apply supabase/migrations/0012_lead_offer_gate.sql.');
+
+// True once this lead carries an offer. offerSentAt is the lead-row fact
+// (migration 0012) and the OFFER activity is the pre-0012 fallback, for a lead
+// whose row has not been backfilled yet.
+export function hasOffer(lead, db) {
+  if (!lead) return false;
+  if (lead.offerSentAt) return true;
+  const acts = (db || getDB()).activities?.[lead.id] || [];
+  return acts.some(a => a.type === 'OFFER');
+}
+
+// Let the display layer ask the same question without importing this module —
+// see offerRegistry.js. This is what makes "Offer Sent" the badge everywhere in
+// the app, not only on the screens that already know about the offer.
+setOfferResolver(leadId => (getDB().activities?.[leadId] || []).some(a => a.type === 'OFFER'));
+
+// Returns false and changes nothing when a Team Lead hand-off arrives without a
+// complete offer — the caller surfaces that; the modal blocks it first.
 export function fwdLead(leadId, toUser, currentUser, offerData) {
   const l = getLead(leadId);
+  const isTL = toUser.role === ROLES.TL;
+  if (isTL && !offerComplete(offerData)) return false;
   const isMeetingSet = toUser.role === ROLES.MA;
   updLead(leadId, {
     assignedTo: toUser.id, assignedToName: toUser.name, assignedRole: toUser.role,
@@ -1500,17 +1551,20 @@ export function fwdLead(leadId, toUser, currentUser, offerData) {
     status: isMeetingSet ? 'MEETING_SET' : l.status,
     meetingSetBy: isMeetingSet ? currentUser.id : l.meetingSetBy,
     meetingSetDate: isMeetingSet ? now_() : l.meetingSetDate,
+    // Stamped on the row so the pipeline can filter and sum server-side.
+    ...(isTL ? { offerSentAt: now_(), offerValue: offerData.pipelineValue || 0 } : {}),
   });
   addAct(leadId, { type: 'FORWARDED', description: 'Forwarded to ' + toUser.name + ' (' + rlabel(toUser.role) + ')', userId: currentUser.id, userName: currentUser.name, durationSeconds: 0 });
-  if (offerData && toUser.role === ROLES.TL) {
+  if (isTL) {
     addAct(leadId, { type: 'OFFER', description: JSON.stringify({ ourOffer: offerData.ourOffer || 0, clientOffer: offerData.clientOffer || 0, totalSft: offerData.totalSft || 0, pipelineValue: offerData.pipelineValue || 0, notes: offerData.notes || '' }), userId: currentUser.id, userName: currentUser.name, durationSeconds: 0 });
   }
   const notifList = [{ userId: toUser.id, type: 'ASSIGNED', message: 'New lead assigned: ' + l.name + ' (from ' + currentUser.name + ')', leadId }];
-  if (toUser.role === ROLES.TL) {
+  if (isTL) {
     const iaId = l.previousAssignees[0];
     if (iaId) notifList.push({ userId: iaId, type: 'FORWARDED', message: 'Your lead moved to negotiation: ' + l.name, leadId });
   }
   addNotifs(notifList, currentUser);
+  return true;
 }
 
 export function schedVisit(leadId, dt, loc, user, projects) {
@@ -2279,7 +2333,9 @@ export function submitImport(importData, user) {
 export function calcPipelineValue(leadId, db) {
   const acts = db.activities?.[leadId] || [];
   const offerAct = acts.find(a => a.type === 'OFFER');
-  if (!offerAct) return 0;
+  // The activity cache holds a recent window, so an older lead's OFFER may not
+  // be in it. offer_value (migration 0012) carries the same number on the row.
+  if (!offerAct) return db.leads?.find(l => l.id === leadId)?.offerValue || 0;
   try { return JSON.parse(offerAct.description).pipelineValue || 0; } catch { return 0; }
 }
 

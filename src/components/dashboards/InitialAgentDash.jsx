@@ -9,8 +9,8 @@ import SuccessGauge from '../SuccessGauge.jsx';
 import ConversionPanel from './ConversionPanel.jsx';
 import Mi from '../Mi.jsx';
 import { LoadingBlock } from '../Spinner.jsx';
-import { scoreLead, scoreLabel, periodLabel } from '../../lib/helpers.js';
-import { STATUS_LABELS, SRC_LABELS, PAST_CONTACT } from '../../lib/constants.js';
+import { scoreLead, scoreLabel, periodLabel, leadDisplayStatus } from '../../lib/helpers.js';
+import { SRC_LABELS, PAST_CONTACT } from '../../lib/constants.js';
 import { or, and, KPI } from '../../lib/leadQuery.js';
 import { panelConfigFor } from '../../lib/funnel.js';
 import useActWindow from '../../hooks/useActWindow.js';
@@ -199,7 +199,7 @@ export default function InitialAgentDash() {
                   <tr key={l.id} onClick={() => setPanLead(l.id)}>
                     <td><div className="fut-name">{l.name}</div><div className="fut-sub">{l.phone} · {SRC_LABELS[l.source] || l.source}</div></td>
                     <td><span className={`fut-due${overdue ? ' over' : ''}`}>{overdue ? `Overdue · ${day}` : time}</span></td>
-                    <td><span className="fut-status">{STATUS_LABELS[l.status] || l.status}</span></td>
+                    <td><span className="fut-status">{leadDisplayStatus(l).label}</span></td>
                     <td>
                       <div className="fut-act">
                         <a className="fut-ico" href={`tel:${l.phone}`} title="Call" onClick={e => e.stopPropagation()}><Mi>call</Mi></a>

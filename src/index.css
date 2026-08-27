@@ -2830,6 +2830,7 @@ a {
 
 /* Metric card — shared KPI box size for ALL dashboards (see .st-card too) */
 .mc {
+  position: relative;
   background: var(--surf);
   border-radius: var(--r-lg);
   border: 1px solid var(--bd);
@@ -2874,6 +2875,42 @@ a {
 .mc-sub {
   font-size: 11px;
   color: var(--t3)
+}
+
+/* Sub-label and freshness stamp share ONE row: same baseline, and the card is
+   exactly as tall as it was before the stamp existed. */
+.mc-ft {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0
+}
+
+.mc-ft .mc-sub {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap
+}
+
+.mc-upd {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+  flex: none;
+  font-size: 10px;
+  line-height: 1;
+  letter-spacing: .01em;
+  color: var(--t3);
+  opacity: .75;
+  white-space: nowrap
+}
+
+.mc-upd .mi {
+  font-size: 12px;
+  font-variation-settings: 'FILL' 0, 'wght' 300, 'GRAD' 0, 'opsz' 20
 }
 
 .mc.accent .mc-v {
@@ -10342,6 +10379,10 @@ textarea.fi {
 
 /* Follow-up overlay status badge — sky blue, distinct from gold "Meeting Set" */
 .s-follow_up { color: #38BDF8; border-color: rgba(56, 189, 248, .45); }
+
+/* Offer-sent overlay badge — violet, so a deal with a price on the table reads
+   apart from the teal "Visit Done" it replaces */
+.s-offer_sent { color: #A78BFA; border-color: rgba(167, 139, 250, .45); }
 .iad-fu-empty { padding: 14px 8px; font-size: 13px; color: var(--t3); }
 
 /* Follow-up filter pill (Leads filter bar) */

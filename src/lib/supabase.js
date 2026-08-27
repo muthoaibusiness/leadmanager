@@ -305,6 +305,8 @@ export function lToR(l) {
     meeting_attended: l.meetingAttended || false, meeting_attended_at: l.meetingAttendedAt || null,
     visit_projects: l.visitProjects || null,
     deal_project_id: l.dealProjectId || null, deal_project_name: l.dealProjectName || null,
+    // The offer that bought this lead its place in the Team Lead pipeline (0012).
+    offer_sent_at: l.offerSentAt || null, offer_value: l.offerValue || null,
     call_count: l.callCount || 0, sms_count: l.smsCount || 0,
     whatsapp_count: l.whatsappCount || 0, visit_count: l.visitCount || 0,
     no_answer_count: l.noAnswerCount || 0, no_answer_lock_until: l.noAnswerLockUntil || null,
@@ -331,6 +333,7 @@ export function rToL(r) {
     meetingAttended: r.meeting_attended || false, meetingAttendedAt: r.meeting_attended_at || null,
     visitProjects: r.visit_projects || [],
     dealProjectId: r.deal_project_id || null, dealProjectName: r.deal_project_name || null,
+    offerSentAt: r.offer_sent_at || null, offerValue: r.offer_value || 0,
     callCount: r.call_count || 0, smsCount: r.sms_count || 0,
     whatsappCount: r.whatsapp_count || 0, visitCount: r.visit_count || 0,
     noAnswerCount: r.no_answer_count || 0, noAnswerLockUntil: r.no_answer_lock_until || null,

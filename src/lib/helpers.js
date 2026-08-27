@@ -1,4 +1,5 @@
 import { AVC, STATUS_LABELS, SRC_LABELS } from './constants.js';
+import { leadHasOfferAct } from './offerRegistry.js';
 
 export const uid = () => 'x' + Math.random().toString(36).slice(2, 9) + Date.now().toString(36);
 export const now_ = () => new Date().toISOString();
@@ -42,6 +43,24 @@ export function fmtAgo(iso) {
   if (m < 60) return m + 'm ago';
   if (m < 1440) return Math.floor(m / 60) + 'h ago';
   return Math.floor(m / 1440) + 'd ago';
+}
+
+// Long form of fmtAgo, for the freshness line under a KPI value: "3 hours ago"
+// reads as prose where "3h ago" reads as a log entry. Anything older than a
+// month becomes a date, since "47 days ago" stops being useful.
+export function fmtAgoLong(iso) {
+  if (!iso) return '';
+  const ms = Date.now() - new Date(iso);
+  if (!Number.isFinite(ms)) return '';
+  const m = Math.floor(ms / 60000);
+  if (m < 1) return 'just now';
+  const plural = (n, unit) => n + ' ' + unit + (n === 1 ? '' : 's') + ' ago';
+  if (m < 60) return plural(m, 'minute');
+  const h = Math.floor(m / 60);
+  if (h < 24) return plural(h, 'hour');
+  const d = Math.floor(h / 24);
+  if (d <= 30) return plural(d, 'day');
+  return fmtD(iso);
 }
 
 export function fmtBDT(n) {
@@ -139,7 +158,24 @@ export function sclass(s) { return 's-' + (s || '').toLowerCase(); }
 // Display badge for a lead — overlays a "Follow-up" state when one is scheduled
 // on an early-stage lead, without touching the real workflow status.
 const FU_OVERLAY = ['NEW', 'CONTACTED', 'INTERESTED'];
-export function leadDisplayStatus(lead) {
+// Statuses an offer speaks over. Once a price is with the client, "Visit Done"
+// describes how the lead GOT here, not what it is waiting on — and a Team Lead
+// reading their closing list needs the second thing. NEGOTIATING is absent on
+// purpose: it is further along than the offer, so it keeps its own label.
+const OFFER_OVERLAY = ['MEETING_SET', 'SITE_VISIT_SCHEDULED', 'SITE_VISIT_DONE'];
+
+// The offer is read from the lead row (leads.offer_sent_at, migration 0012)
+// and, for rows written before it, from the lead's OFFER activity via the
+// registry. `opts.hasOffer` overrides both, for a list whose rows are known to
+// carry one — the Team Lead closing pipeline — including leads whose activity
+// window has not been fetched on this screen.
+export function leadDisplayStatus(lead, opts = {}) {
+  const offer = opts.hasOffer !== undefined
+    ? opts.hasOffer
+    : (!!lead.offerSentAt || leadHasOfferAct(lead.id));
+  if (offer && OFFER_OVERLAY.includes(lead.status)) {
+    return { label: 'Offer Sent', cls: 's-offer_sent' };
+  }
   if (lead.nextFollowup && FU_OVERLAY.includes(lead.status)) {
     return { label: 'Follow-up', cls: 's-follow_up' };
   }
