@@ -223,3 +223,22 @@ export function scoreLabel(s) {
   if (s >= 35) return { label: 'Warm', color: '#F0A92B', bg: 'rgba(240,169,43,.14)' };
   return { label: 'Cold', color: '#9CA3AF', bg: 'rgba(255,255,255,.06)' };
 }
+
+// OFFER activities store their payload as a JSON blob in `description` (see
+// submitOffer in db.js). Timelines render that blob as labelled rows instead of
+// raw JSON — returns null for any activity whose description is plain text.
+export function parseOfferDesc(description) {
+  if (typeof description !== 'string' || description.charAt(0) !== '{') return null;
+  let o;
+  try { o = JSON.parse(description); } catch { return null; }
+  if (!o || typeof o !== 'object') return null;
+  const num = v => (typeof v === 'number' && isFinite(v) ? v : 0);
+  const rows = [];
+  if (num(o.ourOffer) > 0) rows.push({ label: 'Our Offer', value: fmtBDT(o.ourOffer) + '/sft' });
+  if (num(o.clientOffer) > 0) rows.push({ label: 'Client Offer', value: fmtBDT(o.clientOffer) + '/sft' });
+  if (num(o.totalSft) > 0) rows.push({ label: 'Total SFT', value: Number(o.totalSft).toLocaleString('en-IN') + ' sqft' });
+  if (num(o.pipelineValue) > 0) rows.push({ label: 'Pipeline Value', value: fmtBDT(o.pipelineValue), strong: true });
+  const notes = typeof o.notes === 'string' ? o.notes.trim() : '';
+  if (!rows.length && !notes) return null;
+  return { rows, notes };
+}

@@ -1,9 +1,9 @@
 import { useState, useEffect, useRef } from 'react';
 import { useApp } from './context/AppContext.jsx';
-import { getDB, getSession, setSession, loginRemote, hasSessionId, saveDBDeferred, checkFollowUpReminders, getProperties, expireHolds, migrateTenancy, mergeDB, purgeDemoSeed, dedupeLeads, reconcileDeletions, applyRealtimeEvent, clearLocalDB, cacheBelongsTo, fetchSessionUser } from './lib/db.js';
+import { getDB, getUnreadCount, getSession, setSession, loginRemote, hasSessionId, saveDBDeferred, checkFollowUpReminders, getProperties, expireHolds, migrateTenancy, mergeDB, purgeDemoSeed, dedupeLeads, reconcileDeletions, applyRealtimeEvent, clearLocalDB, cacheBelongsTo, fetchSessionUser } from './lib/db.js';
 import { seedDB, SEED_PROPERTIES, DEMO_PROPERTIES } from './lib/seed.js';
 import { sbLoad, sbSubscribeAll } from './lib/supabase.js';
-import { pushNotify, requestNotifyPermission } from './lib/pushNotify.js';
+import { pushUnreadSummary, requestNotifyPermission } from './lib/pushNotify.js';
 import { avc, ini, rlabel } from './lib/helpers.js';
 import { ROLES, canSee, FEATURE_KEYS, effectiveRole } from './lib/constants.js';
 
@@ -281,7 +281,7 @@ const needsBootFetch = () => hasSessionId() && !getSession();
 
 // ── Root App ─────────────────────────────────────────────────────────────────
 export default function App() {
-  const { user, setUser, view, setView, refreshDB, searchRef, panLead, setPanLead, closeModal, modal, setSearch, notifOpen } = useApp();
+  const { user, setUser, view, setView, refreshDB, searchRef, panLead, setPanLead, closeModal, modal, setSearch, setNotifOpen } = useApp();
   // The loader is only for the one case that genuinely has nothing to render:
   // a stored session id whose user is NOT in the local cache. An anonymous
   // visitor gets Landing/Login and a returning user gets the shell, both on the
@@ -291,8 +291,6 @@ export default function App() {
   const [showLogin, setShowLogin] = useState(false); // landing → login gate
   const [entering, setEntering] = useState(false);    // brief loader after login
   const initialized = useRef(false);
-  const notifOpenRef = useRef(false);
-  notifOpenRef.current = notifOpen; // live value for the (stable) realtime callback
 
   // Pull the cloud snapshot, reconcile it against the local cache, and run the
   // one-time migrations. Deliberately NOT on the first-paint path: the shell
@@ -368,6 +366,17 @@ export default function App() {
     requestNotifyPermission(); // ask for browser push permission on login
   };
 
+  // The app's only browser push: one summary of everything still unread, sent
+  // once per page load after the data is in. Individual notifications stay
+  // silent — they show up in the bell.
+  const summarizeUnread = (who) => {
+    const u = who || user || getSession();
+    if (!u) return;
+    pushUnreadSummary(getUnreadCount(u.id), {
+      onClick: () => setNotifOpen(true),
+    });
+  };
+
   // Reveal the app as soon as there is something to show. A returning user has
   // a warm cache and goes straight in; a first login on a new browser has no
   // data at all, so the loader stays up for the real fetch rather than for a
@@ -384,11 +393,11 @@ export default function App() {
     // Leads are the real signal that there is something to render.
     const warm = (getDB().leads || []).length > 0;
     if (warm) {
-      hydrateFromCloud(u); // refresh underneath, nothing blocks
+      hydrateFromCloud(u).finally(() => summarizeUnread(u)); // refresh underneath, nothing blocks
       return;
     }
     setEntering(true);
-    hydrateFromCloud(u).finally(() => setEntering(false));
+    hydrateFromCloud(u).finally(() => { setEntering(false); summarizeUnread(u); });
   };
 
   // Real-time subscription, scoped to the signed-in account's company (MASTER
@@ -409,18 +418,8 @@ export default function App() {
         const changed = applyRealtimeEvent(table, type, record, oldRecord, user);
         if (changed) {
           refreshDB();
-          // Trigger browser push if it's a new notification meant for this user
-          if (table === 'notifications' && type === 'INSERT' && record.user_id === user.id) {
-            const db = getDB();
-            const newNotif = (db.notifications[user.id] || []).find(n => n.id === record.id);
-            if (newNotif) {
-              const suppress = notifOpenRef.current && document.visibilityState === 'visible';
-              pushNotify(newNotif, {
-                suppress,
-                onClick: (n) => { if (n.leadId) setPanLead(n.leadId); },
-              });
-            }
-          }
+          // No per-notification OS popup: new notifications land in the in-app
+          // bell only. The single push is the startup unread summary below.
         }
       }, user);
     };
@@ -481,7 +480,7 @@ export default function App() {
       // `user` from the same read). Just ask for push permission and refresh
       // the data underneath.
       requestNotifyPermission();
-      hydrateFromCloud(cached);
+      hydrateFromCloud(cached).finally(() => summarizeUnread(cached));
       return;
     }
 
@@ -500,6 +499,7 @@ export default function App() {
       const u = getSession();
       if (u) signIn(u);
       revealApp();
+      if (u) summarizeUnread(u);
     })();
   }, []);
 
