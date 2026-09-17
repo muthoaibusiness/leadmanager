@@ -8,7 +8,6 @@
 
 import { SB_URL, SB_KEY, SB_H, sbGet, sbUpsert } from './supabase.js';
 import { normalizePhone, getDB } from './db.js';
-import { canSee } from './constants.js';
 
 export const WA_BUCKET = 'wa-media';
 
@@ -159,21 +158,16 @@ export async function waSaveToken(settings, { account, apiToken, webhookSecret }
 
 // ── access control ──────────────────────────────────────────────────────────
 // Two doors:
-//   waCanChat     — the full Conversations inbox (every thread). Admins, an
-//                   explicit allowedFeatures grant, or the Chat Settings list.
+//   waCanChat     — the full Conversations inbox (every thread). Management
+//                   and Master only; no per-user grant opens it.
 //   waCanChatLead — the per-lead chat opened from a lead's WhatsApp button.
 //                   Any signed-in agent, unless chat is switched off globally.
 export function isChatAdmin(user) {
   return !!user && (user.role === 'MANAGEMENT' || user.role === 'MASTER');
 }
 
-export function waCanChat(user, settings) {
-  if (!user) return false;
-  if (isChatAdmin(user)) return true;
-  if (settings && settings.enabled === false) return false;
-  if (canSee(user, 'conversations')) return true;
-  const list = settings?.allowedUserIds || [];
-  return list.includes(user.id);
+export function waCanChat(user) {
+  return isChatAdmin(user);
 }
 
 export function waCanChatLead(user, settings) {

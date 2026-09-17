@@ -1,9 +1,6 @@
 import { useState, useEffect } from 'react';
 import Mi from '../Mi.jsx';
 import { useApp } from '../../context/AppContext.jsx';
-import { getDB } from '../../lib/db.js';
-import { rlabel, avc, ini } from '../../lib/helpers.js';
-import { ROLES } from '../../lib/constants.js';
 import { waLoadSettings, waSaveSettings, waSaveToken, isChatAdmin, WA_ACCOUNTS, WA_ACCOUNT_LABEL, WA_DEFAULT_ACCOUNT } from '../../lib/wa.js';
 
 // Admin-only WhatsApp configuration: which accounts get the Conversations
@@ -18,8 +15,6 @@ export default function ChatSettingsModal() {
   const [sessionName, setSessionName] = useState('');
   const [webhookUrl, setWebhookUrl] = useState('');
   const [enabled, setEnabled] = useState(true);
-  const [allowed, setAllowed] = useState(() => new Set());
-  const [q, setQ] = useState('');
   const [account, setAccount] = useState(WA_DEFAULT_ACCOUNT);
   const [token, setToken] = useState('');
   const [secret, setSecret] = useState('');
@@ -36,7 +31,6 @@ export default function ChatSettingsModal() {
     setSessionName(s.sessionName || '');
     setWebhookUrl(s.webhookUrl || '');
     setEnabled(s.enabled !== false);
-    setAllowed(new Set(s.allowedUserIds || []));
     setTokenSet(!!s.tokenSet);
     setToken('');
     setSecret('');
@@ -54,25 +48,12 @@ export default function ChatSettingsModal() {
     );
   }
 
-  const db = getDB();
-  // Master sees every tenant; Management stays inside its own company.
-  const candidates = db.users
-    .filter(u => (user.role === ROLES.MASTER ? true : u.companyId === user.companyId))
-    .filter(u => u.role !== ROLES.MASTER)
-    .sort((a, b) => (a.name || '').localeCompare(b.name || ''));
-  const ql = q.trim().toLowerCase();
-  const shown = ql
-    ? candidates.filter(u => (u.name || '').toLowerCase().includes(ql) || (u.email || '').toLowerCase().includes(ql) || rlabel(u.role).toLowerCase().includes(ql))
-    : candidates;
-
-  const toggle = (id) => setAllowed(s => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
-
   const save = async () => {
     setSaving(true);
     try {
       const next = {
         relayUrl: relayUrl.trim(), sessionName: sessionName.trim(), webhookUrl: webhookUrl.trim(),
-        enabled, allowedUserIds: [...allowed],
+        enabled, allowedUserIds: [],
       };
       const res = await waSaveSettings(next, user);
       if (res && res.ok === false && !res.skipped) {
@@ -120,7 +101,7 @@ export default function ChatSettingsModal() {
                 <Mi>{enabled ? 'toggle_on' : 'toggle_off'}</Mi>{enabled ? 'On' : 'Off'}
               </button>
             </div>
-            <div className="ea-count">Turning this off hides Conversations for every non-admin account.</div>
+            <div className="ea-count">Turning this off disables the per-lead WhatsApp chat for agents. The Conversations inbox is always Management / Master only.</div>
           </div>
 
           <div className="fl">
@@ -196,35 +177,6 @@ export default function ChatSettingsModal() {
             </div>
           </div>
 
-          <div className="fl">
-            <div className="ea-row">
-              <label style={{ margin: 0 }}>Who can use chat</label>
-              <span className="ea-count" style={{ margin: 0 }}>{allowed.size} account{allowed.size === 1 ? '' : 's'}</span>
-            </div>
-            <div className="wa-search wa-search-inline">
-              <Mi>search</Mi>
-              <input placeholder="Search accounts" value={q} onChange={e => setQ(e.target.value)} />
-            </div>
-            <div className="wa-userlist">
-              {shown.map(u => (
-                <button key={u.id} className={`wa-userrow${allowed.has(u.id) ? ' on' : ''}`} onClick={() => toggle(u.id)}>
-                  <Mi>{allowed.has(u.id) ? 'check_box' : 'check_box_outline_blank'}</Mi>
-                  {u.avatar
-                    ? <img className="wa-ci-av wa-ci-img wa-userav" src={u.avatar} alt="" />
-                    : <div className="wa-ci-av wa-userav" style={{ background: avc(u.name) }}>{ini(u.name)}</div>}
-                  <span className="wa-usertx">
-                    <span className="wa-username">{u.name}</span>
-                    <span className="wa-userrole">{rlabel(u.role)}{u.email ? ' · ' + u.email : ''}</span>
-                  </span>
-                </button>
-              ))}
-              {!shown.length && <div className="cl-none">No account matches.</div>}
-            </div>
-            <div className="ea-count">
-              This list opens the full Conversations inbox. Every agent can already chat with their own leads from the
-              lead panel's WhatsApp button; Management and Master always see everything.
-            </div>
-          </div>
         </div>
 
         <div className="m-ft">

@@ -13,9 +13,9 @@ export const NAV_SCOPES = {
   dashboard: ALL_ROLES,
   leads: ALL_ROLES,
   add_customer: ['INITIAL_AGENT', 'TEAM_LEAD'],
-  // The full Conversations inbox is admin / allow-list only (see waCanChat in
-  // wa.js). Agents chat per lead from the lead panel's WhatsApp button instead,
-  // which is gated by waCanChatLead.
+  // The full Conversations inbox is Management / Master only (waCanChat in
+  // wa.js) and cannot be granted per user. Agents chat per lead from the lead
+  // panel's WhatsApp button instead (waCanChatLead).
   conversations: [],
   calendar: ['MEETING_AGENT', 'TEAM_LEAD', 'MANAGEMENT'],
   pipeline: ALL_ROLES,
@@ -58,7 +58,7 @@ export const effectiveRole = (user) => {
 
 // Features an admin can grant/revoke per user, in display order (nav features only;
 // 'companies' is master-only overview and 'profile' is always-on, so both excluded).
-export const FEATURE_KEYS = ['dashboard', 'leads', 'add_customer', 'conversations', 'calendar', 'pipeline', 'properties', 'reports', 'agentperf', 'requests', 'carpool', 'team', 'users', 'accounts'];
+export const FEATURE_KEYS = ['dashboard', 'leads', 'add_customer', 'calendar', 'pipeline', 'properties', 'reports', 'agentperf', 'requests', 'carpool', 'team', 'users', 'accounts'];
 export const FEATURE_LABELS = {
   dashboard: 'Home', leads: 'Leads', add_customer: 'Add Customer', conversations: 'Conversations', calendar: 'Calendar', pipeline: 'Pipeline', properties: 'Projects',
   reports: 'Reports', agentperf: 'Performance', requests: 'Requests', carpool: 'Carpool', team: 'Team',
