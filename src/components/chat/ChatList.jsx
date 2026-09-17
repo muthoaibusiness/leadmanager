@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import Mi from '../Mi.jsx';
 import { avc, ini } from '../../lib/helpers.js';
+import { WA_ACCOUNT_LABEL } from '../../lib/wa.js';
 
 const fmtWhen = (iso) => {
   if (!iso) return '';
@@ -88,6 +89,7 @@ export default function ChatList({ conversations, activeId, onSelect, connState,
             <div className="wa-ci-mid">
               <div className="wa-ci-top">
                 <span className="wa-ci-name">{c.name || c.phone}</span>
+                <span className={`wa-acct-dot wa-acct-${c.account}`} title={WA_ACCOUNT_LABEL[c.account] || c.account} />
                 <span className="wa-ci-when">{fmtWhen(c.lastMessageAt)}</span>
               </div>
               <div className="wa-ci-bot">

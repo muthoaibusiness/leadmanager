@@ -4,7 +4,7 @@ import { useApp } from '../../context/AppContext.jsx';
 import { getDB } from '../../lib/db.js';
 import { rlabel, avc, ini } from '../../lib/helpers.js';
 import { ROLES } from '../../lib/constants.js';
-import { waLoadSettings, waSaveSettings, waSaveToken, isChatAdmin } from '../../lib/wa.js';
+import { waLoadSettings, waSaveSettings, waSaveToken, isChatAdmin, WA_ACCOUNTS, WA_ACCOUNT_LABEL, WA_DEFAULT_ACCOUNT } from '../../lib/wa.js';
 
 // Admin-only WhatsApp configuration: which accounts get the Conversations
 // section, where outbound messages are relayed, and rotation of the Wasender
@@ -20,6 +20,7 @@ export default function ChatSettingsModal() {
   const [enabled, setEnabled] = useState(true);
   const [allowed, setAllowed] = useState(() => new Set());
   const [q, setQ] = useState('');
+  const [account, setAccount] = useState(WA_DEFAULT_ACCOUNT);
   const [token, setToken] = useState('');
   const [secret, setSecret] = useState('');
   const [showToken, setShowToken] = useState(false);
@@ -91,7 +92,7 @@ export default function ChatSettingsModal() {
     if (!token.trim()) { showToast('Enter a token first.', 'err'); return; }
     setTokenSaving(true);
     try {
-      const res = await waSaveToken({ relayUrl: relayUrl.trim() }, { apiToken: token.trim(), webhookSecret: secret.trim() }, user);
+      const res = await waSaveToken({ relayUrl: relayUrl.trim() }, { account, apiToken: token.trim(), webhookSecret: secret.trim() }, user);
       if (!res.ok) { showToast(res.error || 'Could not store the token.', 'err'); return; }
       setTokenSet(true);
       setToken('');
@@ -128,7 +129,7 @@ export default function ChatSettingsModal() {
               className="finp"
               value={relayUrl}
               onChange={e => setRelayUrl(e.target.value)}
-              placeholder="https://<project>.functions.supabase.co/wa-send  ·  or your n8n webhook"
+              placeholder="https://n8n.mutholab.com/webhook/wecon-whatsapp-send"
             />
             <div className="ea-count">Server endpoint that holds the API token and talks to Wasender. The browser only ever POSTs here.</div>
           </div>
@@ -139,9 +140,9 @@ export default function ChatSettingsModal() {
               className="finp"
               value={webhookUrl}
               onChange={e => setWebhookUrl(e.target.value)}
-              placeholder="https://<project>.functions.supabase.co/wa-webhook"
+              placeholder="https://n8n.mutholab.com/webhook/wecon-whatsapp?account=eyad"
             />
-            <div className="ea-count">Reference only — stored so the team can find it later.</div>
+            <div className="ea-count">Reference only — stored so the team can find it later. Each Wasender session gets its own URL: <code>?account=dubai</code> or <code>?account=eyad</code>.</div>
           </div>
 
           <div className="fl">
@@ -155,6 +156,13 @@ export default function ChatSettingsModal() {
               <span className={`wa-cred-state${tokenSet ? ' on' : ''}`}>
                 <Mi>{tokenSet ? 'lock' : 'lock_open'}</Mi>{tokenSet ? 'Token stored' : 'Not set'}
               </span>
+            </div>
+            <div className="wa-acct-pick">
+              {WA_ACCOUNTS.map(a => (
+                <button key={a} type="button" className={`ftab${account === a ? ' on' : ''}`} onClick={() => setAccount(a)}>
+                  {WA_ACCOUNT_LABEL[a]}
+                </button>
+              ))}
             </div>
             <div className="wa-cred-row">
               <input
@@ -179,11 +187,12 @@ export default function ChatSettingsModal() {
               style={{ marginTop: '8px' }}
             />
             <button className="btn btn-g wa-fullbtn" disabled={tokenSaving || !relayUrl.trim()} onClick={saveToken}>
-              <Mi>key</Mi>{tokenSaving ? 'Storing…' : (tokenSet ? 'Rotate credentials' : 'Store credentials')}
+              <Mi>key</Mi>{tokenSaving ? 'Storing…' : `Store ${WA_ACCOUNT_LABEL[account]} credentials`}
             </button>
             <div className="ea-count">
-              Sent straight to the relay and written to <code>wa_secrets</code> by the service role. It is never stored in
-              the browser, never returned by the API, and never included in the built bundle. Set the relay URL first.
+              One token per WhatsApp number. Dubai-team leads use the Dubai session; every other lead uses Eyad's.
+              Sent straight to the relay and written to <code>wa_secrets</code> by the service role — never stored in
+              the browser. Tokens can also be set as Edge Function secrets (see <code>.env</code>). Set the relay URL first.
             </div>
           </div>
 
@@ -212,8 +221,8 @@ export default function ChatSettingsModal() {
               {!shown.length && <div className="cl-none">No account matches.</div>}
             </div>
             <div className="ea-count">
-              Management and Master always have access. With this list empty, only a Dubai Initial Agent account can open
-              Conversations.
+              This list opens the full Conversations inbox. Every agent can already chat with their own leads from the
+              lead panel's WhatsApp button; Management and Master always see everything.
             </div>
           </div>
         </div>

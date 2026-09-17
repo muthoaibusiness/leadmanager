@@ -7,9 +7,46 @@
 // from wa_settings. The relay holds the credential.
 
 import { SB_URL, SB_KEY, SB_H, sbGet, sbUpsert } from './supabase.js';
-import { normalizePhone } from './db.js';
+import { normalizePhone, getDB } from './db.js';
+import { canSee } from './constants.js';
 
 export const WA_BUCKET = 'wa-media';
+
+// ── accounts ────────────────────────────────────────────────────────────────
+// Two Wasender sessions. The Dubai team's leads go through the Dubai number;
+// every other lead through Eyad's. Thread ids are <account>:<jid>.
+export const WA_ACCOUNTS = ['dubai', 'eyad'];
+export const WA_DEFAULT_ACCOUNT = 'eyad';
+export const WA_ACCOUNT_LABEL = { dubai: 'Dubai WhatsApp', eyad: 'Eyad WhatsApp' };
+// Team name (case-insensitive substring) that routes to the Dubai account.
+const DUBAI_TEAM_MATCH = (import.meta.env.VITE_WA_DUBAI_TEAM || 'dubai').toLowerCase();
+
+export const normAccount = (a) => (WA_ACCOUNTS.includes(String(a || '').toLowerCase()) ? String(a).toLowerCase() : WA_DEFAULT_ACCOUNT);
+export const waConvId = (account, jid) => `${normAccount(account)}:${jid}`;
+// The WhatsApp JID behind a thread id (strips the account prefix if present).
+export const waConvJid = (id) => {
+  const s = String(id || '');
+  for (const a of WA_ACCOUNTS) if (s.startsWith(a + ':')) return s.slice(a.length + 1);
+  return s;
+};
+
+const teamName = (teamId) => (getDB().teams || []).find(t => t.id === teamId)?.name || '';
+const isDubaiTeam = (teamId) => !!teamId && teamName(teamId).toLowerCase().includes(DUBAI_TEAM_MATCH);
+
+// Which number a lead should be contacted from. Team of the lead first, then
+// the team of whoever it is assigned to, then that user's own name/email as a
+// last resort (how the Dubai agent was recognised before teams carried it).
+export function waAccountForLead(lead) {
+  if (!lead) return WA_DEFAULT_ACCOUNT;
+  if (isDubaiTeam(lead.teamId)) return 'dubai';
+  const owner = (getDB().users || []).find(u => u.id === lead.assignedTo);
+  if (owner) {
+    if (isDubaiTeam(owner.teamId)) return 'dubai';
+    const tag = `${owner.name || ''} ${owner.email || ''}`.toLowerCase();
+    if (tag.includes(DUBAI_TEAM_MATCH)) return 'dubai';
+  }
+  return WA_DEFAULT_ACCOUNT;
+}
 
 // Message lifecycle, in the order WhatsApp reports it.
 export const WA_STATUS = { PENDING: 'PENDING', SENT: 'SENT', DELIVERED: 'DELIVERED', READ: 'READ', FAILED: 'FAILED' };
@@ -31,6 +68,7 @@ export function rToConv(r) {
     source: r.source || 'WHATSAPP', adMeta: r.ad_meta || null,
     assignedTo: r.assigned_to || null, companyId: r.company_id || null,
     archived: !!r.archived, createdAt: r.created_at, updatedAt: r.updated_at,
+    account: normAccount(r.account),
   };
 }
 
@@ -41,6 +79,7 @@ export function convToR(c) {
     last_message_preview: c.lastMessagePreview || '', last_message_dir: c.lastMessageDir || 'IN',
     unread_count: c.unreadCount || 0, source: c.source || 'WHATSAPP', ad_meta: c.adMeta || null,
     assigned_to: c.assignedTo || null, company_id: c.companyId || null, archived: !!c.archived,
+    account: normAccount(c.account),
   };
 }
 
@@ -52,6 +91,7 @@ export function rToMsg(r) {
     mediaSize: r.media_size || 0, status: r.status || 'SENT', error: r.error || '',
     senderName: r.sender_name || '', sentBy: r.sent_by || null, clientRef: r.client_ref || null,
     waTimestamp: r.wa_timestamp || r.created_at, createdAt: r.created_at,
+    account: normAccount(r.account),
   };
 }
 
@@ -63,6 +103,7 @@ export function msgToR(m) {
     media_size: m.mediaSize || 0, status: m.status || 'PENDING', error: m.error || '',
     sender_name: m.senderName || '', sent_by: m.sentBy || null, client_ref: m.clientRef || null,
     wa_timestamp: m.waTimestamp || new Date().toISOString(),
+    account: normAccount(m.account),
   };
 }
 
@@ -100,13 +141,13 @@ export async function waSaveSettings(s, user) {
 // Store/rotate the Wasender token. Deliberately goes through the relay, never
 // into a browser-readable table — wa_secrets has RLS on with no policies, so
 // only the service role behind the relay can write it.
-export async function waSaveToken(settings, { apiToken, webhookSecret }, user) {
+export async function waSaveToken(settings, { account, apiToken, webhookSecret }, user) {
   if (!settings?.relayUrl) return { ok: false, error: 'Set the relay URL first.' };
   try {
     const r = await fetch(settings.relayUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'set-credentials', apiToken, webhookSecret, userId: user?.id }),
+      body: JSON.stringify({ action: 'set-credentials', account: normAccount(account), apiToken, webhookSecret, userId: user?.id }),
     });
     if (!r.ok) return { ok: false, error: `Relay returned HTTP ${r.status}` };
     await sbUpsert('wa_settings', [{ id: 'default', token_set: true, updated_at: new Date().toISOString(), updated_by: user?.id || null }]);
@@ -117,9 +158,11 @@ export async function waSaveToken(settings, { apiToken, webhookSecret }, user) {
 }
 
 // ── access control ──────────────────────────────────────────────────────────
-// Admins manage the allow-list from Chat Settings. Before that list is
-// configured the feature still needs to reach its first user, so a Dubai
-// Initial Agent is recognised by name as a fallback.
+// Two doors:
+//   waCanChat     — the full Conversations inbox (every thread). Admins, an
+//                   explicit allowedFeatures grant, or the Chat Settings list.
+//   waCanChatLead — the per-lead chat opened from a lead's WhatsApp button.
+//                   Any signed-in agent, unless chat is switched off globally.
 export function isChatAdmin(user) {
   return !!user && (user.role === 'MANAGEMENT' || user.role === 'MASTER');
 }
@@ -128,14 +171,57 @@ export function waCanChat(user, settings) {
   if (!user) return false;
   if (isChatAdmin(user)) return true;
   if (settings && settings.enabled === false) return false;
-  // An explicit per-user feature grant from Users → Edit also opens the door.
-  if (Array.isArray(user.allowedFeatures) && user.allowedFeatures.includes('conversations')) return true;
+  if (canSee(user, 'conversations')) return true;
   const list = settings?.allowedUserIds || [];
-  if (list.length) return list.includes(user.id);
-  // Not configured yet → Dubai (Initial Agent) only, per the rollout scope.
-  const name = (user.name || '').toLowerCase();
-  const email = (user.email || '').toLowerCase();
-  return user.role === 'INITIAL_AGENT' && (name.includes('dubai') || email.includes('dubai'));
+  return list.includes(user.id);
+}
+
+export function waCanChatLead(user, settings) {
+  if (!user) return false;
+  if (isChatAdmin(user)) return true;
+  return !(settings && settings.enabled === false);
+}
+
+// The JID WhatsApp uses for a phone-addressed 1:1 chat. Matches what the
+// webhook stores for inbound messages, so a thread started from the CRM and
+// the customer's reply land in the same row.
+export const waJidForPhone = (phone) => {
+  const d = normalizePhone(phone);
+  return d ? `${d}@s.whatsapp.net` : '';
+};
+
+// Find the lead's thread on the account its team uses, or open a fresh one.
+// Existing threads are matched on the last 9 digits (same rule as matchLead)
+// so a LID-addressed thread that already learned its number is reused.
+export async function waFindOrCreateConversation(lead) {
+  const digits = normalizePhone(lead?.phone);
+  if (!digits) return { ok: false, error: 'This customer has no valid phone number.' };
+  const tail = digits.slice(-9);
+  const account = waAccountForLead(lead);
+
+  try {
+    const rows = await sbGet(`wa_conversations?account=eq.${account}&phone=like.*${encodeURIComponent(tail)}&archived=is.false&order=last_message_at.desc.nullslast&limit=5`);
+    const hit = (rows || []).map(rToConv).find(c => (normalizePhone(c.phone) || '').slice(-9) === tail);
+    if (hit) {
+      if (!hit.leadId && lead.id) { waLinkLead(hit.id, lead.id); hit.leadId = lead.id; }
+      return { ok: true, conversation: hit, created: false };
+    }
+  } catch (e) {
+    return { ok: false, error: e.message || 'Could not look up the conversation.' };
+  }
+
+  const conv = {
+    id: waConvId(account, waJidForPhone(digits)), account, phone: digits, name: lead.name || digits,
+    leadId: lead.id || null, lastMessageAt: new Date().toISOString(), lastMessagePreview: '',
+    lastMessageDir: 'OUT', unreadCount: 0, source: 'WHATSAPP', adMeta: null,
+    assignedTo: lead.assignedTo || null, companyId: lead.companyId || null, archived: false,
+  };
+  try {
+    await sbUpsert('wa_conversations', [convToR(conv)]);
+    return { ok: true, conversation: conv, created: true };
+  } catch (e) {
+    return { ok: false, error: e.message || 'Could not start the conversation.' };
+  }
 }
 
 // ── reads ───────────────────────────────────────────────────────────────────
@@ -196,7 +282,7 @@ export const waClientRef = () => 'c' + Math.random().toString(36).slice(2, 10) +
 // "The provided JID does not exist on WhatsApp." Such a thread is only sendable
 // once the webhook has learned the real number from a later message.
 export function waSendTarget(conversation) {
-  const id = String(conversation?.id || '');
+  const id = waConvJid(conversation?.id);
   const idDigits = id.split('@')[0].split(':')[0].replace(/\D/g, '');
   const phone = String(conversation?.phone || '').replace(/\D/g, '');
   if (id.endsWith('@lid') && (!phone || phone === idDigits)) return '';
@@ -232,9 +318,11 @@ export async function waUploadMedia(file, onProgress) {
 // the row with the real Wasender id once accepted.
 export async function waSendMessage(settings, { conversation, user, type = 'text', body = '', mediaUrl = '', mediaMime = '', mediaName = '', mediaSize = 0 }) {
   const clientRef = waClientRef();
+  const account = normAccount(conversation.account);
   const optimistic = {
     id: clientRef,
     conversationId: conversation.id,
+    account,
     phone: conversation.phone,
     direction: 'OUT',
     type, body, caption: type === 'text' ? '' : body,
@@ -249,6 +337,7 @@ export async function waSendMessage(settings, { conversation, user, type = 'text
   await sbUpsert('wa_messages', [msgToR(optimistic)]);
   await sbUpsert('wa_conversations', [{
     id: conversation.id,
+    account,
     phone: conversation.phone,
     last_message_at: optimistic.waTimestamp,
     last_message_preview: type === 'text' ? body : (mediaName || type),
@@ -273,6 +362,7 @@ export async function waSendMessage(settings, { conversation, user, type = 'text
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         action: 'send',
+        account,
         to,
         conversationId: conversation.id,
         clientRef,

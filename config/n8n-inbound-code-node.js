@@ -6,6 +6,13 @@
 //   Mode: "Run Once for All Items"
 //   Language: JavaScript
 //
+// Two WhatsApp numbers share this one workflow. Give each Wasender session its
+// own webhook URL, differing only by the account in the query string:
+//   Dubai: https://n8n.mutholab.com/webhook/wecon-whatsapp?account=dubai
+//   Eyad : https://n8n.mutholab.com/webhook/wecon-whatsapp?account=eyad
+// The Webhook node exposes that as $json.query.account. A URL with no account
+// is treated as Eyad. Thread ids are stored as <account>:<jid>.
+//
 // Required n8n environment variables:
 //   SUPABASE_URL               https://sbqmougcvnplgjgihpwe.supabase.co
 //   SUPABASE_SERVICE_ROLE_KEY  service_role key (NOT the anon key)
@@ -216,11 +223,16 @@ for (const item of $input.all()) {
   const event = payload?.event ?? payload?.type ?? 'unknown';
   const data = payload?.data ?? payload;
 
+  // Which number this delivery belongs to (see header). Query string first,
+  // then a payload field in case a proxy strips the query.
+  const rawAccount = item.json?.query?.account ?? payload?.account ?? '';
+  const account = String(rawAccount).toLowerCase() === 'dubai' ? 'dubai' : 'eyad';
+
   const deliveryId =
     payload?.id ?? payload?.eventId ??
     data?.key?.id ?? data?.messages?.key?.id ?? data?.msgId ?? null;
 
-  if (deliveryId && !(await claimEvent(`${event}:${deliveryId}`, event))) {
+  if (deliveryId && !(await claimEvent(`${account}:${event}:${deliveryId}`, event))) {
     out.push({ json: { skipped: 'duplicate', event, deliveryId } });
     continue;
   }
@@ -276,14 +288,17 @@ for (const item of $input.all()) {
   const mediaUrl = media.url ? await mirrorMedia(media.url, media.name, media.mime) : '';
 
   // Conversation first, so the message never points at a missing thread.
-  const existingRes = await sbFetch(`/rest/v1/wa_conversations?id=eq.${encodeURIComponent(jid)}&select=id,name,lead_id,source`, { headers: H });
+  // Threads are keyed per account so one customer can talk to both numbers.
+  const threadId = `${account}:${jid}`;
+  const existingRes = await sbFetch(`/rest/v1/wa_conversations?id=eq.${encodeURIComponent(threadId)}&select=id,name,lead_id,source`, { headers: H });
   const existing = existingRes.ok ? await existingRes.json().catch(() => []) : [];
   const leadId = existing?.[0]?.lead_id ?? (await findLeadId(phone));
 
   // pushName on a fromMe message is our own WhatsApp profile name, not the
   // customer's — it must never overwrite the thread title.
   const conv = {
-    id: jid,
+    id: threadId,
+    account,
     phone,
     name: (fromMe ? '' : pushName) || existing?.[0]?.name || phone,
     lead_id: leadId,
@@ -307,7 +322,8 @@ for (const item of $input.all()) {
   await upsert('wa_messages', [{
     id: msgId,
     wa_id: msgId,
-    conversation_id: jid,
+    conversation_id: threadId,
+    account,
     phone,
     direction: fromMe ? 'OUT' : 'IN',
     type: media.type,
@@ -327,14 +343,14 @@ for (const item of $input.all()) {
     method: 'POST',
     headers: H,
     body: JSON.stringify({
-      p_conv: jid,
+      p_conv: threadId,
       p_preview: String(text || media.name || media.type).slice(0, 180),
       p_at: at,
       p_dir: fromMe ? 'OUT' : 'IN',
     }),
   });
 
-  out.push({ json: { ok: true, jid, msgId, type: media.type, ad: !!ad, mirrored: !!mediaUrl } });
+  out.push({ json: { ok: true, account, jid, msgId, type: media.type, ad: !!ad, mirrored: !!mediaUrl } });
 }
 
 return out;

@@ -13,8 +13,9 @@ export const NAV_SCOPES = {
   dashboard: ALL_ROLES,
   leads: ALL_ROLES,
   add_customer: ['INITIAL_AGENT', 'TEAM_LEAD'],
-  // WhatsApp chat is never granted by role — access comes from the allow-list in
-  // wa_settings (or an explicit allowedFeatures grant). See waCanChat() in wa.js.
+  // The full Conversations inbox is admin / allow-list only (see waCanChat in
+  // wa.js). Agents chat per lead from the lead panel's WhatsApp button instead,
+  // which is gated by waCanChatLead.
   conversations: [],
   calendar: ['MEETING_AGENT', 'TEAM_LEAD', 'MANAGEMENT'],
   pipeline: ALL_ROLES,

@@ -1,0 +1,620 @@
+{
+  "name": "WECON · WhatsApp chat inbound",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "wecon-whatsapp-chat",
+        "options": {}
+      },
+      "name": "Wasender delivers here",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": "wecon-whatsapp-chat",
+      "notes": "Set this as each Wasender session's webhook URL — Dubai: https://n8n.mutholab.com/webhook/wecon-whatsapp-chat?account=dubai — Eyad: https://n8n.mutholab.com/webhook/wecon-whatsapp-chat?account=eyad. Every delivery is mirrored into the CRM chat tables AND forwarded unchanged to the 'Wecon WA Bot' webhook."
+    },
+    {
+      "parameters": {
+        "jsCode": "// Hand the untouched delivery to the existing bot workflow so it keeps\n// working exactly as before (welcome message, preleads, CAPI...). The bot's\n// own webhook URL is no longer what Wasender calls; this workflow is.\nconst item = $input.first().json;\nreturn [{ json: { body: item.body ?? {}, account: item.query?.account ?? '' } }];"
+      },
+      "name": "Forward to bot",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        240,
+        -220
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://n8n.mutholab.com/webhook/wecon-whatsapp?account={{ encodeURIComponent($json.account) }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.body) }}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          },
+          "timeout": 25000
+        }
+      },
+      "name": "Wecon WA Bot (unchanged)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        480,
+        -220
+      ],
+      "notes": "Replays the delivery to the existing bot's webhook so that workflow needs no changes."
+    },
+    {
+      "parameters": {
+        "jsCode": "// CRM Chat · Parse — normalise one Wasender delivery for the Conversations\n// tables. Runs in parallel with the bot's own Parse Event; it never sends\n// anything. Text only: media messages are recorded by type, no file mirroring.\n//\n// Which number this session is comes from the webhook URL:\n//   …/webhook/wecon-whatsapp?account=dubai   or   ?account=eyad\n// No account → eyad. Thread ids are <account>:<jid>.\nconst item = $input.first().json;\nconst payload = item.body ?? item;\nconst event = String(payload?.event ?? payload?.type ?? 'unknown');\nconst data = payload?.data ?? payload;\n\nconst rawAccount = item.query?.account ?? payload?.account ?? '';\nconst account = String(rawAccount).toLowerCase() === 'dubai' ? 'dubai' : 'eyad';\n\nconst STATUS_MAP = {\n  pending: 'PENDING', sent: 'SENT', server_ack: 'SENT',\n  delivered: 'DELIVERED', delivery_ack: 'DELIVERED',\n  read: 'READ', played: 'READ', failed: 'FAILED', error: 'FAILED',\n};\n\nconst msgNode = data?.messages ?? data?.message ?? data;\nconst key = msgNode?.key ?? data?.key ?? {};\nconst inner = msgNode?.message ?? msgNode ?? {};\n\nconst text = String(\n  inner?.conversation ?? inner?.extendedTextMessage?.text ?? inner?.imageMessage?.caption ??\n  inner?.videoMessage?.caption ?? inner?.documentMessage?.caption ??\n  inner?.buttonsResponseMessage?.selectedDisplayText ?? inner?.listResponseMessage?.title ??\n  msgNode?.messageBody ?? inner?.messageBody ?? inner?.text ?? ''\n).trim();\n\nlet type = 'text', mediaName = '';\nif (inner?.imageMessage) { type = 'image'; mediaName = 'image.jpg'; }\nelse if (inner?.videoMessage) { type = 'video'; mediaName = 'video.mp4'; }\nelse if (inner?.audioMessage) { type = 'audio'; mediaName = 'audio.ogg'; }\nelse if (inner?.documentMessage) { type = 'document'; mediaName = inner.documentMessage.fileName || 'document'; }\nelse if (inner?.stickerMessage) { type = 'sticker'; mediaName = 'sticker.webp'; }\nelse {\n  const flat = String(msgNode?.messageType ?? '').replace(/Message$/, '').toLowerCase();\n  if (['image', 'video', 'audio', 'document', 'sticker'].includes(flat)) { type = flat; mediaName = msgNode?.fileName || flat; }\n}\nconst hasContent = !!(text || type !== 'text');\n\n// Delivery receipts for messages the CRM sent.\nif (!hasContent && (event.includes('update') || event.includes('receipt') || event === 'message.sent')) {\n  const updates = Array.isArray(data) ? data : [data];\n  return updates\n    .map(u => ({ id: u?.key?.id ?? u?.msgId ?? u?.id, status: STATUS_MAP[String(u?.status ?? u?.update?.status ?? '').toLowerCase()] }))\n    .filter(x => x.id && x.status)\n    .map(x => ({ json: { kind: 'receipt', waId: String(x.id), status: x.status } }));\n}\n\nconst jid = String(key.remoteJid ?? msgNode?.remoteJid ?? data?.from ?? '');\nif (!hasContent || !jid || jid.endsWith('@g.us')) return [];\n\nconst fromMe = key.fromMe === true;\nconst msgId = String(key.id ?? msgNode?.id ?? `gen-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);\nconst phoneJidCandidates = [\n  key.remoteJid, key.remoteJidAlt, msgNode?.remoteJidAlt, data?.remoteJidAlt,\n  ...(fromMe ? [] : [key.senderPn, key.participantPn, key.cleanedSenderPn, msgNode?.senderPn, data?.senderPn]),\n  data?.from,\n].filter(Boolean).map(String);\nconst phoneJid = phoneJidCandidates.find(j => j.endsWith('@s.whatsapp.net')) ?? '';\nconst phone = (phoneJid || jid).split('@')[0].split(':')[0].replace(/\\D/g, '');\nconst pushName = String(msgNode?.pushName ?? data?.pushName ?? '');\nconst ts = Number(msgNode?.messageTimestamp ?? data?.timestamp ?? 0);\nconst at = ts ? new Date(ts * 1000).toISOString() : new Date().toISOString();\nconst deliveryId = String(payload?.id ?? payload?.eventId ?? key.id ?? msgId);\n\nreturn [{ json: {\n  kind: 'message', account, event,\n  eventId: `${account}:${event}:${deliveryId}`,\n  threadId: `${account}:${jid}`, jid, phone, phoneTail: phone.slice(-9),\n  fromMe, msgId, text, type, mediaName, pushName, at,\n  preview: String(text || mediaName || type).slice(0, 180),\n} }];"
+      },
+      "name": "CRM Chat · Parse",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        240,
+        0
+      ],
+      "notes": "Mirrors every 1:1 message into wa_conversations / wa_messages for the CRM Conversations view. Text only. Parallel to the bot — never replies."
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "CRM Chat · Kind-message",
+                    "leftValue": "={{ $json.kind }}",
+                    "rightValue": "message",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "message"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "CRM Chat · Kind-receipt",
+                    "leftValue": "={{ $json.kind }}",
+                    "rightValue": "receipt",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "receipt"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "CRM Chat · Kind",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        480,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "=https://sbqmougcvnplgjgihpwe.supabase.co/rest/v1/wa_messages?wa_id=eq.{{ encodeURIComponent($json.waId) }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "options": {},
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Prefer",
+              "value": "return=minimal"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ status: $json.status }) }}"
+      },
+      "name": "CRM Chat · Receipt",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        720,
+        200
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "3ZLIHjmCxLAgkhkX",
+          "name": "Wepro CRM"
+        }
+      },
+      "alwaysOutputData": true,
+      "notes": "Delivery / read receipts for CRM-sent messages (matched on wa_id)."
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://sbqmougcvnplgjgihpwe.supabase.co/rest/v1/wa_webhook_events",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true,
+              "fullResponse": true
+            }
+          }
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Prefer",
+              "value": "return=minimal"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify([{ id: $json.eventId, event_type: $json.event }]) }}"
+      },
+      "name": "CRM Chat · Claim event",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        720,
+        0
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "3ZLIHjmCxLAgkhkX",
+          "name": "Wepro CRM"
+        }
+      },
+      "notes": "Insert-once replay guard: 409 means this delivery was already processed."
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "new-1",
+              "leftValue": "={{ $json.statusCode }}",
+              "rightValue": 409,
+              "operator": {
+                "type": "number",
+                "operation": "notEquals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "name": "CRM Chat · New?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        960,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://sbqmougcvnplgjgihpwe.supabase.co/rest/v1/wa_conversations?id=eq.{{ encodeURIComponent($('CRM Chat · Parse').first().json.threadId) }}&select=id,name,lead_id,source",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "options": {}
+      },
+      "name": "CRM Chat · Existing thread",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1200,
+        0
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "3ZLIHjmCxLAgkhkX",
+          "name": "Wepro CRM"
+        }
+      },
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://sbqmougcvnplgjgihpwe.supabase.co/rest/v1/leads?phone=like.*{{ $('CRM Chat · Parse').first().json.phoneTail }}&select=id&limit=1",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "options": {}
+      },
+      "name": "CRM Chat · Lead by phone",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1440,
+        0
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "3ZLIHjmCxLAgkhkX",
+          "name": "Wepro CRM"
+        }
+      },
+      "alwaysOutputData": true,
+      "notes": "Attach the thread to an existing CRM lead by the last 9 digits."
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://sbqmougcvnplgjgihpwe.supabase.co/rest/v1/wa_messages?wa_id=eq.{{ encodeURIComponent($('CRM Chat · Parse').first().json.msgId) }}&select=id&limit=1",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "options": {}
+      },
+      "name": "CRM Chat · Sent by CRM?",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1680,
+        0
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "3ZLIHjmCxLAgkhkX",
+          "name": "Wepro CRM"
+        }
+      },
+      "alwaysOutputData": true,
+      "notes": "fromMe echo of a CRM-sent message → already stored, skip the bubble."
+    },
+    {
+      "parameters": {
+        "jsCode": "// CRM Chat · Build rows — merge what we know into the upsert bodies.\nconst p = $('CRM Chat · Parse').first().json;\nconst ex = $('CRM Chat · Existing thread').first().json || {};\nconst ld = $('CRM Chat · Lead by phone').first().json || {};\nconst sent = $input.first().json || {};\n\nconst existing = ex.id ? ex : null;\nconst leadId = existing?.lead_id ?? ld.id ?? null;\n\n// pushName on a fromMe message is our own WhatsApp profile name, not the\n// customer's — it must never overwrite the thread title.\nconst conv = {\n  id: p.threadId, account: p.account, phone: p.phone,\n  name: (p.fromMe ? '' : p.pushName) || existing?.name || p.phone,\n  lead_id: leadId,\n};\nif (!existing) conv.source = 'WHATSAPP';\n\n// A fromMe echo of a message the CRM itself sent is already stored under its\n// clientRef (wa_id = this id) — don't add a second bubble.\nconst skipMessage = !!sent.id;\n\nconst msg = {\n  id: p.msgId, wa_id: p.msgId, conversation_id: p.threadId, account: p.account, phone: p.phone,\n  direction: p.fromMe ? 'OUT' : 'IN', type: p.type,\n  body: p.type === 'text' ? p.text : '', caption: p.type === 'text' ? '' : p.text,\n  media_url: '', media_mime: '', media_name: p.mediaName || '', media_size: 0,\n  status: p.fromMe ? 'SENT' : 'DELIVERED',\n  sender_name: p.fromMe ? '' : p.pushName, wa_timestamp: p.at,\n};\n\nreturn [{ json: {\n  skipMessage, conv: [conv], msg: [msg],\n  bump: { p_conv: p.threadId, p_preview: p.preview, p_at: p.at, p_dir: p.fromMe ? 'OUT' : 'IN' },\n} }];"
+      },
+      "name": "CRM Chat · Build rows",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1920,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://sbqmougcvnplgjgihpwe.supabase.co/rest/v1/wa_conversations?on_conflict=id",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "options": {},
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Prefer",
+              "value": "resolution=merge-duplicates,return=representation"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.conv) }}"
+      },
+      "name": "CRM Chat · Upsert thread",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2160,
+        0
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "3ZLIHjmCxLAgkhkX",
+          "name": "Wepro CRM"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "skip-1",
+              "leftValue": "={{ $('CRM Chat · Build rows').first().json.skipMessage }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "false",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "name": "CRM Chat · Store message?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        2400,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://sbqmougcvnplgjgihpwe.supabase.co/rest/v1/wa_messages?on_conflict=id",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "options": {},
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Prefer",
+              "value": "resolution=merge-duplicates,return=representation"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($('CRM Chat · Build rows').first().json.msg) }}"
+      },
+      "name": "CRM Chat · Upsert message",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2640,
+        0
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "3ZLIHjmCxLAgkhkX",
+          "name": "Wepro CRM"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://sbqmougcvnplgjgihpwe.supabase.co/rest/v1/rpc/wa_bump_unread",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "options": {},
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($('CRM Chat · Build rows').first().json.bump) }}"
+      },
+      "name": "CRM Chat · Bump unread",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2880,
+        0
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "3ZLIHjmCxLAgkhkX",
+          "name": "Wepro CRM"
+        }
+      },
+      "alwaysOutputData": true,
+      "notes": "Atomic unread + preview update on the thread."
+    }
+  ],
+  "connections": {
+    "Wasender delivers here": {
+      "main": [
+        [
+          {
+            "node": "Forward to bot",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "CRM Chat · Parse",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Forward to bot": {
+      "main": [
+        [
+          {
+            "node": "Wecon WA Bot (unchanged)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "CRM Chat · Parse": {
+      "main": [
+        [
+          {
+            "node": "CRM Chat · Kind",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "CRM Chat · Kind": {
+      "main": [
+        [
+          {
+            "node": "CRM Chat · Claim event",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "CRM Chat · Receipt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "CRM Chat · Claim event": {
+      "main": [
+        [
+          {
+            "node": "CRM Chat · New?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "CRM Chat · New?": {
+      "main": [
+        [
+          {
+            "node": "CRM Chat · Existing thread",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "CRM Chat · Existing thread": {
+      "main": [
+        [
+          {
+            "node": "CRM Chat · Lead by phone",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "CRM Chat · Lead by phone": {
+      "main": [
+        [
+          {
+            "node": "CRM Chat · Sent by CRM?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "CRM Chat · Sent by CRM?": {
+      "main": [
+        [
+          {
+            "node": "CRM Chat · Build rows",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "CRM Chat · Build rows": {
+      "main": [
+        [
+          {
+            "node": "CRM Chat · Upsert thread",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "CRM Chat · Upsert thread": {
+      "main": [
+        [
+          {
+            "node": "CRM Chat · Store message?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "CRM Chat · Store message?": {
+      "main": [
+        [
+          {
+            "node": "CRM Chat · Upsert message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "CRM Chat · Upsert message": {
+      "main": [
+        [
+          {
+            "node": "CRM Chat · Bump unread",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Asia/Dhaka"
+  },
+  "meta": {
+    "description": "Inbound for the CRM Conversations view. Wasender sessions call THIS webhook; it mirrors every message into wa_conversations / wa_messages (text only) and forwards the raw delivery to the existing Wecon WA Bot webhook, which stays untouched. Per-session URLs: https://n8n.mutholab.com/webhook/wecon-whatsapp-chat?account=dubai and ?account=eyad."
+  }
+}

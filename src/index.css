@@ -4262,6 +4262,10 @@ a {
 
 .ld-wa {
   margin-left: auto;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -11932,6 +11936,25 @@ input[type="time"]::-webkit-calendar-picker-indicator { opacity: .9; cursor: poi
    from the same tokens as the rest of the app, so both themes follow along. */
 
 .wa-wrap { display: flex; flex-direction: column; gap: 12px; height: calc(100dvh - 132px); min-height: 520px; }
+
+/* Which WhatsApp number a thread lives on. */
+.wa-acct-chip { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--bd); color: var(--t2); background: var(--surf2); }
+.wa-acct-chip .mi { font-size: 13px; }
+.wa-acct-chip.wa-acct-dubai { color: var(--accent); background: var(--blue-l); border-color: var(--accent); }
+.wa-acct-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--t3); flex-shrink: 0; margin-right: 6px; }
+.wa-acct-dot.wa-acct-dubai { background: var(--accent); }
+.wa-acct-pick { display: flex; gap: 6px; margin-bottom: 8px; }
+
+/* Single-lead chat opened from the lead panel: the transcript + composer only,
+   no rail, no CRM pane — the lead panel already is the CRM pane. */
+.wa-lead-modal { display: flex; flex-direction: column; width: min(640px, calc(100vw - 32px)); height: min(720px, calc(100dvh - 48px)); max-height: none; padding: 0; overflow: hidden; }
+.wa-lead-modal .wa-head { padding: 12px 14px; }
+.wa-lead-modal .wa-thread-wrap { flex: 1; min-height: 0; }
+.wa-lead-modal .wa-gate-inline { margin: auto; text-align: center; color: var(--t3); font-size: 13px; padding: 24px; display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.wa-lead-modal .wa-gate-inline .mi { font-size: 30px; }
+@media (max-width: 640px) {
+  .wa-lead-modal { width: 100vw; height: 100dvh; border-radius: 0; }
+}
 
 .wa-bar { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 .wa-bar-t { font-family: var(--font-display); font-size: 26px; font-weight: 500; text-transform: uppercase; letter-spacing: .01em; line-height: 1.1; }

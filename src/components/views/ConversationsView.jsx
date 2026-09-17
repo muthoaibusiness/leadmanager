@@ -9,7 +9,7 @@ import { getDB, getLead } from '../../lib/db.js';
 import { pushNotify } from '../../lib/pushNotify.js';
 import {
   waLoadConversations, waLoadMessages, waMarkRead, waSendMessage, waRetry,
-  waSubscribe, matchLead, mergeStatus, isChatAdmin,
+  waSubscribe, matchLead, mergeStatus, isChatAdmin, WA_ACCOUNT_LABEL,
 } from '../../lib/wa.js';
 
 export default function ConversationsView() {
@@ -259,6 +259,7 @@ export default function ConversationsView() {
                   <div className="wa-head-name">{active.name || active.phone}</div>
                   <div className="wa-head-sub">
                     {active.phone}
+                    <span className={`wa-acct-chip wa-acct-${active.account}`}><Mi>sim_card</Mi>{WA_ACCOUNT_LABEL[active.account] || active.account}</span>
                     {active.source === 'AD' && <span className="wa-src-chip"><Mi>campaign</Mi>From ad</span>}
                     {lead && <span className="wa-link-chip"><Mi>link</Mi>{lead.name}</span>}
                   </div>

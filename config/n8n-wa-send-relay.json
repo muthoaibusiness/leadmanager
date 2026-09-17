@@ -8,98 +8,315 @@
         "responseMode": "responseNode",
         "options": {}
       },
-      "id": "webhook-in",
       "name": "CRM sends here",
       "type": "n8n-nodes-base.webhook",
-      "typeVersion": 2,
-      "position": [-360, 0],
-      "webhookId": "wecon-whatsapp-send"
+      "typeVersion": 2.1,
+      "position": [
+        -580,
+        0
+      ],
+      "webhookId": "wecon-whatsapp-send",
+      "notes": "Production URL: https://n8n.mutholab.com/webhook/wecon-whatsapp-send — set as WEPRO CRM → Chat Settings → Relay URL."
     },
     {
       "parameters": {
-        "jsCode": "// Translate the CRM relay contract into a Wasender payload.\n// Contract (from src/lib/wa.js waSendMessage):\n//   { action, to, conversationId, clientRef, type, text, caption,\n//     mediaUrl, mediaName, mediaMime, userId }\nconst b = $input.first().json.body ?? $input.first().json;\n\nif (b.action !== 'send') {\n  return [{ json: { _skip: true, reason: 'unsupported action: ' + b.action } }];\n}\n\nlet payload;\nswitch (b.type) {\n  case 'image':    payload = { to: b.to, text: b.caption || '', imageUrl: b.mediaUrl }; break;\n  case 'video':    payload = { to: b.to, text: b.caption || '', videoUrl: b.mediaUrl }; break;\n  case 'audio':    payload = { to: b.to, audioUrl: b.mediaUrl }; break;\n  case 'document': payload = { to: b.to, text: b.caption || '', documentUrl: b.mediaUrl, fileName: b.mediaName || 'file' }; break;\n  default:         payload = { to: b.to, text: b.text || '' };\n}\n\nreturn [{ json: { payload, clientRef: b.clientRef, conversationId: b.conversationId } }];"
+        "jsCode": "// Translate the CRM relay contract into a Wasender payload.\n// Contract (src/lib/wa.js waSendMessage):\n//   { action, account, to, conversationId, clientRef, type, text, caption,\n//     mediaUrl, mediaName, mediaMime, userId }\n// account is 'dubai' or 'eyad' — which WhatsApp number to send from.\nconst b = $input.first().json.body ?? $input.first().json;\n\nif (b.action !== 'send') {\n  return [{ json: { _skip: true, ok: false, reason: 'unsupported action: ' + b.action } }];\n}\n\nconst account = String(b.account || '').toLowerCase() === 'dubai' ? 'dubai' : 'eyad';\n\nlet payload;\nswitch (b.type) {\n  case 'image':    payload = { to: b.to, text: b.caption || '', imageUrl: b.mediaUrl }; break;\n  case 'video':    payload = { to: b.to, text: b.caption || '', videoUrl: b.mediaUrl }; break;\n  case 'audio':    payload = { to: b.to, audioUrl: b.mediaUrl }; break;\n  case 'document': payload = { to: b.to, text: b.caption || '', documentUrl: b.mediaUrl, fileName: b.mediaName || 'file' }; break;\n  default:         payload = { to: b.to, text: b.text || '' };\n}\n\nreturn [{ json: { account, payload, clientRef: b.clientRef, conversationId: b.conversationId } }];"
       },
-      "id": "build-payload",
       "name": "Build Wasender payload",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [-140, 0]
+      "position": [
+        -360,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "Which number?-dubai",
+                    "leftValue": "={{ $json.account }}",
+                    "rightValue": "dubai",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "dubai"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "Which number?-eyad",
+                    "leftValue": "={{ $json.account }}",
+                    "rightValue": "eyad",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "eyad"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Which number?",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        -140,
+        0
+      ],
+      "notes": "Dubai-team leads go out through the Dubai session; everyone else through Eyad's. The CRM decides and sends `account` in the body."
     },
     {
       "parameters": {
         "method": "POST",
-        "url": "https://wasenderapi.com/api/send-message",
+        "url": "https://www.wasenderapi.com/api/send-message",
         "authentication": "genericCredentialType",
         "genericAuthType": "httpHeaderAuth",
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify($json.payload) }}",
-        "options": { "response": { "response": { "neverError": true, "fullResponse": true } } }
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true,
+              "fullResponse": true
+            }
+          }
+        }
       },
-      "id": "wasender",
-      "name": "Wasender · send-message",
+      "name": "Wasender · send (Dubai)",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [80, 0],
-      "notes": "Attach an n8n 'Header Auth' credential: Name = Authorization, Value = Bearer <WASENDER_PRIVATE_API_TOKEN>. The token lives ONLY in this credential — never in the workflow JSON, never in the CRM bundle."
+      "position": [
+        80,
+        -140
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "RRKM12HaqAsyEKhk",
+          "name": "WaSender Header Auth"
+        }
+      },
+      "notes": "DUBAI session. Currently attached to the Eyad credential for testing — swap to a Header Auth credential holding the Dubai token (Name = Authorization, Value = Bearer <token>)."
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://www.wasenderapi.com/api/send-message",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.payload) }}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true,
+              "fullResponse": true
+            }
+          }
+        }
+      },
+      "name": "Wasender · send (Eyad)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        80,
+        140
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "RRKM12HaqAsyEKhk",
+          "name": "WaSender Header Auth"
+        }
+      },
+      "notes": "EYAD session — 'WaSender Header Auth' credential (Name = Authorization, Value = Bearer <token>)."
     },
     {
       "parameters": {
         "jsCode": "// Turn the Wasender response into the PATCH the CRM message row needs.\nconst r = $input.first().json;\nconst ok = r.statusCode >= 200 && r.statusCode < 300;\nconst body = r.body ?? {};\nconst clientRef = $('Build Wasender payload').first().json.clientRef;\n\nconst waId = body?.data?.msgId ?? body?.data?.id ?? body?.data?.key?.id ?? body?.msgId ?? body?.id ?? null;\n\nreturn [{ json: {\n  clientRef,\n  ok,\n  patch: ok\n    ? { status: 'SENT', wa_id: waId ? String(waId) : null, error: null }\n    : { status: 'FAILED', error: String(body?.message ?? JSON.stringify(body)).slice(0, 400) },\n} }];"
       },
-      "id": "shape-result",
       "name": "Shape result",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [300, 0]
+      "position": [
+        300,
+        0
+      ]
     },
     {
       "parameters": {
         "method": "PATCH",
-        "url": "={{ $env.SUPABASE_URL }}/rest/v1/wa_messages?id=eq.{{ encodeURIComponent($json.clientRef) }}",
-        "authentication": "genericCredentialType",
-        "genericAuthType": "httpHeaderAuth",
+        "url": "=https://sbqmougcvnplgjgihpwe.supabase.co/rest/v1/wa_messages?id=eq.{{ encodeURIComponent($json.clientRef) }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "options": {},
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
-            { "name": "apikey", "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}" },
-            { "name": "Prefer", "value": "return=minimal" }
+            {
+              "name": "Prefer",
+              "value": "return=minimal"
+            }
           ]
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify($json.patch) }}",
-        "options": {}
+        "jsonBody": "={{ JSON.stringify($json.patch) }}"
       },
-      "id": "patch-status",
       "name": "Update message status",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [520, 0],
-      "notes": "Header Auth credential: Name = Authorization, Value = Bearer <SUPABASE_SERVICE_ROLE_KEY>. Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY as n8n environment variables."
+      "position": [
+        520,
+        0
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "3ZLIHjmCxLAgkhkX",
+          "name": "Wepro CRM"
+        }
+      },
+      "alwaysOutputData": true,
+      "notes": "Marks the optimistic CRM row SENT (with Wasender's id) or FAILED (with the reason)."
     },
     {
       "parameters": {
         "respondWith": "json",
-        "responseBody": "={{ JSON.stringify({ ok: $json.ok !== false }) }}",
-        "options": { "responseCode": "={{ $json.ok === false ? 502 : 200 }}" }
+        "responseBody": "={{ JSON.stringify({ ok: $('Shape result').first().json.ok !== false }) }}",
+        "options": {
+          "responseCode": "={{ $('Shape result').first().json.ok === false ? 502 : 200 }}"
+        }
       },
-      "id": "respond",
       "name": "Respond to CRM",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.1,
-      "position": [740, 0]
+      "position": [
+        740,
+        0
+      ]
     }
   ],
   "connections": {
-    "CRM sends here": { "main": [[{ "node": "Build Wasender payload", "type": "main", "index": 0 }]] },
-    "Build Wasender payload": { "main": [[{ "node": "Wasender · send-message", "type": "main", "index": 0 }]] },
-    "Wasender · send-message": { "main": [[{ "node": "Shape result", "type": "main", "index": 0 }]] },
-    "Shape result": { "main": [[{ "node": "Update message status", "type": "main", "index": 0 }]] },
-    "Update message status": { "main": [[{ "node": "Respond to CRM", "type": "main", "index": 0 }]] }
+    "CRM sends here": {
+      "main": [
+        [
+          {
+            "node": "Build Wasender payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Wasender payload": {
+      "main": [
+        [
+          {
+            "node": "Which number?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Which number?": {
+      "main": [
+        [
+          {
+            "node": "Wasender · send (Dubai)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Wasender · send (Eyad)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wasender · send (Dubai)": {
+      "main": [
+        [
+          {
+            "node": "Shape result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wasender · send (Eyad)": {
+      "main": [
+        [
+          {
+            "node": "Shape result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Shape result": {
+      "main": [
+        [
+          {
+            "node": "Update message status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update message status": {
+      "main": [
+        [
+          {
+            "node": "Respond to CRM",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
   },
-  "settings": { "executionOrder": "v1" },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Asia/Dhaka"
+  },
   "meta": {
-    "description": "Outbound-only alternative to the wa-send Edge Function. Import into n8n, attach the two Header Auth credentials described in the node notes, activate, then paste the production webhook URL into WEPRO CRM → Conversations → Chat Settings → Relay URL. Inbound stays on the wa-webhook Edge Function, which mirrors WhatsApp media into Supabase Storage and guards against replayed deliveries."
+    "description": "Outbound relay on n8n.mutholab.com. Attach: 'WaSender Header Auth' style credentials per number on the two Wasender nodes, and the 'Wepro CRM' Supabase credential on 'Update message status'. Relay URL for the CRM: https://n8n.mutholab.com/webhook/wecon-whatsapp-send"
   }
 }

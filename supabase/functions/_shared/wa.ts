@@ -5,6 +5,18 @@
 
 export const WASENDER_BASE = "https://wasenderapi.com/api";
 
+// ── accounts ────────────────────────────────────────────────────────────────
+// One Wasender session per account. The Dubai team talks through "dubai";
+// everyone else through "eyad". Thread ids are  <account>:<jid>.
+export const WA_ACCOUNTS = ["dubai", "eyad"] as const;
+export type WaAccount = typeof WA_ACCOUNTS[number];
+export const DEFAULT_ACCOUNT: WaAccount = "eyad";
+export const normAccount = (a: unknown): WaAccount =>
+  (WA_ACCOUNTS as readonly string[]).includes(String(a ?? "").toLowerCase())
+    ? (String(a).toLowerCase() as WaAccount)
+    : DEFAULT_ACCOUNT;
+export const convId = (account: WaAccount, jid: string) => `${account}:${jid}`;
+
 export const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 export const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
 
@@ -81,14 +93,21 @@ export async function claimEvent(id: string, eventType: string): Promise<boolean
 }
 
 // ── credentials ─────────────────────────────────────────────────────────────
-// wa_secrets wins so the token can be rotated from the admin UI without a
-// redeploy; the env var is the bootstrap/fallback.
-export async function getCredentials(): Promise<{ token: string; webhookSecret: string }> {
-  const rows = await sbSelect("wa_secrets?id=eq.default&select=api_token,webhook_secret");
-  const row = rows?.[0] ?? {};
+// Per account. Order: wa_secrets row for that account (rotatable from the
+// admin UI) → WASENDER_API_TOKEN_<ACCOUNT> env → for the default account only,
+// the legacy 'default' row / WASENDER_API_TOKEN. A non-default account with no
+// token of its own fails loudly rather than silently sending from the wrong
+// number.
+export async function getCredentials(account: WaAccount = DEFAULT_ACCOUNT): Promise<{ token: string; webhookSecret: string }> {
+  const rows = await sbSelect(`wa_secrets?id=in.(${account},default)&select=id,api_token,webhook_secret`);
+  const own = rows?.find((r) => r.id === account) ?? {};
+  const legacy = account === DEFAULT_ACCOUNT ? (rows?.find((r) => r.id === "default") ?? {}) : {};
+  const A = account.toUpperCase();
   return {
-    token: row.api_token || Deno.env.get("WASENDER_API_TOKEN") || "",
-    webhookSecret: row.webhook_secret || Deno.env.get("WASENDER_WEBHOOK_SECRET") || "",
+    token: own.api_token || Deno.env.get(`WASENDER_API_TOKEN_${A}`) || legacy.api_token
+      || (account === DEFAULT_ACCOUNT ? Deno.env.get("WASENDER_API_TOKEN") : "") || "",
+    webhookSecret: own.webhook_secret || Deno.env.get(`WASENDER_WEBHOOK_SECRET_${A}`) || legacy.webhook_secret
+      || (account === DEFAULT_ACCOUNT ? Deno.env.get("WASENDER_WEBHOOK_SECRET") : "") || "",
   };
 }
 

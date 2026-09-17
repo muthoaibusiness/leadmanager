@@ -1,0 +1,57 @@
+{
+  "meta": {
+    "description": "One node to add to each bot workflow ('Wecon WA Bot' → account=eyad, 'Wecon WA Bot Dubai' → account=dubai). Paste on the canvas, connect 'WhatsApp Webhook' → 'Forward to CRM Chat', save."
+  },
+  "eyad": {
+    "parameters": {
+      "method": "POST",
+      "url": "https://n8n.mutholab.com/webhook/wecon-whatsapp-chat?account=eyad",
+      "sendBody": true,
+      "specifyBody": "json",
+      "jsonBody": "={{ JSON.stringify($json.body) }}",
+      "options": {
+        "response": {
+          "response": {
+            "neverError": true
+          }
+        },
+        "timeout": 20000
+      }
+    },
+    "name": "Forward to CRM Chat",
+    "type": "n8n-nodes-base.httpRequest",
+    "typeVersion": 4.2,
+    "position": [
+      240,
+      320
+    ],
+    "onError": "continueRegularOutput",
+    "notes": "Copies every delivery to the 'WECON · WhatsApp chat inbound' workflow (account=eyad) so the CRM Conversations view sees it. Fire-and-forget: never affects this bot's own flow."
+  },
+  "dubai": {
+    "parameters": {
+      "method": "POST",
+      "url": "https://n8n.mutholab.com/webhook/wecon-whatsapp-chat?account=dubai",
+      "sendBody": true,
+      "specifyBody": "json",
+      "jsonBody": "={{ JSON.stringify($json.body) }}",
+      "options": {
+        "response": {
+          "response": {
+            "neverError": true
+          }
+        },
+        "timeout": 20000
+      }
+    },
+    "name": "Forward to CRM Chat",
+    "type": "n8n-nodes-base.httpRequest",
+    "typeVersion": 4.2,
+    "position": [
+      240,
+      320
+    ],
+    "onError": "continueRegularOutput",
+    "notes": "Copies every delivery to the 'WECON · WhatsApp chat inbound' workflow (account=dubai) so the CRM Conversations view sees it. Fire-and-forget: never affects this bot's own flow."
+  }
+}

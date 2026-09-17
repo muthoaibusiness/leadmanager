@@ -65,6 +65,7 @@ import BookingModal from './components/modals/BookingModal.jsx';
 import TransferLeadModal from './components/modals/TransferLeadModal.jsx';
 import GlobalLoadingBar from './components/GlobalLoadingBar.jsx';
 import ChatSettingsModal from './components/modals/ChatSettingsModal.jsx';
+import LeadChatModal from './components/chat/LeadChatModal.jsx';
 
 // ── Loading screen ──────────────────────────────────────────────────────────
 function LoadingScreen({ visible }) {
@@ -555,6 +556,7 @@ export default function App() {
       <BookingModal />
       <TransferLeadModal />
       <ChatSettingsModal />
+      <LeadChatModal />
       <Toast />
     </>
   );

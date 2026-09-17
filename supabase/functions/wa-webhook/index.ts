@@ -1,8 +1,13 @@
 // Inbound webhook. Point Wasender straight at this URL, or have n8n forward the
 // untouched payload here.
 //
+// One URL per Wasender session, the account named in the query string:
+//   …/wa-webhook?account=dubai     (Dubai team's number)
+//   …/wa-webhook?account=eyad      (everyone else)
+// A URL with no ?account falls back to the default (eyad).
+//
 // Deploy:  npx supabase functions deploy wa-webhook --no-verify-jwt
-// Secrets: npx supabase secrets set WASENDER_WEBHOOK_SECRET=...
+// Secrets: npx supabase secrets set WASENDER_WEBHOOK_SECRET_DUBAI=... WASENDER_WEBHOOK_SECRET_EYAD=...
 //
 // Responsibilities: verify the signature, drop replays, copy media into Storage
 // so it stays viewable, upsert the conversation (with ad referral), insert the
@@ -10,7 +15,7 @@
 
 import {
   CORS, json, SUPABASE_URL, SERVICE_KEY, claimEvent, getCredentials,
-  jidToPhone, sbPatch, sbRpc, sbSelect, sbUpsert, safeEqual,
+  jidToPhone, sbPatch, sbRpc, sbSelect, sbUpsert, safeEqual, normAccount, convId,
 } from "../_shared/wa.ts";
 
 const BUCKET = "wa-media";
@@ -123,8 +128,14 @@ Deno.serve(async (req) => {
 
   const rawBody = await req.text();
 
+  // Which number this session is. Set per Wasender session in the webhook URL;
+  // a payload field is accepted too in case a relay strips the query string.
+  let payloadAccount: unknown = null;
+  try { payloadAccount = JSON.parse(rawBody)?.account ?? null; } catch { /* handled below */ }
+  const account = normAccount(new URL(req.url).searchParams.get("account") ?? payloadAccount);
+
   // ── signature ────────────────────────────────────────────────────────────
-  const { webhookSecret } = await getCredentials();
+  const { webhookSecret } = await getCredentials(account);
   if (webhookSecret) {
     const sig = req.headers.get("x-webhook-signature") ?? req.headers.get("x-wasender-signature") ?? "";
     if (!safeEqual(sig, webhookSecret)) {
@@ -144,7 +155,7 @@ Deno.serve(async (req) => {
     payload.id ?? payload.eventId ??
     data?.key?.id ?? data?.messages?.key?.id ?? data?.msgId ?? null;
   if (deliveryId) {
-    const fresh = await claimEvent(`${event}:${deliveryId}`, event);
+    const fresh = await claimEvent(`${account}:${event}:${deliveryId}`, event);
     if (!fresh) return json({ ok: true, duplicate: true });
   }
 
@@ -198,13 +209,16 @@ Deno.serve(async (req) => {
   if (media.url) mediaUrl = await mirrorMedia(media.url, media.name ?? "file", media.mime ?? "");
 
   // Conversation first, so the message never references a missing thread.
-  const existing = await sbSelect(`wa_conversations?id=eq.${encodeURIComponent(jid)}&select=id,name,lead_id,source`);
+  // Threads are keyed per account so one customer can talk to both numbers.
+  const threadId = convId(account, jid);
+  const existing = await sbSelect(`wa_conversations?id=eq.${encodeURIComponent(threadId)}&select=id,name,lead_id,source`);
   const leadId = existing?.[0]?.lead_id ?? (await findLeadId(phone));
 
   // pushName on a fromMe message is our own WhatsApp profile name, not the
   // customer's — it must never overwrite the thread title.
   const convRow: Record<string, unknown> = {
-    id: jid,
+    id: threadId,
+    account,
     phone,
     name: (fromMe ? "" : pushName) || existing?.[0]?.name || phone,
     lead_id: leadId,
@@ -228,7 +242,8 @@ Deno.serve(async (req) => {
   await sbUpsert("wa_messages", [{
     id: msgId,
     wa_id: msgId,
-    conversation_id: jid,
+    conversation_id: threadId,
+    account,
     phone,
     direction: fromMe ? "OUT" : "IN",
     type: media.type,
@@ -245,7 +260,7 @@ Deno.serve(async (req) => {
 
   // Atomic — two messages landing together can't clobber each other's count.
   await sbRpc("wa_bump_unread", {
-    p_conv: jid,
+    p_conv: threadId,
     p_preview: String(preview).slice(0, 180),
     p_at: at,
     p_dir: fromMe ? "OUT" : "IN",

@@ -2,14 +2,15 @@
 // credential and talks to the API.
 //
 // Deploy:  npx supabase functions deploy wa-send --no-verify-jwt
-// Secrets: npx supabase secrets set WASENDER_API_TOKEN=...
+// Secrets: npx supabase secrets set WASENDER_API_TOKEN_DUBAI=... WASENDER_API_TOKEN_EYAD=...
+//          (or: npx supabase secrets set --env-file .env)
 //
 // --no-verify-jwt is required because the CRM authenticates its own users and
 // never mints a Supabase JWT. Admin-only actions are checked against the users
 // table instead (see isAdminUser).
 
 import {
-  CORS, json, WASENDER_BASE, getCredentials, isAdminUser, sbPatch, sbUpsert, phoneToJid,
+  CORS, json, WASENDER_BASE, getCredentials, isAdminUser, sbPatch, sbUpsert, phoneToJid, normAccount,
 } from "../_shared/wa.ts";
 
 interface SendBody {
@@ -24,6 +25,7 @@ interface SendBody {
   mediaName?: string;
   mediaMime?: string;
   userId?: string | null;
+  account?: string;           // "dubai" | "eyad" — which Wasender session to use
   sessionName?: string;
   apiToken?: string;
   webhookSecret?: string;
@@ -62,7 +64,7 @@ Deno.serve(async (req) => {
     if (!(await isAdminUser(body.userId ?? null))) return json({ error: "Not authorised" }, 403);
     if (!body.apiToken) return json({ error: "apiToken is required" }, 400);
     const ok = await sbUpsert("wa_secrets", [{
-      id: "default",
+      id: normAccount(body.account),
       api_token: body.apiToken,
       webhook_secret: body.webhookSecret || null,
       updated_at: new Date().toISOString(),
@@ -76,12 +78,12 @@ Deno.serve(async (req) => {
     return json({ error: "to, clientRef and conversationId are required" }, 400);
   }
 
-  const { token } = await getCredentials();
+  const account = normAccount(body.account);
+  const { token } = await getCredentials(account);
   if (!token) {
-    await sbPatch("wa_messages", `id=eq.${encodeURIComponent(body.clientRef)}`, {
-      status: "FAILED", error: "No Wasender token configured on the server.",
-    });
-    return json({ error: "No Wasender token configured" }, 500);
+    const reason = `No Wasender token configured for the ${account} account.`;
+    await sbPatch("wa_messages", `id=eq.${encodeURIComponent(body.clientRef)}`, { status: "FAILED", error: reason });
+    return json({ error: reason }, 500);
   }
 
   // ── deliver ──────────────────────────────────────────────────────────────
@@ -118,6 +120,7 @@ Deno.serve(async (req) => {
     // Make sure the thread exists and floats to the top of the rail.
     await sbUpsert("wa_conversations", [{
       id: body.conversationId,
+      account,
       phone: body.to,
       last_message_at: new Date().toISOString(),
       last_message_preview: body.type === "text" ? (body.text || "") : (body.mediaName || body.type || ""),

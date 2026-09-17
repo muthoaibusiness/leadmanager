@@ -7,13 +7,19 @@ import { getLead, getActs, ensureLead, ensureLeadActs, hasFullActs, changeStatus
 import { fmtD, fmtDT, fmtBDT, rlabel, scoreLead, scoreLabel, leadDisplayStatus, fmtDateTimeAP } from '../lib/helpers.js';
 import ActivityTimeline from './ActivityTimeline.jsx';
 import { ROLES, STATUS_LABELS, SRC_LABELS, effectiveRole } from '../lib/constants.js';
+import { waCanChatLead } from '../lib/wa.js';
 
 function sclass(s) { return 's-' + (s || '').toLowerCase(); }
 const leadCode = (l) => l.externalId || ('#' + String(l.id || '').slice(-6).toUpperCase());
 const SHARED_LABEL = { price: 'Price idea', brochure: 'Brochure', video: 'Video', image: 'Image' };
 
 function LeadInfo({ l }) {
-  const { user } = useApp();
+  const { user, waSettings, setChatTarget } = useApp();
+
+  // In-app WhatsApp: opens this one customer's thread in LeadChatModal, on the
+  // account their team uses. Falls back to wa.me when chat is switched off.
+  const canChat = waCanChatLead(user, waSettings);
+  const openChat = (phone) => setChatTarget({ ...l, phone });
   const phones = (l.phones?.length ? l.phones : [l.phone]).filter(Boolean);
   const emails = (l.emails?.length ? l.emails : l.email ? [l.email] : []).filter(Boolean);
 
@@ -77,7 +83,9 @@ function LeadInfo({ l }) {
             <div key={'p' + i} className="ld-crow">
               <Mi>call</Mi>
               <a href={`tel:${p}`}>{p}{i === 0 && phones.length > 1 ? ' · primary' : ''}</a>
-              <a className="ld-wa" href={`https://wa.me/${p.replace(/[^0-9]/g, '')}`} target="_blank" rel="noreferrer" title="WhatsApp"><Mi>chat</Mi></a>
+              {canChat
+                ? <button type="button" className="ld-wa" onClick={() => openChat(p)} title="Open WhatsApp chat"><Mi>chat</Mi></button>
+                : <a className="ld-wa" href={`https://wa.me/${p.replace(/[^0-9]/g, '')}`} target="_blank" rel="noreferrer" title="WhatsApp"><Mi>chat</Mi></a>}
             </div>
           ))}
           {emails.map((e, i) => (

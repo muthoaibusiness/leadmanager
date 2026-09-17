@@ -47,6 +47,9 @@ export function AppProvider({ children }) {
   // WhatsApp chat config (wa_settings row) — loaded once on login. Null until then.
   const [waSettings, setWaSettings] = useState(null);
   const [waUnread, setWaUnread] = useState(0); // total unread across chat threads
+  // Set by the lead panel's WhatsApp button; ConversationsView consumes it once
+  // it has mounted, opening (or starting) that customer's thread.
+  const [chatTarget, setChatTarget] = useState(null);
   const searchRef = useRef(null);
 
   // Admin account switcher — become any account without email/password.
@@ -122,6 +125,7 @@ export function AppProvider({ children }) {
     consoleAdmin, setConsoleAdmin,
     waSettings, setWaSettings, chatOk,
     waUnread, setWaUnread,
+    chatTarget, setChatTarget,
     searchRef,
     nav,
     db,
