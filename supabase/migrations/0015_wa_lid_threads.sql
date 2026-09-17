@@ -19,6 +19,23 @@
 alter table public.wa_conversations add column if not exists lid text;
 create index if not exists idx_wa_conv_account_lid on public.wa_conversations (account, lid) where lid is not null;
 
+-- 1b) a LID thread whose "phone" is just the LID digits may still have learned
+--     the real number from an inbound message (senderPn) — adopt it.
+update public.wa_conversations l
+   set phone = x.phone
+  from (
+    select distinct on (m.conversation_id) m.conversation_id, m.phone
+      from public.wa_messages m
+      join public.wa_conversations c on c.id = m.conversation_id
+     where c.id like '%@lid'
+       and m.phone ~ '^[0-9]{10,15}$'
+       and m.phone <> split_part(split_part(c.id, ':', 2), '@', 1)
+     order by m.conversation_id, m.direction = 'IN' desc, m.wa_timestamp desc
+  ) x
+ where x.conversation_id = l.id
+   and l.id like '%@lid'
+   and (coalesce(l.phone, '') = '' or l.phone = split_part(split_part(l.id, ':', 2), '@', 1));
+
 -- LID threads whose phone is a real number (not the LID digits themselves)
 create temp table wa_lid_merge on commit drop as
 select l.id                                                  as lid_id,
