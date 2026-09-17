@@ -67,7 +67,7 @@ export function rToConv(r) {
     source: r.source || 'WHATSAPP', adMeta: r.ad_meta || null,
     assignedTo: r.assigned_to || null, companyId: r.company_id || null,
     archived: !!r.archived, createdAt: r.created_at, updatedAt: r.updated_at,
-    account: normAccount(r.account),
+    account: normAccount(r.account), lid: r.lid || '',
   };
 }
 

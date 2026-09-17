@@ -15,48 +15,12 @@
         0
       ],
       "webhookId": "wecon-whatsapp-chat",
-      "notes": "Set this as each Wasender session's webhook URL — Dubai: https://n8n.mutholab.com/webhook/wecon-whatsapp-chat?account=dubai — Eyad: https://n8n.mutholab.com/webhook/wecon-whatsapp-chat?account=eyad. Every delivery is mirrored into the CRM chat tables AND forwarded unchanged to the 'Wecon WA Bot' webhook."
+      "notes": "Called by the bot's 'Forward to CRM Chat' node (Eyad session, via the bot's own webhook) and directly by any Wasender session whose webhook is https://n8n.mutholab.com/webhook/wecon-whatsapp-chat?account=dubai|eyad.",
+      "id": "d095ae4e-5936-448f-96bf-c19813c69cbc"
     },
     {
       "parameters": {
-        "jsCode": "// Hand the untouched delivery to the existing bot workflow so it keeps\n// working exactly as before (welcome message, preleads, CAPI...). The bot's\n// own webhook URL is no longer what Wasender calls; this workflow is.\nconst item = $input.first().json;\nreturn [{ json: { body: item.body ?? {}, account: item.query?.account ?? '' } }];"
-      },
-      "name": "Forward to bot",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        240,
-        -220
-      ]
-    },
-    {
-      "parameters": {
-        "method": "POST",
-        "url": "=https://n8n.mutholab.com/webhook/wecon-whatsapp?account={{ encodeURIComponent($json.account) }}",
-        "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify($json.body) }}",
-        "options": {
-          "response": {
-            "response": {
-              "neverError": true
-            }
-          },
-          "timeout": 25000
-        }
-      },
-      "name": "Wecon WA Bot (unchanged)",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [
-        480,
-        -220
-      ],
-      "notes": "Replays the delivery to the existing bot's webhook so that workflow needs no changes."
-    },
-    {
-      "parameters": {
-        "jsCode": "// CRM Chat · Parse — normalise one Wasender delivery for the Conversations\n// tables. Runs in parallel with the bot's own Parse Event; it never sends\n// anything. Text only: media messages are recorded by type, no file mirroring.\n//\n// Which number this session is comes from the webhook URL:\n//   …/webhook/wecon-whatsapp?account=dubai   or   ?account=eyad\n// No account → eyad. Thread ids are <account>:<jid>.\nconst item = $input.first().json;\nconst payload = item.body ?? item;\nconst event = String(payload?.event ?? payload?.type ?? 'unknown');\nconst data = payload?.data ?? payload;\n\nconst rawAccount = item.query?.account ?? payload?.account ?? '';\nconst account = String(rawAccount).toLowerCase() === 'dubai' ? 'dubai' : 'eyad';\n\nconst STATUS_MAP = {\n  pending: 'PENDING', sent: 'SENT', server_ack: 'SENT',\n  delivered: 'DELIVERED', delivery_ack: 'DELIVERED',\n  read: 'READ', played: 'READ', failed: 'FAILED', error: 'FAILED',\n};\n\nconst msgNode = data?.messages ?? data?.message ?? data;\nconst key = msgNode?.key ?? data?.key ?? {};\nconst inner = msgNode?.message ?? msgNode ?? {};\n\nconst text = String(\n  inner?.conversation ?? inner?.extendedTextMessage?.text ?? inner?.imageMessage?.caption ??\n  inner?.videoMessage?.caption ?? inner?.documentMessage?.caption ??\n  inner?.buttonsResponseMessage?.selectedDisplayText ?? inner?.listResponseMessage?.title ??\n  msgNode?.messageBody ?? inner?.messageBody ?? inner?.text ?? ''\n).trim();\n\nlet type = 'text', mediaName = '';\nif (inner?.imageMessage) { type = 'image'; mediaName = 'image.jpg'; }\nelse if (inner?.videoMessage) { type = 'video'; mediaName = 'video.mp4'; }\nelse if (inner?.audioMessage) { type = 'audio'; mediaName = 'audio.ogg'; }\nelse if (inner?.documentMessage) { type = 'document'; mediaName = inner.documentMessage.fileName || 'document'; }\nelse if (inner?.stickerMessage) { type = 'sticker'; mediaName = 'sticker.webp'; }\nelse {\n  const flat = String(msgNode?.messageType ?? '').replace(/Message$/, '').toLowerCase();\n  if (['image', 'video', 'audio', 'document', 'sticker'].includes(flat)) { type = flat; mediaName = msgNode?.fileName || flat; }\n}\nconst hasContent = !!(text || type !== 'text');\n\n// Delivery receipts for messages the CRM sent.\nif (!hasContent && (event.includes('update') || event.includes('receipt') || event === 'message.sent')) {\n  const updates = Array.isArray(data) ? data : [data];\n  return updates\n    .map(u => ({ id: u?.key?.id ?? u?.msgId ?? u?.id, status: STATUS_MAP[String(u?.status ?? u?.update?.status ?? '').toLowerCase()] }))\n    .filter(x => x.id && x.status)\n    .map(x => ({ json: { kind: 'receipt', waId: String(x.id), status: x.status } }));\n}\n\nconst jid = String(key.remoteJid ?? msgNode?.remoteJid ?? data?.from ?? '');\nif (!hasContent || !jid || jid.endsWith('@g.us')) return [];\n\nconst fromMe = key.fromMe === true;\nconst msgId = String(key.id ?? msgNode?.id ?? `gen-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);\nconst phoneJidCandidates = [\n  key.remoteJid, key.remoteJidAlt, msgNode?.remoteJidAlt, data?.remoteJidAlt,\n  ...(fromMe ? [] : [key.senderPn, key.participantPn, key.cleanedSenderPn, msgNode?.senderPn, data?.senderPn]),\n  data?.from,\n].filter(Boolean).map(String);\nconst phoneJid = phoneJidCandidates.find(j => j.endsWith('@s.whatsapp.net')) ?? '';\nconst phone = (phoneJid || jid).split('@')[0].split(':')[0].replace(/\\D/g, '');\nconst pushName = String(msgNode?.pushName ?? data?.pushName ?? '');\nconst ts = Number(msgNode?.messageTimestamp ?? data?.timestamp ?? 0);\nconst at = ts ? new Date(ts * 1000).toISOString() : new Date().toISOString();\nconst deliveryId = String(payload?.id ?? payload?.eventId ?? key.id ?? msgId);\n\nreturn [{ json: {\n  kind: 'message', account, event,\n  eventId: `${account}:${event}:${deliveryId}`,\n  threadId: `${account}:${jid}`, jid, phone, phoneTail: phone.slice(-9),\n  fromMe, msgId, text, type, mediaName, pushName, at,\n  preview: String(text || mediaName || type).slice(0, 180),\n} }];"
+        "jsCode": "// CRM Chat · Parse — normalise one Wasender delivery for the Conversations\n// tables. Runs in parallel with the bot's own Parse Event; it never sends\n// anything. Text only: media messages are recorded by type, no file mirroring.\n//\n// Which number this session is comes from the webhook URL:\n//   …/webhook/wecon-whatsapp?account=dubai   or   ?account=eyad\n// No account → eyad. Thread ids are <account>:<jid>.\nconst item = $input.first().json;\nconst payload = item.body ?? item;\nconst event = String(payload?.event ?? payload?.type ?? 'unknown');\nconst data = payload?.data ?? payload;\n\nconst rawAccount = item.query?.account ?? payload?.account ?? item.headers?.['x-wa-account']\n  ?? (/[?&/]account=(dubai|eyad)/i.test(String(item.webhookUrl || '')) ? RegExp.$1 : '');\nconst account = String(rawAccount).toLowerCase() === 'dubai' ? 'dubai' : 'eyad';\n\nconst STATUS_MAP = {\n  pending: 'PENDING', sent: 'SENT', server_ack: 'SENT',\n  delivered: 'DELIVERED', delivery_ack: 'DELIVERED',\n  read: 'READ', played: 'READ', failed: 'FAILED', error: 'FAILED',\n};\n\nconst msgNode = data?.messages ?? data?.message ?? data;\nconst key = msgNode?.key ?? data?.key ?? {};\nconst inner = msgNode?.message ?? msgNode ?? {};\n\nconst text = String(\n  inner?.conversation ?? inner?.extendedTextMessage?.text ?? inner?.imageMessage?.caption ??\n  inner?.videoMessage?.caption ?? inner?.documentMessage?.caption ??\n  inner?.buttonsResponseMessage?.selectedDisplayText ?? inner?.listResponseMessage?.title ??\n  msgNode?.messageBody ?? inner?.messageBody ?? inner?.text ?? ''\n).trim();\n\nlet type = 'text', mediaName = '';\nif (inner?.imageMessage) { type = 'image'; mediaName = 'image.jpg'; }\nelse if (inner?.videoMessage) { type = 'video'; mediaName = 'video.mp4'; }\nelse if (inner?.audioMessage) { type = 'audio'; mediaName = 'audio.ogg'; }\nelse if (inner?.documentMessage) { type = 'document'; mediaName = inner.documentMessage.fileName || 'document'; }\nelse if (inner?.stickerMessage) { type = 'sticker'; mediaName = 'sticker.webp'; }\nelse {\n  const flat = String(msgNode?.messageType ?? '').replace(/Message$/, '').toLowerCase();\n  if (['image', 'video', 'audio', 'document', 'sticker'].includes(flat)) { type = flat; mediaName = msgNode?.fileName || flat; }\n}\nconst hasContent = !!(text || type !== 'text');\n\n// Delivery receipts for messages the CRM sent.\nif (!hasContent && (event.includes('update') || event.includes('receipt') || event === 'message.sent')) {\n  const updates = Array.isArray(data) ? data : [data];\n  return updates\n    .map(u => ({ id: u?.key?.id ?? u?.msgId ?? u?.id, status: STATUS_MAP[String(u?.status ?? u?.update?.status ?? '').toLowerCase()] }))\n    .filter(x => x.id && x.status)\n    .map(x => ({ json: { kind: 'receipt', waId: String(x.id), status: x.status } }));\n}\n\nconst jid = String(key.remoteJid ?? msgNode?.remoteJid ?? data?.from ?? '');\nif (!hasContent || !jid || jid.endsWith('@g.us')) return [];\n\nconst fromMe = key.fromMe === true;\nconst msgId = String(key.id ?? msgNode?.id ?? `gen-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);\nconst phoneJidCandidates = [\n  key.remoteJid, key.remoteJidAlt, msgNode?.remoteJidAlt, data?.remoteJidAlt,\n  ...(fromMe ? [] : [key.senderPn, key.participantPn, key.cleanedSenderPn, msgNode?.senderPn, data?.senderPn]),\n  data?.from,\n].filter(Boolean).map(String);\nconst phoneJid = phoneJidCandidates.find(j => j.endsWith('@s.whatsapp.net')) ?? '';\nconst phone = (phoneJid || jid).split('@')[0].split(':')[0].replace(/\\D/g, '');\nconst pushName = String(msgNode?.pushName ?? data?.pushName ?? '');\nconst ts = Number(msgNode?.messageTimestamp ?? data?.timestamp ?? 0);\nconst at = ts ? new Date(ts * 1000).toISOString() : new Date().toISOString();\nconst deliveryId = String(payload?.id ?? payload?.eventId ?? key.id ?? msgId);\n\n// One thread per customer per number. WhatsApp may address the same person\n// by LID (…@lid) on inbound and by phone JID on outbound — keying the thread\n// on the phone JID whenever the number is known keeps both sides together.\nconst threadJid = phone ? `${phone}@s.whatsapp.net` : jid;\n\nreturn [{ json: {\n  kind: 'message', account, event,\n  eventId: `${account}:${event}:${deliveryId}`,\n  threadId: `${account}:${threadJid}`, jid: threadJid, phone, phoneTail: phone.slice(-9),\n  fromMe, msgId, text, type, mediaName, pushName, at,\n  preview: String(text || mediaName || type).slice(0, 180),\n} }];"
       },
       "name": "CRM Chat · Parse",
       "type": "n8n-nodes-base.code",
@@ -65,7 +29,8 @@
         240,
         0
       ],
-      "notes": "Mirrors every 1:1 message into wa_conversations / wa_messages for the CRM Conversations view. Text only. Parallel to the bot — never replies."
+      "notes": "Mirrors every 1:1 message into wa_conversations / wa_messages for the CRM Conversations view. Text only. Parallel to the bot — never replies.",
+      "id": "8c527664-0dce-4774-aa5d-eb1313afde0c"
     },
     {
       "parameters": {
@@ -129,7 +94,8 @@
       "position": [
         480,
         0
-      ]
+      ],
+      "id": "a401c368-03d8-48ce-a4dd-efe75e888e25"
     },
     {
       "parameters": {
@@ -165,7 +131,8 @@
         }
       },
       "alwaysOutputData": true,
-      "notes": "Delivery / read receipts for CRM-sent messages (matched on wa_id)."
+      "notes": "Delivery / read receipts for CRM-sent messages (matched on wa_id).",
+      "id": "790d82b9-9fbb-4db7-9d43-4e20ffa8b964"
     },
     {
       "parameters": {
@@ -207,7 +174,8 @@
           "name": "Wepro CRM"
         }
       },
-      "notes": "Insert-once replay guard: 409 means this delivery was already processed."
+      "notes": "Insert-once replay guard: 409 means this delivery was already processed.",
+      "id": "c83823d6-fbe7-4271-b0da-1139bc62671f"
     },
     {
       "parameters": {
@@ -239,7 +207,8 @@
       "position": [
         960,
         0
-      ]
+      ],
+      "id": "7459ae6c-d011-4941-8e28-ab3a06b25ddd"
     },
     {
       "parameters": {
@@ -262,7 +231,8 @@
           "name": "Wepro CRM"
         }
       },
-      "alwaysOutputData": true
+      "alwaysOutputData": true,
+      "id": "a0863dd0-b5e2-4fba-867b-cf361453a48e"
     },
     {
       "parameters": {
@@ -286,7 +256,8 @@
         }
       },
       "alwaysOutputData": true,
-      "notes": "Attach the thread to an existing CRM lead by the last 9 digits."
+      "notes": "Attach the thread to an existing CRM lead by the last 9 digits.",
+      "id": "4a8f8a36-d8f9-4574-b87d-f00e39a4f367"
     },
     {
       "parameters": {
@@ -310,7 +281,8 @@
         }
       },
       "alwaysOutputData": true,
-      "notes": "fromMe echo of a CRM-sent message → already stored, skip the bubble."
+      "notes": "fromMe echo of a CRM-sent message → already stored, skip the bubble.",
+      "id": "57685ec4-de50-4bb5-8862-dfa6a35f7b14"
     },
     {
       "parameters": {
@@ -322,7 +294,8 @@
       "position": [
         1920,
         0
-      ]
+      ],
+      "id": "b520cc27-2e98-442a-9cb6-19fa42c92e77"
     },
     {
       "parameters": {
@@ -356,7 +329,8 @@
           "id": "3ZLIHjmCxLAgkhkX",
           "name": "Wepro CRM"
         }
-      }
+      },
+      "id": "f04ff984-1201-49b7-850d-a8d1ffc936f3"
     },
     {
       "parameters": {
@@ -389,7 +363,8 @@
       "position": [
         2400,
         0
-      ]
+      ],
+      "id": "30b02d94-c337-4aa8-b46f-980f621ad40d"
     },
     {
       "parameters": {
@@ -423,7 +398,8 @@
           "id": "3ZLIHjmCxLAgkhkX",
           "name": "Wepro CRM"
         }
-      }
+      },
+      "id": "79abdb1a-e804-46d5-8968-68e2468c56d6"
     },
     {
       "parameters": {
@@ -450,7 +426,8 @@
         }
       },
       "alwaysOutputData": true,
-      "notes": "Atomic unread + preview update on the thread."
+      "notes": "Atomic unread + preview update on the thread.",
+      "id": "dc6e0852-edce-431c-ba91-56de41096ca3"
     }
   ],
   "connections": {
@@ -458,23 +435,7 @@
       "main": [
         [
           {
-            "node": "Forward to bot",
-            "type": "main",
-            "index": 0
-          },
-          {
             "node": "CRM Chat · Parse",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Forward to bot": {
-      "main": [
-        [
-          {
-            "node": "Wecon WA Bot (unchanged)",
             "type": "main",
             "index": 0
           }

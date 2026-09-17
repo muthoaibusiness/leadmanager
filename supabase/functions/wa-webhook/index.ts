@@ -199,7 +199,12 @@ Deno.serve(async (req) => {
     data?.from,
   ].filter(Boolean).map(String);
   const phoneJid = phoneJidCandidates.find((j) => j.endsWith("@s.whatsapp.net")) ?? "";
-  const phone = jidToPhone(phoneJid || jid);
+  // Phone only when WhatsApp actually told us one — a LID's digits are not a
+  // phone number. A LID-only delivery is matched to its thread via the lid.
+  const phone = phoneJid ? jidToPhone(phoneJid) : "";
+  const lid = jidToPhone(
+    [jid, key.senderLid, key.remoteJidAlt, msgNode?.remoteJidAlt].filter(Boolean).map(String).find((j) => j.endsWith("@lid")) ?? "",
+  );
   const ad = extractAd(inner, data);
   const pushName: string = msgNode?.pushName ?? data?.pushName ?? "";
   const tsSeconds = Number(msgNode?.messageTimestamp ?? data?.timestamp ?? 0);
@@ -209,20 +214,32 @@ Deno.serve(async (req) => {
   if (media.url) mediaUrl = await mirrorMedia(media.url, media.name ?? "file", media.mime ?? "");
 
   // Conversation first, so the message never references a missing thread.
-  // Threads are keyed per account so one customer can talk to both numbers.
-  const threadId = convId(account, jid);
-  const existing = await sbSelect(`wa_conversations?id=eq.${encodeURIComponent(threadId)}&select=id,name,lead_id,source`);
-  const leadId = existing?.[0]?.lead_id ?? (await findLeadId(phone));
+  // Threads are keyed per account so one customer can talk to both numbers,
+  // and on the phone JID whenever the number is known: WhatsApp addresses
+  // inbound by LID (…@lid) but outbound by phone, and both must land in one
+  // thread. A LID-only delivery is looked up by lid so it joins that thread;
+  // only a LID nobody has resolved yet keeps the LID as its key.
+  let threadId = convId(account, phone ? `${phone}@s.whatsapp.net` : jid);
+  const lookup = lid
+    ? `or=(id.eq.${encodeURIComponent(threadId)},lid.eq.${encodeURIComponent(lid)})`
+    : `id=eq.${encodeURIComponent(threadId)}`;
+  const existing = await sbSelect(
+    `wa_conversations?account=eq.${account}&${lookup}&order=last_message_at.desc.nullslast&limit=1&select=id,name,lead_id,source,phone,lid`,
+  );
+  if (existing?.[0]?.id) threadId = existing[0].id;
+  const threadPhone = phone || existing?.[0]?.phone || lid;
+  const leadId = existing?.[0]?.lead_id ?? (phone ? await findLeadId(phone) : null);
 
   // pushName on a fromMe message is our own WhatsApp profile name, not the
   // customer's — it must never overwrite the thread title.
   const convRow: Record<string, unknown> = {
     id: threadId,
     account,
-    phone,
-    name: (fromMe ? "" : pushName) || existing?.[0]?.name || phone,
+    phone: threadPhone,
+    name: (fromMe ? "" : pushName) || existing?.[0]?.name || threadPhone,
     lead_id: leadId,
   };
+  if (lid) convRow.lid = lid;
   // Only stamp the ad payload once — the referral arrives on the first message
   // and must not be wiped by later plain messages in the same thread.
   if (ad) { convRow.source = "AD"; convRow.ad_meta = ad; }
@@ -244,7 +261,7 @@ Deno.serve(async (req) => {
     wa_id: msgId,
     conversation_id: threadId,
     account,
-    phone,
+    phone: threadPhone,
     direction: fromMe ? "OUT" : "IN",
     type: media.type,
     body: media.type === "text" ? text : "",
