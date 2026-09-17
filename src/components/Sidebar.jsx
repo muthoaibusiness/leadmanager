@@ -10,7 +10,7 @@ import { canSee, ROLES } from '../lib/constants.js';
 // when active. Visibility is driven by canSee(user, key).
 const SECTIONS = [
   { label: null, keys: ['dashboard', 'companies', 'reports', 'agentperf', 'requests'] },
-  { label: 'Sales Team', keys: ['leads', 'calendar', 'properties'] },
+  { label: 'Sales Team', keys: ['leads', 'conversations', 'calendar', 'properties'] },
   { label: 'Admin', keys: ['team', 'users', 'accounts', 'carpool'] },
 ];
 
@@ -20,14 +20,18 @@ const CHILDREN = {
 };
 
 export default function Sidebar() {
-  const { user, view, nav, sidebarOpen, setSidebarOpen } = useApp();
+  const { user, view, nav, sidebarOpen, setSidebarOpen, chatOk, waUnread } = useApp();
 
   if (!user) return null;
   const role = user.role;
 
+  // Conversations is gated by the chat allow-list rather than NAV_SCOPES.
+  const visible = (k) => (k === 'conversations' ? chatOk : canSee(user, k));
+
   const META = {
     dashboard: { ico: 'home', lbl: 'Home' },
     leads: { ico: 'person_search', lbl: role === ROLES.MA ? 'My Leads' : 'Leads' },
+    conversations: { ico: 'forum', lbl: 'Conversations' },
     calendar: { ico: 'calendar_month', lbl: 'Calendar' },
     pipeline: { ico: 'view_kanban', lbl: 'Pipeline' },
     clients: { ico: 'account_circle', lbl: 'Contacts' },
@@ -51,7 +55,9 @@ export default function Sidebar() {
     const kids = CHILDREN[k];
     // Parent stays highlighted while on itself OR any of its nested sub-views.
     const active = view === k || (kids && kids.some(c => c.key === view));
-    const badge = k === 'requests' && pendingHolds > 0 ? pendingHolds : 0;
+    let badge = 0;
+    if (k === 'requests' && pendingHolds > 0) badge = pendingHolds;
+    if (k === 'conversations' && waUnread > 0) badge = waUnread;
     return (
       <div>
         <div className={`sb-it${active ? ' on' : ''}`} onClick={() => nav(k)}>
@@ -88,7 +94,7 @@ export default function Sidebar() {
 
         <nav className="sb-nav">
           {SECTIONS.map((sec, si) => {
-            const keys = sec.keys.filter(k => canSee(user, k));
+            const keys = sec.keys.filter(visible);
             if (!keys.length) return null;
             return (
               <div className="sb-sec" key={si}>
