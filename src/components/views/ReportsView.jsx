@@ -1,9 +1,11 @@
+import { useState } from 'react';
 import Mi from '../Mi.jsx';
 import { useApp } from '../../context/AppContext.jsx';
 import { getLeads, getProperties, getBookings, bookingPaid, bookingDue } from '../../lib/db.js';
 import { fmtBDT, srclabel } from '../../lib/helpers.js';
 import { Donut, HBars, CHART_COLORS } from '../charts/Charts.jsx';
 import useLeadBook from '../../hooks/useLeadBook.js';
+import ReportPrintDoc from '../ReportPrintDoc.jsx';
 
 function MoneyBars({ data }) {
   const max = Math.max(...data.map(d => d.value), 1);
@@ -24,6 +26,7 @@ function MoneyBars({ data }) {
 export default function ReportsView() {
   useLeadBook(); // this view reduces over every lead; leads are not in the boot load
   const { user } = useApp();
+  const [showPrint, setShowPrint] = useState(false);
   const leads = getLeads(user);
   const props = getProperties();
   const bookings = getBookings();
@@ -81,6 +84,13 @@ export default function ReportsView() {
 
   return (
     <div className="rep-wrap">
+      <div className="rep-toolbar">
+        <button className="btn btn-g" onClick={() => setShowPrint(true)}>
+          <Mi>description</Mi>Export Report
+        </button>
+      </div>
+      {showPrint && <ReportPrintDoc user={user} leads={leads} onClose={() => setShowPrint(false)} />}
+
       <div className="inv-strip">
         {kpis.map((k, i) => (
           <div key={i} className="inv-tile">

@@ -9817,6 +9817,12 @@ textarea.fi {
   flex-direction: column
 }
 
+.rep-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 12px
+}
+
 .rep-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
