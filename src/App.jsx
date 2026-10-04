@@ -64,6 +64,7 @@ import UnitBookingModal from './components/modals/UnitBookingModal.jsx';
 import BookingModal from './components/modals/BookingModal.jsx';
 import TransferLeadModal from './components/modals/TransferLeadModal.jsx';
 import GlobalLoadingBar from './components/GlobalLoadingBar.jsx';
+import UpgradePlanModal from './components/modals/UpgradePlanModal.jsx';
 import ChatSettingsModal from './components/modals/ChatSettingsModal.jsx';
 
 // ── Loading screen ──────────────────────────────────────────────────────────
@@ -534,6 +535,7 @@ export default function App() {
       <LeadPanel />
       {/* Modals */}
       <AddLeadModal />
+      <UpgradePlanModal />
       <ForwardModal />
       <RescheduleModal />
       <SchedModal />

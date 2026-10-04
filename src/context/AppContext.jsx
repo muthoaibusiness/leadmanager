@@ -2,6 +2,7 @@ import { createContext, useContext, useState, useCallback, useRef } from 'react'
 import { getDB, getSession } from '../lib/db.js';
 import { ROLES } from '../lib/constants.js';
 import { waCanChat } from '../lib/wa.js';
+import { claimLead, isQuotaLimited } from '../lib/leadQuota.js';
 
 const AppContext = createContext(null);
 
@@ -15,7 +16,7 @@ export function AppProvider({ children }) {
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [sortBy, setSortBy] = useState('updated');
   const [search, setSearch] = useState('');
-  const [panLead, setPanLead] = useState(null);
+  const [panLead, setPanLeadRaw] = useState(null);
   const [modal, setModal] = useState(null);
   const [fwdTarget, setFwdTarget] = useState(null);
   const [tgtUser, setTgtUser] = useState(null);
@@ -75,6 +76,11 @@ export function AppProvider({ children }) {
   }, []);
 
   const openModal = useCallback((name) => setModal(name), []);
+  // Single gate for every way of opening a lead — enforces the per-agent lead quota.
+  const setPanLead = useCallback((id) => {
+    if (!id || !isQuotaLimited(user)) { setPanLeadRaw(id); return; }
+    claimLead(user, id).then(r => { if (r.ok) setPanLeadRaw(id); else setModal('upgrade-plan'); });
+  }, [user]);
   const closeModal = useCallback(() => setModal(null), []);
 
   const nav = useCallback((v) => {

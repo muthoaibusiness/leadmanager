@@ -1,4 +1,4 @@
-import { ROLES, STATUS_LABELS, SRC_LABELS, PAST_CONTACT, OFFER_MAX } from './constants.js';
+import { ROLES, isNiHandler, STATUS_LABELS, SRC_LABELS, PAST_CONTACT, OFFER_MAX } from './constants.js';
 import { setOfferResolver } from './offerRegistry.js';
 import { uid, now_, fmtBDT, fmtDT, curMonth, startOfMonth, rlabel } from './helpers.js';
 import { leadFilterParam, ORDER } from './leadQuery.js';
@@ -247,6 +247,7 @@ export function inScope(table, record, user) {
         const team = new Set((db.users || []).filter(u => u.teamId === user.teamId).map(u => u.id));
         return record.team_id === user.teamId || team.has(record.assigned_to) || prev.some(id => team.has(id));
       }
+      if (isNiHandler(user) && record.status !== 'NOT_INTERESTED') return false;
       return record.assigned_to === user.id || prev.includes(user.id);
     }
     // Activities cannot be filtered server-side by a lead set, so every one in
@@ -533,8 +534,11 @@ export function getLeads(user, opts = {}) {
       (l.previousAssignees || []).some(id => teamMemberIds.has(id))
     );
   }
-  if (opts.involved) return inCo.filter(l => l.assignedTo === user.id || (l.previousAssignees || []).includes(user.id));
-  return inCo.filter(l => l.assignedTo === user.id);
+  const niOnly = isNiHandler(user);
+  const own = opts.involved
+    ? inCo.filter(l => l.assignedTo === user.id || (l.previousAssignees || []).includes(user.id))
+    : inCo.filter(l => l.assignedTo === user.id);
+  return niOnly ? own.filter(l => l.status === 'NOT_INTERESTED') : own;
 }
 
 export function getLead(id) { return getDB().leads.find(l => l.id === id); }
@@ -1502,6 +1506,34 @@ export function changeStatus(leadId, status, user) {
   // active lock — each stage gets its own fresh 7-attempt budget.
   updLead(leadId, { status, noAnswerCount: 0, noAnswerLockUntil: null });
   addAct(leadId, { type: 'STATUS_CHANGE', description: 'Status → ' + (STATUS_LABELS[status] || status), userId: user.id, userName: user.name, durationSeconds: 0 });
+  if (status === 'NOT_INTERESTED') autoTransferNotInterested(leadId, user);
+}
+
+// A lead that turns Not Interested moves to the company's Not Interested handler
+// (see isNiHandler). The previous owner is appended to previousAssignees so the
+// originator chain — and that agent's own view of the lead — survives the move.
+export async function autoTransferNotInterested(leadId, user) {
+  const l = getLead(leadId);
+  if (!l) return false;
+  const cid = l.companyId || user?.companyId;
+  // An agent's cache holds only their own user row, so the handler is looked up
+  // on the server when it is not already loaded.
+  let h = getDB().users.find(u => isNiHandler(u) && u.isActive !== false && sameCompany(u.companyId, cid));
+  if (!h) {
+    const q = `users?select=id,name,email,role,team_id,company_id,is_active,allowed_features&is_active=eq.true&allowed_features=cs.${encodeURIComponent(JSON.stringify(['ni_only']))}`
+      + (cid ? `&company_id=eq.${encodeURIComponent(cid)}` : '');
+    const rows = await sbGet(q);
+    h = rows && rows[0] ? rToU(rows[0]) : null;
+  }
+  if (!h || l.assignedTo === h.id) return false;
+  const cur = getLead(leadId) || l;
+  const prev = cur.previousAssignees || [];
+  updLead(leadId, {
+    assignedTo: h.id, assignedToName: h.name, assignedRole: h.role,
+    previousAssignees: cur.assignedTo && !prev.includes(cur.assignedTo) ? [...prev, cur.assignedTo] : prev,
+  });
+  addAct(leadId, { type: 'NOTE', description: 'Auto-transferred to ' + h.name + ' (Not Interested)', userId: user?.id, userName: user?.name, durationSeconds: 0 });
+  return true;
 }
 
 // An offer is what a Team Lead negotiates with, so a hand-off without one has

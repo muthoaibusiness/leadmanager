@@ -3,7 +3,7 @@ import Mi from '../Mi.jsx';
 import { useApp } from '../../context/AppContext.jsx';
 import { getProperties, updateAgent } from '../../lib/db.js';
 import { rlabel } from '../../lib/helpers.js';
-import { ROLES, FEATURE_KEYS, FEATURE_LABELS, defaultFeatures } from '../../lib/constants.js';
+import { ROLES, NI_ONLY, FEATURE_KEYS, FEATURE_LABELS, defaultFeatures } from '../../lib/constants.js';
 
 // Team Lead edits an agent's projects. Admins (Management/Master) additionally get a
 // per-user Feature Access checklist that overrides the role's default feature set.
@@ -43,7 +43,7 @@ export default function EditAgentModal() {
   const save = () => {
     const fields = { name: name.trim() || a.name, phone: phone.trim() };
     if (showProjects) fields.projects = all ? 'ALL' : [...sel];
-    if (isAdmin) fields.allowedFeatures = [...feat];
+    if (isAdmin) fields.allowedFeatures = [...feat, ...(Array.isArray(a.allowedFeatures) && a.allowedFeatures.includes(NI_ONLY) ? [NI_ONLY] : [])];
     updateAgent(a.id, fields);
     refreshDB();
     closeModal();

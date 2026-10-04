@@ -6,7 +6,7 @@ import LogCall from './LogCall.jsx';
 import { getLead, getActs, ensureLead, ensureLeadActs, hasFullActs, changeStatus, doneVisit, deleteLead, updLead, addAct, logNoAnswer, noAnswerLock, attendMeeting, createCarpoolRequest, userNameById } from '../lib/db.js';
 import { fmtD, fmtDT, fmtBDT, rlabel, scoreLead, scoreLabel, leadDisplayStatus, fmtDateTimeAP } from '../lib/helpers.js';
 import ActivityTimeline from './ActivityTimeline.jsx';
-import { ROLES, STATUS_LABELS, SRC_LABELS, effectiveRole } from '../lib/constants.js';
+import { ROLES, STATUS_LABELS, SRC_LABELS, effectiveRole, isNiHandler } from '../lib/constants.js';
 
 function sclass(s) { return 's-' + (s || '').toLowerCase(); }
 const leadCode = (l) => l.externalId || ('#' + String(l.id || '').slice(-6).toUpperCase());
@@ -280,6 +280,17 @@ function Actions({ l }) {
       <button key="fwd-tl" className="btn btn-purple btn-full" onClick={() => openModal('forward-tl')}>
         <Mi>forward_to_inbox</Mi>Forward to Team Lead
       </button>
+    );
+  }
+
+  // Not Interested handler: may move the lead to any other status. It then leaves
+  // their (Not Interested-only) list, but stays assigned to them.
+  if (isNiHandler(user)) {
+    btns.push(
+      <select key="ni-status" className="btn btn-full" value="" onChange={e => { if (e.target.value) doStatus(e.target.value); }}>
+        <option value="">Change status…</option>
+        {Object.entries(STATUS_LABELS).filter(([k]) => k !== l.status).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+      </select>
     );
   }
 

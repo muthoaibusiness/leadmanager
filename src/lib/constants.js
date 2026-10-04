@@ -55,6 +55,12 @@ export const effectiveRole = (user) => {
   return ROLES.IA;
 };
 
+// Marker kept in allowedFeatures (not a nav feature): the account is the
+// "Not Interested" handler. It sees only NOT_INTERESTED leads, and every lead that
+// turns NOT_INTERESTED in its company is auto-transferred to it.
+export const NI_ONLY = 'ni_only';
+export const isNiHandler = (user) => !!user && Array.isArray(user.allowedFeatures) && user.allowedFeatures.includes(NI_ONLY);
+
 // Features an admin can grant/revoke per user, in display order (nav features only;
 // 'companies' is master-only overview and 'profile' is always-on, so both excluded).
 export const FEATURE_KEYS = ['dashboard', 'leads', 'add_customer', 'conversations', 'calendar', 'pipeline', 'properties', 'reports', 'agentperf', 'requests', 'carpool', 'team', 'users', 'accounts'];

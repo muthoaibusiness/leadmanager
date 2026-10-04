@@ -14,7 +14,7 @@
 // nests them: `and=(a.eq.1,or(b.eq.2,c.eq.3))`. The whole expression is
 // percent-encoded as a single value, so commas inside quoted literals cannot be
 // mistaken for term separators.
-import { ROLES, PAST_CONTACT } from './constants.js';
+import { ROLES, PAST_CONTACT, isNiHandler } from './constants.js';
 
 // Statuses that take a lead out of the working pipeline. Mirrors the CLOSED
 // list the dashboards use.
@@ -74,7 +74,8 @@ export function scopeExpr(user, { involved = false, teamMemberIds = [] } = {}) {
   const mine = involved
     ? or(`assigned_to.eq.${lit(user.id)}`, holdsPrev(user.id))
     : `assigned_to.eq.${lit(user.id)}`;
-  return and(co, mine);
+  // The Not Interested handler never sees anything else.
+  return and(co, mine, isNiHandler(user) ? 'status.eq.NOT_INTERESTED' : null);
 }
 
 // "Leads I am or was on" — the Team Lead's own hand-off queue. Their scope is
