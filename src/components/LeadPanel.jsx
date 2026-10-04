@@ -283,14 +283,23 @@ function Actions({ l }) {
     );
   }
 
-  // Not Interested handler: may move the lead to any other status. It then leaves
-  // their (Not Interested-only) list, but stays assigned to them.
-  if (isNiHandler(user)) {
+  // Not Interested handler: re-engages the lead with the same buttons an Initial
+  // Agent uses. Moving it off Not Interested takes it out of their (Not
+  // Interested-only) list, but it stays assigned to them.
+  if (isNiHandler(user) && l.status === 'NOT_INTERESTED') {
     btns.push(
-      <select key="ni-status" className="btn btn-full" value="" onChange={e => { if (e.target.value) doStatus(e.target.value); }}>
-        <option value="">Change status…</option>
-        {Object.entries(STATUS_LABELS).filter(([k]) => k !== l.status).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-      </select>
+      <button key="ni-contacted" className="btn btn-p btn-full" onClick={() => doStatus('CONTACTED')}>
+        <Mi>phone_callback</Mi>Connected
+      </button>,
+      <button key="ni-interested" className="btn btn-success btn-full" onClick={() => doStatus('INTERESTED')}>
+        <Mi>thumb_up</Mi>Interested
+      </button>,
+      <button key="ni-noans" className="btn btn-neutral btn-full" onClick={doNoAnswer}>
+        <Mi>phone_missed</Mi>Attempt{!l.noAnswerLockUntil && l.noAnswerCount > 0 ? ` (${l.noAnswerCount}/7)` : ''}
+      </button>,
+      <button key="ni-followup" className="btn btn-full" style={{ background: 'var(--orange-l)', color: 'var(--orange)' }} onClick={() => openModal('follow-up')}>
+        <Mi>alarm</Mi>Follow-up
+      </button>
     );
   }
 
