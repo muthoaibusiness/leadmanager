@@ -88,7 +88,7 @@ export default function LeadTable({ leads, total = null, page: pageProp, onPage,
     // as data loss.
     if (loading) {
       return (
-        <div className={`lt${canSelect ? ' lt-with-cb' : ''}`}>
+        <div className={`lt lt-leads${canSelect ? ' lt-with-cb' : ''}`}>
           <div className="lt-hdr">
             {canSelect && <div className="lt-cb-col" />}
             <div>Lead ID</div><div>Customer Name</div><div>Source</div><div>Property</div><div>Status</div><div>Create date</div>
@@ -98,7 +98,7 @@ export default function LeadTable({ leads, total = null, page: pageProp, onPage,
       );
     }
     return (
-      <div className={`lt${canSelect ? ' lt-with-cb' : ''}`}>
+      <div className={`lt lt-leads${canSelect ? ' lt-with-cb' : ''}`}>
         <div className="lt-hdr">
           {canSelect && <div className="lt-cb-col" />}
           <div>Lead ID</div><div>Customer Name</div><div>Source</div><div>Property</div><div>Status</div><div>Create date</div>
@@ -130,7 +130,7 @@ export default function LeadTable({ leads, total = null, page: pageProp, onPage,
           onDone={() => setSelected(new Set())}
         />
       )}
-      <div className={`lt lt-wrap${canSelect ? ' lt-with-cb' : ''}${loading ? ' lt-busy' : ''}`}>
+      <div className={`lt lt-wrap lt-leads${canSelect ? ' lt-with-cb' : ''}${loading ? ' lt-busy' : ''}`}>
         {loading && <LoadingBar />}
         <div className="lt-hdr">
           {canSelect && (

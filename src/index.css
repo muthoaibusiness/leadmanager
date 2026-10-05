@@ -3361,7 +3361,7 @@ a {
 .lt-hdr,
 .lt-row {
   display: grid;
-  grid-template-columns: 140px minmax(190px, 1.7fr) 116px minmax(170px, 1.5fr) 134px 124px;
+  grid-template-columns: 140px minmax(190px, 1.7fr) 116px minmax(170px, 1.5fr) 134px 160px;
   column-gap: 24px;
   align-items: center;
   padding: 0 28px
@@ -3369,7 +3369,29 @@ a {
 
 .lt-with-cb .lt-hdr,
 .lt-with-cb .lt-row {
-  grid-template-columns: 22px 140px minmax(190px, 1.7fr) 116px minmax(170px, 1.5fr) 134px 124px
+  grid-template-columns: 22px 140px minmax(190px, 1.7fr) 116px minmax(170px, 1.5fr) 134px 160px
+}
+
+/* Customers table only — LeadTable puts .lt-leads on every render path
+   (loading, empty, rows), so the header never changes width between them.
+   The columns above cannot shrink below their minimums, and .lt's
+   overflow:hidden used to cut Status / Create date off whenever the card was
+   narrower than that (worst at 1024px, with the sidebar docked). Scroll the
+   card sideways instead. Header and rows get the same min-width, so their
+   columns stay aligned while scrolled. The min-width covers the left padding,
+   every column and every gap, but not the 28px right padding: as before, the
+   last column may run into that padding, so no scrollbar appears just for it.
+     28 + 140 + 190 + 116 + 170 + 134 + 160 + 5 gaps × 24 = 1058
+     with the checkbox: + 22 track + 24 gap               = 1104
+   Keep these in step with the track lists. ≤768px keeps its card layout. */
+@media(min-width:769px) {
+  .lt-leads { overflow-x: auto }
+
+  .lt-leads .lt-hdr,
+  .lt-leads .lt-row { min-width: 1058px }
+
+  .lt-leads.lt-with-cb .lt-hdr,
+  .lt-leads.lt-with-cb .lt-row { min-width: 1104px }
 }
 
 .lt-hdr {
@@ -3462,6 +3484,16 @@ a {
   font-size: 13px;
   color: var(--t3);
   font-variant-numeric: tabular-nums
+}
+
+/* Create date on one line. The 160px track fits the widest value
+   ("28 Sept 2025, 12:00 AM": ~149px in Space Grotesk, ~154px in the Inter
+   fallback); the ellipsis only covers anything wider. Scoped to .lt-leads
+   because .lt-date is also the Projects table's Handover column. */
+.lt-leads .lt-date {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap
 }
 
 .lt-src {
