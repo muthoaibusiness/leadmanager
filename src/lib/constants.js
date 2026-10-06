@@ -74,6 +74,9 @@ export const defaultFeatures = (role) => FEATURE_KEYS.filter(k => (NAV_SCOPES[k]
 
 // Properties catalog
 export const PROPERTY_TYPES = ['Apartment', 'Duplex', 'Penthouse', 'Plot', 'Commercial', 'Villa'];
+// Project type, chosen in the project catalog and stored in the property's
+// existing `purpose` column (see projectTypeOf in lib/projects.js).
+export const PROJECT_TYPES = ['Residential', 'Commercial'];
 export const PROPERTY_STATUS = {
   AVAILABLE: 'Available',
   FEW_LEFT: 'Few Left',

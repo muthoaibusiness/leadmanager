@@ -1,11 +1,13 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import Mi from '../Mi.jsx';
 import { useApp } from '../../context/AppContext.jsx';
-import { getProjectById, setUnitStatus, removeProject } from '../../lib/projects.js';
+import { getProjectById, setUnitStatus, toProject } from '../../lib/projects.js';
 import { createHoldRequest, getLeads } from '../../lib/db.js';
 import { computeDeal, emptyDeal } from '../../lib/deal.js';
 import ProjectCatalog from './ProjectCatalog.jsx';
 import ProjectInvoice from './ProjectInvoice.jsx';
+import { useProjectToast } from './projectToast.js';
+import './ProjectConsole.css';
 import { fmtBDT } from '../../lib/helpers.js';
 import { ROLES } from '../../lib/constants.js';
 import useLeadBook from '../../hooks/useLeadBook.js';
@@ -33,7 +35,8 @@ function useCountdown(targetMs) {
 }
 
 export default function ProjectConsole() {
-  const { modal, closeModal, propSel, user, refreshDB, showToast, dbVersion, consoleAdmin } = useApp();
+  const { modal, closeModal, propSel, propDraft, setPropDraft, user, refreshDB, dbVersion, consoleAdmin } = useApp();
+  const toast = useProjectToast();
   const isOpen = modal === 'project-console';
   // Gated on isOpen — App.jsx mounts this on every page and it renders nothing
   // until opened, so an ungated call pulled the whole lead book everywhere.
@@ -47,9 +50,14 @@ export default function ProjectConsole() {
   const [cq, setCq] = useState(''); // client search query
   const [invoice, setInvoice] = useState(false); // invoice preview overlay
   const [startedAt] = useState(() => Date.now()); // fast-close window anchor
+  const [actsEl, setActsEl] = useState(null); // header slot for the catalog's Discard / Save
 
   void dbVersion;
-  const p = isOpen && propSel ? getProjectById(propSel) : null;
+  // Add Property opens an unsaved draft (propDraft) instead of a stored record;
+  // it becomes a real project only when ProjectCatalog saves it.
+  const stored = isOpen && propSel ? getProjectById(propSel) : null;
+  const isNew = isOpen && !stored && !!propDraft && propDraft.id === propSel;
+  const p = stored || (isNew ? toProject(propDraft) : null);
   const variants = useMemo(() => (p ? p.variants : []), [p, dbVersion]);
   const variant = variants.find(v => v.id === vid) || variants[0] || null;
 
@@ -82,6 +90,89 @@ export default function ProjectConsole() {
   const countdown = useCountdown(fastTarget);
 
   const calc = variant ? computeDeal(deal, variant, p) : null;
+
+  // ✕, the backdrop and Esc all close through here. Closing never writes: an
+  // unsaved new project just goes away, and unsaved catalog edits are dropped
+  // only after the user confirms. A save in flight blocks closing.
+  const catalogRef = useRef(null);
+  // In the Projects tab the question is a goey-toast confirmation that never
+  // blocks the editor. Opened from another tab (Hold Requests), an existing
+  // project keeps the browser confirm it always had.
+  const [discardAsk, setDiscardAsk] = useState(false);
+  const askIdRef = useRef(null);      // the open confirmation toast
+  const askReturnRef = useRef(null);  // what had focus before it opened
+  const backdropRef = useRef(false);  // this press started (and ended) on the backdrop
+  const dropAsk = () => {
+    const id = askIdRef.current;
+    askIdRef.current = null;
+    setDiscardAsk(false);
+    if (id != null) toast.dismiss(id);
+  };
+  const closeNow = () => {
+    dropAsk();
+    askReturnRef.current = null;
+    if (propDraft) setPropDraft(null);
+    closeModal();
+  };
+  // Cancel (and Esc) hand focus back to where it was, so typing carries on.
+  const cancelAsk = () => {
+    const el = askReturnRef.current;
+    askReturnRef.current = null;
+    dropAsk();
+    if (el && el.isConnected && el !== document.body) el.focus({ preventScroll: true });
+  };
+  // A save already in flight would land anyway, so Discard waits it out.
+  const discardDraft = () => {
+    if (catalogRef.current?.isSaving()) return false;
+    closeNow();
+  };
+  const askDiscard = () => {
+    if (askIdRef.current != null) return; // already asking: never stack a second toast
+    askReturnRef.current = document.activeElement;
+    setDiscardAsk(true);
+    askIdRef.current = toast.confirm({
+      title: isNew ? 'Discard this new property?' : 'Discard unsaved changes?',
+      description: isNew ? 'It has not been saved.' : 'Your edits will be lost.',
+      confirmLabel: 'Discard',
+      onConfirm: discardDraft,
+      onCancel: cancelAsk,
+      onDismiss: (id) => { if (askIdRef.current === id) { askIdRef.current = null; setDiscardAsk(false); } },
+    });
+  };
+  const requestClose = () => {
+    const cat = catalogRef.current;
+    if (cat?.isSaving()) return;
+    if (cat?.isDirty()) {
+      if (toast.on) { askDiscard(); return; }
+      if (!window.confirm('Discard unsaved changes?')) return;
+    }
+    closeNow();
+  };
+  // Pressing or typing anywhere in the editor puts the question away, so
+  // editing carries on without a Cancel first. Tab and modifier keys don't,
+  // which keeps the toast's buttons reachable from the keyboard.
+  const dismissAsk = (e) => {
+    if (!discardAsk) return;
+    if (e.type === 'keydown' && ['Tab', 'Shift', 'Control', 'Alt', 'Meta'].includes(e.key)) return;
+    askReturnRef.current = null;
+    dropAsk();
+  };
+  // Capture phase, so this runs before App.jsx's global Esc handler (which
+  // would close the modal directly and skip the check above) and before goey's
+  // own Escape handler. Esc first backs out of an open confirmation.
+  useEffect(() => {
+    if (!isOpen) return;
+    const onKey = (e) => {
+      if (e.key !== 'Escape') return;
+      // An open dropdown list (the PROJECT TYPE select) closes itself first.
+      if (e.target instanceof Element && e.target.closest('[role="listbox"]')) return;
+      e.stopPropagation();
+      if (discardAsk) cancelAsk();
+      else requestClose();
+    };
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
+  });
 
   if (!isOpen) return <div className="mov" onClick={closeModal} />;
   if (!p) return <div className="mov on" onClick={closeModal} />;
@@ -121,23 +212,21 @@ export default function ProjectConsole() {
     }, user);
     refreshDB();
     setDeal(d => ({ ...d, stage: 'hold', holdAt: Date.now() }));
-    showToast('Hold request sent to management', 'ok');
+    toast.success('Hold requested', `Unit ${deal.unitId} sent to management for approval.`, 'Hold request sent to management');
   };
   const releaseHold = () => {
     setUnitStatus(p.id, variant.id, deal.unitId, 'available', { user });
     refreshDB();
     setDeal(d => ({ ...d, stage: 'offer' }));
-    showToast(`Unit ${deal.unitId} released`, 'ok');
+    toast.success('Unit released', `Unit ${deal.unitId} is available again.`, `Unit ${deal.unitId} released`);
   };
   const confirmDeal = () => {
     setUnitStatus(p.id, variant.id, deal.unitId, 'sold', { user, client: { id: deal.client.id, name: deal.client.name } });
     refreshDB();
     setDeal(d => ({ ...d, stage: 'closed' }));
-    showToast(`Deal closed · Unit ${deal.unitId} sold`, 'ok');
+    toast.success('Deal closed', `Unit ${deal.unitId} sold to ${deal.client.name}.`, `Deal closed · Unit ${deal.unitId} sold`);
   };
   const newDeal = () => setDeal({ ...emptyDeal(), variantId: variant?.id });
-  // closing an untitled (abandoned) new project cleans it up
-  const handleClose = () => { if (p && !(p.name || '').trim()) removeProject(p.id); closeModal(); };
 
   const plans = calc ? [
     { id: 'full', name: 'Full payment', sub: '−1% extra', total: calc.dealTotal * 0.99, lines: [`One-time ${fmtBDT(calc.dealTotal * 0.99)}`] },
@@ -146,24 +235,40 @@ export default function ProjectConsole() {
   ] : [];
 
   return (
-    <div className="mov on" onClick={handleClose}>
-      <div className="modal pc-modal" onClick={e => e.stopPropagation()}>
-        <div className="pc-top">
-          <div className="pc-top-l"><Mi>storefront</Mi><b>{p.name}</b></div>
+    // Outside click = pressed AND released on the backdrop. A text selection
+    // dragged across the modal edge is clicked on .mov too, and must not count.
+    <div className="mov on"
+      onPointerDown={e => { backdropRef.current = e.target === e.currentTarget; }}
+      onPointerUp={e => { backdropRef.current = backdropRef.current && e.target === e.currentTarget; }}
+      onClick={e => { if (backdropRef.current && e.target === e.currentTarget) requestClose(); backdropRef.current = false; }}>
+      <div className="modal pc-modal" onClick={e => e.stopPropagation()} onPointerDownCapture={dismissAsk} onKeyDownCapture={dismissAsk}>
+        <div className={`pc-top${admin || isNew ? ' pc-top-edit' : ''}`}>
+          <div className="pc-top-l"><Mi>storefront</Mi><b>{p.name || (isNew ? 'New property' : '')}</b></div>
           <div className="pc-top-r">
-            {isAdmin && (
+            {isAdmin && !isNew && (
               <div className="pc-toggle">
                 <button className={!admin ? 'on' : ''} onClick={() => setAdmin(false)}>Agent console</button>
                 <button className={admin ? 'on' : ''} onClick={() => setAdmin(true)}>Admin catalog</button>
               </div>
             )}
-            <button className="m-x" onClick={handleClose}><Mi>close</Mi></button>
+            {/* The catalog editor's Discard and Save (ProjectCatalog portals
+                them in). A new property's Discard closes it, so it takes the
+                place of ✕; an existing project keeps ✕ to leave the console. */}
+            {(admin || isNew) && <div className="pc-acts" ref={setActsEl} />}
+            {!isNew && <button className="m-x" onClick={requestClose}><Mi>close</Mi></button>}
           </div>
         </div>
 
-        {admin ? (
+        {admin || isNew ? (
           <div className="pc-adminview">
-            <ProjectCatalog project={p} onDone={() => setAdmin(false)} />
+            <ProjectCatalog
+              ref={catalogRef}
+              actionsEl={actsEl}
+              project={p}
+              isNew={isNew}
+              onDone={isNew ? requestClose : () => setAdmin(false)}
+              onSaved={() => { dropAsk(); if (isNew) setPropDraft(null); setAdmin(false); }}
+            />
           </div>
         ) : (
           <div className="pc-body">

@@ -1677,6 +1677,23 @@ a {
   font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24
 }
 
+/* Group header (e.g. Leads): it only opens/closes its pages, so it is never
+   .on. While it holds the current page it gets this subtle state; the strong
+   one belongs to the active child. */
+.sb-it.has-on {
+  color: var(--accent)
+}
+
+.sb-it .sb-chev {
+  margin-left: auto;
+  font-size: 18px;
+  transition: transform var(--tr)
+}
+
+.sb-grp[aria-expanded="false"] .sb-chev {
+  transform: rotate(-90deg)
+}
+
 .sb-sub {
   margin: 2px 0 4px 23px;
   border-left: 1px solid var(--bd);
@@ -1687,6 +1704,7 @@ a {
 }
 
 .sb-subit {
+  position: relative;
   padding: 7px 10px;
   font-size: 10.5px;
   font-weight: 500;
@@ -1703,8 +1721,23 @@ a {
   background: var(--surf2)
 }
 
+/* The page on screen: the one strong highlight, with its bar on the tree line. */
 .sb-subit.on {
-  color: var(--accent)
+  background: var(--blue-l);
+  color: var(--accent);
+  font-weight: 600
+}
+
+.sb-subit.on::before {
+  content: '';
+  position: absolute;
+  left: -11px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 3px;
+  height: 15px;
+  border-radius: 0 3px 3px 0;
+  background: var(--accent)
 }
 
 .sb-foot {
@@ -2393,6 +2426,59 @@ a {
 
 .hero-acts .btn .mi {
   font-size: 16px
+}
+
+/* Customers hero Refresh: a pill inside a slowly rotating light ring. The ring
+   is a blurred light spot on a 200% square spun behind a 2px gap; the pill
+   covers the rest. The icon spins while the list is loading. */
+.rf-ring {
+  position: relative;
+  z-index: 0;
+  display: inline-flex;
+  padding: 2px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--t1) 15%, transparent);
+  transition: transform .3s
+}
+
+.rf-ring:hover { transform: scale(1.05) }
+.rf-ring:active { transform: scale(1) }
+.rf-ring:has(.rf-btn:focus-visible) { box-shadow: 0 0 0 2px var(--accent) }
+
+.rf-ring::before {
+  content: '';
+  position: absolute;
+  z-index: -2;
+  left: -50%;
+  top: -50%;
+  width: 200%;
+  height: 200%;
+  background: linear-gradient(var(--t1), var(--t1)) 100% 50% / 50% 30% no-repeat;
+  filter: blur(6px);
+  animation: rf-rotate 4s linear infinite
+}
+
+.rf-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 32px;
+  border-radius: 999px;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--t1);
+  background: color-mix(in srgb, var(--bg) 80%, transparent);
+  backdrop-filter: blur(8px)
+}
+
+.rf-btn .mi { font-size: 18px }
+.rf-btn.busy .mi { animation: rf-rotate 1s linear infinite }
+
+@keyframes rf-rotate { to { transform: rotate(1turn) } }
+
+@media (prefers-reduced-motion: reduce) {
+  .rf-ring::before, .rf-btn.busy .mi { animation: none }
 }
 
 @media(max-width:560px) {
@@ -3372,6 +3458,21 @@ a {
   grid-template-columns: 22px 140px minmax(190px, 1.7fr) 116px minmax(170px, 1.5fr) 134px 160px
 }
 
+/* Customers table: seven columns (… Status, Last Follow-up, Create date) on
+   tighter tracks and gaps, so it still fits a 1366px laptop without scrolling
+   sideways. Scoped to .lt-leads — the Projects and Bookings tables keep the
+   rules above. */
+.lt-leads .lt-hdr,
+.lt-leads .lt-row {
+  grid-template-columns: 110px minmax(160px, 1.7fr) 100px minmax(140px, 1.5fr) 134px 160px 160px;
+  column-gap: 12px
+}
+
+.lt-leads.lt-with-cb .lt-hdr,
+.lt-leads.lt-with-cb .lt-row {
+  grid-template-columns: 22px 110px minmax(160px, 1.7fr) 100px minmax(140px, 1.5fr) 134px 160px 160px
+}
+
 /* Customers table only — LeadTable puts .lt-leads on every render path
    (loading, empty, rows), so the header never changes width between them.
    The columns above cannot shrink below their minimums, and .lt's
@@ -3381,17 +3482,21 @@ a {
    columns stay aligned while scrolled. The min-width covers the left padding,
    every column and every gap, but not the 28px right padding: as before, the
    last column may run into that padding, so no scrollbar appears just for it.
-     28 + 140 + 190 + 116 + 170 + 134 + 160 + 5 gaps × 24 = 1058
-     with the checkbox: + 22 track + 24 gap               = 1104
-   Keep these in step with the track lists. ≤768px keeps its card layout. */
+     28 + 110 + 160 + 100 + 140 + 134 + 160 + 160 + 6 gaps × 12 = 1064
+     with the checkbox: + 22 track + 12 gap                       = 1098
+   Keep these in step with the .lt-leads track lists. The card is at most
+   1238px wide (.pg-inner), so a larger total scrolls at every width. At a
+   1366px viewport the card is about 1118px, and only because .pg-body is
+   zoomed to .95; without that zoom both totals would scroll there.
+   ≤768px keeps its card layout. */
 @media(min-width:769px) {
   .lt-leads { overflow-x: auto }
 
   .lt-leads .lt-hdr,
-  .lt-leads .lt-row { min-width: 1058px }
+  .lt-leads .lt-row { min-width: 1064px }
 
   .lt-leads.lt-with-cb .lt-hdr,
-  .lt-leads.lt-with-cb .lt-row { min-width: 1104px }
+  .lt-leads.lt-with-cb .lt-row { min-width: 1098px }
 }
 
 .lt-hdr {
@@ -3448,6 +3553,14 @@ a {
   font-variant-numeric: tabular-nums;
   letter-spacing: .02em;
   white-space: nowrap
+}
+
+/* Customers: the Lead ID track is 110px, so a long external id ends in an
+   ellipsis (full id in its title) instead of being cut off. */
+.lt-leads .lt-id {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis
 }
 
 .lt-n {
@@ -3576,7 +3689,8 @@ a {
     padding: 13px 16px
   }
 
-  /* no checkbox: 1=ID 2=Name 3=Source 4=Property 5=Status 6=Date → keep Name + Status */
+  /* no checkbox: 1=ID 2=Name 3=Source 4=Property 5=Status 6=Last Follow-up
+     (7=Create date, hidden by the ≤768px rule) → keep Name + Status */
   .lt-cell:nth-child(1),
   .lt-cell:nth-child(3),
   .lt-cell:nth-child(4),
@@ -3595,7 +3709,8 @@ a {
     display: flex
   }
 
-  /* with checkbox: 1=cb 2=ID 3=Name 4=Source 5=Property 6=Status 7=Date */
+  /* with checkbox: 1=cb 2=ID 3=Name 4=Source 5=Property 6=Status 7=Last Follow-up
+     (8=Create date, hidden by the ≤768px rule) */
   .lt-with-cb .lt-cb-col {
     flex: 0 0 22px
   }
@@ -11563,7 +11678,7 @@ textarea.fi {
     grid-row: 3 !important;
     text-align: right !important;
   }
-  .lt-cell-id, .lt-cell-date, .lt-date {
+  .lt-cell-id, .lt-cell-date, .lt-cell-fu, .lt-date {
     display: none !important;
   }
 }

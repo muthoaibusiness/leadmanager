@@ -6,31 +6,39 @@ import { avc, ini, rlabel } from '../lib/helpers.js';
 import { canSee, ROLES } from '../lib/constants.js';
 
 // Grouped, role-scoped navigation (Muthoclo admin pattern).
-// Sections render a label + their visible items; items may expand children
-// when active. Visibility is driven by canSee(user, key).
+// Sections render a label + their visible items; a group renders a header that
+// opens/closes its child pages. Visibility is driven by canSee(user, key).
 const SECTIONS = [
   { label: null, keys: ['dashboard', 'companies', 'reports', 'agentperf', 'requests'] },
-  { label: 'Sales Team', keys: ['leads', 'conversations', 'calendar', 'properties'] },
+  { label: 'Sales Team', keys: ['leadsGroup', 'conversations', 'calendar', 'properties'] },
   { label: 'Admin', keys: ['team', 'users', 'accounts', 'carpool'] },
 ];
 
-// Nested sub-views: Pipeline is a view of Leads, so it lives indented under it.
-const CHILDREN = {
-  leads: [{ key: 'pipeline', lbl: 'Pipeline' }],
+// Collapsible groups. The header only opens/closes; each child is a page, and
+// only the child whose key is the current view is active. The group id is not
+// a view key, so the header itself can never be the active page.
+const GROUPS = {
+  leadsGroup: {
+    ico: 'person_search', lbl: 'Leads',
+    kids: [{ key: 'leads', lbl: 'Customers' }, { key: 'pipeline', lbl: 'Pipeline' }],
+  },
 };
 
 export default function Sidebar() {
   const { user, view, nav, sidebarOpen, setSidebarOpen, chatOk, waUnread } = useApp();
+  // Groups start open; this holds the ones the user has closed.
+  const [closed, setClosed] = useState({});
 
   if (!user) return null;
   const role = user.role;
 
-  // Conversations is gated by the chat allow-list rather than NAV_SCOPES.
-  const visible = (k) => (k === 'conversations' ? chatOk : canSee(user, k));
+  // Conversations is gated by the chat allow-list rather than NAV_SCOPES; a
+  // group shows when the user may see at least one of its pages.
+  const visible = (k) => (GROUPS[k] ? GROUPS[k].kids.some(c => canSee(user, c.key))
+    : k === 'conversations' ? chatOk : canSee(user, k));
 
   const META = {
     dashboard: { ico: 'home', lbl: 'Home' },
-    leads: { ico: 'person_search', lbl: role === ROLES.MA ? 'My Leads' : 'Leads' },
     conversations: { ico: 'forum', lbl: 'Conversations' },
     calendar: { ico: 'calendar_month', lbl: 'Calendar' },
     pipeline: { ico: 'view_kanban', lbl: 'Pipeline' },
@@ -50,33 +58,45 @@ export default function Sidebar() {
 
   const pendingHolds = role === 'MANAGEMENT' ? getHoldRequests().filter(r => r.status === 'pending').length : 0;
 
-  const NavItem = ({ k }) => {
+  // A plain function, not a component declared in here: a component type made
+  // anew on every render remounts every row whenever the app context changes,
+  // so the rows (and an open group) would not stay stable.
+  const renderItem = (k) => {
+    const g = GROUPS[k];
+    if (g) {
+      const kids = g.kids.filter(c => canSee(user, c.key));
+      const open = !closed[k];
+      // Subtle "holds the current page" state; the strong one is the child's.
+      const childOn = kids.some(c => c.key === view);
+      return (
+        <div key={k}>
+          <div className={`sb-it sb-grp${childOn ? ' has-on' : ''}`} aria-expanded={open}
+            onClick={() => setClosed(c => ({ ...c, [k]: !c[k] }))}>
+            <Mi>{g.ico}</Mi>{g.lbl}
+            <Mi className="sb-chev">expand_more</Mi>
+          </div>
+          {open && (
+            <div className="sb-sub">
+              {kids.map(c => (
+                <div key={c.key} className={`sb-subit${view === c.key ? ' on' : ''}`} onClick={() => nav(c.key)}>
+                  {c.lbl}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      );
+    }
     const m = META[k];
-    const kids = CHILDREN[k];
-    // Parent stays highlighted while on itself OR any of its nested sub-views.
-    const active = view === k || (kids && kids.some(c => c.key === view));
     let badge = 0;
     if (k === 'requests' && pendingHolds > 0) badge = pendingHolds;
     if (k === 'conversations' && waUnread > 0) badge = waUnread;
     return (
-      <div>
-        <div className={`sb-it${active ? ' on' : ''}`} onClick={() => nav(k)}>
+      <div key={k}>
+        <div className={`sb-it${view === k ? ' on' : ''}`} onClick={() => nav(k)}>
           <Mi>{m.ico}</Mi>{m.lbl}
           {badge > 0 && <span className="sb-badge">{badge}</span>}
         </div>
-        {active && kids && kids.some(c => canSee(user, c.key)) && (
-          <div className="sb-sub">
-            {kids.filter(c => canSee(user, c.key)).map((c) => (
-              <div
-                key={c.key}
-                className={`sb-subit${view === c.key ? ' on' : ''}`}
-                onClick={(e) => { e.stopPropagation(); nav(c.key); }}
-              >
-                {c.lbl}
-              </div>
-            ))}
-          </div>
-        )}
       </div>
     );
   };
@@ -99,7 +119,7 @@ export default function Sidebar() {
             return (
               <div className="sb-sec" key={si}>
                 {sec.label && <div className="sb-sec-lbl">{sec.label}</div>}
-                {keys.map(k => <NavItem key={k} k={k} />)}
+                {keys.map(k => renderItem(k))}
               </div>
             );
           })}

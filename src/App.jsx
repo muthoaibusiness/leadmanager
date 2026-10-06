@@ -9,6 +9,7 @@ import { avc, ini, rlabel } from './lib/helpers.js';
 import { ROLES, canSee, FEATURE_KEYS, effectiveRole } from './lib/constants.js';
 
 import Mi from './components/Mi.jsx';
+import RefreshButton from './components/RefreshButton.jsx';
 import { SignIn1 } from './components/ui/modern-stunning-sign-in.jsx';
 import LoadingRadar from './components/LoadingRadar.jsx';
 import LandingPage from './components/LandingPage.jsx';
@@ -58,7 +59,7 @@ import FollowUpModal from './components/modals/FollowUpModal.jsx';
 import LostModal from './components/modals/LostModal.jsx';
 import PropertyViewModal from './components/modals/PropertyViewModal.jsx';
 import ProjectConsole from './components/project/ProjectConsole.jsx';
-import { migrateProjects, createProject } from './lib/projects.js';
+import { migrateProjects, newProjectDraft } from './lib/projects.js';
 import PropertyFormModal from './components/modals/PropertyFormModal.jsx';
 import UnitBookingModal from './components/modals/UnitBookingModal.jsx';
 import BookingModal from './components/modals/BookingModal.jsx';
@@ -152,7 +153,7 @@ function PageHeader() {
 
 // ── In-body hero header (eyebrow + big title + subtitle + actions) ───────────
 function PageHero() {
-  const { user, view, agentFilter, teamFilter, setAgentFilter, setTeamFilter, setTab, setStatusFilter, setSearch, openModal, setCreateUserRoles, setPropEdit, setPropSel, setConsoleAdmin, dbVersion, leadCounts } = useApp();
+  const { user, view, agentFilter, teamFilter, setAgentFilter, setTeamFilter, setTab, setStatusFilter, setSearch, openModal, setCreateUserRoles, setPropEdit, setPropSel, setPropDraft, setConsoleAdmin, dbVersion, leadCounts } = useApp();
 
   // The Customers count is NOT computed here. It has to agree with the table
   // underneath it, and the table's query is built from filters this component
@@ -205,6 +206,8 @@ function PageHero() {
 
   // actions
   let actions = [];
+  // Customers: re-fetch the list, for every role that can open the view.
+  if (view === 'leads') actions.push(<RefreshButton key="refresh" />);
   if (view === 'leads' && canSee(user, 'add_customer')) {
     actions.push(<button key="add-lead" className="btn btn-p" onClick={() => openModal('add-lead')}><Mi>add</Mi>Add Customer</button>);
     actions.push(<button key="import" className="btn btn-g" onClick={() => openModal('import')}><Mi>upload</Mi>Import</button>);
@@ -215,7 +218,9 @@ function PageHero() {
   // creates Team Leads, each of which starts a team of its own.
   if (view === 'team' && user.role === ROLES.TL) actions.push(<button key="add-agent" className="btn btn-p" onClick={() => { setCreateUserRoles([ROLES.IA, ROLES.MA, ROLES.EXEC]); openModal('create-user'); }}><Mi>person_add</Mi>Add Agent</button>);
   if (view === 'users' && user.role === ROLES.MGMT) actions.push(<button key="add-user" className="btn btn-p" onClick={() => { setCreateUserRoles([ROLES.TL]); openModal('create-user'); }}><Mi>person_add</Mi>Add User</button>);
-  if (view === 'properties' && user.role === ROLES.MGMT) actions.push(<button key="add-prop" className="btn btn-p" onClick={() => { const nid = createProject({ name: '', companyId: user.companyId }); setConsoleAdmin(true); setPropSel(nid); openModal('project-console'); }}><Mi>add</Mi>Add Property</button>);
+  // Add Property opens an unsaved draft; the project is created only when the
+  // catalog's Save product succeeds (see ProjectCatalog / saveNewProject).
+  if (view === 'properties' && user.role === ROLES.MGMT) actions.push(<button key="add-prop" className="btn btn-p" onClick={() => { const d = newProjectDraft(user.companyId); setPropDraft(d); setConsoleAdmin(true); setPropSel(d.id); openModal('project-console'); }}><Mi>add</Mi>Add Property</button>);
 
   return (
     <div className={`hero${view === 'pipeline' ? ' hero-compact' : ''}`}>

@@ -11,10 +11,16 @@
 // Everything goes through this module, so swapping to a real API = change the
 // bodies here only — the UI never touches the store directly.
 
-import { getProperty, getProperties, addPropertyFn, updatePropertyFn, deletePropertyFn, unitsFromCodes } from './db.js';
+import { getProperty, getProperties, addPropertyFn, updatePropertyFn, deletePropertyFn, insertPropertyChecked, updatePropertyChecked, unitsFromCodes } from './db.js';
 import { uid } from './helpers.js';
+import { PROJECT_TYPES } from './constants.js';
 
 const nowISO = () => new Date().toISOString();
+
+// A project's type (Residential / Commercial) is kept in the property's
+// existing `purpose` column, so it needs no schema change. Anything else there
+// (empty, or the old edit form's 'Sale') means none has been chosen yet.
+export const projectTypeOf = (p) => (PROJECT_TYPES.includes(p?.purpose) ? p.purpose : null);
 const mapStatus = (s) => (s === 'sold' ? 'sold' : s === 'available' ? 'available' : 'hold'); // locked/booked → hold
 
 // ── shape / migration (legacy property → storefront project) ─────────────────
@@ -85,6 +91,18 @@ export function getProjectById(id) { return toProject(getProperty(id)); }
 export function createProject(data) { return addPropertyFn({ variants: [], addons: [], media: { images: [], docs: [], links: [] }, fastClosePct: 2, fastCloseDays: 5, ...data }); }
 export function updateProject(id, patch) { updatePropertyFn(id, patch); }
 export function removeProject(id) { deletePropertyFn(id); }
+
+// Add Property starts from a draft that only the editor holds — nothing reaches
+// the store or the cloud until the first successful save. Same starting shape
+// createProject stores.
+export function newProjectDraft(companyId) {
+  return { id: 'p' + uid(), name: '', companyId: companyId || null, variants: [], addons: [], media: { images: [], docs: [], links: [] }, fastClosePct: 2, fastCloseDays: 5 };
+}
+
+// The catalog editor's saves. They wait for the cloud and resolve to
+// { ok, id } or { ok: false, error }, so a failed save can keep the draft open.
+export function saveNewProject(draft) { return insertPropertyChecked(draft); }
+export function saveProject(id, patch) { return updatePropertyChecked(id, patch); }
 
 // ── variants ─────────────────────────────────────────────────────────────────
 export function addVariant(id) {

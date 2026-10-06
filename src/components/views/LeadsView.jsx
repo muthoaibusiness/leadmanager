@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useApp } from '../../context/AppContext.jsx';
-import { queryLeads, countLeads, fetchLeadProjects } from '../../lib/db.js';
+import { queryLeads, countLeads, fetchLeadProjects, fetchLastFollowups } from '../../lib/db.js';
 import { selfInvolved } from '../../lib/leadQuery.js';
 import { STATUS_LABELS, ROLES } from '../../lib/constants.js';
 import { rlabel } from '../../lib/helpers.js';
@@ -120,6 +120,24 @@ export default function LeadsView() {
       });
   }, [qKey, page, sortBy, dbVersion, query]);
 
+  // The Last Follow-up column: the newest FOLLOW_UP and Add Note for the rows on
+  // screen, fetched for this page's ids once its rows land. A separate request,
+  // so the page query -- shared with the KPI cards and dashboards -- stays as it
+  // is. Every new page result refetches (a dbVersion bump included). `fu.rows`
+  // records which result the map answers, so the table can tell "not answered
+  // yet" from "none"; a failed fetch (null) changes nothing, so rows it never
+  // answered keep showing '…' rather than claiming '—'.
+  const [fu, setFu] = useState({ rows: null, map: {} });
+  const fuSeq = useRef(0);
+  useEffect(() => {
+    const rows = result.rows;
+    const mine = ++fuSeq.current;
+    fetchLastFollowups(rows.map(l => l.id)).then(map => {
+      if (mine !== fuSeq.current || !map) return;
+      setFu({ rows, map });
+    });
+  }, [result.rows]);
+
   // ── The header's "N customers · M active" ────────────────────────────────
   //
   // Both halves describe THIS list. The header used to count on its own with a
@@ -213,7 +231,8 @@ export default function LeadsView() {
           </select>
         )}
       </div>
-      <LeadTable leads={result.rows} total={result.total} page={page} onPage={setPage} loading={loading} />
+      <LeadTable leads={result.rows} total={result.total} page={page} onPage={setPage} loading={loading}
+        lastFu={fu.map} fuPending={fu.rows !== result.rows} />
     </>
   );
 }

@@ -30,6 +30,7 @@ export function AppProvider({ children }) {
   const [leadCounts, setLeadCounts] = useState(null);
   const [propSel, setPropSel] = useState(null);   // property id for detail view
   const [propEdit, setPropEdit] = useState(null);  // property obj for edit, {} for new
+  const [propDraft, setPropDraft] = useState(null); // unsaved new project (Add Property) — stored only once saved
   const [bookSel, setBookSel] = useState(null);    // booking id for detail modal
   const [createUserRoles, setCreateUserRoles] = useState([]);
   const [editUser, setEditUser] = useState(null);   // agent obj for edit-agent modal
@@ -113,6 +114,7 @@ export function AppProvider({ children }) {
     leadCounts, setLeadCounts,
     propSel, setPropSel,
     propEdit, setPropEdit,
+    propDraft, setPropDraft,
     bookSel, setBookSel,
     createUserRoles, setCreateUserRoles,
     editUser, setEditUser,

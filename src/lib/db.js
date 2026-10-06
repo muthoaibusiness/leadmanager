@@ -1046,6 +1046,67 @@ export async function fetchUserActivity(userId, { limit = 40 } = {}) {
   }));
 }
 
+// The Customers table's "Last Follow-up" column, for the leads on one page.
+//
+// Per lead: the newest FOLLOW_UP row (when it was logged -- activity.timestamp,
+// not lead.nextFollowup, which is the NEXT scheduled time) and the newest note
+// an agent typed with Add Note (isAgentNote). One read keyed by the page's ids,
+// through sbPage rather than sbGetAll because sbPage reports a failed request
+// as null instead of an empty list -- the caller can then leave its cells as
+// they were instead of painting them all "no follow-up". Paged in 1000s, so a
+// lead with a long run of Attempt rows cannot push newer rows out of a capped
+// reply; a failure on any page fails the whole read.
+//
+// Read-only: the rows go back to the caller and never into db.activities.
+// That cache drives the lead panel's own timeline loading (ensureLeadActs), and
+// a partial history there would hide its spinner and shorten its timeline.
+export async function fetchLastFollowups(leadIds) {
+  const ids = [...new Set((leadIds || []).filter(Boolean))];
+  const out = Object.fromEntries(ids.map(id => [id, { fu: null, note: null }]));
+  if (!ids.length) return out;
+  const path = 'activities?select=id,lead_id,type,description,timestamp,user_id,user_name'
+    + `&lead_id=in.(${encodeURIComponent(ids.map(i => `"${i}"`).join(','))})`
+    + '&type=in.(FOLLOW_UP,NOTE)&order=timestamp.desc.nullslast,id.desc';
+  const rows = [];
+  for (let page = 0; ; page++) {
+    const res = await sbPage(path, { page, size: 1000 });
+    if (!res) return null;
+    rows.push(...res.rows);
+    if (res.rows.length < 1000 || rows.length >= res.total) break;
+  }
+  // Own keys only: a lead_id such as "__proto__" must not reach Object.prototype.
+  rows.forEach(r => { if (Object.hasOwn(out, r.lead_id)) pickLatest(out[r.lead_id], rToA(r)); });
+  return out;
+}
+
+// What the Last Follow-up cell shows for one lead: the server's pick for the
+// page, overtaken by anything newer in this browser's activity cache -- a
+// follow-up or note logged a moment ago sits there before its fire-and-forget
+// insert lands (addAct). Reads the cache without getActs, which sorts the
+// cached array in place.
+export function lastFollowupFor(leadId, fromServer) {
+  const slot = { fu: fromServer?.fu || null, note: fromServer?.note || null };
+  (getDB().activities?.[leadId] || []).forEach(a => pickLatest(slot, a));
+  return slot;
+}
+
+// Fold one activity into a { fu, note } slot. Newest by when it was logged;
+// ties -- including the server and cached copies of one row -- settle on id, so
+// the pick is stable. A row without a valid timestamp never beats one with.
+function pickLatest(slot, a) {
+  if (!slot || !a) return;
+  const key = a.type === 'FOLLOW_UP' ? 'fu' : isAgentNote(a) ? 'note' : null;
+  if (!key) return;
+  const cur = slot[key];
+  const ta = actTime(a), tc = actTime(cur);
+  if (!cur || ta > tc || (ta === tc && String(a.id) > String(cur.id))) slot[key] = a;
+}
+
+function actTime(a) {
+  const t = Date.parse(a?.timestamp);
+  return Number.isNaN(t) ? -Infinity : t;
+}
+
 // Drop every on-demand marker. Called on sign-out and on a tenant switch: the
 // underlying _DB is thrown away there, so leaving "full" flags behind would
 // make the next account's panels render an empty timeline and never refetch.
@@ -1152,6 +1213,42 @@ export function deletePropertyFn(id) {
     db.deletionLog.push({ id, name: p?.name || 'project', kind: 'property', deletedBy: 'admin', deletedAt: now_() });
   });
   sbDelete('properties', [id]); // hard-delete from Supabase
+}
+
+// Checked variants for the catalog editor's "Save product". The pair above is
+// fire-and-forget, which suits the background writers (unit holds, expiries)
+// but let a rejected save look like a success. These wait for the cloud first
+// and only touch the local store once it has accepted the row, so a failure
+// leaves the draft in the editor and nothing half-saved behind.
+function writeError(res) {
+  if (res.error) return 'network error, check your connection';
+  if (res.skipped) return 'the properties table is missing';
+  return res.status ? `the server rejected it (HTTP ${res.status})` : 'the server rejected it';
+}
+
+export async function insertPropertyChecked(p) {
+  const ts = now_();
+  const row = { ...p, id: p.id || 'p' + uid(), companyId: p.companyId || currentCompanyId(), createdAt: ts, updatedAt: ts };
+  const res = await sbInsert('properties', pToR(row));
+  if (!res.ok) return { ok: false, error: writeError(res) };
+  mutate(db => {
+    if (!db.properties) db.properties = [];
+    db.properties.unshift(row);
+  });
+  return { ok: true, id: row.id };
+}
+
+export async function updatePropertyChecked(id, upd) {
+  const cur = getProperty(id);
+  if (!cur) return { ok: false, error: 'this project no longer exists' };
+  const ts = now_();
+  const res = await sbUpdate('properties', id, pToR({ ...cur, ...upd, updatedAt: ts }));
+  if (!res.ok) return { ok: false, error: writeError(res) };
+  mutate(db => {
+    const i = (db.properties || []).findIndex(x => x.id === id);
+    if (i >= 0) db.properties[i] = { ...db.properties[i], ...upd, updatedAt: ts };
+  });
+  return { ok: true, id };
 }
 
 // ── Unit booking (seat-style) ──
@@ -1883,6 +1980,39 @@ export function checkFollowUpReminders(db) {
 
 export function addNote(leadId, txt, user) {
   addAct(leadId, { type: 'NOTE', description: txt, userId: user.id, userName: user.name, durationSeconds: 0 });
+}
+
+// A NOTE row is an agent's Add Note (NoteModal -> addNote above) unless its text
+// is one of these system templates. activities has no column that marks a
+// system note, and the system writers stamp the acting user, so the text is the
+// only signal -- never classify by user_id. Each pattern is anchored at both
+// ends, so an agent note that merely starts like a template still counts.
+// Keep in step with every other NOTE writer:
+//   bulkTransferLeads          'Lead transferred to … (Assigned to: … - …)'
+//   autoTransferNotInterested  'Auto-transferred to … (Not Interested)'
+//   AddLeadModal, edit         'Lead updated — <Label>: … → …'
+//   AddLeadModal, re-submit    'Re-submitted … — record updated (already handled by …)'
+//   submitImport, duplicate    'Updated via import — duplicate number (owner: …)'
+//   attributeLead (removed July 2026; its rows remain)
+//                              'Attributed to ad "…" · …' / 'Campaign attribution cleared'
+// submitImport's CSV log NOTE is free text no pattern can match. Imports stay
+// local today, but while saveDB still synced everything through sbSave (Apr-Jun
+// 2026) such logs reached the server; on those leads one reads as the latest
+// note until an agent adds a real one. If imports sync again, give the log a
+// fixed prefix and a pattern here.
+const SYSTEM_NOTE_RES = [
+  /^Lead transferred to .* \(Assigned to: .* - .*\)$/s,
+  /^Auto-transferred to .* \(Not Interested\)$/s,
+  /^Lead updated — [A-Z][A-Za-z ]*: .* → .*$/s,
+  /^Re-submitted .* — record updated \(already handled by .*\)$/s,
+  /^Updated via import — duplicate number \(owner: .*\)$/s,
+  /^Attributed to ad ".*"( · .*)?$/s,
+  /^Campaign attribution cleared$/,
+];
+
+export function isAgentNote(a) {
+  const d = a?.type === 'NOTE' ? a.description : null;
+  return typeof d === 'string' && d.trim() !== '' && !SYSTEM_NOTE_RES.some(re => re.test(d));
 }
 
 export function setTargetFn(userId, val) {

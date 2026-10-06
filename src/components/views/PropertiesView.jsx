@@ -1,14 +1,18 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useApp } from '../../context/AppContext.jsx';
 import { getProperties, deletePropertyFn } from '../../lib/db.js';
 import { ROLES, PROPERTY_TYPES, PROPERTY_STATUS } from '../../lib/constants.js';
 import Mi from '../Mi.jsx';
+import ProjectsToaster from '../project/ProjectsToaster.jsx';
+import { useProjectToast } from '../project/projectToast.js';
 
 const PS_CLASS = { AVAILABLE: 'ps-available', FEW_LEFT: 'ps-few', SOLD_OUT: 'ps-sold', UPCOMING: 'ps-upcoming' };
 const fmtSft = n => n >= 1000 ? (n / 1000).toFixed(n >= 100000 ? 0 : 1) + 'k' : String(n);
 
 export default function PropertiesView() {
-  const { user, setPropSel, openModal, setConsoleAdmin, refreshDB, showToast } = useApp();
+  const { user, setPropSel, openModal, setConsoleAdmin, refreshDB } = useApp();
+  const toast = useProjectToast();
+  const deleteAskRef = useRef(null); // the open delete confirmation, if any
   const isAdmin = user?.role === ROLES.MGMT;
   const [q, setQ] = useState('');
   const [city, setCity] = useState('ALL');
@@ -40,11 +44,21 @@ export default function PropertiesView() {
   const bulkDelete = () => {
     const ids = [...sel];
     if (!ids.length) return;
-    if (!window.confirm(`Delete ${ids.length} project${ids.length > 1 ? 's' : ''}? This cannot be undone.`)) return;
-    ids.forEach(id => deletePropertyFn(id));   // tombstones + cloud-deletes each (no resurrect on reload)
-    setSel(new Set());
-    refreshDB();
-    showToast(`${ids.length} project${ids.length > 1 ? 's' : ''} deleted`, 'ok');
+    const label = `${ids.length} project${ids.length > 1 ? 's' : ''}`;
+    // One question at a time: a second click replaces it with the current count.
+    if (deleteAskRef.current != null) toast.dismiss(deleteAskRef.current);
+    deleteAskRef.current = toast.confirm({
+      title: `Delete ${label}?`,
+      description: 'This cannot be undone.',
+      confirmLabel: 'Delete',
+      onConfirm: () => {
+        ids.forEach(id => deletePropertyFn(id));   // tombstones + cloud-deletes each (no resurrect on reload)
+        setSel(new Set());
+        refreshDB();
+        toast.success(ids.length > 1 ? 'Projects deleted' : 'Project deleted', `${label} removed.`);
+      },
+      onDismiss: (id) => { if (deleteAskRef.current === id) deleteAskRef.current = null; },
+    });
   };
 
   const totalUnits = props.reduce((s, p) => s + (p.totalUnits || 0), 0);
@@ -62,6 +76,7 @@ export default function PropertiesView() {
 
   return (
     <>
+      <ProjectsToaster />
       <div className="inv-strip">
         {stats.map((s, i) => (
           <div key={i} className="inv-tile">
