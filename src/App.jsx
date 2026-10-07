@@ -64,7 +64,7 @@ import FollowUpModal from './components/modals/FollowUpModal.jsx';
 import LostModal from './components/modals/LostModal.jsx';
 import PropertyViewModal from './components/modals/PropertyViewModal.jsx';
 import ProjectConsole from './components/project/ProjectConsole.jsx';
-import { migrateProjects, newProjectDraft } from './lib/projects.js';
+import { migrateProjects, newProjectDraft, projectInventory } from './lib/projects.js';
 import PropertyFormModal from './components/modals/PropertyFormModal.jsx';
 import UnitBookingModal from './components/modals/UnitBookingModal.jsx';
 import BookingModal from './components/modals/BookingModal.jsx';
@@ -191,7 +191,8 @@ function PageHero() {
 
   // eyebrow / title / subtitle per view
   const props = getProperties();
-  const propAvail = props.filter(p => p.status !== 'SOLD_OUT').length;
+  // units still for sale, counted from the catalog's blocks like the Projects KPIs
+  const propAvail = props.reduce((s, p) => s + projectInventory(p).available, 0);
   const teamAgents = db.users.filter(u => (u.role === ROLES.IA || u.role === ROLES.MA) && u.teamId === user.teamId).length;
 
   const META = {
@@ -200,7 +201,7 @@ function PageHero() {
     calendar: { eyebrow: 'Schedule', title: 'Calendar', sub: 'Your scheduled meetings' },
     pipeline: { eyebrow: 'Sales', title: 'Pipeline', sub: 'Drag deals across stages' },
     clients: { eyebrow: 'Relationships', title: 'Contacts', sub: '360° customer view' },
-    properties: { eyebrow: 'Catalog', title: 'Projects', sub: `${props.length} projects · ${propAvail} available` },
+    properties: { eyebrow: 'Catalog', title: 'Projects', sub: `${props.length} project${props.length === 1 ? '' : 's'} · ${propAvail} unit${propAvail === 1 ? '' : 's'} available` },
     reports: { eyebrow: 'Insights', title: 'Reports', sub: 'Live sales analytics' },
     agentperf: { eyebrow: 'Insights', title: 'Performance', sub: 'Per-role scorecards & funnels' },
     bookings: { eyebrow: 'Sales', title: 'Sales Activity', sub: 'Payments, instalments & dues' },

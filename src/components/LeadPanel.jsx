@@ -204,9 +204,11 @@ function Actions({ l }) {
         <Mi>forward_to_inbox</Mi>FW to Next Agent
       </button>
     );
-    // Not Interested — manual disqualify, available before contact (NEW) and after
-    // connecting (CONTACTED) once the agent decides the lead isn't worth pursuing.
-    if (['NEW', 'CONTACTED'].includes(l.status)) btns.push(
+    // Not Interested — manual disqualify, available before contact (NEW), after
+    // connecting (CONTACTED), and once interested (INTERESTED): a client who
+    // showed interest can still back out before the hand-off, and the agent must
+    // be able to record it as a status, not only as a note.
+    if (['NEW', 'CONTACTED', 'INTERESTED'].includes(l.status)) btns.push(
       <button key="notint" className="btn btn-g btn-full" onClick={doNotInterested}>
         <Mi>thumb_down</Mi>Not Interested
       </button>

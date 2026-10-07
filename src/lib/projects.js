@@ -87,6 +87,39 @@ export function migrateProjects(db) {
 export function listProjects() { return getProperties().map(toProject); }
 export function getProjectById(id) { return toProject(getProperty(id)); }
 
+// ── inventory summary (Projects list, its KPI strip, the page subtitle) ──────
+// Counted from the blocks (variants) and their units — what the catalog edits
+// and the project console sells from. The old flat fields (totalUnits,
+// unitsAvailable, totalSft, pricePerSqft, status) are not kept up to date by
+// the catalog; they only seed toProject()'s default block for legacy rows.
+//   total / available / hold / sold   units by status
+//   area                              Σ block size × its units, in sqft
+//   rateMin / rateMax, sizeMin / sizeMax   over blocks that have one (else null)
+//   status   SOLD_OUT when every unit is sold, FEW_LEFT at ≤ 20% left (at least
+//            1), else AVAILABLE; an UPCOMING flag set on the project wins;
+//            null when the project has no units yet
+export function projectInventory(raw) {
+  const p = toProject(raw);
+  let total = 0, available = 0, hold = 0, sold = 0, area = 0;
+  const rates = [], sizes = [];
+  (p?.variants || []).forEach(v => {
+    const units = v.units || [];
+    total += units.length;
+    units.forEach(u => { if (u.status === 'available') available++; else if (u.status === 'sold') sold++; else hold++; });
+    if (v.size > 0) { sizes.push(v.size); area += v.size * units.length; }
+    if (v.listRate > 0) rates.push(v.listRate);
+  });
+  const status = p?.status === 'UPCOMING' ? 'UPCOMING'
+    : !total ? null
+    : sold === total ? 'SOLD_OUT'
+    : available <= Math.max(1, Math.floor(total * 0.2)) ? 'FEW_LEFT'
+    : 'AVAILABLE';
+  const span = (xs) => (xs.length ? [Math.min(...xs), Math.max(...xs)] : [null, null]);
+  const [rateMin, rateMax] = span(rates);
+  const [sizeMin, sizeMax] = span(sizes);
+  return { total, available, hold, sold, area, rateMin, rateMax, sizeMin, sizeMax, status };
+}
+
 // ── project CRUD ─────────────────────────────────────────────────────────────
 export function createProject(data) { return addPropertyFn({ variants: [], addons: [], media: { images: [], docs: [], links: [] }, fastClosePct: 2, fastCloseDays: 5, ...data }); }
 export function updateProject(id, patch) { updatePropertyFn(id, patch); }

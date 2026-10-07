@@ -6,6 +6,7 @@ import { STATUS_LABELS, ROLES } from '../../lib/constants.js';
 import { rlabel } from '../../lib/helpers.js';
 import LeadTable, { PAGE_SIZE } from '../LeadTable.jsx';
 import SearchBox from '../SearchBox.jsx';
+import { ActionSwapCascadeButton } from '../ui/action-swap-cascade.jsx';
 
 // Order the admin's people picker groups the way the pipeline runs, so the
 // dropdown reads top-down rather than alphabetically across mixed roles.
@@ -37,7 +38,7 @@ export default function LeadsView() {
   const [page, setPage] = useState(0);
   const [result, setResult] = useState({ rows: [], total: 0 });
   const [loading, setLoading] = useState(true);
-  const [fwdCount, setFwdCount] = useState(0);
+  const [fwdCount, setFwdCount] = useState(null); // null until the first count lands
 
   useEffect(() => { fetchLeadProjects(user).then(setProjectOptions); }, [user]);
 
@@ -165,6 +166,8 @@ export default function LeadsView() {
   useEffect(() => () => setLeadCounts(null), [setLeadCounts]);
 
   // The Forwarded tab's badge is a count, so it costs a count query, not rows.
+  // It is live: realtime lead changes the agent is involved in (inScope keeps
+  // leads they held before) bump dbVersion, and the count is asked again.
   useEffect(() => {
     if (!isAgent) { setFwdCount(0); return; }
     let alive = true;
@@ -175,16 +178,23 @@ export default function LeadsView() {
   return (
     <>
       {isAgent && !drillAgent && (
-        <div className="ftabs" style={{ marginBottom: 12 }}>
-          <button className={`ftab${tab === 'mine' ? ' on' : ''}`} onClick={() => setTab('mine')}>My Leads</button>
-          <button className={`ftab${tab === 'fwd' ? ' on' : ''}`} onClick={() => setTab('fwd')}>
-            Forwarded{fwdCount > 0 ? ` (${fwdCount})` : ''}
-          </button>
+        // Two beui ActionSwap (cascade) pills. A tab is one item, so clicking
+        // selects it instead of cycling; the Forwarded item's id carries the
+        // count, so a new count rolls in letter by letter.
+        <div className="lv-tabs" role="tablist" aria-label="Customer lists">
+          <ActionSwapCascadeButton role="tab" aria-selected={tab === 'mine'} cycle={false}
+            variant={tab === 'mine' ? 'primary' : 'secondary'}
+            items={[{ id: 'mine', label: 'My Leads' }]} onClick={() => setTab('mine')} />
+          <ActionSwapCascadeButton role="tab" aria-selected={tab === 'fwd'} cycle={false}
+            variant={tab === 'fwd' ? 'primary' : 'secondary'}
+            items={[{ id: `fwd-${fwdCount ?? ''}`, label: fwdCount == null ? 'Forwarded' : `Forwarded (${fwdCount})` }]}
+            onClick={() => setTab('fwd')} />
         </div>
       )}
       {/* Compact pill filter bar — everything applies live, no apply button. */}
       <div className="fbar">
-        <SearchBox placeholder="" style={{ flex: '0 1 300px', minWidth: '180px' }} />
+        {/* Grows into the room the pills leave (.sbox: flex 1 1 240px). */}
+        <SearchBox placeholder="Search name, phone or project" />
         <select className="fsel" value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
           <option value="ALL">All status</option>
           <option value="FOLLOW_UP">Follow-up</option>
