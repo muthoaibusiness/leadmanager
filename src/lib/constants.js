@@ -39,6 +39,10 @@ export const canSee = (user, key) => {
   return (NAV_SCOPES[key] || []).includes(user.role);
 };
 
+// Below this width the sidebar is an overlay drawer; from 1024px it is docked
+// (and can be collapsed). Keep in step with the 1023px breakpoints in index.css.
+export const DRAWER_MQ = '(max-width: 1023px)';
+
 // Behavioural role — decides which dashboard and which lead-action set a user
 // gets. EXECUTIVE is a blank-canvas role with no dashboard/actions of its own, so
 // it operates as whichever front-line agent role its granted features imply:

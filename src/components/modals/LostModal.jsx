@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import Mi from '../Mi.jsx';
 import { useApp } from '../../context/AppContext.jsx';
 import { markLostFn } from '../../lib/db.js';
@@ -7,10 +7,17 @@ export default function LostModal() {
   const { modal, closeModal, user, panLead, refreshDB, showToast } = useApp();
   const isOpen = modal === 'lost';
   const [reason, setReason] = useState('');
+  const reasonRef = useRef(null);
 
   useEffect(() => { if (isOpen) setReason(''); }, [isOpen]);
+  // This modal stays mounted while closed, so autoFocus fired on page load and
+  // put the cursor in the hidden textarea. Focus the field when it opens instead.
+  useEffect(() => { if (isOpen) reasonRef.current?.focus(); }, [isOpen]);
 
   const submit = () => {
+    // A closing modal can still take a key press during its fade-out; a second
+    // Enter on Confirm must not mark the lead lost twice.
+    if (!isOpen) return;
     if (!reason.trim()) { showToast('Please provide a loss summary', 'err'); return; }
     markLostFn(panLead, reason.trim(), user);
     closeModal();
@@ -32,12 +39,12 @@ export default function LostModal() {
           <div className="fl" style={{ marginTop: '14px' }}>
             <label>Why was this lead lost? *</label>
             <textarea
+              ref={reasonRef}
               className="finp"
               rows={4}
               placeholder="e.g. Price too high, client chose competitor, not ready to buy yet…"
               value={reason}
               onChange={e => setReason(e.target.value)}
-              autoFocus
             />
           </div>
           <div className="lost-hints">

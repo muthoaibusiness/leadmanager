@@ -1,5 +1,6 @@
-/* goey-toast dressed in the app's design tokens (Projects tab only — every toast
-   there carries .wp-gt). Selectors include [data-theme] so they outrank goey's
+/* goey-toast dressed in the app's design tokens (every goey toast carries
+   .wp-gt — Projects, Accounts, the form discard questions). Selectors include
+   [data-theme] so they outrank goey's
    own dark-theme rules; the tokens switch with the app's light/dark theme. */
 
 .wp-gt.gooey-wrapper[data-theme] { font-family: var(--font-display); }
@@ -19,6 +20,11 @@
 .wp-gt.gooey-wrapper[data-theme] .gooey-titleError { color: var(--red); }
 .wp-gt.gooey-wrapper[data-theme] .gooey-titleWarning { color: var(--orange); }
 .wp-gt.gooey-wrapper[data-theme] .gooey-description { margin-top: 10px; font-size: 12.5px; line-height: 1.45; color: var(--t2); }
+/* The toaster is top-centre, so goey centres the pill over the body; the body
+   is at least 300px wide. Left-aligned, a short second line hugged the body's
+   left edge and sat off-centre under the pill — centre it on the pill's axis.
+   goey writes text-align:left inline on the description, hence !important. */
+.wp-gt.gooey-wrapper[data-theme] .gooey-description { text-align: center !important; }
 
 /* goey measures a toast with offsetWidth, which rounds to whole pixels, and
    pins it at that width while it animates in and out. A message that only
@@ -27,8 +33,7 @@
 .wp-gt-desc { display: block; width: calc(100% + 1px); }
 
 /* Room for the widest toast (goey lets one grow to 380px; sonner's list is
-   356px). Only goey uses sonner in this app, and its toaster only mounts in
-   the Projects tab. */
+   356px). Only goey uses sonner in this app (ProjectsToaster.jsx, one per tab). */
 [data-sonner-toaster][data-x-position="center"] { --width: min(400px, calc(100vw - 32px)) !important; }
 
 /* Confirmation: the question in the pill, its context on the line below, then

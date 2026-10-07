@@ -29,8 +29,8 @@ function FollowUpCell({ leadId, fromServer, pending }) {
   return (
     <div className="lt-cell lt-cell-fu">
       <div style={{ minWidth: 0 }}>
-        <div className="lt-date" title={fu ? fu.description : undefined}>{when || (wait ? '…' : '—')}</div>
-        <div className="lt-sub" title={note ? note.description : undefined}>{note ? note.description : (wait ? '' : '—')}</div>
+        <div className={`lt-date${fu ? ' lt-fu-on' : ''}`} title={fu ? fu.description : undefined}>{when || (wait ? '…' : '—')}</div>
+        <div className={`lt-sub${note ? ' lt-fu-on' : ''}`} title={note ? note.description : undefined}>{note ? note.description : (wait ? '' : '—')}</div>
       </div>
     </div>
   );

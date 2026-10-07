@@ -6,7 +6,8 @@ import LogCall from './LogCall.jsx';
 import { getLead, getActs, ensureLead, ensureLeadActs, hasFullActs, changeStatus, doneVisit, deleteLead, updLead, addAct, logNoAnswer, noAnswerLock, attendMeeting, createCarpoolRequest, userNameById } from '../lib/db.js';
 import { fmtD, fmtDT, fmtBDT, rlabel, scoreLead, scoreLabel, leadDisplayStatus, fmtDateTimeAP } from '../lib/helpers.js';
 import ActivityTimeline from './ActivityTimeline.jsx';
-import { ROLES, STATUS_LABELS, SRC_LABELS, effectiveRole, isNiHandler } from '../lib/constants.js';
+import { ROLES, STATUS_LABELS, SRC_LABELS, effectiveRole, isNiHandler, DRAWER_MQ } from '../lib/constants.js';
+import useMediaQuery from '../hooks/useMediaQuery.js';
 
 function sclass(s) { return 's-' + (s || '').toLowerCase(); }
 const leadCode = (l) => l.externalId || ('#' + String(l.id || '').slice(-6).toUpperCase());
@@ -431,7 +432,10 @@ function Timeline({ acts, lead }) {
 }
 
 export default function LeadPanel() {
-  const { panLead, setPanLead, openModal, dbVersion, user, refreshDB, showToast } = useApp();
+  const { panLead, setPanLead, openModal, dbVersion, user, refreshDB, showToast, sidebarOpen } = useApp();
+  // Inert while the ≤1023px drawer is open, like the page behind it: the panel
+  // lives outside #app, and even closed (off-canvas) its buttons would take Tab.
+  const drawerOpen = useMediaQuery(DRAWER_MQ) && sidebarOpen;
   // Only Management / Master (admin) may delete a lead. Real agents — Initial
   // Agent, Meeting Agent, Team Lead — cannot delete any lead.
   const canDelete = user?.role === ROLES.MGMT || user?.role === ROLES.MASTER;
@@ -493,7 +497,7 @@ export default function LeadPanel() {
   return (
     <>
       <div id="pov" className={isOpen ? 'on' : ''} onClick={() => setPanLead(null)} />
-      <div id="pan" className={isOpen ? 'on' : ''}>
+      <div id="pan" className={isOpen ? 'on' : ''} inert={drawerOpen}>
         <div className="p-hd">
           <button className="p-back" onClick={() => setPanLead(null)}><Mi>arrow_back</Mi></button>
           <div className="p-ttl">{l ? (l.name || 'Unnamed customer') : 'Customer Details'}</div>

@@ -10,7 +10,8 @@ export function applyStoredTheme() {
   return t;
 }
 
-export default function ThemeToggle() {
+// `inert`: set while the mobile sidebar drawer is open, so Tab cannot reach it.
+export default function ThemeToggle({ inert }) {
   const [theme, setTheme] = useState(() => localStorage.getItem('theme') || 'dark');
   const isDark = theme === 'dark';
 
@@ -25,6 +26,7 @@ export default function ThemeToggle() {
       onClick={() => setTheme(isDark ? 'light' : 'dark')}
       title={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
       aria-label="Toggle theme"
+      inert={inert}
     >
       <span className="thtog-knob"><Mi>{isDark ? 'dark_mode' : 'light_mode'}</Mi></span>
     </button>

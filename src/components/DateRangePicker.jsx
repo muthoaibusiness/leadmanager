@@ -154,10 +154,10 @@ export default function DateRangePicker() {
   return (
     <div className="drp-wrap" ref={ref}>
       <button className={`drp-trigger${open?' open':''}`} onClick={()=>setOpen(o=>!o)}>
-        <Mi>date_range</Mi>
+        <Mi aria-hidden="true">date_range</Mi>
         <span className="drp-trigger-preset">{activeLabel}</span>
         {rangeLabel && <span className="drp-trigger-range">{rangeLabel}</span>}
-        <Mi>arrow_drop_down</Mi>
+        <Mi aria-hidden="true">arrow_drop_down</Mi>
       </button>
 
       {open && (

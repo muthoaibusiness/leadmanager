@@ -5,10 +5,12 @@ import { seedDB, SEED_PROPERTIES, DEMO_PROPERTIES } from './lib/seed.js';
 import { sbLoad, sbSubscribeAll } from './lib/supabase.js';
 import { waLoadSettings } from './lib/wa.js';
 import { pushUnreadSummary, requestNotifyPermission } from './lib/pushNotify.js';
-import { avc, ini, rlabel } from './lib/helpers.js';
-import { ROLES, canSee, FEATURE_KEYS, effectiveRole } from './lib/constants.js';
+import { avc, ini, rlabel, kbd } from './lib/helpers.js';
+import { ROLES, canSee, FEATURE_KEYS, effectiveRole, DRAWER_MQ } from './lib/constants.js';
+import useMediaQuery from './hooks/useMediaQuery.js';
 
 import Mi from './components/Mi.jsx';
+import SidebarGlyph from './components/SidebarGlyph.jsx';
 import RefreshButton from './components/RefreshButton.jsx';
 import { SignIn1 } from './components/ui/modern-stunning-sign-in.jsx';
 import LoadingRadar from './components/LoadingRadar.jsx';
@@ -16,8 +18,11 @@ import LandingPage from './components/LandingPage.jsx';
 import Sidebar from './components/Sidebar.jsx';
 import ThemeToggle from './components/ThemeToggle.jsx';
 import NotifBell from './components/NotifBell.jsx';
+import UserMenu from './components/UserMenu.jsx';
+import HeaderMascot from './components/HeaderMascot.jsx';
 import LeadPanel from './components/LeadPanel.jsx';
 import Toast from './components/Toast.jsx';
+import ProjectsToaster from './components/project/ProjectsToaster.jsx';
 import DateRangePicker from './components/DateRangePicker.jsx';
 
 import InitialAgentDash from './components/dashboards/InitialAgentDash.jsx';
@@ -138,12 +143,24 @@ function LoginPage({ onLogin, onBack }) {
 }
 
 // ── Thin chrome bar ─────────────────────────────────────────────────────────
-function PageHeader() {
-  const { setSidebarOpen } = useApp();
+// `shown`: the sidebar is on screen. `showBtnRef`: the show button, which the
+// shell moves focus onto when the sidebar hides with focus inside it.
+function PageHeader({ shown, showBtnRef }) {
+  const { setSidebarShown } = useApp();
   return (
     <header className="pg-head">
-      <button className="ham" onClick={() => setSidebarOpen(true)}><Mi>menu</Mi></button>
+      {/* Show-sidebar button, same glyph as the sidebar's hide button: always
+          there for the ≤1023px drawer, on desktop only while collapsed (CSS). */}
+      <button ref={showBtnRef} className="ham" onClick={() => setSidebarShown(true)}
+        aria-label="Show sidebar" aria-controls="app-sidebar" aria-expanded={shown}
+        title={`Show sidebar (${kbd('\\')})`}>
+        <SidebarGlyph />
+      </button>
+      {/* the fox: positioned over the header, above the content's left edge */}
+      <HeaderMascot />
       <div style={{ flex: 1 }} />
+      {/* account → date filter → notifications */}
+      <UserMenu />
       <DateRangePicker />
       <span className="pg-div" />
       <NotifBell />
@@ -271,16 +288,72 @@ function PageBody() {
 
 // ── App shell ───────────────────────────────────────────────────────────────
 function AppShell() {
-  const { view } = useApp();
+  const { view, sidebarOpen, sidebarCollapsed } = useApp();
   const wide = view === 'pipeline' || view === 'conversations'; // kanban + chat need the full canvas
+  // Below 1024px the sidebar is a drawer over the page; from 1024px it is docked
+  // and may be collapsed. `shown` is "on screen" in whichever layout applies.
+  const drawer = useMediaQuery(DRAWER_MQ);
+  const shown = drawer ? sidebarOpen : !sidebarCollapsed;
+  const drawerOpen = drawer && sidebarOpen; // the page behind goes inert, so Tab stays in the drawer
+  const hideBtnRef = useRef(null);
+  const showBtnRef = useRef(null);
+  const wasShown = useRef(shown);
+  // The sidebar control that last took focus (null once focus moves on). A hide
+  // can unmount the focused control in its own commit, which drops focus to
+  // <body> with no focusout; a remembered control that is no longer connected
+  // still counts as focus in the sidebar.
+  const lastFocus = useRef(null);
+
+  useEffect(() => {
+    const onFocusIn = (e) => { lastFocus.current = document.getElementById('app-sidebar')?.contains(e.target) ? e.target : null; };
+    // A pointer press hands focus to the browser: a hide it causes (a backdrop
+    // tap, even one that unmounted the focused control first) never brings a
+    // ring onto the show button.
+    const onPointer = () => { lastFocus.current = null; };
+    // A key press is judged from here: a control already gone before it (an
+    // earlier unmount that left focus on <body>) is not "in the sidebar".
+    const onKey = () => { if (!lastFocus.current?.isConnected) lastFocus.current = null; };
+    document.addEventListener('focusin', onFocusIn);
+    document.addEventListener('pointerdown', onPointer, true);
+    document.addEventListener('keydown', onKey, true);
+    return () => {
+      document.removeEventListener('focusin', onFocusIn);
+      document.removeEventListener('pointerdown', onPointer, true);
+      document.removeEventListener('keydown', onKey, true);
+    };
+  }, []);
+
+  // Keep keyboard focus on something visible as the sidebar comes and goes. An
+  // opening drawer takes focus (the page behind is inert); on desktop focus
+  // follows only from the show button, which disappears as the sidebar returns.
+  // Hiding with focus inside the sidebar (including on a control the hide just
+  // unmounted, see lastFocus) hands focus to the header's show button. Focus
+  // that is not in the sidebar (or already dropped to <body> by a backdrop tap)
+  // is left alone: no stray ring, and Space still scrolls.
+  useEffect(() => {
+    if (wasShown.current === shown) return;
+    wasShown.current = shown;
+    const a = document.activeElement;
+    // preventScroll: the drawer is still mid-slide (off-canvas) at this point
+    if (shown) {
+      if (drawer || a === showBtnRef.current) hideBtnRef.current?.focus({ preventScroll: true });
+    } else if (document.getElementById('app-sidebar')?.contains(a)
+      || (a === document.body && lastFocus.current && !lastFocus.current.isConnected)) {
+      showBtnRef.current?.focus({ preventScroll: true });
+    }
+  }, [shown, drawer]);
+
   return (
-    <div id="app">
-      <Sidebar />
-      <div className="page">
-        <PageHeader />
+    <div id="app" className={sidebarCollapsed ? 'sb-collapsed' : undefined}>
+      <Sidebar hideBtnRef={hideBtnRef} />
+      <div className="page" inert={drawerOpen}>
+        <PageHeader shown={shown} showBtnRef={showBtnRef} />
         <main className="pg-body"><div className={`pg-inner${wide ? ' pg-wide' : ''}`}><PageHero /><PageBody /></div></main>
       </div>
-      <ThemeToggle />
+      <ThemeToggle inert={drawerOpen} />
+      {/* goey-toast host for every tab but Projects, which renders its own:
+          Accounts' toasts and the form discard questions show here. */}
+      {view !== 'properties' && <ProjectsToaster />}
     </div>
   );
 }
@@ -292,7 +365,7 @@ const needsBootFetch = () => hasSessionId() && !getSession();
 
 // ── Root App ─────────────────────────────────────────────────────────────────
 export default function App() {
-  const { user, setUser, view, setView, refreshDB, searchRef, panLead, setPanLead, closeModal, modal, setSearch, setNotifOpen, setWaSettings, chatOk } = useApp();
+  const { user, setUser, view, setView, refreshDB, searchRef, panLead, setPanLead, closeModal, modal, setSearch, notifOpen, setNotifOpen, setWaSettings, chatOk, sidebarOpen, setSidebarOpen, toggleSidebar } = useApp();
   // The loader is only for the one case that genuinely has nothing to render:
   // a stored session id whose user is NOT in the local cache. An anonymous
   // visitor gets Landing/Login and a returning user gets the shell, both on the
@@ -474,6 +547,15 @@ export default function App() {
 
   useEffect(() => {
     function onKey(e) {
+      // Ctrl+\ (⌘\ on a Mac) shows/hides the sidebar. It types nothing, so it
+      // is safe to take even while a text field has focus.
+      if (user && (e.ctrlKey || e.metaKey) && !e.altKey && (e.key === '\\' || e.code === 'Backslash') && !e.repeat && !e.isComposing) {
+        e.preventDefault();
+        // Not while an overlay is up (modal, lead panel, notifications): the
+        // sidebar would open beneath it and pull focus out from under it.
+        if (!modal && !panLead && !notifOpen) toggleSidebar();
+        return;
+      }
       const tag = document.activeElement?.tagName;
       const inInput = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT';
       if (e.key === '/' && !inInput) {
@@ -483,12 +565,13 @@ export default function App() {
       if (e.key === 'Escape') {
         if (modal) { closeModal(); return; }
         if (panLead) { setPanLead(null); return; }
+        if (sidebarOpen) { setSidebarOpen(false); return; } // the ≤1023px drawer
         if (searchRef?.current === document.activeElement) { setSearch(''); searchRef.current.blur(); }
       }
     }
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [modal, panLead, searchRef]);
+  }, [user, modal, panLead, notifOpen, sidebarOpen, searchRef, closeModal, setPanLead, setSearch, setSidebarOpen, toggleSidebar]);
 
   useEffect(() => {
     if (initialized.current) return;

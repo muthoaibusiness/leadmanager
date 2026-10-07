@@ -1,9 +1,10 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState } from 'react';
 import Mi from './Mi.jsx';
+import SidebarGlyph from './SidebarGlyph.jsx';
 import { useApp } from '../context/AppContext.jsx';
-import { clearSession, getHoldRequests, getDB } from '../lib/db.js';
-import { avc, ini, rlabel } from '../lib/helpers.js';
-import { canSee, ROLES } from '../lib/constants.js';
+import { getHoldRequests } from '../lib/db.js';
+import { kbd } from '../lib/helpers.js';
+import { canSee } from '../lib/constants.js';
 
 // Grouped, role-scoped navigation (Muthoclo admin pattern).
 // Sections render a label + their visible items; a group renders a header that
@@ -24,8 +25,13 @@ const GROUPS = {
   },
 };
 
-export default function Sidebar() {
-  const { user, view, nav, sidebarOpen, setSidebarOpen, chatOk, waUnread } = useApp();
+// Rows are clickable divs (the codebase's pattern), so Enter/Space are wired to
+// do what a click does.
+const onActivate = (fn) => (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fn(); } };
+
+// `hideBtnRef`: the brand-row hide button, which the shell moves focus onto.
+export default function Sidebar({ hideBtnRef }) {
+  const { user, view, nav, sidebarOpen, setSidebarOpen, setSidebarShown, chatOk, waUnread } = useApp();
   // Groups start open; this holds the ones the user has closed.
   const [closed, setClosed] = useState({});
 
@@ -68,17 +74,21 @@ export default function Sidebar() {
       const open = !closed[k];
       // Subtle "holds the current page" state; the strong one is the child's.
       const childOn = kids.some(c => c.key === view);
+      const toggle = () => setClosed(c => ({ ...c, [k]: !c[k] }));
+      const subId = `sb-sub-${k}`;
       return (
         <div key={k}>
-          <div className={`sb-it sb-grp${childOn ? ' has-on' : ''}`} aria-expanded={open}
-            onClick={() => setClosed(c => ({ ...c, [k]: !c[k] }))}>
-            <Mi>{g.ico}</Mi>{g.lbl}
-            <Mi className="sb-chev">expand_more</Mi>
+          <div className={`sb-it sb-grp${childOn ? ' has-on' : ''}`} role="button" tabIndex={0}
+            aria-expanded={open} aria-controls={subId} onClick={toggle} onKeyDown={onActivate(toggle)}>
+            <Mi aria-hidden="true">{g.ico}</Mi>{g.lbl}
+            <Mi className="sb-chev" aria-hidden="true">expand_more</Mi>
           </div>
           {open && (
-            <div className="sb-sub">
+            <div className="sb-sub" id={subId}>
               {kids.map(c => (
-                <div key={c.key} className={`sb-subit${view === c.key ? ' on' : ''}`} onClick={() => nav(c.key)}>
+                <div key={c.key} className={`sb-subit${view === c.key ? ' on' : ''}`} role="button" tabIndex={0}
+                  aria-current={view === c.key ? 'page' : undefined}
+                  onClick={() => nav(c.key)} onKeyDown={onActivate(() => nav(c.key))}>
                   {c.lbl}
                 </div>
               ))}
@@ -93,8 +103,10 @@ export default function Sidebar() {
     if (k === 'conversations' && waUnread > 0) badge = waUnread;
     return (
       <div key={k}>
-        <div className={`sb-it${view === k ? ' on' : ''}`} onClick={() => nav(k)}>
-          <Mi>{m.ico}</Mi>{m.lbl}
+        <div className={`sb-it${view === k ? ' on' : ''}`} role="button" tabIndex={0}
+          aria-current={view === k ? 'page' : undefined}
+          onClick={() => nav(k)} onKeyDown={onActivate(() => nav(k))}>
+          <Mi aria-hidden="true">{m.ico}</Mi>{m.lbl}
           {badge > 0 && <span className="sb-badge">{badge}</span>}
         </div>
       </div>
@@ -104,15 +116,19 @@ export default function Sidebar() {
   return (
     <>
       <div className={`sb-ov${sidebarOpen ? ' on' : ''}`} onClick={() => setSidebarOpen(false)} />
-      <aside className={`sidebar${sidebarOpen ? ' open' : ''}`}>
+      <aside id="app-sidebar" className={`sidebar${sidebarOpen ? ' open' : ''}`}>
         <div className="sb-brand">
           <span className="wlogo wlogo-sm">WEPRO<span className="wlogo-accent"> CRM</span></span>
-          <button className="sb-close" onClick={() => setSidebarOpen(false)} title="Close">
-            <Mi>close</Mi>
+          {/* macOS-style sidebar button: collapses the docked sidebar on
+              desktop, closes the drawer below 1024px. */}
+          <button ref={hideBtnRef} className="sb-tog" onClick={() => setSidebarShown(false)}
+            aria-label="Hide sidebar" aria-controls="app-sidebar" aria-expanded="true"
+            title={`Hide sidebar (${kbd('\\')})`}>
+            <SidebarGlyph />
           </button>
         </div>
 
-        <nav className="sb-nav">
+        <nav className="sb-nav" aria-label="Main">
           {SECTIONS.map((sec, si) => {
             const keys = sec.keys.filter(visible);
             if (!keys.length) return null;
@@ -124,99 +140,7 @@ export default function Sidebar() {
             );
           })}
         </nav>
-
-        <div className="sb-foot">
-          <UserMenu />
-        </div>
       </aside>
     </>
-  );
-}
-
-// Small initials/photo avatar used in the user menu.
-function UAvatar({ u, cls = '' }) {
-  return u.avatar
-    ? <img src={u.avatar} alt="" className={`sb-av sb-av-img ${cls}`} />
-    : <div className={`sb-av ${cls}`} style={{ background: avc(u.name) }}>{ini(u.name)}</div>;
-}
-
-// Footer identity control: the current-user row is the trigger; clicking opens an
-// upward menu with a searchable account switcher (admins) + Profile + Sign out.
-// Replaces the old top-of-sidebar AccountSwitcher pill.
-function UserMenu() {
-  const { user, setUser, impersonator, impersonate, stopImpersonate, nav } = useApp();
-  const [open, setOpen] = useState(false);
-  const [q, setQ] = useState('');
-  const ref = useRef(null);
-
-  useEffect(() => {
-    if (!open) return;
-    const h = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
-    document.addEventListener('mousedown', h);
-    return () => document.removeEventListener('mousedown', h);
-  }, [open]);
-
-  const admin = impersonator || user;
-  const isAdmin = admin.role === ROLES.MGMT || admin.role === ROLES.MASTER;
-  const db = getDB();
-  const accounts = isAdmin
-    ? db.users
-        .filter(u => (admin.role === ROLES.MASTER ? true : (u.companyId === admin.companyId && u.role !== ROLES.MASTER)))
-        .filter(u => u.id !== user.id)
-        .sort((a, b) => (a.name || '').localeCompare(b.name || ''))
-    : [];
-  const ql = q.trim().toLowerCase();
-  const filtered = ql ? accounts.filter(u => (u.name || '').toLowerCase().includes(ql) || String(rlabel(u.role) || '').toLowerCase().includes(ql)) : accounts;
-
-  const logout = () => { clearSession(); setUser(null); };
-
-  return (
-    <div className="sb-umwrap" ref={ref}>
-      {open && (
-        <div className="umenu">
-          {impersonator && (
-            <button className="umenu-item umenu-return" onClick={() => { stopImpersonate(); setOpen(false); }}>
-              <Mi>undo</Mi><span>Back to {impersonator.name}</span>
-            </button>
-          )}
-          {isAdmin && (
-            <>
-              <div className="umenu-sec">Switch account</div>
-              <div className="umenu-search">
-                <Mi>search</Mi>
-                <input autoFocus placeholder="Search account" value={q} onChange={e => setQ(e.target.value)} />
-              </div>
-              <div className="umenu-list">
-                {filtered.map(u => (
-                  <button key={u.id} className="umenu-item" onClick={() => { impersonate(u); setOpen(false); setQ(''); }}>
-                    <UAvatar u={u} cls="umenu-av" />
-                    <span className="umenu-itx"><span className="umenu-in">{u.name}</span><span className="umenu-ir">{rlabel(u.role)}</span></span>
-                  </button>
-                ))}
-                {!filtered.length && <div className="umenu-empty">No match</div>}
-              </div>
-              <div className="umenu-div" />
-            </>
-          )}
-          {canSee(user, 'profile') && (
-            <button className="umenu-item" onClick={() => { nav('profile'); setOpen(false); }}>
-              <Mi>person</Mi><span>Profile</span>
-            </button>
-          )}
-          <button className="umenu-item umenu-danger" onClick={logout}>
-            <Mi>logout</Mi><span>Sign out</span>
-          </button>
-        </div>
-      )}
-
-      <button className={`sb-user${open ? ' open' : ''}${impersonator ? ' imp' : ''}`} onClick={() => setOpen(o => !o)}>
-        <UAvatar u={user} />
-        <div className="sb-uinfo">
-          <div className="sb-un">{user.name}</div>
-          <div className="sb-ur">{impersonator ? 'Viewing · ' + rlabel(user.role) : rlabel(user.role)}</div>
-        </div>
-        <Mi>unfold_more</Mi>
-      </button>
-    </div>
   );
 }

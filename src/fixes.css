@@ -12,3 +12,13 @@
   .ui-row { flex-wrap: wrap; }
   .ui-info { min-width: 100px; flex-shrink: 1; overflow: hidden; text-overflow: ellipsis; }
 }
+
+/* ISSUE 7 FIX: Closed modals taking keyboard focus and typed input.
+   Most modals stay mounted while closed and were only faded out (opacity 0), so
+   Tab and typing could still reach their fields. Hide them once the fade ends. */
+.mov { visibility: hidden; transition: opacity .2s, visibility 0s linear .2s; }
+.mov.on { visibility: visible; transition: opacity .2s, visibility 0s; }
+/* Their `transition: all` also animated the visibility these controls inherit
+   from .mov, so a field was still hidden when the open effect focused it, and
+   focus lingered in a closed modal. Keep only the hover/focus properties. */
+.mov .finp, .mov .btn, .mov .fu-chip, .mov .do-btn, .mov .seg-b, .mov .chip-sel { transition-property: background-color, border-color, color, box-shadow, transform, opacity; }

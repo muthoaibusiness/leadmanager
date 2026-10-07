@@ -45,6 +45,10 @@
   --sw: 256px;
   --hh: 58px;
   --tr: .15s ease;
+  /* sidebar slide: in (show) a touch slower than out (hide), both easing out */
+  --sb-ease: cubic-bezier(.2, 0, 0, 1);
+  --sb-in: .22s;
+  --sb-out: .18s;
   --font-display: 'Space Grotesk', 'Inter', 'Hind Siliguri', sans-serif;
 }
 
@@ -1470,6 +1474,7 @@ a {
 /* ── APP SHELL ─────────────────────────────── */
 #app {
   height: 100vh;
+  height: 100dvh;   /* phones: the visible viewport, not the one behind the URL bar */
   overflow: hidden;
   position: relative
 }
@@ -1493,20 +1498,36 @@ a {
     linear-gradient(180deg, rgba(10, 10, 10, 0.86) 0%, rgba(10, 10, 10, 0.8) 45%, rgba(10, 10, 10, 0.9) 100%);
 }
 
+/* Drawer backdrop: ≤1023px only, so it can never be left over the docked
+   desktop layout. It fades both ways, and lets clicks through as soon as it
+   starts fading out. */
 .sb-ov {
   position: fixed;
   inset: 0;
   background: rgba(0, 0, 0, .4);
   z-index: 199;
-  display: none
+  display: none;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity .2s ease, visibility 0s linear .2s
 }
 
-.sb-ov.on {
-  display: block
+@media(max-width:1023px) {
+  .sb-ov { display: block }
+  .sb-ov.on {
+    opacity: 1;
+    visibility: visible;
+    pointer-events: auto;
+    transition: opacity .2s ease
+  }
 }
 
 /* Sidebar is ALWAYS fixed (never participates in document flow). Desktop content
-   is offset via .page margin-left; mobile/tablet it slides in as an overlay. */
+   is offset via .page margin-left; mobile/tablet it slides in as an overlay.
+   Shown states slide in over --sb-in; hidden states slide out over --sb-out and
+   only then turn visibility off, which also takes the off-screen sidebar out of
+   the tab order. */
 .sidebar {
   position: fixed;
   top: 0;
@@ -1518,12 +1539,49 @@ a {
   display: flex;
   flex-direction: column;
   z-index: 200;
-  transition: transform var(--tr)
+  transition: transform var(--sb-in) var(--sb-ease), visibility 0s
 }
 
 @media(max-width:1023px) {
-  .sidebar { transform: translateX(-100%) }   /* hidden off-canvas, takes no space */
-  .sidebar.open { transform: translateX(0) }  /* slides in as overlay */
+  .sidebar {   /* hidden off-canvas, takes no space */
+    transform: translateX(-100%);
+    visibility: hidden;
+    transition: transform var(--sb-out) var(--sb-ease), box-shadow var(--sb-out) var(--sb-ease), visibility 0s linear var(--sb-out)
+  }
+  .sidebar.open {   /* slides in as overlay */
+    transform: translateX(0);
+    visibility: visible;
+    box-shadow: var(--sh-lg);
+    transition: transform var(--sb-in) var(--sb-ease), box-shadow var(--sb-in) var(--sb-ease), visibility 0s
+  }
+}
+
+/* Desktop: the docked sidebar collapses away (its brand-row button or Ctrl+\).
+   Desktop only: #app.sb-collapsed .sidebar outranks .sidebar.open, and the
+   drawer must still open for someone who collapsed it on a wide screen.
+   Desktop is the exact complement of the drawer query (DRAWER_MQ): with
+   min-width:1024px, zoomed widths between 1023 and 1024px would be in neither
+   layout, JS treating them as desktop while these rules stay off. */
+@media not all and (max-width: 1023px) {
+  #app.sb-collapsed .sidebar {
+    transform: translateX(-100%);
+    visibility: hidden;
+    transition: transform var(--sb-out) var(--sb-ease), visibility 0s linear var(--sb-out)
+  }
+}
+
+/* The icon font is ~3 MB. Until it lands, each ligature renders as its name
+   ("person_search") and shoves the label beside it; a capped 1em-high box keeps
+   the chrome still. Capped rather than a fixed 1em: a loaded glyph's box is 1em
+   plus the trailing letter-spacing it inherits (.sb-it, .drp-trigger), so the
+   cap leaves the loaded layout exactly as it was. */
+.sidebar .mi,
+.pg-head button > .mi {
+  max-width: 1.1em;
+  height: 1em;
+  overflow: hidden;
+  flex: none;
+  white-space: nowrap
 }
 
 .sb-brand {
@@ -1571,32 +1629,34 @@ a {
   color: var(--t1)
 }
 
-.sb-close {
-  display: none;
+/* Hide-sidebar button (the macOS sidebar.left control), last in the brand row
+   at every width. Its glyph's right edge sits on the nav's right icon column:
+   the Leads chevron and the footer's unfold icon. */
+.sb-tog {
+  display: flex;
+  flex-shrink: 0;
   width: 30px;
   height: 30px;
   border-radius: var(--r-sm);
   align-items: center;
   justify-content: center;
-  color: var(--t3);
+  color: var(--t2);
   background: none;
   border: none;
   cursor: pointer;
-  margin-left: auto
+  transition: background var(--tr), color var(--tr)
 }
 
-.sb-close:hover {
+.sb-tog:hover {
   background: var(--surf2);
   color: var(--t1)
 }
 
-.sb-close .mi {
-  font-size: 20px
-}
-
 @media(max-width:1023px) {
-  .sb-close {
-    display: flex
+  .sb-tog {   /* 44px touch box; the negative margin keeps the glyph on that column */
+    width: 44px;
+    height: 44px;
+    margin-right: -7px
   }
 }
 
@@ -1738,6 +1798,19 @@ a {
   height: 15px;
   border-radius: 0 3px 3px 0;
   background: var(--accent)
+}
+
+/* Keyboard focus ring for the chrome's controls. :focus-visible, so a mouse
+   click never shows it. Rows and menu items take it inset: they stack tightly
+   inside scrolling lists whose overflow would clip an outer ring. */
+.sidebar :is(button, [role="button"]):focus-visible,
+.pg-head :is(button, [role="button"]):focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px
+}
+
+.sidebar :is([role="button"], .umenu-item):focus-visible {
+  outline-offset: -2px
 }
 
 .sb-foot {
@@ -1951,6 +2024,71 @@ a {
 .av-img {
   object-fit: cover;
   background: none
+}
+
+/* ── AvatarGroup (components/ui/avatar-group.jsx) ──────────────────────────
+   The component's Tailwind utilities as CSS: a 32px row, each avatar after
+   the first overlapping by 8px (-space-x-2). Faces are chips with a border in
+   the surface colour; the tooltip is an inverted pill that ignores the
+   pointer (it is portalled, and must never take a click meant for a face). */
+.ag { display: flex; flex-direction: row; align-items: center; height: 32px }
+.ag > * + * { margin-left: -8px }
+.ag-slot { position: relative }
+.ag-av {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: 2px solid var(--surf);
+  border-radius: 50%;
+  overflow: hidden;
+  background: var(--surf2);
+  color: var(--t2);
+  font: 600 12px/1 var(--font-display);
+  user-select: none;
+  cursor: pointer
+}
+.ag-av:focus-visible { outline: 2px solid var(--t1); outline-offset: 1px }
+.ag-img { display: block; width: 100%; height: 100%; object-fit: cover }
+.ag-more { font-size: 11px }
+.ag-tip {
+  padding: 6px 12px;
+  border-radius: 8px;
+  background: var(--t1);
+  color: var(--bg);
+  font: 500 12px/16px var(--font-display);
+  white-space: nowrap;
+  pointer-events: none;
+  transform-origin: var(--radix-tooltip-content-transform-origin);
+  z-index: 300; /* Radix copies it to the portal wrapper: over the page and sidebar, under modals */
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, .06), 0 2px 8px rgba(0, 0, 0, .18)
+}
+[data-radix-popper-content-wrapper]:has(> .ag-tip) { pointer-events: none }
+
+/* ── Header account control (components/UserMenu.jsx) ──────────────────────
+   Top right, before the date filter. Your own face (first) carries an accent
+   ring — orange while viewing as another account — and opens the menu, which
+   drops down from the header instead of rising from the old sidebar footer. */
+.hd-um { position: relative; z-index: 60; display: flex; align-items: center }
+.hd-um .ag-slot:first-child .ag-av { border-color: var(--accent) }
+.hd-um.imp .ag-slot:first-child .ag-av { border-color: var(--orange) }
+.hd-um .umenu {
+  top: calc(100% + 10px);
+  bottom: auto;
+  left: auto;
+  right: 0;
+  width: 290px;
+  animation: umdrop .16s ease
+}
+@keyframes umdrop {
+  from { opacity: 0; transform: translateY(-6px) }
+  to { opacity: 1; transform: translateY(0) }
+}
+.um-me { display: flex; align-items: center; gap: 10px; padding: 8px 10px }
+@media (max-width: 767px) {
+  .hd-um .umenu { position: fixed; top: calc(var(--hh) + 8px); left: 8px; right: 8px; width: auto }
 }
 
 /* ── PROFILE PAGE ────────────────────────────── */
@@ -2200,6 +2338,7 @@ a {
 /* Content offset for the fixed sidebar on desktop; full width on mobile/tablet. */
 .page {
   height: 100vh;
+  height: 100dvh;
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -2209,6 +2348,16 @@ a {
 
 @media(max-width:1023px) {
   .page { margin-left: 0 }   /* sidebar is an overlay — content stays full width */
+}
+
+/* Desktop: the content slides over as the sidebar collapses/expands, in step
+   with the sidebar's own timing. (Desktop = not the drawer query, see .sidebar.) */
+@media not all and (max-width: 1023px) {
+  .page { transition: margin-left var(--sb-in) var(--sb-ease) }
+  #app.sb-collapsed .page {
+    margin-left: 0;
+    transition: margin-left var(--sb-out) var(--sb-ease)
+  }
 }
 
 .pg-head {
@@ -2222,6 +2371,12 @@ a {
   flex-shrink: 0
 }
 
+/* The header fox (components/HeaderMascot.jsx): stands on the header's bottom
+   edge; its left is set from the page content's left edge, and it stays
+   hidden until that is measured. */
+.pg-head { position: relative }
+.pg-mascot { position: absolute; bottom: 0; z-index: 1; visibility: hidden }
+
 /* thin separator between the date filter and the notification bell */
 .pg-div {
   width: 1px;
@@ -2230,30 +2385,42 @@ a {
   flex-shrink: 0
 }
 
+/* Show-sidebar button, first in the header, with the hide button's glyph and
+   look: always there for the ≤1023px drawer, on desktop only while the sidebar
+   is collapsed. */
 .ham {
   width: 34px;
   height: 34px;
+  margin-left: -7px;   /* desktop: the glyph lands at x≈20, where the wordmark sits */
   display: none;
+  flex-shrink: 0;
   align-items: center;
   justify-content: center;
   border-radius: var(--r-sm);
   color: var(--t2);
   cursor: pointer;
   background: none;
-  border: none
+  border: none;
+  transition: background var(--tr), color var(--tr)
 }
 
 .ham:hover {
-  background: var(--surf2)
+  background: var(--surf2);
+  color: var(--t1)
 }
 
-.ham .mi {
-  font-size: 22px
+@media not all and (max-width: 1023px) {
+  #app.sb-collapsed .ham {
+    display: flex
+  }
 }
 
 @media(max-width:1023px) {
   .ham {
-    display: flex
+    display: flex;
+    width: 44px;
+    height: 44px;
+    margin-left: 0
   }
 }
 
@@ -2479,6 +2646,9 @@ a {
 
 @media (prefers-reduced-motion: reduce) {
   .rf-ring::before, .rf-btn.busy .mi { animation: none }
+  /* the sidebar, its backdrop and the page snap instead of sliding; !important
+     because the collapsed-state rules carry #app specificity */
+  .sidebar, .sb-ov, .page { transition: none !important }
 }
 
 @media(max-width:560px) {
@@ -3607,6 +3777,25 @@ a {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap
+}
+
+/* Customers → Last Follow-up: the column agents scan first, so a logged
+   follow-up reads bold in the accent and its note a step up from muted.
+   .lt-fu-on is set only when there is a value — the "—" / "…" placeholders
+   keep the quiet .lt-date / .lt-sub look. */
+.lt-leads .lt-cell-fu .lt-date.lt-fu-on {
+  color: var(--accent);
+  font-weight: 700
+}
+
+.lt-leads .lt-cell-fu .lt-sub.lt-fu-on {
+  color: var(--t2);
+  font-weight: 600
+}
+
+/* header label for the same column (second-to-last in both layouts) */
+.lt-leads .lt-hdr > div:nth-last-child(2) {
+  color: var(--accent)
 }
 
 .lt-src {
@@ -6946,6 +7135,30 @@ textarea.fi {
   border-left: 1px solid var(--bd);
   padding-left: 8px;
   margin-left: 3px
+}
+
+/* Phones: a range preset ("Last 7 days | Oct 1 – Oct 7") made the trigger
+   ~254px wide and pushed the bell out of the header. Drop the dates here (the
+   panel still shows them) and let a long preset label ellipsize instead. */
+@media(max-width:560px) {
+  .drp-wrap {
+    flex-shrink: 1;
+    min-width: 0
+  }
+
+  .drp-trigger {
+    max-width: 100%
+  }
+
+  .drp-trigger-preset {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis
+  }
+
+  .drp-trigger-range {
+    display: none
+  }
 }
 
 .drp-panel {
@@ -10411,7 +10624,7 @@ textarea.fi {
 /* Touch targets — min 44px for actions on touch screens */
 @media (max-width: 1023px) {
   .btn { min-height: 44px }
-  .ham, .m-x, .sb-close, .p-back { min-width: 44px; min-height: 44px }
+  .ham, .m-x, .sb-tog, .p-back { min-width: 44px; min-height: 44px }
   .fsel, .finp, .fi { min-height: 44px }
 }
 
@@ -10592,8 +10805,10 @@ textarea.fi {
 .fpill.on { color: #38BDF8; border-color: rgba(56, 189, 248, .5); background: rgba(56, 189, 248, .10); }
 
 /* ── Theme toggle (floating, bottom-right) ─────────────────────────────── */
+/* z-index under the drawer backdrop (199) and sidebar (200): an open drawer
+   covers it instead of the toggle painting over the drawer on narrow phones. */
 .thtog {
-  position: fixed; right: 18px; bottom: 18px; z-index: 200;
+  position: fixed; right: 18px; bottom: 18px; z-index: 150;
   width: 60px; height: 30px; padding: 3px; border-radius: 999px;
   border: 1px solid var(--bd2); background: var(--surf2);
   box-shadow: var(--sh-md); cursor: pointer; display: flex; align-items: center;

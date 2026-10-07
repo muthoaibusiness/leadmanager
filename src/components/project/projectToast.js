@@ -3,11 +3,13 @@ import { gooeyToast } from 'goey-toast';
 import Mi from '../Mi.jsx';
 import { useApp } from '../../context/AppContext.jsx';
 
-// goey-toast for the Projects tab only. The project console can also be opened
+// goey-toast for the Projects tab. The project console can also be opened
 // from Hold Requests; there (and in every other tab) the app's existing toast
 // and confirm stay exactly as they were. Each call names the message the old
 // toast showed (`legacy`, or nothing where there was none), so outside this tab
-// behaviour does not change. The toaster itself is ProjectsToaster.jsx.
+// behaviour does not change. A view outside Projects opts in with
+// useProjectToast({ always: true }) (Accounts does). The toaster itself is
+// ProjectsToaster.jsx.
 
 const ICON = { success: 'check_circle', error: 'error', warning: 'warning', info: 'info' };
 const LEGACY_TYPE = { success: 'ok', error: 'err', warning: 'warn', info: '' };
@@ -21,9 +23,9 @@ const icon = (type) => h(Mi, { className: 'wp-gt-ico' }, ICON[type]);
 // last instead of queueing behind it (goey shows three, then queues).
 let lastNote = null;
 
-export function useProjectToast() {
+export function useProjectToast({ always = false } = {}) {
   const { view, showToast } = useApp();
-  const on = view === 'properties';
+  const on = always || view === 'properties';
 
   const notify = (type, title, description, legacy) => {
     if (!on) {

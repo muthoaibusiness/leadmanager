@@ -3,8 +3,9 @@ import { GooeyToaster } from 'goey-toast';
 import 'goey-toast/styles.css';
 import './projectToast.css';
 
-// The Projects tab's one goey-toast host. PropertiesView renders it, so it only
-// exists while that tab is open. Portalled to <body>: the page body is zoomed
+// The goey-toast host. PropertiesView renders it while the Projects tab is
+// open; App's shell renders it on every other tab, so there is always exactly
+// one. Portalled to <body>: the page body is zoomed
 // (.pg-body) and the toasts have to sit above the project console's overlay.
 // Colours, type and spacing come from the app's tokens (projectToast.css), so
 // `theme` only picks goey's base layer. A dismissed toast keeps its slot until

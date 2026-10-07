@@ -4,8 +4,16 @@ import { useApp } from '../../context/AppContext.jsx';
 import { getLead, addLeadFn, updLead, addAct, leadByPhone, normalizePhone } from '../../lib/db.js';
 import { SRC_LABELS, ROLES, SOURCE_OPTIONS_IA, SOURCE_OPTIONS_DEFAULT } from '../../lib/constants.js';
 import ProjectInterestPicker from '../ProjectInterestPicker.jsx';
+import useDiscardGuard from '../../hooks/useDiscardGuard.js';
 
 const leadCode = (l) => l.externalId || ('#' + String(l.id || '').slice(-6).toUpperCase());
+
+// Everything the form holds, as one string. The copy taken when the form opens
+// is the baseline isDirty() compares against — the Add Property catalog's way.
+const formKey = (f) => JSON.stringify([
+  f.name, f.company, f.profession, f.city, f.email,
+  f.phones.map(p => p.trim()).filter(Boolean), f.interest, f.source, f.pending || '',
+].map(v => (typeof v === 'string' ? v.trim() : v)));
 
 export default function AddLeadModal() {
   const { modal, closeModal, user, panLead, refreshDB, showToast, setPanLead } = useApp();
@@ -38,31 +46,58 @@ export default function AddLeadModal() {
   // now awaits the server before confirming — see addLeadFn).
   const [saving, setSaving] = useState(false);
 
+  const modalRef = useRef(null);
+  const baselineRef = useRef('');
+
   useEffect(() => {
     if (!isOpen) return;
     setSaving(false); // never reopen stuck in a saving state
+    let f = { name: '', company: '', source: defaultSource, interest: '', profession: '', city: '', email: '', phones: [''] };
     if (isEdit && panLead) {
       const l = getLead(panLead);
       if (!l) return;
-      nameRef.current.value = l.name || '';
-      companyRef.current.value = l.company && l.company !== '—' ? l.company : '';
-      setSource(l.source || defaultSource);
-      setInterest(l.propertyInterest || '');
-      profRef.current.value = l.profession || '';
-      cityRef.current.value = l.city || '';
-      emailRef.current.value = l.email || '';
-      setPhones(l.phones?.length ? l.phones : [l.phone || '']);
-    } else {
-      nameRef.current.value = '';
-      companyRef.current.value = '';
-      setSource(defaultSource);
-      setInterest('');
-      profRef.current.value = '';
-      cityRef.current.value = '';
-      emailRef.current.value = '';
-      setPhones(['']);
+      f = {
+        name: l.name || '',
+        company: l.company && l.company !== '—' ? l.company : '',
+        source: l.source || defaultSource,
+        interest: l.propertyInterest || '',
+        profession: l.profession || '',
+        city: l.city || '',
+        email: l.email || '',
+        phones: l.phones?.length ? l.phones : [l.phone || ''],
+      };
     }
+    nameRef.current.value = f.name;
+    companyRef.current.value = f.company;
+    setSource(f.source);
+    setInterest(f.interest);
+    profRef.current.value = f.profession;
+    cityRef.current.value = f.city;
+    emailRef.current.value = f.email;
+    setPhones(f.phones);
+    baselineRef.current = formKey(f);
   }, [isOpen, isEdit, panLead]);
+
+  // Text typed into the project picker but not yet added as a tag counts too.
+  const isDirty = () => formKey({
+    name: nameRef.current?.value || '',
+    company: companyRef.current?.value || '',
+    source, interest,
+    profession: profRef.current?.value || '',
+    city: cityRef.current?.value || '',
+    email: emailRef.current?.value || '',
+    phones,
+    pending: modalRef.current?.querySelector('.pip-input')?.value || '',
+  }) !== baselineRef.current;
+
+  // ✕, Cancel, the backdrop and Esc close through the guard: an untouched form
+  // just closes, one with input asks first (Projects → Add Property's structure).
+  const guard = useDiscardGuard({
+    isOpen, isDirty, onClose: closeModal, busy: saving,
+    ask: isEdit
+      ? { title: 'Discard unsaved changes?', description: 'Your edits will be lost.' }
+      : { title: 'Discard this new lead?', description: 'It has not been saved.' },
+  });
 
   const updatePhone = (i, v) => {
     const sanitized = v.replace(/[^\d+ ]/g, '');
@@ -151,11 +186,11 @@ export default function AddLeadModal() {
   };
 
   return (
-    <div className={`mov${isOpen ? ' on' : ''}`} onClick={e => { if (e.target === e.currentTarget) closeModal(); }}>
-      <div className="modal">
+    <div className={`mov${isOpen ? ' on' : ''}`} {...guard.backdropProps}>
+      <div className="modal" ref={modalRef} {...guard.modalProps}>
         <div className="m-hd">
           <div className="m-ttl">{isEdit ? 'Edit Customer' : 'Add New Lead'}</div>
-          <button className="m-x" onClick={closeModal}><Mi>close</Mi></button>
+          <button className="m-x" onClick={guard.requestClose}><Mi>close</Mi></button>
         </div>
         <div className="m-body">
           <div className="fg">
@@ -239,7 +274,7 @@ export default function AddLeadModal() {
           </div>
         </div>
         <div className="m-ft">
-          <button className="btn btn-g" onClick={closeModal} disabled={saving}>Cancel</button>
+          <button className="btn btn-g" onClick={guard.requestClose} disabled={saving}>Cancel</button>
           <button className="btn btn-p" onClick={submit} disabled={saving}>
             <Mi>{saving ? 'hourglass_empty' : 'save'}</Mi>{saving ? 'Saving…' : 'Save'}
           </button>
