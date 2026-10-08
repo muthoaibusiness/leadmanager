@@ -1,6 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import Mi from '../Mi.jsx';
 import { useApp } from '../../context/AppContext.jsx';
+import useChanged from '../../hooks/useChanged.js';
 import { getDB } from '../../lib/db.js';
 import { rlabel, avc, ini } from '../../lib/helpers.js';
 import { ROLES } from '../../lib/constants.js';
@@ -27,10 +28,10 @@ export default function ChatSettingsModal() {
   const [tokenSaving, setTokenSaving] = useState(false);
   const [tokenSet, setTokenSet] = useState(false);
 
-  useEffect(() => {
-    if (!isOpen) return;
-    const s = waSettings;
-    if (!s) return;
+  // waSettings is a context state object, so its identity changes only when
+  // the settings are replaced.
+  const s = waSettings;
+  if (useChanged(isOpen ? s : null) && isOpen && s) {
     setRelayUrl(s.relayUrl || '');
     setSessionName(s.sessionName || '');
     setWebhookUrl(s.webhookUrl || '');
@@ -39,7 +40,7 @@ export default function ChatSettingsModal() {
     setTokenSet(!!s.tokenSet);
     setToken('');
     setSecret('');
-  }, [isOpen, waSettings]);
+  }
 
   if (!isOpen) return <div className="mov" onClick={closeModal} />;
   if (!isChatAdmin(user)) {

@@ -44,7 +44,7 @@ export default function AccountsView() {
     const c = { total: coUsers.length, [ROLES.TL]: 0, [ROLES.MA]: 0, [ROLES.IA]: 0, [ROLES.MGMT]: 0 };
     coUsers.forEach(u => { c[u.role] = (c[u.role] || 0) + 1; });
     return c;
-  }, [dbVersion]);
+  }, [dbVersion]); // eslint-disable-line react-hooks/exhaustive-deps -- coUsers is re-derived from db each render; dbVersion tracks it
 
   // ── row editing ──
   const setRow = (i, k, v) => setRows(rs => rs.map((r, idx) => idx === i ? { ...r, [k]: v } : r));
@@ -109,7 +109,7 @@ export default function AccountsView() {
       .filter(u => roleFilter === 'ALL' ? true : u.role === roleFilter)
       .filter(u => !term || (u.name || '').toLowerCase().includes(term) || (u.email || '').toLowerCase().includes(term))
       .sort((a, b) => (a.name || '').localeCompare(b.name || ''));
-  }, [dbVersion, q, roleFilter]);
+  }, [dbVersion, q, roleFilter]); // eslint-disable-line react-hooks/exhaustive-deps -- coUsers is re-derived from db each render; dbVersion tracks it
 
   // After every hook, so the hook order never depends on the role.
   if (user.role !== ROLES.MGMT) return null;

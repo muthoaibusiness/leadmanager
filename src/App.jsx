@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, Suspense } from 'react';
 import { useApp } from './context/AppContext.jsx';
 import { getDB, getUnreadCount, getSession, setSession, loginRemote, hasSessionId, saveDBDeferred, checkFollowUpReminders, getProperties, expireHolds, migrateTenancy, mergeDB, purgeDemoSeed, dedupeLeads, reconcileDeletions, applyRealtimeEvent, clearLocalDB, cacheBelongsTo, fetchSessionUser } from './lib/db.js';
 import { seedDB, SEED_PROPERTIES, DEMO_PROPERTIES } from './lib/seed.js';
@@ -8,68 +8,112 @@ import { pushUnreadSummary, requestNotifyPermission } from './lib/pushNotify.js'
 import { rlabel, kbd } from './lib/helpers.js';
 import { ROLES, canSee, FEATURE_KEYS, effectiveRole, DRAWER_MQ } from './lib/constants.js';
 import useMediaQuery from './hooks/useMediaQuery.js';
+import lazyChunk from './lib/lazyChunk.js';
 
 import Mi from './components/Mi.jsx';
 import SidebarGlyph from './components/SidebarGlyph.jsx';
 import RefreshButton from './components/RefreshButton.jsx';
-import { SignIn1 } from './components/ui/modern-stunning-sign-in.jsx';
 import LoadingRadar from './components/LoadingRadar.jsx';
-import LandingPage from './components/LandingPage.jsx';
 import Sidebar from './components/Sidebar.jsx';
 import ThemeToggle from './components/ThemeToggle.jsx';
 import NotifBell from './components/NotifBell.jsx';
 import UserMenu from './components/UserMenu.jsx';
-import LeadPanel from './components/LeadPanel.jsx';
 import Toast from './components/Toast.jsx';
-import ProjectsToaster from './components/project/ProjectsToaster.jsx';
 import DateRangePicker from './components/DateRangePicker.jsx';
 
-import InitialAgentDash from './components/dashboards/InitialAgentDash.jsx';
-import MeetingAgentDash from './components/dashboards/MeetingAgentDash.jsx';
-import TeamLeadDash from './components/dashboards/TeamLeadDash.jsx';
-import ManagementDash from './components/dashboards/ManagementDash.jsx';
-import MasterDash from './components/dashboards/MasterDash.jsx';
 
-import LeadsView from './components/views/LeadsView.jsx';
-import CalendarView from './components/views/CalendarView.jsx';
-import TeamView from './components/views/TeamView.jsx';
-import UsersView from './components/views/UsersView.jsx';
-import AccountsView from './components/views/AccountsView.jsx';
-import RequestsView from './components/views/RequestsView.jsx';
-import ProfileView from './components/views/ProfileView.jsx';
-import PropertiesView from './components/views/PropertiesView.jsx';
-import BookingsView from './components/views/BookingsView.jsx';
-import PipelineView from './components/views/PipelineView.jsx';
-import ClientsView from './components/views/ClientsView.jsx';
-import ReportsView from './components/views/ReportsView.jsx';
-import AgentPerformanceView from './components/views/AgentPerformanceView.jsx';
-import ConversationsView from './components/views/ConversationsView.jsx';
 
-import AddLeadModal from './components/modals/AddLeadModal.jsx';
-import ForwardModal from './components/modals/ForwardModal.jsx';
-import RescheduleModal from './components/modals/RescheduleModal.jsx';
-import SchedModal from './components/modals/SchedModal.jsx';
-import DealModal from './components/modals/DealModal.jsx';
-import NoteModal from './components/modals/NoteModal.jsx';
-import CreateUserModal from './components/modals/CreateUserModal.jsx';
-import EditAgentModal from './components/modals/EditAgentModal.jsx';
-import ImportModal from './components/modals/ImportModal.jsx';
-import DuplicateModal from './components/modals/DuplicateModal.jsx';
-import TargetModal from './components/modals/TargetModal.jsx';
-import DeleteUserModal from './components/modals/DeleteUserModal.jsx';
-import CredsModal from './components/modals/CredsModal.jsx';
-import FollowUpModal from './components/modals/FollowUpModal.jsx';
-import LostModal from './components/modals/LostModal.jsx';
-import PropertyViewModal from './components/modals/PropertyViewModal.jsx';
-import ProjectConsole from './components/project/ProjectConsole.jsx';
 import { migrateProjects, newProjectDraft, projectInventory } from './lib/projects.js';
-import PropertyFormModal from './components/modals/PropertyFormModal.jsx';
-import UnitBookingModal from './components/modals/UnitBookingModal.jsx';
-import BookingModal from './components/modals/BookingModal.jsx';
-import TransferLeadModal from './components/modals/TransferLeadModal.jsx';
 import GlobalLoadingBar from './components/GlobalLoadingBar.jsx';
-import UpgradePlanModal from './components/modals/UpgradePlanModal.jsx';
-import ChatSettingsModal from './components/modals/ChatSettingsModal.jsx';
+
+// ── Code-split pages and overlays ───────────────────────────────────────────
+// The entry chunk is the shell. Pages load when first shown; modals, the lead
+// panel and the project console mount once the browser is idle after sign-in
+// (or the moment one is asked for), and that idle slot also prefetches every
+// page so later navigation never waits on the network.
+const PAGES = {
+  InitialAgentDash: () => import('./components/dashboards/InitialAgentDash.jsx'),
+  MeetingAgentDash: () => import('./components/dashboards/MeetingAgentDash.jsx'),
+  TeamLeadDash: () => import('./components/dashboards/TeamLeadDash.jsx'),
+  ManagementDash: () => import('./components/dashboards/ManagementDash.jsx'),
+  MasterDash: () => import('./components/dashboards/MasterDash.jsx'),
+  LeadsView: () => import('./components/views/LeadsView.jsx'),
+  CalendarView: () => import('./components/views/CalendarView.jsx'),
+  TeamView: () => import('./components/views/TeamView.jsx'),
+  UsersView: () => import('./components/views/UsersView.jsx'),
+  AccountsView: () => import('./components/views/AccountsView.jsx'),
+  RequestsView: () => import('./components/views/RequestsView.jsx'),
+  ProfileView: () => import('./components/views/ProfileView.jsx'),
+  PropertiesView: () => import('./components/views/PropertiesView.jsx'),
+  BookingsView: () => import('./components/views/BookingsView.jsx'),
+  PipelineView: () => import('./components/views/PipelineView.jsx'),
+  ClientsView: () => import('./components/views/ClientsView.jsx'),
+  ReportsView: () => import('./components/views/ReportsView.jsx'),
+  AgentPerformanceView: () => import('./components/views/AgentPerformanceView.jsx'),
+  ConversationsView: () => import('./components/views/ConversationsView.jsx'),
+};
+const OVERLAYS = {
+  LeadPanel: () => import('./components/LeadPanel.jsx'),
+  AddLeadModal: () => import('./components/modals/AddLeadModal.jsx'),
+  UpgradePlanModal: () => import('./components/modals/UpgradePlanModal.jsx'),
+  ForwardModal: () => import('./components/modals/ForwardModal.jsx'),
+  RescheduleModal: () => import('./components/modals/RescheduleModal.jsx'),
+  SchedModal: () => import('./components/modals/SchedModal.jsx'),
+  DealModal: () => import('./components/modals/DealModal.jsx'),
+  NoteModal: () => import('./components/modals/NoteModal.jsx'),
+  CreateUserModal: () => import('./components/modals/CreateUserModal.jsx'),
+  EditAgentModal: () => import('./components/modals/EditAgentModal.jsx'),
+  ImportModal: () => import('./components/modals/ImportModal.jsx'),
+  DuplicateModal: () => import('./components/modals/DuplicateModal.jsx'),
+  TargetModal: () => import('./components/modals/TargetModal.jsx'),
+  DeleteUserModal: () => import('./components/modals/DeleteUserModal.jsx'),
+  CredsModal: () => import('./components/modals/CredsModal.jsx'),
+  FollowUpModal: () => import('./components/modals/FollowUpModal.jsx'),
+  LostModal: () => import('./components/modals/LostModal.jsx'),
+  PropertyViewModal: () => import('./components/modals/PropertyViewModal.jsx'),
+  ProjectConsole: () => import('./components/project/ProjectConsole.jsx'),
+  PropertyFormModal: () => import('./components/modals/PropertyFormModal.jsx'),
+  UnitBookingModal: () => import('./components/modals/UnitBookingModal.jsx'),
+  BookingModal: () => import('./components/modals/BookingModal.jsx'),
+  TransferLeadModal: () => import('./components/modals/TransferLeadModal.jsx'),
+  ChatSettingsModal: () => import('./components/modals/ChatSettingsModal.jsx'),
+};
+
+const lazyAll = (loaders) => Object.fromEntries(Object.entries(loaders).map(([k, f]) => [k, lazyChunk(f)]));
+
+const { InitialAgentDash, MeetingAgentDash, TeamLeadDash, ManagementDash, MasterDash, LeadsView, CalendarView, TeamView, UsersView, AccountsView, RequestsView, ProfileView, PropertiesView, BookingsView, PipelineView, ClientsView, ReportsView, AgentPerformanceView, ConversationsView } = lazyAll(PAGES);
+const OVERLAY_COMPONENTS = Object.entries(lazyAll(OVERLAYS));
+const LandingPage = lazyChunk(() => import('./components/LandingPage.jsx'));
+const SignIn1 = lazyChunk(() => import('./components/ui/modern-stunning-sign-in.jsx').then(m => ({ default: m.SignIn1 })));
+// goey-toast brings framer-motion and sonner.
+const ProjectsToaster = lazyChunk(() => import('./components/project/ProjectsToaster.jsx'));
+
+// Modals, the lead panel and the project console. Each has its own Suspense so
+// one slow chunk never holds up another, and once mounted they stay mounted
+// (closed modals still render their backdrop for the open transition).
+function Overlays() {
+  const { user, modal, panLead } = useApp();
+  const [mounted, setMounted] = useState(false);
+  if (!mounted && (modal || panLead)) setMounted(true);
+  useEffect(() => {
+    if (mounted || !user) return;
+    let idleId = 0;
+    const t = setTimeout(() => {
+      const go = () => {
+        Object.values(PAGES).forEach(f => f().catch(() => { /* retried on first show */ }));
+        setMounted(true);
+      };
+      if (typeof requestIdleCallback === 'function') idleId = requestIdleCallback(go, { timeout: 4000 });
+      else go();
+    }, 1000);
+    return () => {
+      clearTimeout(t);
+      if (idleId && typeof cancelIdleCallback === 'function') cancelIdleCallback(idleId);
+    };
+  }, [mounted, user]);
+  if (!mounted) return null;
+  return OVERLAY_COMPONENTS.map(([name, C]) => <Suspense key={name} fallback={null}><C /></Suspense>);
+}
 
 // ── Loading screen ──────────────────────────────────────────────────────────
 function LoadingScreen({ visible }) {
@@ -128,12 +172,12 @@ function LoginPage({ onLogin, onBack }) {
         </div>
       </div>
       <div className="ln-right">
-        <SignIn1
+        <Suspense fallback={null}><SignIn1
           email={email} setEmail={setEmail}
           password={pw} setPassword={setPw}
           error={err} loading={loading}
           onSignIn={doLogin} onKeyDown={handleKey} onBack={onBack}
-        />
+        /></Suspense>
       </div>
     </div>
   );
@@ -342,12 +386,12 @@ function AppShell() {
       <Sidebar hideBtnRef={hideBtnRef} />
       <div className="page" inert={drawerOpen}>
         <PageHeader shown={shown} showBtnRef={showBtnRef} />
-        <main className="pg-body"><div className={`pg-inner${wide ? ' pg-wide' : ''}`}><PageHero /><PageBody /></div></main>
+        <main className="pg-body"><div className={`pg-inner${wide ? ' pg-wide' : ''}`}><PageHero /><Suspense fallback={null}><PageBody /></Suspense></div></main>
       </div>
       <ThemeToggle inert={drawerOpen} />
       {/* goey-toast host for every tab but Projects, which renders its own:
           Accounts' toasts and the form discard questions show here. */}
-      {view !== 'properties' && <ProjectsToaster />}
+      {view !== 'properties' && <Suspense fallback={null}><ProjectsToaster /></Suspense>}
     </div>
   );
 }
@@ -507,14 +551,14 @@ export default function App() {
     else setTimeout(open, 0);
 
     return () => { cancelled = true; cancelAnimationFrame(refreshFrame); if (unsub) unsub(); };
-  }, [user?.id]);
+  }, [user?.id]); // eslint-disable-line react-hooks/exhaustive-deps -- per account: a fresh user object for the same id must not reconnect the socket
 
   // Auto-release expired unit holds every minute
   useEffect(() => {
-    if (!user) return;
+    if (!user?.id) return;
     const t = setInterval(() => { if (expireHolds()) refreshDB(); }, 60000);
     return () => clearInterval(t);
-  }, [user?.id]);
+  }, [user?.id, refreshDB]);
 
   // Keep the user on a view they're allowed to see (e.g. Executives with no
   // dashboard land on their first granted feature instead of a forbidden page).
@@ -527,12 +571,12 @@ export default function App() {
       const first = FEATURE_KEYS.find(k => canSee(user, k)) || 'profile';
       setView(first);
     }
-  }, [user?.id, view, user?.allowedFeatures, chatOk]);
+  }, [user, view, chatOk, setView]);
 
   // Chat config drives both sidebar visibility and the relay URL. Load it once
   // per signed-in account; a missing table just leaves chat switched off.
   useEffect(() => {
-    if (!user) { setWaSettings(null); return; }
+    if (!user?.id) { setWaSettings(null); return; }
     let alive = true;
     waLoadSettings()
       .then(s => { if (alive) setWaSettings(s); })
@@ -604,42 +648,18 @@ export default function App() {
       revealApp();
       if (u) summarizeUnread(u);
     })();
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps -- mount only: restores the session once
 
   return (
     <>
       {/* Speaks for every fetch in the app — see GlobalLoadingBar / netActivity. */}
       <GlobalLoadingBar />
       {loadVisible && <LoadingScreen visible={loading} />}
-      {!user && !loading && !showLogin && <LandingPage onEnter={() => setShowLogin(true)} />}
+      {!user && !loading && !showLogin && <Suspense fallback={null}><LandingPage onEnter={() => setShowLogin(true)} /></Suspense>}
       {!user && !loading && showLogin && <LoginPage onLogin={enterApp} onBack={() => setShowLogin(false)} />}
       {user && <AppShell />}
       {entering && <PostLoginLoader />}
-      <LeadPanel />
-      {/* Modals */}
-      <AddLeadModal />
-      <UpgradePlanModal />
-      <ForwardModal />
-      <RescheduleModal />
-      <SchedModal />
-      <DealModal />
-      <NoteModal />
-      <CreateUserModal />
-      <EditAgentModal />
-      <ImportModal />
-      <DuplicateModal />
-      <TargetModal />
-      <DeleteUserModal />
-      <CredsModal />
-      <FollowUpModal />
-      <LostModal />
-      <PropertyViewModal />
-      <ProjectConsole />
-      <PropertyFormModal />
-      <UnitBookingModal />
-      <BookingModal />
-      <TransferLeadModal />
-      <ChatSettingsModal />
+      <Overlays />
       <Toast />
     </>
   );

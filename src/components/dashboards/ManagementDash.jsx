@@ -11,6 +11,7 @@ import { ROLES, STATUS_LABELS } from '../../lib/constants.js';
 import StatTrend from '../StatTrend.jsx';
 import useActWindow from '../../hooks/useActWindow.js';
 import useLeadBook from '../../hooks/useLeadBook.js';
+import useNow from '../../hooks/useNow.js';
 
 function sclass(s) { return 's-' + (s || '').toLowerCase(); }
 
@@ -18,6 +19,8 @@ export default function ManagementDash() {
   useLeadBook(); // this view reduces over every lead; leads are not in the boot load
   useActWindow(); // pull the recent-activity window; activities are not in the boot load
   const { user, setView, setTeamFilter, setAgentFilter, setTab, setSearch, setPropSel, openModal, dateRange, dbVersion, setPanLead } = useApp();
+  // Read once a minute; the needs-attention checks below compare against it.
+  const now = useNow(60000);
   const [activeTab, setActiveTab] = useState(0);
   const [detail, setDetail] = useState(null);
   const db = getDB();
@@ -121,7 +124,7 @@ export default function ManagementDash() {
   ];
 
   // Needs-attention (live, ignores date range)
-  const isStale = (iso, days) => iso && (Date.now() - new Date(iso)) > days * 86400000;
+  const isStale = (iso, days) => iso && (now - new Date(iso)) > days * 86400000;
   const overdueBk = bookings.filter(b => { const nd = bookingNextDue(b); return nd && new Date(nd.dueDate) < new Date() && bookingDue(b) > 0; });
   const overdueAmt = overdueBk.reduce((s, b) => s + bookingDue(b), 0);
   const staleNeg = coLeads.filter(l => l.status === 'NEGOTIATING' && isStale(l.updatedAt || l.createdAt, 14)).length;

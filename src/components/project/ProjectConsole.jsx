@@ -11,6 +11,8 @@ import './ProjectConsole.css';
 import { fmtBDT } from '../../lib/helpers.js';
 import { ROLES } from '../../lib/constants.js';
 import useLeadBook from '../../hooks/useLeadBook.js';
+import useChanged from '../../hooks/useChanged.js';
+import useNow from '../../hooks/useNow.js';
 
 const STAGES = [
   { key: 'offer', label: 'Offer' },
@@ -25,10 +27,9 @@ const crShort = (n) => (n >= 1e7 ? (n / 1e7).toFixed(2) + ' Cr' : n >= 1e5 ? (n 
 const amtShort = (n) => (n >= 1e7 ? +(n / 1e7).toFixed(2) + ' Cr' : n >= 1e5 ? +(n / 1e5).toFixed(1) + ' L' : fmtBDT(n));
 
 // Live countdown to a target ISO time → {d,h,m,s} string, or 'expired'.
-function useCountdown(targetMs) {
-  const [, tick] = useState(0);
-  useEffect(() => { const t = setInterval(() => tick(n => n + 1), 1000); return () => clearInterval(t); }, []);
-  const diff = targetMs - Date.now();
+// Ticks only while `active`: the console stays mounted on every page.
+function useCountdown(targetMs, active) {
+  const diff = targetMs - useNow(1000, active);
   if (diff <= 0) return 'expired';
   const d = Math.floor(diff / 86400000), h = Math.floor(diff / 3600000) % 24, m = Math.floor(diff / 60000) % 60, s = Math.floor(diff / 1000) % 60;
   return `${d}d ${h}h ${m}m ${s}s`;
@@ -58,20 +59,19 @@ export default function ProjectConsole() {
   const stored = isOpen && propSel ? getProjectById(propSel) : null;
   const isNew = isOpen && !stored && !!propDraft && propDraft.id === propSel;
   const p = stored || (isNew ? toProject(propDraft) : null);
-  const variants = useMemo(() => (p ? p.variants : []), [p, dbVersion]);
+  // dbVersion: `p` can be the same cached object after an in-place edit.
+  const variants = useMemo(() => (p ? p.variants : []), [p, dbVersion]); // eslint-disable-line react-hooks/exhaustive-deps
   const variant = variants.find(v => v.id === vid) || variants[0] || null;
 
   // reset when opening a different project
-  useEffect(() => { if (isOpen) { setVid(null); setDeal(emptyDeal()); setCq(''); setAdmin(!!consoleAdmin); } }, [propSel, isOpen]);
+  if (useChanged(`${isOpen}:${propSel}`) && isOpen) { setVid(null); setDeal(emptyDeal()); setCq(''); setAdmin(!!consoleAdmin); }
   // keep deal.variantId in sync; reset unit when variant changes
-  useEffect(() => { if (variant) setDeal(d => (d.variantId === variant.id ? d : { ...emptyDeal(), variantId: variant.id })); }, [variant?.id]);
+  if (useChanged(variant?.id) && variant) setDeal(d => (d.variantId === variant.id ? d : { ...emptyDeal(), variantId: variant.id }));
 
   // returning to the console after admin edits — sanitize the deal so it can't
   // reference a variant/unit that was deleted or is no longer available.
-  useEffect(() => {
-    if (admin) return;
-    const proj = propSel ? getProjectById(propSel) : null;
-    if (!proj) return;
+  const proj = useChanged(admin) && !admin && propSel ? getProjectById(propSel) : null;
+  if (proj) {
     setDeal(d => {
       const v = proj.variants.find(x => x.id === d.variantId);
       if (!v) return { ...emptyDeal(), variantId: proj.variants[0]?.id || null };
@@ -82,12 +82,11 @@ export default function ProjectConsole() {
       if (Object.keys(addons).length !== Object.keys(d.addons || {}).length) nd = { ...nd, addons };
       return nd;
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [admin]);
+  }
 
   const locked = deal.stage !== 'browse'; // editing locked once in the cart
   const fastTarget = startedAt + (p?.fastCloseDays || 0) * 86400000;
-  const countdown = useCountdown(fastTarget);
+  const countdown = useCountdown(fastTarget, isOpen);
 
   const calc = variant ? computeDeal(deal, variant, p) : null;
 

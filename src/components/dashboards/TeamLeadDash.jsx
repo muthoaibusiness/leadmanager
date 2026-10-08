@@ -79,12 +79,13 @@ export default function TeamLeadDash() {
   // `needBook` is the fallback switch: until the migration is applied the
   // rollup is null and the page reduces over ensureLeadBook()'s data exactly as
   // it used to. Nothing downloads the book while the rollup is answering.
+  const teamKey = teamUserIds.join();
   const rollOpts = useMemo(() => ({
     teamId: user.teamId || null,
     userIds: teamUserIds,
     start: rangeStart, end: rangeEnd,
     monthStart: (() => { const d = new Date(); d.setDate(1); d.setHours(0, 0, 0, 0); return d; })(),
-  }), [user.teamId, teamUserIds.join(), rangeStart, rangeEnd]); // eslint-disable-line react-hooks/exhaustive-deps
+  }), [user.teamId, teamKey, rangeStart, rangeEnd]); // eslint-disable-line react-hooks/exhaustive-deps -- teamKey stands in for teamUserIds
   const { rollup, agents, acts, needBook } = useRollup(rollOpts);
   useLeadBook(needBook);
   const leads = getLeads(user);
@@ -99,8 +100,11 @@ export default function TeamLeadDash() {
   useEffect(() => { let alive = true; hasOfferCol().then(v => { if (alive) setOfferCol(v); }); return () => { alive = false; }; }, []);
 
   const [closingRows, setClosingRows] = useState(null);
+  // While the book is in use or the offer gate is unknown, there is no list.
+  const closingGated = needBook || offerCol === null;
+  if (closingGated && closingRows !== null) setClosingRows(null);
   useEffect(() => {
-    if (needBook || offerCol === null) { setClosingRows(null); return; }
+    if (closingGated) return;
     let alive = true;
     // Only leads that carry an offer: forwarding to a Team Lead requires one
     // (fwdLead), so anything else in these statuses is not theirs to close.

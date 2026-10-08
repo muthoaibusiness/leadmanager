@@ -1,15 +1,17 @@
 import Mi from '../Mi.jsx';
 import { fmtBDT } from '../../lib/helpers.js';
+import useNow from '../../hooks/useNow.js';
 
 // WECON offer document (Stripe-receipt style). `inline` renders just the sheet
 // for an embedded A4 preview; otherwise it's a full overlay with a print bar.
 // Preview only for now (TODO: persist/issue with a real number via backend).
 export default function ProjectInvoice({ project, variant, deal, calc, agent, onClose, inline }) {
-  const date = new Date().toLocaleDateString('en-US', { day: 'numeric', month: 'long', year: 'numeric' });
+  const now = useNow(60000);
+  const date = new Date(now).toLocaleDateString('en-US', { day: 'numeric', month: 'long', year: 'numeric' });
   const no = 'WCN-' + (project.id || '').slice(-4).toUpperCase() + '-' + String(deal.unitId || '').replace(/\W/g, '');
   const discountAmt = calc.offerValue - calc.discountedOffer;
   const addonItems = (project.addons || []).filter(a => deal.addons?.[a.id]);
-  const validUntil = new Date(Date.now() + (project.fastCloseDays || 7) * 86400000).toLocaleDateString('en-US', { day: 'numeric', month: 'long', year: 'numeric' });
+  const validUntil = new Date(now + (project.fastCloseDays || 7) * 86400000).toLocaleDateString('en-US', { day: 'numeric', month: 'long', year: 'numeric' });
 
   const sheet = (
     <div className="inv-sheet">

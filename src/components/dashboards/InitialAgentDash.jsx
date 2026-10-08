@@ -126,7 +126,7 @@ export default function InitialAgentDash() {
     const oldestUntouchedAt = oldestUntouched ? new Date(oldestUntouched.createdAt) : null;
 
     return { now, todayStart, queue, oldestUntouchedAt, active, followToday };
-  }, [queueRows, oldestUntouched, db, dbVersion]);
+  }, [queueRows, oldestUntouched, db, dbVersion]); // eslint-disable-line react-hooks/exhaustive-deps -- db mutates in place; dbVersion is the change signal
 
   const QUEUE_CAP = 8;
   const shown = view.queue.slice(0, QUEUE_CAP);

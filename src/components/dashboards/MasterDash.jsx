@@ -19,7 +19,7 @@ export default function MasterDash() {
   const [err, setErr] = useState('');
 
   const companies = getCompanies();
-  const rows = useMemo(() => companies.map(c => ({ c, s: companyStats(c.id) })), [dbVersion, companies.length]);
+  const rows = useMemo(() => companies.map(c => ({ c, s: companyStats(c.id) })), [dbVersion, companies.length]); // eslint-disable-line react-hooks/exhaustive-deps -- getCompanies() is a fresh array each render; dbVersion and its length track it
 
   // global rollup across all tenants
   const totals = useMemo(() => rows.reduce((a, { s }) => ({

@@ -169,10 +169,20 @@ a {
   text-decoration: none
 }
 
+/* The reset below is Google's own for the icon font. text-transform matters
+   most: the subset font (icon_names= in index.html) only knows lower-case
+   names, so an icon inside an uppercase label (the sidebar) would render as
+   its name. The full font happened to accept any case and hid this. */
 .mi {
   font-family: 'Material Symbols Rounded';
   font-size: 20px;
   line-height: 1;
+  text-transform: none;
+  letter-spacing: normal;
+  white-space: nowrap;
+  word-wrap: normal;
+  direction: ltr;
+  font-feature-settings: 'liga';
   user-select: none;
   -webkit-font-smoothing: antialiased;
   vertical-align: middle;

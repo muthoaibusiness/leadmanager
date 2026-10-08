@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import Mi from '../Mi.jsx';
 import { useApp } from '../../context/AppContext.jsx';
 import { markLostFn } from '../../lib/db.js';
+import useChanged from '../../hooks/useChanged.js';
 
 export default function LostModal() {
   const { modal, closeModal, user, panLead, refreshDB, showToast } = useApp();
@@ -9,7 +10,7 @@ export default function LostModal() {
   const [reason, setReason] = useState('');
   const reasonRef = useRef(null);
 
-  useEffect(() => { if (isOpen) setReason(''); }, [isOpen]);
+  if (useChanged(isOpen) && isOpen) setReason('');
   // This modal stays mounted while closed, so autoFocus fired on page load and
   // put the cursor in the hidden textarea. Focus the field when it opens instead.
   useEffect(() => { if (isOpen) reasonRef.current?.focus(); }, [isOpen]);

@@ -98,12 +98,14 @@ export default function DateRangePicker() {
   const ref = useRef();
 
   // sync left month when opening
-  useEffect(()=>{
-    if(!open) return;
-    const now=new Date();
-    setLeftMonth(now.getMonth()===0?11:now.getMonth()-1);
-    setLeftYear(now.getMonth()===0?now.getFullYear()-1:now.getFullYear());
-  },[open]);
+  function toggle() {
+    if(!open){
+      const now=new Date();
+      setLeftMonth(now.getMonth()===0?11:now.getMonth()-1);
+      setLeftYear(now.getMonth()===0?now.getFullYear()-1:now.getFullYear());
+    }
+    setOpen(!open);
+  }
 
   // close on outside click
   useEffect(()=>{
@@ -153,7 +155,7 @@ export default function DateRangePicker() {
 
   return (
     <div className="drp-wrap" ref={ref}>
-      <button className={`drp-trigger${open?' open':''}`} onClick={()=>setOpen(o=>!o)}>
+      <button className={`drp-trigger${open?' open':''}`} onClick={toggle}>
         <Mi aria-hidden="true">date_range</Mi>
         <span className="drp-trigger-preset">{activeLabel}</span>
         {rangeLabel && <span className="drp-trigger-range">{rangeLabel}</span>}

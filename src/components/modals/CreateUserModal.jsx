@@ -6,6 +6,7 @@ import { sbEmailsInUse } from '../../lib/supabase.js';
 import { rlabel } from '../../lib/helpers.js';
 import { ROLES } from '../../lib/constants.js';
 import useDiscardGuard from '../../hooks/useDiscardGuard.js';
+import useChanged from '../../hooks/useChanged.js';
 
 export default function CreateUserModal() {
   const { modal, closeModal, user, createUserRoles, refreshDB, showToast, setCredInfo, openModal } = useApp();
@@ -28,10 +29,13 @@ export default function CreateUserModal() {
     emailRef.current?.value.trim() || '', passRef.current?.value || '', roleRef.current?.value || '',
   ]);
 
+  if (useChanged(isOpen) && isOpen) {
+    setErr('');
+    setShowPw(false);
+  }
+  // The fields are uncontrolled, so clearing them is DOM work for after commit.
   useEffect(() => {
     if (isOpen) {
-      setErr('');
-      setShowPw(false);
       if (nameRef.current) nameRef.current.value = '';
       if (emailRef.current) emailRef.current.value = '';
       if (passRef.current) passRef.current.value = '';

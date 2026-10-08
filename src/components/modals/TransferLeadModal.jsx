@@ -1,6 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import Mi from '../Mi.jsx';
 import { useApp } from '../../context/AppContext.jsx';
+import useChanged from '../../hooks/useChanged.js';
 import { getDB, bulkTransferLeads } from '../../lib/db.js';
 import { ROLES } from '../../lib/constants.js';
 
@@ -42,19 +43,17 @@ export default function TransferLeadModal({ leadIds = null, open = null, onClose
     ? (db.users || []).filter(u => u.teamId === selectedTeamId && u.role === ROLES.MA && u.isActive !== false).sort((a, b) => (a.name || '').localeCompare(b.name || ''))
     : [];
 
-  useEffect(() => {
-    if (isOpen) {
-      setSelectedTeamId('');
-      setSelectedIA('');
-      setSelectedMA('');
-    }
-  }, [isOpen]);
-
-  // Auto-clear agents if team changes
-  useEffect(() => {
+  if (useChanged(isOpen) && isOpen) {
+    setSelectedTeamId('');
     setSelectedIA('');
     setSelectedMA('');
-  }, [selectedTeamId]);
+  }
+
+  // Auto-clear agents if team changes
+  if (useChanged(selectedTeamId)) {
+    setSelectedIA('');
+    setSelectedMA('');
+  }
 
   const handleIAChange = (val) => {
     setSelectedIA(val);

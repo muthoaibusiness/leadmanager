@@ -22,6 +22,7 @@ export default function UsersView() {
   // Won / Active per team. These were two Array.filter passes over the whole
   // company's leads, which is why this page used to download them all; they are
   // two counts per team now, and the page holds no lead rows at all.
+  const teamKey = teams.map(t => t.id).join();
   const teamQ = useMemo(() => {
     const spec = {};
     teams.forEach(t => {
@@ -29,7 +30,7 @@ export default function UsersView() {
       spec['act:' + t.id] = { user, involved: true, extra: [eq('team_id', t.id), 'status.not.in.(DEAL_CLOSED_WON,DEAL_CLOSED_LOST,NOT_INTERESTED)'] };
     });
     return spec;
-  }, [user, teams.map(t => t.id).join()]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [user, teamKey]); // eslint-disable-line react-hooks/exhaustive-deps -- teamKey stands in for teams
   const counts = useLeadCounts(teamQ);
   const num = (k) => (counts[k] == null ? '—' : counts[k]);
   // Executives belong to a team now and render inside its card, next to the agents.

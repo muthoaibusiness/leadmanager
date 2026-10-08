@@ -8,6 +8,7 @@ import { fmtD, fmtDT, fmtBDT, rlabel, scoreLead, scoreLabel, leadDisplayStatus, 
 import ActivityTimeline from './ActivityTimeline.jsx';
 import { ROLES, SRC_LABELS, effectiveRole, isNiHandler, DRAWER_MQ } from '../lib/constants.js';
 import useMediaQuery from '../hooks/useMediaQuery.js';
+import useChanged from '../hooks/useChanged.js';
 
 const leadCode = (l) => l.externalId || ('#' + String(l.id || '').slice(-6).toUpperCase());
 const SHARED_LABEL = { price: 'Price idea', brochure: 'Brochure', video: 'Video', image: 'Image' };
@@ -454,11 +455,12 @@ export default function LeadPanel() {
   // forever. Resolving is the signal, not changing.
   const [actsReady, setActsReady] = useState(false);
 
+  // A lead whose full history is already cached must not flash a spinner.
+  if (useChanged(panLead) && panLead) setActsReady(hasFullActs(panLead));
+
   useEffect(() => {
     if (!panLead) return;
     let alive = true;
-    // A lead whose full history is already cached must not flash a spinner.
-    setActsReady(hasFullActs(panLead));
     // The lead row itself may not be cached either — a notification opens the
     // panel from an id alone, and db.leads only holds what has been listed so far.
     ensureLead(panLead).then(changed => { if (alive && changed) refreshDB(); });

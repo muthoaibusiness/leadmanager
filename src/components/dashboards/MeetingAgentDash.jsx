@@ -87,7 +87,7 @@ export default function MeetingAgentDash() {
       .sort((a, b) => new Date(a.meetingDate) - new Date(b.meetingDate));
 
     return { todayVisits, overdue, upcoming };
-  }, [visitRows, dbVersion]);
+  }, [visitRows, dbVersion]); // eslint-disable-line react-hooks/exhaustive-deps -- db mutates in place; dbVersion is the change signal
 
   // The visual pipeline funnel (clickable stages).
   const STAGES = [

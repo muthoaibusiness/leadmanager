@@ -6,22 +6,19 @@ export function Donut({ data, size = 150, thickness = 20, centerVal, centerSub }
   const total = items.reduce((s, d) => s + d.value, 0) || 1;
   const r = (size - thickness) / 2;
   const c = 2 * Math.PI * r;
-  let off = 0;
+  // Each arc starts where the ones before it end.
+  const lens = items.map(d => c * d.value / total);
+  const offs = lens.map((_, i) => lens.slice(0, i).reduce((s, x) => s + x, 0));
   return (
     <div className="chart-donut">
       <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="cd-svg">
         <g transform={`rotate(-90 ${size / 2} ${size / 2})`}>
           <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="var(--surf2)" strokeWidth={thickness} />
-          {items.map((d, i) => {
-            const len = c * d.value / total;
-            const el = (
-              <circle key={i} cx={size / 2} cy={size / 2} r={r} fill="none"
-                stroke={d.color} strokeWidth={thickness}
-                strokeDasharray={`${len} ${c - len}`} strokeDashoffset={-off} />
-            );
-            off += len;
-            return el;
-          })}
+          {items.map((d, i) => (
+            <circle key={i} cx={size / 2} cy={size / 2} r={r} fill="none"
+              stroke={d.color} strokeWidth={thickness}
+              strokeDasharray={`${lens[i]} ${c - lens[i]}`} strokeDashoffset={-offs[i]} />
+          ))}
         </g>
         {centerVal !== undefined && <text x="50%" y="49%" textAnchor="middle" dominantBaseline="middle" className="cd-val">{centerVal}</text>}
         {centerSub && <text x="50%" y="66%" textAnchor="middle" dominantBaseline="middle" className="cd-sub">{centerSub}</text>}

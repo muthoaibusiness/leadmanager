@@ -1,6 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import Mi from '../Mi.jsx';
 import { useApp } from '../../context/AppContext.jsx';
+import useChanged from '../../hooks/useChanged.js';
 import { getProperty, deletePropertyFn } from '../../lib/db.js';
 import { fmtBDT } from '../../lib/helpers.js';
 import { ROLES, PROPERTY_STATUS } from '../../lib/constants.js';
@@ -14,7 +15,7 @@ export default function PropertyViewModal() {
   const p = isOpen && propSel ? getProperty(propSel) : null;
   const [active, setActive] = useState(0);
 
-  useEffect(() => { setActive(0); }, [propSel, isOpen]);
+  if (useChanged(`${isOpen}:${propSel}`)) setActive(0);
 
   if (!isOpen || !p) return <div className={`mov${isOpen ? ' on' : ''}`} onClick={closeModal} />;
 

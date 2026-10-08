@@ -39,7 +39,7 @@ export default function LiveActivity({ db, coLeads, coUsers, dbVersion }) {
       .filter(e => e.time)
       .sort((a, b) => new Date(b.time) - new Date(a.time))
       .slice(0, 50);
-  }, [db, coLeads, leadsById, dbVersion]);
+  }, [db, coLeads, leadsById, dbVersion]); // eslint-disable-line react-hooks/exhaustive-deps -- db mutates in place; dbVersion is the change signal
 
   return (
     <div className="analytics-card">

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import Mi from './Mi.jsx';
 import { useApp } from '../context/AppContext.jsx';
+import useChanged from '../hooks/useChanged.js';
 
 export default function Toast() {
   const { toast } = useApp();
@@ -8,10 +9,13 @@ export default function Toast() {
   const [current, setCurrent] = useState(null);
   const timerRef = useRef(null);
 
-  useEffect(() => {
-    if (!toast) return;
+  // A new toast swaps in hidden, then fades in two frames later.
+  if (useChanged(toast) && toast) {
     setCurrent(toast);
     setVisible(false);
+  }
+  useEffect(() => {
+    if (!toast) return;
     requestAnimationFrame(() => {
       requestAnimationFrame(() => setVisible(true));
     });

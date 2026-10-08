@@ -49,7 +49,7 @@ export default function AgentPerformanceView() {
   const r = dateRange?.range;
   const allRows = useMemo(
     () => buildAgentPerf(db, { start: r ? r.start.getTime() : null, end: r ? r.end.getTime() : null, periodDays: 0, teamId }),
-    [db, r, teamId, dbVersion]
+    [db, r, teamId, dbVersion] // eslint-disable-line react-hooks/exhaustive-deps -- db mutates in place; dbVersion is the change signal
   );
 
   // 7-day daily involved-lead volume per agent (for the row sparkline + trend insight)
@@ -64,7 +64,7 @@ export default function AgentPerformanceView() {
       });
     });
     return id => map[id] || Array(days).fill(0);
-  }, [db, dbVersion]);
+  }, [db, dbVersion]); // eslint-disable-line react-hooks/exhaustive-deps -- db mutates in place; dbVersion is the change signal
 
   const view = ROLE_VIEWS[role], cfg = CFG[role];
   const rows = allRows.filter(r => r.u.role === role);
