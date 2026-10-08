@@ -239,7 +239,7 @@ function PageHero() {
 
   const META = {
     dashboard: { eyebrow: rlabel(user.role), title: 'Dashboard', sub: '' },
-    leads: { eyebrow: 'Pipeline', title: 'Customers', sub: leadCounts?.total == null ? 'Counting…' : `${leadCounts.total} customers · ${leadCounts.active ?? 0} active` },
+    leads: { eyebrow: 'Pipeline', title: 'Prospects', sub: leadCounts?.total == null ? 'Counting…' : `${leadCounts.total} prospects ·${leadCounts.active ?? 0} active` },
     calendar: { eyebrow: 'Schedule', title: 'Calendar', sub: 'Your scheduled meetings' },
     pipeline: { eyebrow: 'Sales', title: 'Pipeline', sub: 'Drag deals across stages' },
     clients: { eyebrow: 'Relationships', title: 'Contacts', sub: '360° customer view' },
@@ -301,7 +301,7 @@ function PageHero() {
     <div className={`hero${view === 'pipeline' ? ' hero-compact' : ''}`}>
       <div className="hero-main">
         {drilled
-          ? <button className="hero-back" onClick={clearDrill}><Mi>arrow_back</Mi>All Customers</button>
+          ? <button className="hero-back" onClick={clearDrill}><Mi>arrow_back</Mi>All Prospects</button>
           : unitsTab
             ? <button className="hero-back" onClick={() => setProjTab('list')}><Mi>arrow_back</Mi>All Projects</button>
             : <div className="hero-eyebrow">{eyebrow}</div>}
