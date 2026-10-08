@@ -21,7 +21,7 @@ const SECTIONS = [
 const GROUPS = {
   leadsGroup: {
     ico: 'person_search', lbl: 'Leads',
-    kids: [{ key: 'leads', lbl: 'Customers' }, { key: 'pipeline', lbl: 'Pipeline' }],
+    kids: [{ key: 'leads', lbl: 'Prospects' }, { key: 'pipeline', lbl: 'Pipeline' }],
   },
 };
 
