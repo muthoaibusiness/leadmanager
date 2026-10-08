@@ -1,0 +1,56 @@
+/* goey-toast dressed in the app's design tokens (every goey toast carries
+   .wp-gt — Projects, Accounts, the form discard questions). Selectors include
+   [data-theme] so they outrank goey's
+   own dark-theme rules; the tokens switch with the app's light/dark theme. */
+
+.wp-gt.gooey-wrapper[data-theme] { font-family: var(--font-display); }
+.wp-gt.gooey-wrapper[data-theme] .gooey-blobSvg { filter: drop-shadow(0 12px 28px rgba(0, 0, 0, .35)) drop-shadow(0 2px 6px rgba(0, 0, 0, .25)); }
+/* goey paints the blob through SVG attributes; CSS outranks those. A raised
+   panel with a hairline edge, like the app's own toast. */
+.wp-gt.gooey-wrapper[data-theme] .gooey-blobSvg path { fill: var(--surf2); stroke: var(--bd); stroke-width: 1px; }
+
+.wp-gt.gooey-wrapper[data-theme] .gooey-header { gap: 7px; }
+.wp-gt.gooey-wrapper[data-theme] .gooey-iconWrapper { width: 18px; height: 18px; }
+.wp-gt.gooey-wrapper[data-theme] .wp-gt-ico { font-size: 18px; line-height: 1; }
+.wp-gt.gooey-wrapper[data-theme] .gooey-title { font-size: 13px; font-weight: 700; letter-spacing: -.005em; line-height: 1.2; padding: 0 4px 1px 1px; }
+.wp-gt.gooey-wrapper[data-theme] .gooey-titleDefault,
+.wp-gt.gooey-wrapper[data-theme] .gooey-titleLoading,
+.wp-gt.gooey-wrapper[data-theme] .gooey-titleInfo { color: var(--t1); }
+.wp-gt.gooey-wrapper[data-theme] .gooey-titleSuccess { color: var(--accent); }
+.wp-gt.gooey-wrapper[data-theme] .gooey-titleError { color: var(--red); }
+.wp-gt.gooey-wrapper[data-theme] .gooey-titleWarning { color: var(--orange); }
+.wp-gt.gooey-wrapper[data-theme] .gooey-description { margin-top: 10px; font-size: 12.5px; line-height: 1.45; color: var(--t2); }
+/* The toaster is top-centre, so goey centres the pill over the body; the body
+   is at least 300px wide. Left-aligned, a short second line hugged the body's
+   left edge and sat off-centre under the pill — centre it on the pill's axis.
+   goey writes text-align:left inline on the description, hence !important. */
+.wp-gt.gooey-wrapper[data-theme] .gooey-description { text-align: center !important; }
+
+/* goey measures a toast with offsetWidth, which rounds to whole pixels, and
+   pins it at that width while it animates in and out. A message that only
+   just fits on one line then drops its last word to a second line for those
+   frames; one pixel of extra line room absorbs the rounding. */
+.wp-gt-desc { display: block; width: calc(100% + 1px); }
+
+/* Room for the widest toast (goey lets one grow to 380px; sonner's list is
+   356px). Only goey uses sonner in this app (ProjectsToaster.jsx, one per tab). */
+[data-sonner-toaster][data-x-position="center"] { --width: min(400px, calc(100vw - 32px)) !important; }
+
+/* Confirmation: the question in the pill, its context on the line below, then
+   Cancel and the destructive action side by side. */
+.wp-gt-confirm.gooey-wrapper[data-theme] .gooey-description { overflow: visible; } /* keeps the buttons' focus ring */
+.wp-gt-confirm-msg { margin: 0; }
+.wp-gt-confirm-acts { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 12px; }
+.wp-gt-btn { padding: 8px 16px; border: 0; border-radius: 999px; font: 600 12px/1.2 var(--font-display); letter-spacing: .06em; text-transform: uppercase; cursor: pointer; transition: background var(--tr), filter var(--tr); }
+.wp-gt-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.wp-gt-cancel { background: var(--bd); color: var(--t1); }
+.wp-gt-cancel:hover { background: var(--bd2); }
+.wp-gt-danger { background: var(--red-l); color: var(--red); }
+.wp-gt-danger:hover { filter: brightness(1.25); }
+
+/* Phones (last, so it wins over the rules above): still top-centre, but 104px
+   down, clear of the page header; side margins instead of edge to edge. */
+@media (max-width: 600px) {
+  [data-sonner-toaster][data-y-position="top"] { --mobile-offset-top: 104px !important; }
+  .wp-gt.gooey-wrapper[data-theme] .gooey-contentExpanded { max-width: calc(100vw - 48px); }
+}

@@ -1,0 +1,14 @@
+/* PROPERTY DETAILS header: the required PROJECT TYPE select sits on its right
+   (ui/color-emotion-select.jsx). */
+.pcat-hd-type { flex-wrap: wrap; row-gap: 12px; }
+.pcat-ptype { margin-left: auto; }
+
+/* Full-screen console (≤820px): the type takes its own row under the title,
+   right-aligned. Phones: the select spans the row. */
+@media (max-width: 820px) {
+  .pcat-ptype { flex: 1 1 100%; margin-left: 0; justify-content: flex-end; }
+}
+@media (max-width: 600px) {
+  .pcat-ptype { justify-content: flex-start; }
+  .pcat-ptype .ces-trigger { flex: 1 1 auto; min-width: 0; }
+}

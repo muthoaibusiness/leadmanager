@@ -5,7 +5,7 @@ import { fmtAgo } from '../lib/helpers.js';
 import { NOTIF_ICO, NOTIF_CLR } from '../lib/constants.js';
 
 export default function NotifBell() {
-  const { user, notifOpen, setNotifOpen, setPanLead, refreshDB, dbVersion } = useApp();
+  const { user, notifOpen, setNotifOpen, setPanLead, refreshDB } = useApp();
 
   if (!user) return null;
 

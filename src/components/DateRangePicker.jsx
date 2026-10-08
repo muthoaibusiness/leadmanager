@@ -28,7 +28,7 @@ function inRange(d,s,e){ return d&&s&&e&&d>=s&&d<=e; }
 function fmtLabel(d){ return d?d.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}):''; }
 function fmtShort(d){ return d?d.toLocaleDateString('en-US',{month:'short',day:'numeric'}):''; }
 
-export function getPresetRange(key) {
+function getPresetRange(key) {
   const t = startOf(new Date());
   switch(key) {
     case 'today':     return { start: startOf(t), end: endOf(t) };
@@ -154,10 +154,10 @@ export default function DateRangePicker() {
   return (
     <div className="drp-wrap" ref={ref}>
       <button className={`drp-trigger${open?' open':''}`} onClick={()=>setOpen(o=>!o)}>
-        <Mi>date_range</Mi>
+        <Mi aria-hidden="true">date_range</Mi>
         <span className="drp-trigger-preset">{activeLabel}</span>
         {rangeLabel && <span className="drp-trigger-range">{rangeLabel}</span>}
-        <Mi>arrow_drop_down</Mi>
+        <Mi aria-hidden="true">arrow_drop_down</Mi>
       </button>
 
       {open && (

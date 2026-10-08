@@ -22,7 +22,6 @@ export const NAV_SCOPES = {
   reports: ['MANAGEMENT', 'TEAM_LEAD'],
   agentperf: ['MANAGEMENT', 'TEAM_LEAD'],
   requests: ['MANAGEMENT'],
-  carpool: ['MANAGEMENT'],
   team: ['TEAM_LEAD'],
   users: ['MANAGEMENT'],
   accounts: ['MANAGEMENT'],
@@ -38,6 +37,10 @@ export const canSee = (user, key) => {
   if (Array.isArray(user.allowedFeatures)) return user.allowedFeatures.includes(key);
   return (NAV_SCOPES[key] || []).includes(user.role);
 };
+
+// Below this width the sidebar is an overlay drawer; from 1024px it is docked
+// (and can be collapsed). Keep in step with the 1023px breakpoints in index.css.
+export const DRAWER_MQ = '(max-width: 1023px)';
 
 // Behavioural role — decides which dashboard and which lead-action set a user
 // gets. EXECUTIVE is a blank-canvas role with no dashboard/actions of its own, so
@@ -63,10 +66,10 @@ export const isNiHandler = (user) => !!user && Array.isArray(user.allowedFeature
 
 // Features an admin can grant/revoke per user, in display order (nav features only;
 // 'companies' is master-only overview and 'profile' is always-on, so both excluded).
-export const FEATURE_KEYS = ['dashboard', 'leads', 'add_customer', 'conversations', 'calendar', 'pipeline', 'properties', 'reports', 'agentperf', 'requests', 'carpool', 'team', 'users', 'accounts'];
+export const FEATURE_KEYS = ['dashboard', 'leads', 'add_customer', 'conversations', 'calendar', 'pipeline', 'properties', 'reports', 'agentperf', 'requests', 'team', 'users', 'accounts'];
 export const FEATURE_LABELS = {
   dashboard: 'Home', leads: 'Leads', add_customer: 'Add Customer', conversations: 'Conversations', calendar: 'Calendar', pipeline: 'Pipeline', properties: 'Projects',
-  reports: 'Reports', agentperf: 'Performance', requests: 'Requests', carpool: 'Carpool', team: 'Team',
+  reports: 'Reports', agentperf: 'Performance', requests: 'Requests', team: 'Team',
   users: 'Users', accounts: 'Accounts',
 };
 // Default features for a standard role (from NAV_SCOPES). Executive resolves to none.
@@ -74,6 +77,9 @@ export const defaultFeatures = (role) => FEATURE_KEYS.filter(k => (NAV_SCOPES[k]
 
 // Properties catalog
 export const PROPERTY_TYPES = ['Apartment', 'Duplex', 'Penthouse', 'Plot', 'Commercial', 'Villa'];
+// Project type, chosen in the project catalog and stored in the property's
+// existing `purpose` column (see projectTypeOf in lib/projects.js).
+export const PROJECT_TYPES = ['Residential', 'Commercial'];
 export const PROPERTY_STATUS = {
   AVAILABLE: 'Available',
   FEW_LEFT: 'Few Left',

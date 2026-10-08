@@ -103,9 +103,9 @@ export async function sbUpsert(table, rows) {
     }
 
     let body = '';
-    try { body = await r.text(); } catch {}
+    try { body = await r.text(); } catch { /* unreadable body: keep '' and report the HTTP status */ }
     let j = {};
-    try { j = JSON.parse(body); } catch {}
+    try { j = JSON.parse(body); } catch { /* non-JSON error body: no PGRST code, falls through to the generic error */ }
 
     // Missing table → skip for the rest of the session
     if (j.code === 'PGRST205') {
@@ -170,9 +170,9 @@ export async function sbInsert(table, row) {
     }
 
     let body = '';
-    try { body = await r.text(); } catch {}
+    try { body = await r.text(); } catch { /* unreadable body: keep '' and report the HTTP status */ }
     let j = {};
-    try { j = JSON.parse(body); } catch {}
+    try { j = JSON.parse(body); } catch { /* non-JSON error body: no PGRST code, falls through to the generic error */ }
 
     // Missing table → skip for the rest of the session
     if (j.code === 'PGRST205') {
@@ -228,9 +228,9 @@ export async function sbUpdate(table, id, updates) {
     }
 
     let body = '';
-    try { body = await r.text(); } catch {}
+    try { body = await r.text(); } catch { /* unreadable body: keep '' and report the HTTP status */ }
     let j = {};
-    try { j = JSON.parse(body); } catch {}
+    try { j = JSON.parse(body); } catch { /* non-JSON error body: no PGRST code, falls through to the generic error */ }
 
     if (j.code === 'PGRST205') {
       _missingTables.add(table);
@@ -261,7 +261,7 @@ export async function sbUpdate(table, id, updates) {
 async function sbDeleteRaw(path) {
   try {
     const r = await sbFetch(`${SB_URL}/rest/v1/${path}`, { method: 'DELETE', headers: { ...SB_H, Prefer: 'return=minimal' } });
-    if (!r.ok) { let b = ''; try { b = await r.text(); } catch {} console.error(`Supabase Delete Error [${path}] HTTP ${r.status}:`, b); }
+    if (!r.ok) { let b = ''; try { b = await r.text(); } catch { /* unreadable body: log the status alone */ } console.error(`Supabase Delete Error [${path}] HTTP ${r.status}:`, b); }
     return r.ok;
   } catch (e) { console.error(`Supabase Delete network error [${path}]:`, e); return false; }
 }
@@ -469,7 +469,7 @@ export function sbSubscribeNotifs(userId, onNew) {
           const rec = msg.payload?.data?.record;
           if (rec && rec.user_id === userId) onNew(rToN(rec));
         }
-      } catch {}
+      } catch { /* bad frame or handler error: drop this message, keep listening */ }
     };
     ws.onclose = () => {
       clearInterval(hbTimer);
@@ -479,7 +479,7 @@ export function sbSubscribeNotifs(userId, onNew) {
   }
 
   connect();
-  return () => { dead = true; clearInterval(hbTimer); clearTimeout(reconnTimer); try { ws?.close(); } catch {} };
+  return () => { dead = true; clearInterval(hbTimer); clearTimeout(reconnTimer); try { ws?.close(); } catch { /* best-effort teardown: dead is set, so no reconnect follows */ } };
 }
 
 const RT_TABLES = ['users', 'teams', 'leads', 'activities', 'notifications', 'targets', 'companies', 'properties', 'bookings', 'hold_requests'];
@@ -524,7 +524,12 @@ function rtConfig(user) {
     else if (table === 'teams') filter = isMgmt ? co : (user.teamId ? `id=eq.${user.teamId}` : co);
     // activities has no company_id until migration 0009, and filtering on a
     // column that does not exist drops every event for the table.
-    else if (table === 'activities' && _hasCompanyCol.activities !== true) {
+    else if (table === 'activities' && _hasCol['activities.company_id'] !== true) {
+      return [{ event: '*', schema: 'public', table }];
+    }
+    // targets got company_id in the same migration; a filter on the missing
+    // column would make the server reject the whole join.
+    else if (table === 'targets' && _hasCol['targets.company_id'] !== true) {
       return [{ event: '*', schema: 'public', table }];
     }
 
@@ -540,10 +545,17 @@ export function sbSubscribeAll(onEvent, user) {
   const wsUrl = `${SB_URL.replace('https://', 'wss://')}/realtime/v1/websocket?apikey=${SB_KEY}&vsn=1.0.0`;
   let ws, hbTimer, reconnTimer;
   let dead = false;
+  let config = null;
 
-  const config = rtConfig(user);
-
-  function connect() {
+  async function connect() {
+    // rtConfig filters activities and targets by company only once it knows
+    // the column exists. Probe before the first join, so a scoped account does
+    // not fall back to every tenant's rows just because nothing asked yet.
+    if (!config) {
+      if (!isUnscoped(user)) await Promise.all([hasCompanyCol('activities'), hasCompanyCol('targets')]);
+      if (dead) return;
+      config = rtConfig(user);
+    }
     try { ws = new WebSocket(wsUrl); } catch { return; }
     ws.onopen = () => {
       ws.send(JSON.stringify({
@@ -562,10 +574,15 @@ export function sbSubscribeAll(onEvent, user) {
         if (msg.event === 'postgres_changes') {
           const payload = msg.payload?.data;
           if (payload) {
-             onEvent(payload.table, payload.type, payload.record, payload.old_record);
+             onEvent(payload.table, payload.type, payload.record, payload.old_record, payload.errors);
           }
         }
-      } catch {}
+        // A rejected join or binding is otherwise silent: the socket stays open
+        // and simply never delivers anything.
+        else if ((msg.event === 'phx_reply' || msg.event === 'system') && msg.payload?.status === 'error') {
+          console.warn('[realtime] subscription error:', msg.payload.response || msg.payload.message || msg.payload);
+        }
+      } catch { /* bad frame or handler error: drop this message, keep listening */ }
     };
     ws.onclose = () => {
       clearInterval(hbTimer);
@@ -575,7 +592,7 @@ export function sbSubscribeAll(onEvent, user) {
   }
 
   connect();
-  return () => { dead = true; clearInterval(hbTimer); clearTimeout(reconnTimer); try { ws?.close(); } catch {} };
+  return () => { dead = true; clearInterval(hbTimer); clearTimeout(reconnTimer); try { ws?.close(); } catch { /* best-effort teardown: dead is set, so no reconnect follows */ } };
 }
 
 export function bkToR(b) {
@@ -695,7 +712,6 @@ export const isUnscoped = (user) => !user || user.role === 'MASTER' || !user.com
 // text[], so the array operators `ov.{...}` and `cs.{...}` both fail). JSON
 // containment is the operator, and the brackets and quotes must be encoded to
 // survive being nested inside `or=(...)`.
-const prevAssignee = (id) => `previous_assignees.cs.${encodeURIComponent(JSON.stringify([id]))}`;
 
 // PostgREST `in.(...)` list, quoted and encoded.
 const inList = (ids) => `in.(${encodeURIComponent(ids.map(i => `"${i}"`).join(','))})`;

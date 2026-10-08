@@ -3,16 +3,36 @@ import Mi from './Mi.jsx';
 import { LoadingBlock, LoadingBar } from './Spinner.jsx';
 import Pagination from './Pagination.jsx';
 import { fmtDateTimeAP, leadDisplayStatus } from '../lib/helpers.js';
-import { SRC_LABELS, STATUS_LABELS, ROLES } from '../lib/constants.js';
+import { SRC_LABELS, ROLES } from '../lib/constants.js';
 import { useApp } from '../context/AppContext.jsx';
-import { bulkDeleteLeads } from '../lib/db.js';
+import { bulkDeleteLeads, lastFollowupFor } from '../lib/db.js';
 import TransferLeadModal from './modals/TransferLeadModal.jsx';
 
 export const PAGE_SIZE = 15;
 
-function sclass(s) { return 's-' + (s || '').toLowerCase(); }
-function srcclass(s) { return 'src-' + (s || '').toLowerCase(); }
 function leadCode(l) { return l.externalId || ('#' + String(l.id || '').slice(-6).toUpperCase()); }
+
+// One list for the three header copies (loading, empty, rows), so they cannot drift.
+const COLS = ['Lead ID', 'Customer Name', 'Source', 'Property', 'Status', 'Last Follow-up', 'Create date'];
+
+// Last Follow-up: line 1 is when the newest FOLLOW_UP was logged, line 2 the
+// newest Add Note text, each "—" when there is none. Until the server has
+// answered for this page (still loading, or the request failed), a lead with
+// nothing known shows "…" rather than "—", so the cell never claims
+// "no follow-up" without an answer.
+function FollowUpCell({ leadId, fromServer, pending }) {
+  const { fu, note } = lastFollowupFor(leadId, fromServer);
+  const wait = pending && !fromServer;
+  const when = fu ? fmtDateTimeAP(fu.timestamp) : '';
+  return (
+    <div className="lt-cell lt-cell-fu">
+      <div style={{ minWidth: 0 }}>
+        <div className={`lt-date${fu ? ' lt-fu-on' : ''}`} title={fu ? fu.description : undefined}>{when || (wait ? '…' : '—')}</div>
+        <div className={`lt-sub${note ? ' lt-fu-on' : ''}`} title={note ? note.description : undefined}>{note ? note.description : (wait ? '' : '—')}</div>
+      </div>
+    </div>
+  );
+}
 
 // Two modes, one table.
 //
@@ -23,7 +43,7 @@ function leadCode(l) { return l.externalId || ('#' + String(l.id || '').slice(-6
 //                      and slicing here would reorder 15 rows out of thousands
 //                      and produce a wrong page, so both are skipped and the
 //                      pager reports up to the caller.
-export default function LeadTable({ leads, total = null, page: pageProp, onPage, loading = false }) {
+export default function LeadTable({ leads, total = null, page: pageProp, onPage, loading = false, lastFu = {}, fuPending = false }) {
   const { setPanLead, user, refreshDB, showToast, sortBy } = useApp();
   const server = total != null;
   const [ownPage, setOwnPage] = useState(0);
@@ -88,20 +108,20 @@ export default function LeadTable({ leads, total = null, page: pageProp, onPage,
     // as data loss.
     if (loading) {
       return (
-        <div className={`lt${canSelect ? ' lt-with-cb' : ''}`}>
+        <div className={`lt lt-leads${canSelect ? ' lt-with-cb' : ''}`}>
           <div className="lt-hdr">
             {canSelect && <div className="lt-cb-col" />}
-            <div>Lead ID</div><div>Customer Name</div><div>Source</div><div>Property</div><div>Status</div><div>Create date</div>
+            {COLS.map(c => <div key={c}>{c}</div>)}
           </div>
           <LoadingBlock label="Loading customers…" pad={40} />
         </div>
       );
     }
     return (
-      <div className={`lt${canSelect ? ' lt-with-cb' : ''}`}>
+      <div className={`lt lt-leads${canSelect ? ' lt-with-cb' : ''}`}>
         <div className="lt-hdr">
           {canSelect && <div className="lt-cb-col" />}
-          <div>Lead ID</div><div>Customer Name</div><div>Source</div><div>Property</div><div>Status</div><div>Create date</div>
+          {COLS.map(c => <div key={c}>{c}</div>)}
         </div>
         <div className="empty"><Mi>inbox</Mi><p>No customers here</p></div>
       </div>
@@ -130,7 +150,7 @@ export default function LeadTable({ leads, total = null, page: pageProp, onPage,
           onDone={() => setSelected(new Set())}
         />
       )}
-      <div className={`lt lt-wrap${canSelect ? ' lt-with-cb' : ''}${loading ? ' lt-busy' : ''}`}>
+      <div className={`lt lt-wrap lt-leads${canSelect ? ' lt-with-cb' : ''}${loading ? ' lt-busy' : ''}`}>
         {loading && <LoadingBar />}
         <div className="lt-hdr">
           {canSelect && (
@@ -138,7 +158,7 @@ export default function LeadTable({ leads, total = null, page: pageProp, onPage,
               <input type="checkbox" checked={allSelected} onChange={() => {}} onClick={(e) => { e.stopPropagation(); toggleAll(); }} />
             </div>
           )}
-          <div>Lead ID</div><div>Customer Name</div><div>Source</div><div>Property</div><div>Status</div><div>Create date</div>
+          {COLS.map(c => <div key={c}>{c}</div>)}
         </div>
         {slice.map(l => (
           <div key={l.id} className={`lt-row${selected.has(l.id) ? ' lt-sel' : ''}`}
@@ -149,7 +169,7 @@ export default function LeadTable({ leads, total = null, page: pageProp, onPage,
               </div>
             )}
             <div className="lt-cell lt-cell-id">
-              <span className="lt-id">{leadCode(l)}</span>
+              <span className="lt-id" title={leadCode(l)}>{leadCode(l)}</span>
             </div>
             <div className="lt-cell lt-cell-main">
               <div style={{ minWidth: 0 }}>
@@ -168,6 +188,7 @@ export default function LeadTable({ leads, total = null, page: pageProp, onPage,
             <div className="lt-cell lt-cell-status">
               {(() => { const ds = leadDisplayStatus(l); return <span className={`bdg ${ds.cls}`}>{ds.label}</span>; })()}
             </div>
+            <FollowUpCell leadId={l.id} fromServer={lastFu[l.id]} pending={fuPending} />
             <div className="lt-cell lt-cell-date">
               <span className="lt-date">{fmtDateTimeAP(l.createdAt)}</span>
             </div>

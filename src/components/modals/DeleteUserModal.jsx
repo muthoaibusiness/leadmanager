@@ -1,10 +1,14 @@
 import Mi from '../Mi.jsx';
 import { useApp } from '../../context/AppContext.jsx';
 import { getDB, deleteUserFn } from '../../lib/db.js';
+import { useProjectToast } from '../project/projectToast.js';
 
 export default function DeleteUserModal() {
-  const { modal, closeModal, deleteUserId, setDeleteUserId, refreshDB, showToast, user } = useApp();
+  const { modal, closeModal, deleteUserId, setDeleteUserId, refreshDB, user, view } = useApp();
   const isOpen = modal === 'del-user';
+  // Removing from Accounts → All accounts reports through goey-toast (top
+  // centre), like Create all; from Users / Team the app's toast stays.
+  const toast = useProjectToast({ always: view === 'accounts' });
 
   const db = getDB();
   const u = deleteUserId ? db.users.find(x => x.id === deleteUserId) : null;
@@ -15,7 +19,7 @@ export default function DeleteUserModal() {
     setDeleteUserId(null);
     closeModal();
     refreshDB();
-    showToast('User removed', 'ok');
+    toast.success('User removed', u?.name ? `${u.name} can no longer sign in.` : undefined, 'User removed');
   };
 
   return (

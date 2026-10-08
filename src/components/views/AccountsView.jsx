@@ -5,6 +5,7 @@ import { useApp } from '../../context/AppContext.jsx';
 import { getDB, bulkCreateUsers, addNotifs } from '../../lib/db.js';
 import { rlabel } from '../../lib/helpers.js';
 import { ROLES } from '../../lib/constants.js';
+import { useProjectToast } from '../project/projectToast.js';
 
 const ROLE_OPTS = [
   { v: ROLES.IA, l: 'Initial Agent' },
@@ -17,6 +18,9 @@ const roleBadge = (role) => {
   const cls = { INITIAL_AGENT: 's-new', MEETING_AGENT: 's-site_visit_done', TEAM_LEAD: 's-negotiating', MANAGEMENT: 's-deal_closed_won' }[role] || 's-new';
   return <span className={`bdg ${cls}`}>{rlabel(role)}</span>;
 };
+// "1 account" / "3 accounts" — never "account(s)".
+const nAccounts = (n) => `${n} account${n === 1 ? '' : 's'}`;
+const nRows = (n) => `${n} row${n === 1 ? '' : 's'}`;
 
 export default function AccountsView() {
   const { user, dbVersion, refreshDB, showToast, setDeleteUserId, openModal } = useApp();
@@ -33,8 +37,7 @@ export default function AccountsView() {
   const [paste, setPaste] = useState('');
   const [q, setQ] = useState('');
   const [roleFilter, setRoleFilter] = useState('ALL');
-
-  if (user.role !== ROLES.MGMT) return null;
+  const toast = useProjectToast({ always: true });
 
   // ── KPI counts ──
   const counts = useMemo(() => {
@@ -66,9 +69,10 @@ export default function AccountsView() {
   };
 
   // ── create all ──
+  // Create all reports through goey-toast (top centre), like the Projects tab.
   const createAll = async () => {
     const filled = rows.filter(r => r.name.trim() || r.email.trim());
-    if (!filled.length) { showToast('Add at least one account', 'warn'); return; }
+    if (!filled.length) { toast.warning('Add at least one account', 'Enter a name and email in any row.'); return; }
     // async: bulkCreateUsers now asks the server about duplicate emails, because
     // db.users only holds this company since the load became tenant-scoped.
     const res = await bulkCreateUsers(filled, user);
@@ -80,9 +84,14 @@ export default function AccountsView() {
       addNotifs(mgmtIds.map(uid => ({ userId: uid, type: 'NEW_USER', message: `${res.created.length} new account(s) created`, leadId: null })), user);
       setRows([blankRow(), blankRow(), blankRow()]);
       refreshDB();
-      showToast(`${res.created.length} account(s) created`, 'ok');
+      toast.success(
+        `${nAccounts(res.created.length)} created`,
+        res.errors.length
+          ? `${nRows(res.errors.length)} skipped — see the list below.`
+          : 'Their login details are listed below.',
+      );
     } else {
-      showToast('No accounts created — check errors', 'warn');
+      toast.error('No accounts created', 'Fix the rows listed below and try again.');
     }
   };
 
@@ -101,6 +110,9 @@ export default function AccountsView() {
       .filter(u => !term || (u.name || '').toLowerCase().includes(term) || (u.email || '').toLowerCase().includes(term))
       .sort((a, b) => (a.name || '').localeCompare(b.name || ''));
   }, [dbVersion, q, roleFilter]);
+
+  // After every hook, so the hook order never depends on the role.
+  if (user.role !== ROLES.MGMT) return null;
 
   return (
     <div className="acc">
@@ -172,7 +184,7 @@ export default function AccountsView() {
           <div className="acc-result">
             {!!result.created.length && (
               <div className="acc-res-ok">
-                <div className="acc-res-hd"><Mi>check_circle</Mi>{result.created.length} account(s) created
+                <div className="acc-res-hd"><Mi>check_circle</Mi>{nAccounts(result.created.length)} created
                   <button className="btn btn-g btn-sm" style={{ marginLeft: 'auto' }} onClick={copyCreds}><Mi>content_copy</Mi>Copy logins</button>
                 </div>
                 <div className="acc-creds">
@@ -189,7 +201,7 @@ export default function AccountsView() {
             )}
             {!!result.errors.length && (
               <div className="acc-res-err">
-                <div className="acc-res-hd"><Mi>error</Mi>{result.errors.length} row(s) skipped</div>
+                <div className="acc-res-hd"><Mi>error</Mi>{nRows(result.errors.length)} skipped</div>
                 {result.errors.map((e, i) => <div className="acc-err-row" key={i}>Row {e.line} · {e.name} — {e.reason}</div>)}
               </div>
             )}

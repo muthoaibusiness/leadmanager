@@ -1,6 +1,6 @@
 import { useState, useRef } from 'react';
 import { useApp } from '../../context/AppContext.jsx';
-import { getDB, getTarget, updateAgent } from '../../lib/db.js';
+import { getDB, updateAgent } from '../../lib/db.js';
 import { avc, ini, fmtBDT, rlabel, startOfMonth, curMonth } from '../../lib/helpers.js';
 import { ROLES } from '../../lib/constants.js';
 import Mi from '../Mi.jsx';
@@ -96,7 +96,7 @@ export default function ProfileView() {
   // Target
   const tgt = db.targets?.find(t => t.userId === fresh.id && t.month === curMonth());
 
-  let kpis = [];
+  let kpis;
   if (fresh.role === ROLES.IA) {
     kpis = [
       { ico: 'call', val: calls, label: 'Calls This Month', color: '#2DD4BF' },

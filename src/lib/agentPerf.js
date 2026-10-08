@@ -43,7 +43,7 @@ export function buildAgentPerf(db, { periodDays = 30, start = null, end = null, 
 
   // Per-agent activity rollup — count ONLY valid/real activity (skip system or
   // empty entries; a call counts only if it has real talk duration > 0).
-  Object.entries(acts).forEach(([leadId, arr]) => {
+  Object.entries(acts).forEach(([, arr]) => {
     (arr || []).forEach(a => {
       if (!a || !a.userId || a.userId === 'system') return;
       const s = stat[a.userId]; if (!s) return;

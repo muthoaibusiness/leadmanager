@@ -16,7 +16,7 @@ export let _DB = null;
 
 export function getDB() {
   if (!_DB) {
-    try { _DB = JSON.parse(localStorage.getItem(KEY)) || null; } catch { }
+    try { _DB = JSON.parse(localStorage.getItem(KEY)) || null; } catch { /* storage blocked or cached JSON corrupt: fall back to the empty DB below */ }
   }
   if (!_DB) {
     _DB = { companies: [], users: [], teams: [], leads: [], targets: [], activities: {}, notifications: {}, properties: [], bookings: [], holdRequests: [] };
@@ -272,16 +272,31 @@ export async function addNotifsToRole(role, scope, make, currentUser) {
   } catch (e) { console.warn('notify ' + role + ' failed:', e); }
 }
 
-export function applyRealtimeEvent(table, eventType, record, oldRecord, user) {
+export function applyRealtimeEvent(table, eventType, record, oldRecord, user, errors) {
   if (!_DB) return false;
+  // A payload over Realtime's size limit arrives with `errors` and its large
+  // values dropped. Applying it would blank those columns here, and a later
+  // full-row save would write the blanks back, so the cached row is left alone;
+  // the next load brings the real one.
+  if (eventType !== 'DELETE' && errors && errors.length) return false;
+  // The bulk load never ships passwords (USER_COLS), and the socket must not
+  // either: the anon role can read the column, so the record carries it.
+  if (table === 'users' && record && 'password' in record) {
+    record = { ...record };
+    delete record.password;
+  }
   if (eventType !== 'DELETE' && !inScope(table, record, user)) return false;
   let changed = false;
-  
-  const handleArrayEvent = (arrName, converter) => {
+
+  const handleArrayEvent = (arrName, converter, toRow) => {
     if (!_DB[arrName]) _DB[arrName] = [];
     if (eventType === 'INSERT' || eventType === 'UPDATE') {
-      const item = converter(record);
-      const idx = _DB[arrName].findIndex(x => x.id === item.id);
+      const idx = _DB[arrName].findIndex(x => x.id === record.id);
+      // Under the default replica identity an UPDATE omits unchanged TOASTed
+      // columns (a project's media and variants, for one). Converted alone they
+      // would default to empty and the next full-row save would write that back,
+      // so the record is laid over the cached row instead.
+      const item = idx >= 0 ? converter({ ...toRow(_DB[arrName][idx]), ...record }) : converter(record);
       if (idx >= 0) _DB[arrName][idx] = item;
       else _DB[arrName].unshift(item);
       changed = true;
@@ -295,14 +310,14 @@ export function applyRealtimeEvent(table, eventType, record, oldRecord, user) {
     }
   };
 
-  if (table === 'users') handleArrayEvent('users', rToU);
-  else if (table === 'teams') handleArrayEvent('teams', rToT);
-  else if (table === 'leads') handleArrayEvent('leads', rToL);
-  else if (table === 'companies') handleArrayEvent('companies', rToC);
-  else if (table === 'properties') handleArrayEvent('properties', rToP);
-  else if (table === 'bookings') handleArrayEvent('bookings', rToBk);
-  else if (table === 'targets') handleArrayEvent('targets', rToTg);
-  else if (table === 'hold_requests') handleArrayEvent('holdRequests', rToHr);
+  if (table === 'users') handleArrayEvent('users', rToU, uToR);
+  else if (table === 'teams') handleArrayEvent('teams', rToT, tToR);
+  else if (table === 'leads') handleArrayEvent('leads', rToL, lToR);
+  else if (table === 'companies') handleArrayEvent('companies', rToC, cToR);
+  else if (table === 'properties') handleArrayEvent('properties', rToP, pToR);
+  else if (table === 'bookings') handleArrayEvent('bookings', rToBk, bkToR);
+  else if (table === 'targets') handleArrayEvent('targets', rToTg, tgToR);
+  else if (table === 'hold_requests') handleArrayEvent('holdRequests', rToHr, hrToR);
   else if (table === 'activities') {
     if (eventType === 'INSERT' || eventType === 'UPDATE') {
       const act = rToA(record);
@@ -349,7 +364,7 @@ export function applyRealtimeEvent(table, eventType, record, oldRecord, user) {
     }
   }
 
-  if (changed) persistLocal(_DB);
+  if (changed) persistSoon();
   return changed;
 }
 
@@ -370,6 +385,16 @@ const _idle = (fn) => (typeof requestIdleCallback === 'function'
 export function saveDBDeferred(db) {
   _DB = db;
   _idle(() => persistLocal(db));
+}
+
+// Realtime delivers bursts (expireHolds touches every property at once), and a
+// full JSON.stringify of the store per event would stall the page. One idle
+// write covers the whole burst.
+let _persistQueued = false;
+function persistSoon() {
+  if (_persistQueued) return;
+  _persistQueued = true;
+  _idle(() => { _persistQueued = false; if (_DB) persistLocal(_DB); });
 }
 
 // localStorage is ~5MB; the full dataset (esp. activities + property media) can
@@ -646,9 +671,9 @@ export async function fetchLeadBook(user, opts = {}) {
 }
 
 // Fetch ONE lead by id into the cache. The detail panel can be opened from a
-// notification or a carpool request — places that hold only an id — and with
-// the book no longer preloaded, that lead may never have been fetched. Resolves
-// to true when the cache gained something worth re-rendering for.
+// notification — which holds only an id — and with the book no longer
+// preloaded, that lead may never have been fetched. Resolves to true when the
+// cache gained something worth re-rendering for.
 export async function ensureLead(id) {
   if (!id || getLead(id)) return false;
   const rows = await sbGet(`leads?id=eq.${encodeURIComponent(id)}&limit=1`);
@@ -1046,6 +1071,67 @@ export async function fetchUserActivity(userId, { limit = 40 } = {}) {
   }));
 }
 
+// The Customers table's "Last Follow-up" column, for the leads on one page.
+//
+// Per lead: the newest FOLLOW_UP row (when it was logged -- activity.timestamp,
+// not lead.nextFollowup, which is the NEXT scheduled time) and the newest note
+// an agent typed with Add Note (isAgentNote). One read keyed by the page's ids,
+// through sbPage rather than sbGetAll because sbPage reports a failed request
+// as null instead of an empty list -- the caller can then leave its cells as
+// they were instead of painting them all "no follow-up". Paged in 1000s, so a
+// lead with a long run of Attempt rows cannot push newer rows out of a capped
+// reply; a failure on any page fails the whole read.
+//
+// Read-only: the rows go back to the caller and never into db.activities.
+// That cache drives the lead panel's own timeline loading (ensureLeadActs), and
+// a partial history there would hide its spinner and shorten its timeline.
+export async function fetchLastFollowups(leadIds) {
+  const ids = [...new Set((leadIds || []).filter(Boolean))];
+  const out = Object.fromEntries(ids.map(id => [id, { fu: null, note: null }]));
+  if (!ids.length) return out;
+  const path = 'activities?select=id,lead_id,type,description,timestamp,user_id,user_name'
+    + `&lead_id=in.(${encodeURIComponent(ids.map(i => `"${i}"`).join(','))})`
+    + '&type=in.(FOLLOW_UP,NOTE)&order=timestamp.desc.nullslast,id.desc';
+  const rows = [];
+  for (let page = 0; ; page++) {
+    const res = await sbPage(path, { page, size: 1000 });
+    if (!res) return null;
+    rows.push(...res.rows);
+    if (res.rows.length < 1000 || rows.length >= res.total) break;
+  }
+  // Own keys only: a lead_id such as "__proto__" must not reach Object.prototype.
+  rows.forEach(r => { if (Object.hasOwn(out, r.lead_id)) pickLatest(out[r.lead_id], rToA(r)); });
+  return out;
+}
+
+// What the Last Follow-up cell shows for one lead: the server's pick for the
+// page, overtaken by anything newer in this browser's activity cache -- a
+// follow-up or note logged a moment ago sits there before its fire-and-forget
+// insert lands (addAct). Reads the cache without getActs, which sorts the
+// cached array in place.
+export function lastFollowupFor(leadId, fromServer) {
+  const slot = { fu: fromServer?.fu || null, note: fromServer?.note || null };
+  (getDB().activities?.[leadId] || []).forEach(a => pickLatest(slot, a));
+  return slot;
+}
+
+// Fold one activity into a { fu, note } slot. Newest by when it was logged;
+// ties -- including the server and cached copies of one row -- settle on id, so
+// the pick is stable. A row without a valid timestamp never beats one with.
+function pickLatest(slot, a) {
+  if (!slot || !a) return;
+  const key = a.type === 'FOLLOW_UP' ? 'fu' : isAgentNote(a) ? 'note' : null;
+  if (!key) return;
+  const cur = slot[key];
+  const ta = actTime(a), tc = actTime(cur);
+  if (!cur || ta > tc || (ta === tc && String(a.id) > String(cur.id))) slot[key] = a;
+}
+
+function actTime(a) {
+  const t = Date.parse(a?.timestamp);
+  return Number.isNaN(t) ? -Infinity : t;
+}
+
 // Drop every on-demand marker. Called on sign-out and on a tenant switch: the
 // underlying _DB is thrown away there, so leaving "full" flags behind would
 // make the next account's panels render an empty timeline and never refetch.
@@ -1152,6 +1238,42 @@ export function deletePropertyFn(id) {
     db.deletionLog.push({ id, name: p?.name || 'project', kind: 'property', deletedBy: 'admin', deletedAt: now_() });
   });
   sbDelete('properties', [id]); // hard-delete from Supabase
+}
+
+// Checked variants for the catalog editor's "Save product". The pair above is
+// fire-and-forget, which suits the background writers (unit holds, expiries)
+// but let a rejected save look like a success. These wait for the cloud first
+// and only touch the local store once it has accepted the row, so a failure
+// leaves the draft in the editor and nothing half-saved behind.
+function writeError(res) {
+  if (res.error) return 'network error, check your connection';
+  if (res.skipped) return 'the properties table is missing';
+  return res.status ? `the server rejected it (HTTP ${res.status})` : 'the server rejected it';
+}
+
+export async function insertPropertyChecked(p) {
+  const ts = now_();
+  const row = { ...p, id: p.id || 'p' + uid(), companyId: p.companyId || currentCompanyId(), createdAt: ts, updatedAt: ts };
+  const res = await sbInsert('properties', pToR(row));
+  if (!res.ok) return { ok: false, error: writeError(res) };
+  mutate(db => {
+    if (!db.properties) db.properties = [];
+    db.properties.unshift(row);
+  });
+  return { ok: true, id: row.id };
+}
+
+export async function updatePropertyChecked(id, upd) {
+  const cur = getProperty(id);
+  if (!cur) return { ok: false, error: 'this project no longer exists' };
+  const ts = now_();
+  const res = await sbUpdate('properties', id, pToR({ ...cur, ...upd, updatedAt: ts }));
+  if (!res.ok) return { ok: false, error: writeError(res) };
+  mutate(db => {
+    const i = (db.properties || []).findIndex(x => x.id === id);
+    if (i >= 0) db.properties[i] = { ...db.properties[i], ...upd, updatedAt: ts };
+  });
+  return { ok: true, id };
 }
 
 // ── Unit booking (seat-style) ──
@@ -1799,45 +1921,6 @@ export function decideHoldRequest(id, approve, user, days = 2) {
   return req;
 }
 
-// ── Carpool requests (Meeting Agent → Management approval for a site-visit ride) ──
-export function getCarpoolRequests() {
-  const cid = currentCompanyId();
-  const all = getDB().carpoolRequests || [];
-  return cid ? all.filter(r => sameCompany(r.companyId, cid)) : all;
-}
-
-export function createCarpoolRequest(payload, user) {
-  const id = 'cp' + uid();
-  const req = {
-    id, companyId: user.companyId, status: 'pending',
-    createdAt: now_(), decidedAt: null, decidedBy: '',
-    ...payload, agentId: user.id, agentName: user.name,
-  };
-  mutate(db => { db.carpoolRequests = db.carpoolRequests || []; db.carpoolRequests.unshift(req); });
-  if (payload.leadId) updLead(payload.leadId, { carpoolRequested: true });
-  addNotifsToRole(ROLES.MGMT, { companyId: user.companyId }, (userId) => ({
-    userId, type: 'CARPOOL_REQUEST', leadId: payload.leadId || null,
-    message: `${user.name} requested a carpool${payload.clientName ? ' for ' + payload.clientName : ''}`,
-  }), user);
-  return id;
-}
-
-export function decideCarpoolRequest(id, approve, user) {
-  let agentId = null, clientName = '';
-  mutate(db => {
-    const r = (db.carpoolRequests || []).find(x => x.id === id);
-    if (!r) return;
-    r.status = approve ? 'approved' : 'rejected';
-    r.decidedAt = now_();
-    r.decidedBy = user.name;
-    agentId = r.agentId; clientName = r.clientName || '';
-  });
-  if (agentId) addNotifs([{
-    userId: agentId, type: 'CARPOOL_REQUEST', leadId: null,
-    message: `Your carpool request${clientName ? ' for ' + clientName : ''} was ${approve ? 'approved' : 'rejected'}`,
-  }], user);
-}
-
 // Mark a follow-up task as done — clears the reminder.
 export function clearFollowup(leadId, user) {
   updLead(leadId, { nextFollowup: null });
@@ -1883,6 +1966,39 @@ export function checkFollowUpReminders(db) {
 
 export function addNote(leadId, txt, user) {
   addAct(leadId, { type: 'NOTE', description: txt, userId: user.id, userName: user.name, durationSeconds: 0 });
+}
+
+// A NOTE row is an agent's Add Note (NoteModal -> addNote above) unless its text
+// is one of these system templates. activities has no column that marks a
+// system note, and the system writers stamp the acting user, so the text is the
+// only signal -- never classify by user_id. Each pattern is anchored at both
+// ends, so an agent note that merely starts like a template still counts.
+// Keep in step with every other NOTE writer:
+//   bulkTransferLeads          'Lead transferred to … (Assigned to: … - …)'
+//   autoTransferNotInterested  'Auto-transferred to … (Not Interested)'
+//   AddLeadModal, edit         'Lead updated — <Label>: … → …'
+//   AddLeadModal, re-submit    'Re-submitted … — record updated (already handled by …)'
+//   submitImport, duplicate    'Updated via import — duplicate number (owner: …)'
+//   attributeLead (removed July 2026; its rows remain)
+//                              'Attributed to ad "…" · …' / 'Campaign attribution cleared'
+// submitImport's CSV log NOTE is free text no pattern can match. Imports stay
+// local today, but while saveDB still synced everything through sbSave (Apr-Jun
+// 2026) such logs reached the server; on those leads one reads as the latest
+// note until an agent adds a real one. If imports sync again, give the log a
+// fixed prefix and a pattern here.
+const SYSTEM_NOTE_RES = [
+  /^Lead transferred to .* \(Assigned to: .* - .*\)$/s,
+  /^Auto-transferred to .* \(Not Interested\)$/s,
+  /^Lead updated — [A-Z][A-Za-z ]*: .* → .*$/s,
+  /^Re-submitted .* — record updated \(already handled by .*\)$/s,
+  /^Updated via import — duplicate number \(owner: .*\)$/s,
+  /^Attributed to ad ".*"( · .*)?$/s,
+  /^Campaign attribution cleared$/,
+];
+
+export function isAgentNote(a) {
+  const d = a?.type === 'NOTE' ? a.description : null;
+  return typeof d === 'string' && d.trim() !== '' && !SYSTEM_NOTE_RES.some(re => re.test(d));
 }
 
 export function setTargetFn(userId, val) {
@@ -2171,7 +2287,7 @@ export async function addLeadFn(name, phone, phones, email, emails, company, sou
 // ── CSV Import ──
 function parseCSV(text) {
   text = text.replace(/^\uFEFF/, '').replace(/\r\n/g, '\n').replace(/\r/g, '\n');
-  const fields = []; const rows = []; let cur = ''; let inQ = false; let row = [];
+  const rows = []; let cur = ''; let inQ = false; let row = [];
   for (let i = 0; i <= text.length; i++) {
     const c = i < text.length ? text[i] : null;
     if (inQ) {

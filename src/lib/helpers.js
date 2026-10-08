@@ -152,6 +152,11 @@ export function rlabel(r) {
   return m[r] || r;
 }
 
+// Keyboard-shortcut hint in the platform's own notation: kbd('\\') is "⌘\" on
+// Apple devices and "Ctrl+\" everywhere else.
+const IS_MAC = typeof navigator !== 'undefined' && /Mac|iPhone|iPad|iPod/.test(navigator.platform || navigator.userAgent || '');
+export const kbd = (key) => (IS_MAC ? '⌘' : 'Ctrl+') + key;
+
 export function slabel(s) { return STATUS_LABELS[s] || s; }
 export function sclass(s) { return 's-' + (s || '').toLowerCase(); }
 

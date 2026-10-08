@@ -1,33 +1,83 @@
-import { useState } from 'react';
+import { useState, useImperativeHandle } from 'react';
+import { createPortal } from 'react-dom';
 import Mi from '../Mi.jsx';
+import { ColorEmotionSelect } from '../ui/color-emotion-select.jsx';
 import { useApp } from '../../context/AppContext.jsx';
-import { updateProject } from '../../lib/projects.js';
+import { saveNewProject, saveProject, projectTypeOf } from '../../lib/projects.js';
+import { PROJECT_TYPES } from '../../lib/constants.js';
+import { useProjectToast } from './projectToast.js';
+import './ProjectCatalog.css';
 
 const nextStatus = (s) => (s === 'available' ? 'hold' : s === 'hold' ? 'sold' : 'available');
+const TYPE_REQUIRED = 'Project type is required.';
+const TYPE_LOOK = { Residential: { color: '#54B848', emoji: '🏠' }, Commercial: { color: '#3B82F6', emoji: '🏢' } };
+const TYPE_OPTIONS = PROJECT_TYPES.map(t => ({ value: t, label: t, ...TYPE_LOOK[t] }));
 
 // Admin · Catalog — e-commerce-style product editor for a project. Writes to
 // local state, only persisted globally when "Save product" is clicked.
-export default function ProjectCatalog({ project, onDone }) {
-  const { refreshDB, showToast } = useApp();
-  
-  // Create a deep copy of the project for local editing so we don't mutate global state or jump around
-  const [p, setP] = useState(() => JSON.parse(JSON.stringify(project)));
+// `isNew`: the project is an unsaved Add Property draft, so saving creates it.
+// `actionsEl`: the console header's slot; Discard and Save render there.
+// `ref` exposes isDirty() / isSaving() for the console's close guard.
+export default function ProjectCatalog({ project, isNew = false, actionsEl, onDone, onSaved, ref }) {
+  const { refreshDB } = useApp();
+  const toast = useProjectToast();
+
+  // Create a deep copy of the project for local editing so we don't mutate global state or jump around.
+  // The same string is the baseline isDirty() compares against.
+  const [baseline] = useState(() => JSON.stringify(project));
+  const [p, setP] = useState(() => JSON.parse(baseline));
   const id = p.id;
-  
-  const up = (patch) => setP(prev => ({ ...prev, ...patch }));
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState('');
+  const leaveLabel = isNew ? 'Discard' : 'Preview / Discard';
+  const ptype = projectTypeOf(p); // null = "Default", not chosen yet
+
+  useImperativeHandle(ref, () => ({
+    isDirty: () => JSON.stringify(p) !== baseline,
+    isSaving: () => saving,
+  }), [p, baseline, saving]);
+
+  const up = (patch) => { setErr(''); setP(prev => ({ ...prev, ...patch })); };
   const [counts, setCounts] = useState({}); // unit-count edit buffers, committed on blur
   const [lk, setLk] = useState({ url: '', label: '' }); // add-link form
 
   const addMedia = (kind, item) => setP(prev => ({ ...prev, media: { ...prev.media, [kind]: [...(prev.media[kind] || []), item] } }));
   const removeMedia = (kind, index) => setP(prev => ({ ...prev, media: { ...prev.media, [kind]: (prev.media[kind] || []).filter((_, i) => i !== index) } }));
 
-  const submitLink = () => { if (!lk.url.trim()) return; addMedia('links', { url: lk.url.trim(), label: lk.label.trim() || lk.url.trim() }); setLk({ url: '', label: '' }); };
+  const submitLink = () => {
+    if (!lk.url.trim()) { toast.warning('Add a link first', 'Paste a URL, then press Add link.'); return; }
+    addMedia('links', { url: lk.url.trim(), label: lk.label.trim() || lk.url.trim() });
+    toast.success('Link added', `${lk.label.trim() || 'Attachment link'} added. Save the product to keep it.`);
+    setLk({ url: '', label: '' });
+  };
 
+  // Same checks and the same media items as before; the notifications only
+  // report the outcome, once per batch rather than once per file.
   const onFiles = (files, kind, asLabel) => {
-    [...files].forEach(f => {
-      if (f.size > 3 * 1024 * 1024) { showToast('File too large (max 3MB) — use a link instead', 'err'); return; }
+    const noun = kind === 'images' ? 'photo' : 'PDF';
+    const list = [...files];
+    const tooBig = list.filter(f => f.size > 3 * 1024 * 1024);
+    const ok = list.filter(f => f.size <= 3 * 1024 * 1024);
+    if (tooBig.length) {
+      toast.error(tooBig.length > 1 ? `${tooBig.length} files too large` : 'File too large',
+        `${tooBig.map(f => f.name).join(', ')} ${tooBig.length > 1 ? 'are' : 'is'} over 3 MB. Use a link instead.`,
+        'File too large (max 3MB) — use a link instead');
+    }
+    let left = ok.length;
+    const added = [], failed = [];
+    const settle = () => {
+      if (--left > 0) return;
+      const many = added.length > 1;
+      if (added.length) {
+        toast.success(`${noun === 'photo' ? 'Photo' : 'PDF'}${many ? 's' : ''} added`,
+          `${many ? `${added.length} ${noun}s` : added[0]} added. Save the product to keep ${many ? 'them' : 'it'}.`);
+      }
+      if (failed.length) toast.error(`Couldn't read ${failed.length > 1 ? 'files' : 'file'}`, `${failed.join(', ')} could not be read. Try again.`);
+    };
+    ok.forEach(f => {
       const r = new FileReader();
-      r.onload = () => addMedia(kind, asLabel ? { label: f.name, url: r.result } : { name: f.name, url: r.result });
+      r.onload = () => { addMedia(kind, asLabel ? { label: f.name, url: r.result } : { name: f.name, url: r.result }); added.push(f.name); settle(); };
+      r.onerror = () => { failed.push(f.name); settle(); };
       r.readAsDataURL(f);
     });
   };
@@ -65,18 +115,38 @@ export default function ProjectCatalog({ project, onDone }) {
   const updateAddon = (aid, patch) => setP(prev => ({ ...prev, addons: (prev.addons || []).map(a => a.id === aid ? { ...a, ...patch } : a) }));
   const removeAddon = (aid) => setP(prev => ({ ...prev, addons: (prev.addons || []).filter(a => a.id !== aid) }));
 
-  const handleSave = () => {
-    updateProject(id, p);
+  const handleSave = async () => {
+    if (saving) return;
+    const name = (p.name || '').trim();
+    if (!name) { setErr('Property name is required.'); toast.warning('Name required', 'Add a property name before saving.'); return; }
+    if (!ptype) { setErr(TYPE_REQUIRED); toast.warning(TYPE_REQUIRED, 'Choose Residential or Commercial, then save.', TYPE_REQUIRED); return; }
+    setErr('');
+    setSaving(true);
+    const draft = { ...p, name };
+    const res = isNew ? await saveNewProject(draft) : await saveProject(id, draft);
+    setSaving(false);
+    // A failed save keeps the editor open with every field as typed.
+    if (!res.ok) {
+      setErr(`Not saved: ${res.error}.`);
+      toast.error(isNew ? 'Property not saved' : 'Changes not saved', `${res.error.charAt(0).toUpperCase()}${res.error.slice(1)}. Your edits are still here.`, 'Project not saved');
+      return;
+    }
     refreshDB();
-    showToast('Project saved', 'ok');
-    onDone();
+    toast.success(isNew ? 'Property saved' : 'Changes saved', isNew ? 'New property saved successfully.' : `${name} updated.`, 'Project saved');
+    onSaved(res.id);
   };
 
   return (
     <div className="pcat">
       {/* Details */}
       <section className="pcat-sec">
-        <div className="pcat-hd"><Mi>info</Mi>Property details</div>
+        <div className="pcat-hd pcat-hd-type">
+          <Mi>info</Mi>Property details
+          {/* Required project type, saved in `purpose`. Until one is picked
+              the select reads "Default", which is a placeholder, not an option. */}
+          <ColorEmotionSelect className="pcat-ptype" options={TYPE_OPTIONS} label="PROJECT TYPE" placeholder="Default"
+            value={ptype ?? ''} onChange={(t) => up({ purpose: t })} invalid={err === TYPE_REQUIRED} />
+        </div>
         <div className="pcat-grid">
           <label className="pcat-f pcat-f-full"><span>Property name</span><input value={p.name || ''} onChange={e => up({ name: e.target.value })} placeholder="e.g. Meadowcrest Residences" /></label>
           <label className="pcat-f"><span>Location</span><input value={p.address || ''} onChange={e => up({ address: e.target.value })} placeholder="Area · Block · City" /></label>
@@ -189,10 +259,16 @@ export default function ProjectCatalog({ project, onDone }) {
         ))}
       </section>
 
-      <div className="pcat-foot">
-        <button className="btn btn-g" onClick={() => onDone()}><Mi>visibility</Mi>Preview / Discard</button>
-        <button className="btn btn-p" onClick={handleSave}><Mi>save</Mi>Save product</button>
-      </div>
+      {/* Discard and Save live in the console header, not in a footer bar. On
+          phones the .pc-act-tx words hide: Discard shows only its icon. */}
+      {actionsEl && createPortal(
+        <>
+          {err && <div className="pc-warn"><Mi>error</Mi>{err}</div>}
+          <button className="btn btn-g" disabled={saving} onClick={() => onDone()} aria-label={leaveLabel}><Mi>{isNew ? 'close' : 'visibility'}</Mi><span className="pc-act-tx">{leaveLabel}</span></button>
+          <button className="btn btn-p" disabled={saving} onClick={handleSave}><Mi>save</Mi>{saving ? 'Saving…' : <>Save<span className="pc-act-tx"> project</span></>}</button>
+        </>,
+        actionsEl,
+      )}
     </div>
   );
 }

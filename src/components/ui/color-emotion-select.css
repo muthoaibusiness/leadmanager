@@ -1,0 +1,46 @@
+/* Colour-emotion select (ui/color-emotion-select.jsx). Each option's colour
+   arrives as --ces-color; color-mix() tints fall back to plain surfaces. */
+.ces { display: flex; align-items: center; gap: 8px; text-transform: none; letter-spacing: 0; }
+.ces-label { font-size: 11px; font-weight: 800; letter-spacing: .08em; color: var(--t1); white-space: nowrap; }
+
+.ces-trigger {
+  display: inline-flex; align-items: center; justify-content: space-between; gap: 10px;
+  min-width: 190px; min-height: 40px; padding: 0 12px 0 14px;
+  border: 1px solid var(--bd2); border-radius: 10px;
+  background: var(--surf2); color: var(--t1);
+  font: 800 13.5px/1.2 var(--font-display); cursor: pointer;
+  transition: border-color var(--tr), background var(--tr), box-shadow var(--tr);
+}
+.ces-trigger:not(.ces-empty) { border-color: var(--ces-color); background: color-mix(in srgb, var(--ces-color) 16%, var(--surf2)); }
+/* Nothing chosen yet: the placeholder ("Default") stands out in amber. */
+.ces-trigger.ces-empty { border-style: dashed; border-color: var(--orange); background: var(--orange-l); }
+.ces-ph { color: var(--orange); }
+.ces-trigger:hover,
+.ces-trigger[data-state="open"] { box-shadow: 0 0 0 3px var(--bd); }
+.ces-trigger:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.ces-trigger.ces-invalid { border-style: solid; border-color: var(--red); box-shadow: 0 0 0 1px var(--red); }
+.ces-chev { display: inline-flex; color: var(--t2); transition: transform var(--tr); }
+.ces-trigger[data-state="open"] .ces-chev { transform: rotate(180deg); }
+.ces-emoji { margin-right: 8px; font-size: 15px; line-height: 1; }
+
+/* The list renders in a portal above everything, modals included (.mov: 500). */
+.ces-content {
+  z-index: 1000; min-width: var(--radix-select-trigger-width);
+  padding: 6px; border: 1px solid var(--bd2); border-radius: 12px;
+  background: var(--surf2); color: var(--t1); font-family: var(--font-display);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, .35), 0 2px 8px rgba(0, 0, 0, .25);
+}
+.ces-viewport { display: flex; flex-direction: column; gap: 2px; }
+.ces-item {
+  display: flex; align-items: center; gap: 10px; min-height: 40px; padding: 0 10px;
+  border-radius: 8px; font-size: 13.5px; font-weight: 700; cursor: pointer; outline: none; user-select: none;
+}
+.ces-item[data-highlighted] { background: var(--bd); background: color-mix(in srgb, var(--ces-color) 18%, transparent); }
+.ces-item[data-state="checked"] { font-weight: 800; }
+.ces-dot { flex-shrink: 0; width: 10px; height: 10px; border-radius: 50%; background: var(--ces-color); box-shadow: 0 0 0 3px color-mix(in srgb, var(--ces-color) 25%, transparent); }
+.ces-check { margin-left: auto; display: inline-flex; color: var(--ces-color); }
+
+/* Touch screens: 44px targets. */
+@media (max-width: 1023px) {
+  .ces-trigger, .ces-item { min-height: 44px; }
+}

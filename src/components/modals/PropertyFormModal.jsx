@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import Mi from '../Mi.jsx';
 import { useApp } from '../../context/AppContext.jsx';
 import { addPropertyFn, updatePropertyFn, unitsFromCodes } from '../../lib/db.js';
-import { PROPERTY_TYPES, PROPERTY_STATUS } from '../../lib/constants.js';
+import { PROPERTY_TYPES, PROPERTY_STATUS, PROJECT_TYPES } from '../../lib/constants.js';
 
 const BLANK = {
   name: '', developer: 'WECON Properties', type: 'Apartment', district: '', area: '', address: '', status: 'AVAILABLE',
@@ -65,7 +65,10 @@ export default function PropertyFormModal() {
       pricePerSqft: num(f.pricePerSqft), sizeText: f.sizeText.trim(), sizeMin: firstSize, sizeMax: 0,
       askingPrice: num(f.pricePerSqft) && firstSize ? num(f.pricePerSqft) * firstSize : 0,
       landArea: f.landArea.trim(), storeys: f.storeys.trim(), facing: f.facing.trim(),
-      totalSft: num(f.totalSft), saleableUnits: f.saleableUnits.trim(), driveLink: f.driveLink.trim(), purpose: 'Sale',
+      totalSft: num(f.totalSft), saleableUnits: f.saleableUnits.trim(), driveLink: f.driveLink.trim(),
+      // `purpose` also holds the project type set in the project catalog
+      // (Residential / Commercial); keep that instead of resetting it to 'Sale'.
+      purpose: isEdit && PROJECT_TYPES.includes(propEdit.purpose) ? propEdit.purpose : 'Sale',
       construction: Math.max(0, Math.min(100, num(f.construction))),
       handover: f.handover.trim(),
       images: [f.img0, f.img1, f.img2].map(s => s.trim()).filter(Boolean),

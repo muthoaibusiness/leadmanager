@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import Mi from '../Mi.jsx';
 import { useApp } from '../../context/AppContext.jsx';
 import { setFollowUpAt } from '../../lib/db.js';
@@ -18,8 +18,12 @@ export default function FollowUpModal() {
   const { modal, closeModal, user, panLead, refreshDB, showToast } = useApp();
   const isOpen = modal === 'follow-up';
   const [when, setWhen] = useState(defaultWhen);
+  const whenRef = useRef(null);
 
   useEffect(() => { if (isOpen) setWhen(defaultWhen()); }, [isOpen]);
+  // Mounted while closed, so autoFocus would grab focus on page load into a
+  // hidden field. Focus the date field when the modal opens instead.
+  useEffect(() => { if (isOpen) whenRef.current?.focus(); }, [isOpen]);
 
   // Quick presets fill the date+time field.
   const presets = [
@@ -31,6 +35,9 @@ export default function FollowUpModal() {
   ];
 
   const submit = () => {
+    // A closing modal can still take a key press during its fade-out; a second
+    // Enter must not set the follow-up twice.
+    if (!isOpen) return;
     if (!when) { showToast('Pick a date & time', 'err'); return; }
     const d = new Date(when);
     if (isNaN(d.getTime())) { showToast('Invalid date & time', 'err'); return; }
@@ -55,7 +62,7 @@ export default function FollowUpModal() {
           <div className="m-hint"><Mi>alarm</Mi>You'll get a reminder, and it appears on the home page task list.</div>
           <div className="fl" style={{ marginTop: '14px' }}>
             <label>Follow-up date &amp; time</label>
-            <input className="finp" type="datetime-local" value={when} onChange={e => setWhen(e.target.value)} autoFocus />
+            <input ref={whenRef} className="finp" type="datetime-local" value={when} onChange={e => setWhen(e.target.value)} />
             {preview && <div className="fi-hint">Reminder on {preview}</div>}
           </div>
           <div className="fu-presets">

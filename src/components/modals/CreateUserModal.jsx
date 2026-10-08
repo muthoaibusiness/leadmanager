@@ -5,6 +5,7 @@ import { getDB, createUserFn, addNotifs } from '../../lib/db.js';
 import { sbEmailsInUse } from '../../lib/supabase.js';
 import { rlabel } from '../../lib/helpers.js';
 import { ROLES } from '../../lib/constants.js';
+import useDiscardGuard from '../../hooks/useDiscardGuard.js';
 
 export default function CreateUserModal() {
   const { modal, closeModal, user, createUserRoles, refreshDB, showToast, setCredInfo, openModal } = useApp();
@@ -17,6 +18,15 @@ export default function CreateUserModal() {
   const emailRef = useRef();
   const passRef = useRef();
   const roleRef = useRef();
+  const baselineRef = useRef('');
+
+  // Everything the form holds, as one string; the copy taken on open is the
+  // baseline isDirty() compares against. The role picker is not reset on open,
+  // so its value then is the baseline, not the first role.
+  const formKey = () => JSON.stringify([
+    nameRef.current?.value.trim() || '', phoneRef.current?.value.trim() || '',
+    emailRef.current?.value.trim() || '', passRef.current?.value || '', roleRef.current?.value || '',
+  ]);
 
   useEffect(() => {
     if (isOpen) {
@@ -26,8 +36,16 @@ export default function CreateUserModal() {
       if (emailRef.current) emailRef.current.value = '';
       if (passRef.current) passRef.current.value = '';
       if (phoneRef.current) phoneRef.current.value = '';
+      baselineRef.current = formKey();
     }
   }, [isOpen]);
+
+  // ✕, Cancel, the backdrop and Esc close through the guard: an untouched form
+  // just closes, one with input asks first (Projects → Add Property's structure).
+  const guard = useDiscardGuard({
+    isOpen, isDirty: () => formKey() !== baselineRef.current, onClose: closeModal,
+    ask: { title: 'Exit without creating?', description: 'This new account will be lost.' },
+  });
 
   const submit = async () => {
     const name = nameRef.current.value.trim();
@@ -65,11 +83,11 @@ export default function CreateUserModal() {
   };
 
   return (
-    <div className={`mov${isOpen ? ' on' : ''}`} onClick={e => { if (e.target === e.currentTarget) closeModal(); }}>
-      <div className="modal">
+    <div className={`mov${isOpen ? ' on' : ''}`} {...guard.backdropProps}>
+      <div className="modal" {...guard.modalProps}>
         <div className="m-hd">
           <div className="m-ttl">Create Account</div>
-          <button className="m-x" onClick={closeModal}><Mi>close</Mi></button>
+          <button className="m-x" onClick={guard.requestClose}><Mi>close</Mi></button>
         </div>
         <div className="m-body">
           {createUserRoles.length > 1 && (
@@ -94,7 +112,7 @@ export default function CreateUserModal() {
           {err && <div style={{ color: 'var(--red)', fontSize: '12px', marginTop: '4px' }}>{err}</div>}
         </div>
         <div className="m-ft">
-          <button className="btn btn-g" onClick={closeModal}>Cancel</button>
+          <button className="btn btn-g" onClick={guard.requestClose}>Cancel</button>
           <button className="btn btn-p" onClick={submit}><Mi>person_add</Mi>Create</button>
         </div>
       </div>

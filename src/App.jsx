@@ -5,18 +5,23 @@ import { seedDB, SEED_PROPERTIES, DEMO_PROPERTIES } from './lib/seed.js';
 import { sbLoad, sbSubscribeAll } from './lib/supabase.js';
 import { waLoadSettings } from './lib/wa.js';
 import { pushUnreadSummary, requestNotifyPermission } from './lib/pushNotify.js';
-import { avc, ini, rlabel } from './lib/helpers.js';
-import { ROLES, canSee, FEATURE_KEYS, effectiveRole } from './lib/constants.js';
+import { rlabel, kbd } from './lib/helpers.js';
+import { ROLES, canSee, FEATURE_KEYS, effectiveRole, DRAWER_MQ } from './lib/constants.js';
+import useMediaQuery from './hooks/useMediaQuery.js';
 
 import Mi from './components/Mi.jsx';
+import SidebarGlyph from './components/SidebarGlyph.jsx';
+import RefreshButton from './components/RefreshButton.jsx';
 import { SignIn1 } from './components/ui/modern-stunning-sign-in.jsx';
 import LoadingRadar from './components/LoadingRadar.jsx';
 import LandingPage from './components/LandingPage.jsx';
 import Sidebar from './components/Sidebar.jsx';
 import ThemeToggle from './components/ThemeToggle.jsx';
 import NotifBell from './components/NotifBell.jsx';
+import UserMenu from './components/UserMenu.jsx';
 import LeadPanel from './components/LeadPanel.jsx';
 import Toast from './components/Toast.jsx';
+import ProjectsToaster from './components/project/ProjectsToaster.jsx';
 import DateRangePicker from './components/DateRangePicker.jsx';
 
 import InitialAgentDash from './components/dashboards/InitialAgentDash.jsx';
@@ -27,7 +32,6 @@ import MasterDash from './components/dashboards/MasterDash.jsx';
 
 import LeadsView from './components/views/LeadsView.jsx';
 import CalendarView from './components/views/CalendarView.jsx';
-import CarpoolView from './components/views/CarpoolView.jsx';
 import TeamView from './components/views/TeamView.jsx';
 import UsersView from './components/views/UsersView.jsx';
 import AccountsView from './components/views/AccountsView.jsx';
@@ -58,7 +62,7 @@ import FollowUpModal from './components/modals/FollowUpModal.jsx';
 import LostModal from './components/modals/LostModal.jsx';
 import PropertyViewModal from './components/modals/PropertyViewModal.jsx';
 import ProjectConsole from './components/project/ProjectConsole.jsx';
-import { migrateProjects, createProject } from './lib/projects.js';
+import { migrateProjects, newProjectDraft, projectInventory } from './lib/projects.js';
 import PropertyFormModal from './components/modals/PropertyFormModal.jsx';
 import UnitBookingModal from './components/modals/UnitBookingModal.jsx';
 import BookingModal from './components/modals/BookingModal.jsx';
@@ -89,7 +93,6 @@ function PostLoginLoader() {
 function LoginPage({ onLogin, onBack }) {
   const [email, setEmail] = useState('');
   const [pw, setPw] = useState('');
-  const [showPw, setShowPw] = useState(false);
   const [err, setErr] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -137,12 +140,22 @@ function LoginPage({ onLogin, onBack }) {
 }
 
 // ── Thin chrome bar ─────────────────────────────────────────────────────────
-function PageHeader() {
-  const { setSidebarOpen } = useApp();
+// `shown`: the sidebar is on screen. `showBtnRef`: the show button, which the
+// shell moves focus onto when the sidebar hides with focus inside it.
+function PageHeader({ shown, showBtnRef }) {
+  const { setSidebarShown } = useApp();
   return (
     <header className="pg-head">
-      <button className="ham" onClick={() => setSidebarOpen(true)}><Mi>menu</Mi></button>
+      {/* Show-sidebar button, same glyph as the sidebar's hide button: always
+          there for the ≤1023px drawer, on desktop only while collapsed (CSS). */}
+      <button ref={showBtnRef} className="ham" onClick={() => setSidebarShown(true)}
+        aria-label="Show sidebar" aria-controls="app-sidebar" aria-expanded={shown}
+        title={`Show sidebar (${kbd('\\')})`}>
+        <SidebarGlyph />
+      </button>
       <div style={{ flex: 1 }} />
+      {/* account → date filter → notifications */}
+      <UserMenu />
       <DateRangePicker />
       <span className="pg-div" />
       <NotifBell />
@@ -152,7 +165,7 @@ function PageHeader() {
 
 // ── In-body hero header (eyebrow + big title + subtitle + actions) ───────────
 function PageHero() {
-  const { user, view, agentFilter, teamFilter, setAgentFilter, setTeamFilter, setTab, setStatusFilter, setSearch, openModal, setCreateUserRoles, setPropEdit, setPropSel, setConsoleAdmin, dbVersion, leadCounts } = useApp();
+  const { user, view, agentFilter, teamFilter, setAgentFilter, setTeamFilter, setTab, setStatusFilter, setSearch, openModal, setCreateUserRoles, setPropSel, setPropDraft, setConsoleAdmin, leadCounts } = useApp();
 
   // The Customers count is NOT computed here. It has to agree with the table
   // underneath it, and the table's query is built from filters this component
@@ -173,7 +186,8 @@ function PageHero() {
 
   // eyebrow / title / subtitle per view
   const props = getProperties();
-  const propAvail = props.filter(p => p.status !== 'SOLD_OUT').length;
+  // units still for sale, counted from the catalog's blocks like the Projects KPIs
+  const propAvail = props.reduce((s, p) => s + projectInventory(p).available, 0);
   const teamAgents = db.users.filter(u => (u.role === ROLES.IA || u.role === ROLES.MA) && u.teamId === user.teamId).length;
 
   const META = {
@@ -182,14 +196,13 @@ function PageHero() {
     calendar: { eyebrow: 'Schedule', title: 'Calendar', sub: 'Your scheduled meetings' },
     pipeline: { eyebrow: 'Sales', title: 'Pipeline', sub: 'Drag deals across stages' },
     clients: { eyebrow: 'Relationships', title: 'Contacts', sub: '360° customer view' },
-    properties: { eyebrow: 'Catalog', title: 'Projects', sub: `${props.length} projects · ${propAvail} available` },
+    properties: { eyebrow: 'Catalog', title: 'Projects', sub: `${props.length} project${props.length === 1 ? '' : 's'} · ${propAvail} unit${propAvail === 1 ? '' : 's'} available` },
     reports: { eyebrow: 'Insights', title: 'Reports', sub: 'Live sales analytics' },
     agentperf: { eyebrow: 'Insights', title: 'Performance', sub: 'Per-role scorecards & funnels' },
     bookings: { eyebrow: 'Sales', title: 'Sales Activity', sub: 'Payments, instalments & dues' },
     team: { eyebrow: 'Team', title: 'My Team', sub: `${teamAgents} agents` },
     users: { eyebrow: 'Administration', title: 'Users', sub: `${db.users.length} accounts` },
     accounts: { eyebrow: 'Administration', title: 'Account Management', sub: 'Create & manage multiple accounts' },
-    carpool: { eyebrow: 'Administration', title: 'Carpool Requests', sub: 'Approve agent ride requests' },
     requests: { eyebrow: 'Administration', title: 'Hold Requests', sub: 'Approve agent unit holds' },
     profile: { eyebrow: 'Account', title: 'My Profile', sub: 'Manage your details & avatar' },
     companies: { eyebrow: 'Master Admin', title: 'Companies', sub: 'Company-wise overview' },
@@ -205,6 +218,8 @@ function PageHero() {
 
   // actions
   let actions = [];
+  // Customers: re-fetch the list, for every role that can open the view.
+  if (view === 'leads') actions.push(<RefreshButton key="refresh" />);
   if (view === 'leads' && canSee(user, 'add_customer')) {
     actions.push(<button key="add-lead" className="btn btn-p" onClick={() => openModal('add-lead')}><Mi>add</Mi>Add Customer</button>);
     actions.push(<button key="import" className="btn btn-g" onClick={() => openModal('import')}><Mi>upload</Mi>Import</button>);
@@ -215,7 +230,9 @@ function PageHero() {
   // creates Team Leads, each of which starts a team of its own.
   if (view === 'team' && user.role === ROLES.TL) actions.push(<button key="add-agent" className="btn btn-p" onClick={() => { setCreateUserRoles([ROLES.IA, ROLES.MA, ROLES.EXEC]); openModal('create-user'); }}><Mi>person_add</Mi>Add Agent</button>);
   if (view === 'users' && user.role === ROLES.MGMT) actions.push(<button key="add-user" className="btn btn-p" onClick={() => { setCreateUserRoles([ROLES.TL]); openModal('create-user'); }}><Mi>person_add</Mi>Add User</button>);
-  if (view === 'properties' && user.role === ROLES.MGMT) actions.push(<button key="add-prop" className="btn btn-p" onClick={() => { const nid = createProject({ name: '', companyId: user.companyId }); setConsoleAdmin(true); setPropSel(nid); openModal('project-console'); }}><Mi>add</Mi>Add Property</button>);
+  // Add Property opens an unsaved draft; the project is created only when the
+  // catalog's Save product succeeds (see ProjectCatalog / saveNewProject).
+  if (view === 'properties' && user.role === ROLES.MGMT) actions.push(<button key="add-prop" className="btn btn-p" onClick={() => { const d = newProjectDraft(user.companyId); setPropDraft(d); setConsoleAdmin(true); setPropSel(d.id); openModal('project-console'); }}><Mi>add</Mi>Add Property</button>);
 
   return (
     <div className={`hero${view === 'pipeline' ? ' hero-compact' : ''}`}>
@@ -233,7 +250,7 @@ function PageHero() {
 
 // ── Main page body ──────────────────────────────────────────────────────────
 function PageBody() {
-  const { user, view, dbVersion } = useApp();
+  const { user, view } = useApp();
   if (!user) return null;
 
   if (user.role === ROLES.MASTER && view !== 'profile') return <MasterDash />; // master sees the company-wise overview
@@ -259,23 +276,78 @@ function PageBody() {
   if (view === 'users') return <UsersView />;
   if (view === 'accounts') return <AccountsView />;
   if (view === 'requests') return <RequestsView />;
-  if (view === 'carpool') return <CarpoolView />;
   if (view === 'profile') return <ProfileView />;
   return null;
 }
 
 // ── App shell ───────────────────────────────────────────────────────────────
 function AppShell() {
-  const { view } = useApp();
+  const { view, sidebarOpen, sidebarCollapsed } = useApp();
   const wide = view === 'pipeline' || view === 'conversations'; // kanban + chat need the full canvas
+  // Below 1024px the sidebar is a drawer over the page; from 1024px it is docked
+  // and may be collapsed. `shown` is "on screen" in whichever layout applies.
+  const drawer = useMediaQuery(DRAWER_MQ);
+  const shown = drawer ? sidebarOpen : !sidebarCollapsed;
+  const drawerOpen = drawer && sidebarOpen; // the page behind goes inert, so Tab stays in the drawer
+  const hideBtnRef = useRef(null);
+  const showBtnRef = useRef(null);
+  const wasShown = useRef(shown);
+  // The sidebar control that last took focus (null once focus moves on). A hide
+  // can unmount the focused control in its own commit, which drops focus to
+  // <body> with no focusout; a remembered control that is no longer connected
+  // still counts as focus in the sidebar.
+  const lastFocus = useRef(null);
+
+  useEffect(() => {
+    const onFocusIn = (e) => { lastFocus.current = document.getElementById('app-sidebar')?.contains(e.target) ? e.target : null; };
+    // A pointer press hands focus to the browser: a hide it causes (a backdrop
+    // tap, even one that unmounted the focused control first) never brings a
+    // ring onto the show button.
+    const onPointer = () => { lastFocus.current = null; };
+    // A key press is judged from here: a control already gone before it (an
+    // earlier unmount that left focus on <body>) is not "in the sidebar".
+    const onKey = () => { if (!lastFocus.current?.isConnected) lastFocus.current = null; };
+    document.addEventListener('focusin', onFocusIn);
+    document.addEventListener('pointerdown', onPointer, true);
+    document.addEventListener('keydown', onKey, true);
+    return () => {
+      document.removeEventListener('focusin', onFocusIn);
+      document.removeEventListener('pointerdown', onPointer, true);
+      document.removeEventListener('keydown', onKey, true);
+    };
+  }, []);
+
+  // Keep keyboard focus on something visible as the sidebar comes and goes. An
+  // opening drawer takes focus (the page behind is inert); on desktop focus
+  // follows only from the show button, which disappears as the sidebar returns.
+  // Hiding with focus inside the sidebar (including on a control the hide just
+  // unmounted, see lastFocus) hands focus to the header's show button. Focus
+  // that is not in the sidebar (or already dropped to <body> by a backdrop tap)
+  // is left alone: no stray ring, and Space still scrolls.
+  useEffect(() => {
+    if (wasShown.current === shown) return;
+    wasShown.current = shown;
+    const a = document.activeElement;
+    // preventScroll: the drawer is still mid-slide (off-canvas) at this point
+    if (shown) {
+      if (drawer || a === showBtnRef.current) hideBtnRef.current?.focus({ preventScroll: true });
+    } else if (document.getElementById('app-sidebar')?.contains(a)
+      || (a === document.body && lastFocus.current && !lastFocus.current.isConnected)) {
+      showBtnRef.current?.focus({ preventScroll: true });
+    }
+  }, [shown, drawer]);
+
   return (
-    <div id="app">
-      <Sidebar />
-      <div className="page">
-        <PageHeader />
+    <div id="app" className={sidebarCollapsed ? 'sb-collapsed' : undefined}>
+      <Sidebar hideBtnRef={hideBtnRef} />
+      <div className="page" inert={drawerOpen}>
+        <PageHeader shown={shown} showBtnRef={showBtnRef} />
         <main className="pg-body"><div className={`pg-inner${wide ? ' pg-wide' : ''}`}><PageHero /><PageBody /></div></main>
       </div>
-      <ThemeToggle />
+      <ThemeToggle inert={drawerOpen} />
+      {/* goey-toast host for every tab but Projects, which renders its own:
+          Accounts' toasts and the form discard questions show here. */}
+      {view !== 'properties' && <ProjectsToaster />}
     </div>
   );
 }
@@ -287,7 +359,7 @@ const needsBootFetch = () => hasSessionId() && !getSession();
 
 // ── Root App ─────────────────────────────────────────────────────────────────
 export default function App() {
-  const { user, setUser, view, setView, refreshDB, searchRef, panLead, setPanLead, closeModal, modal, setSearch, setNotifOpen, setWaSettings, chatOk } = useApp();
+  const { user, setUser, view, setView, refreshDB, searchRef, panLead, setPanLead, closeModal, modal, setSearch, notifOpen, setNotifOpen, setWaSettings, chatOk, sidebarOpen, setSidebarOpen, toggleSidebar } = useApp();
   // The loader is only for the one case that genuinely has nothing to render:
   // a stored session id whose user is NOT in the local cache. An anonymous
   // visitor gets Landing/Login and a returning user gets the shell, both on the
@@ -414,16 +486,17 @@ export default function App() {
     if (!user) return;
     let unsub = null;
     let cancelled = false; // the effect can tear down before the idle callback runs
+    let refreshFrame = 0;  // one re-render per frame, however many events a burst brings
 
     const open = () => {
       if (cancelled) return;
-      unsub = sbSubscribeAll((table, type, record, oldRecord) => {
+      unsub = sbSubscribeAll((table, type, record, oldRecord, errors) => {
         if (import.meta.env.DEV) console.log(`[Realtime] ${type} ${table}`, record || oldRecord);
         // applyRealtimeEvent re-checks the tenant client-side: the server filter
         // covers INSERT/UPDATE only, since DELETE is subscribed unfiltered.
-        const changed = applyRealtimeEvent(table, type, record, oldRecord, user);
-        if (changed) {
-          refreshDB();
+        const changed = applyRealtimeEvent(table, type, record, oldRecord, user, errors);
+        if (changed && !refreshFrame) {
+          refreshFrame = requestAnimationFrame(() => { refreshFrame = 0; refreshDB(); });
           // No per-notification OS popup: new notifications land in the in-app
           // bell only. The single push is the startup unread summary below.
         }
@@ -433,7 +506,7 @@ export default function App() {
     if (typeof requestIdleCallback === 'function') requestIdleCallback(open, { timeout: 2000 });
     else setTimeout(open, 0);
 
-    return () => { cancelled = true; if (unsub) unsub(); };
+    return () => { cancelled = true; cancelAnimationFrame(refreshFrame); if (unsub) unsub(); };
   }, [user?.id]);
 
   // Auto-release expired unit holds every minute
@@ -469,6 +542,15 @@ export default function App() {
 
   useEffect(() => {
     function onKey(e) {
+      // Ctrl+\ (⌘\ on a Mac) shows/hides the sidebar. It types nothing, so it
+      // is safe to take even while a text field has focus.
+      if (user && (e.ctrlKey || e.metaKey) && !e.altKey && (e.key === '\\' || e.code === 'Backslash') && !e.repeat && !e.isComposing) {
+        e.preventDefault();
+        // Not while an overlay is up (modal, lead panel, notifications): the
+        // sidebar would open beneath it and pull focus out from under it.
+        if (!modal && !panLead && !notifOpen) toggleSidebar();
+        return;
+      }
       const tag = document.activeElement?.tagName;
       const inInput = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT';
       if (e.key === '/' && !inInput) {
@@ -478,12 +560,13 @@ export default function App() {
       if (e.key === 'Escape') {
         if (modal) { closeModal(); return; }
         if (panLead) { setPanLead(null); return; }
+        if (sidebarOpen) { setSidebarOpen(false); return; } // the ≤1023px drawer
         if (searchRef?.current === document.activeElement) { setSearch(''); searchRef.current.blur(); }
       }
     }
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [modal, panLead, searchRef]);
+  }, [user, modal, panLead, notifOpen, sidebarOpen, searchRef, closeModal, setPanLead, setSearch, setSidebarOpen, toggleSidebar]);
 
   useEffect(() => {
     if (initialized.current) return;

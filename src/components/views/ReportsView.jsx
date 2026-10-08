@@ -2,7 +2,8 @@ import Mi from '../Mi.jsx';
 import { useApp } from '../../context/AppContext.jsx';
 import { getLeads, getProperties, getBookings, bookingPaid, bookingDue } from '../../lib/db.js';
 import { fmtBDT, srclabel } from '../../lib/helpers.js';
-import { Donut, HBars, CHART_COLORS } from '../charts/Charts.jsx';
+import { Donut, HBars } from '../charts/Charts.jsx';
+import { CHART_COLORS } from '../charts/chartColors.js';
 import useLeadBook from '../../hooks/useLeadBook.js';
 
 function MoneyBars({ data }) {

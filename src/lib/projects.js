@@ -11,10 +11,16 @@
 // Everything goes through this module, so swapping to a real API = change the
 // bodies here only — the UI never touches the store directly.
 
-import { getProperty, getProperties, addPropertyFn, updatePropertyFn, deletePropertyFn, unitsFromCodes } from './db.js';
+import { getProperty, getProperties, addPropertyFn, updatePropertyFn, deletePropertyFn, insertPropertyChecked, updatePropertyChecked, unitsFromCodes } from './db.js';
 import { uid } from './helpers.js';
+import { PROJECT_TYPES } from './constants.js';
 
 const nowISO = () => new Date().toISOString();
+
+// A project's type (Residential / Commercial) is kept in the property's
+// existing `purpose` column, so it needs no schema change. Anything else there
+// (empty, or the old edit form's 'Sale') means none has been chosen yet.
+export const projectTypeOf = (p) => (PROJECT_TYPES.includes(p?.purpose) ? p.purpose : null);
 const mapStatus = (s) => (s === 'sold' ? 'sold' : s === 'available' ? 'available' : 'hold'); // locked/booked → hold
 
 // ── shape / migration (legacy property → storefront project) ─────────────────
@@ -81,10 +87,55 @@ export function migrateProjects(db) {
 export function listProjects() { return getProperties().map(toProject); }
 export function getProjectById(id) { return toProject(getProperty(id)); }
 
+// ── inventory summary (Projects list, its KPI strip, the page subtitle) ──────
+// Counted from the blocks (variants) and their units — what the catalog edits
+// and the project console sells from. The old flat fields (totalUnits,
+// unitsAvailable, totalSft, pricePerSqft, status) are not kept up to date by
+// the catalog; they only seed toProject()'s default block for legacy rows.
+//   total / available / hold / sold   units by status
+//   area                              Σ block size × its units, in sqft
+//   rateMin / rateMax, sizeMin / sizeMax   over blocks that have one (else null)
+//   status   SOLD_OUT when every unit is sold, FEW_LEFT at ≤ 20% left (at least
+//            1), else AVAILABLE; an UPCOMING flag set on the project wins;
+//            null when the project has no units yet
+export function projectInventory(raw) {
+  const p = toProject(raw);
+  let total = 0, available = 0, hold = 0, sold = 0, area = 0;
+  const rates = [], sizes = [];
+  (p?.variants || []).forEach(v => {
+    const units = v.units || [];
+    total += units.length;
+    units.forEach(u => { if (u.status === 'available') available++; else if (u.status === 'sold') sold++; else hold++; });
+    if (v.size > 0) { sizes.push(v.size); area += v.size * units.length; }
+    if (v.listRate > 0) rates.push(v.listRate);
+  });
+  const status = p?.status === 'UPCOMING' ? 'UPCOMING'
+    : !total ? null
+    : sold === total ? 'SOLD_OUT'
+    : available <= Math.max(1, Math.floor(total * 0.2)) ? 'FEW_LEFT'
+    : 'AVAILABLE';
+  const span = (xs) => (xs.length ? [Math.min(...xs), Math.max(...xs)] : [null, null]);
+  const [rateMin, rateMax] = span(rates);
+  const [sizeMin, sizeMax] = span(sizes);
+  return { total, available, hold, sold, area, rateMin, rateMax, sizeMin, sizeMax, status };
+}
+
 // ── project CRUD ─────────────────────────────────────────────────────────────
 export function createProject(data) { return addPropertyFn({ variants: [], addons: [], media: { images: [], docs: [], links: [] }, fastClosePct: 2, fastCloseDays: 5, ...data }); }
 export function updateProject(id, patch) { updatePropertyFn(id, patch); }
 export function removeProject(id) { deletePropertyFn(id); }
+
+// Add Property starts from a draft that only the editor holds — nothing reaches
+// the store or the cloud until the first successful save. Same starting shape
+// createProject stores.
+export function newProjectDraft(companyId) {
+  return { id: 'p' + uid(), name: '', companyId: companyId || null, variants: [], addons: [], media: { images: [], docs: [], links: [] }, fastClosePct: 2, fastCloseDays: 5 };
+}
+
+// The catalog editor's saves. They wait for the cloud and resolve to
+// { ok, id } or { ok: false, error }, so a failed save can keep the draft open.
+export function saveNewProject(draft) { return insertPropertyChecked(draft); }
+export function saveProject(id, patch) { return updatePropertyChecked(id, patch); }
 
 // ── variants ─────────────────────────────────────────────────────────────────
 export function addVariant(id) {

@@ -3,12 +3,12 @@ import Mi from './Mi.jsx';
 import { LoadingBlock } from './Spinner.jsx';
 import { useApp } from '../context/AppContext.jsx';
 import LogCall from './LogCall.jsx';
-import { getLead, getActs, ensureLead, ensureLeadActs, hasFullActs, changeStatus, doneVisit, deleteLead, updLead, addAct, logNoAnswer, noAnswerLock, attendMeeting, createCarpoolRequest, userNameById } from '../lib/db.js';
+import { getLead, getActs, ensureLead, ensureLeadActs, hasFullActs, changeStatus, doneVisit, deleteLead, logNoAnswer, noAnswerLock, attendMeeting, userNameById } from '../lib/db.js';
 import { fmtD, fmtDT, fmtBDT, rlabel, scoreLead, scoreLabel, leadDisplayStatus, fmtDateTimeAP } from '../lib/helpers.js';
 import ActivityTimeline from './ActivityTimeline.jsx';
-import { ROLES, STATUS_LABELS, SRC_LABELS, effectiveRole, isNiHandler } from '../lib/constants.js';
+import { ROLES, SRC_LABELS, effectiveRole, isNiHandler, DRAWER_MQ } from '../lib/constants.js';
+import useMediaQuery from '../hooks/useMediaQuery.js';
 
-function sclass(s) { return 's-' + (s || '').toLowerCase(); }
 const leadCode = (l) => l.externalId || ('#' + String(l.id || '').slice(-6).toUpperCase());
 const SHARED_LABEL = { price: 'Price idea', brochure: 'Brochure', video: 'Video', image: 'Image' };
 
@@ -121,7 +121,7 @@ function LeadInfo({ l }) {
 }
 
 function Actions({ l }) {
-  const { user, openModal, setFwdTarget, setPanLead, refreshDB, showToast } = useApp();
+  const { user, openModal, refreshDB, showToast } = useApp();
   // Behavioural role: an Executive works leads with the action set its features
   // imply (e.g. add_customer ⇒ Initial Agent). Delete stays on the raw role below.
   const r = effectiveRole(user);
@@ -157,12 +157,6 @@ function Actions({ l }) {
     attendMeeting(l.id, user);
     refreshDB();
     showToast('Meeting marked as attended', 'ok');
-  };
-
-  const doCarpool = () => {
-    createCarpoolRequest({ leadId: l.id, clientName: l.name, visitDate: l.meetingDate, projects: l.visitProjects || [] }, user);
-    refreshDB();
-    showToast('Carpool requested — pending admin approval', 'ok');
   };
 
   // A lead that has burned through its 7 attempts is locked for 24h: the entire
@@ -203,9 +197,11 @@ function Actions({ l }) {
         <Mi>forward_to_inbox</Mi>FW to Next Agent
       </button>
     );
-    // Not Interested — manual disqualify, available before contact (NEW) and after
-    // connecting (CONTACTED) once the agent decides the lead isn't worth pursuing.
-    if (['NEW', 'CONTACTED'].includes(l.status)) btns.push(
+    // Not Interested — manual disqualify, available before contact (NEW), after
+    // connecting (CONTACTED), and once interested (INTERESTED): a client who
+    // showed interest can still back out before the hand-off, and the agent must
+    // be able to record it as a status, not only as a note.
+    if (['NEW', 'CONTACTED', 'INTERESTED'].includes(l.status)) btns.push(
       <button key="notint" className="btn btn-g btn-full" onClick={doNotInterested}>
         <Mi>thumb_down</Mi>Not Interested
       </button>
@@ -235,7 +231,6 @@ function Actions({ l }) {
   }
 
   if (r === ROLES.MA) {
-    const maClosed = ['SITE_VISIT_DONE', 'NEGOTIATING', 'DEAL_CLOSED_WON', 'DEAL_CLOSED_LOST', 'NOT_INTERESTED'];
     // Attended the scheduled meeting → log it, then schedule the site visit/booking.
     if (l.status === 'MEETING_SET' && !l.meetingAttended) btns.push(
       <button key="attend" className="btn btn-success btn-full" onClick={doAttend}>
@@ -258,12 +253,6 @@ function Actions({ l }) {
       <button key="done-visit" className="btn btn-success btn-full" onClick={doDoneVisit}>
         <Mi>check_circle</Mi>Mark Visit as Done
       </button>
-    );
-    // Request a carpool ride to the site visit — admin approves in Carpool Requests.
-    if (l.status === 'SITE_VISIT_SCHEDULED') btns.push(
-      l.carpoolRequested
-        ? <button key="carpool" className="btn btn-g btn-full" disabled><Mi>directions_car</Mi>Carpool Requested</button>
-        : <button key="carpool" className="btn btn-full" style={{ background: 'var(--orange-l)', color: 'var(--orange)' }} onClick={doCarpool}><Mi>directions_car</Mi>Request Carpool</button>
     );
     // Attempt — couldn't reach the client; logs an attempt + next-day follow-up.
     // 7 attempts in a stage → lead locked for 24h (status unchanged), then reset.
@@ -393,7 +382,7 @@ function ScoreCard({ l, acts }) {
 function OfferCard({ acts }) {
   const offer = acts.find(a => a.type === 'OFFER');
   if (!offer) return null;
-  let data = null;
+  let data;
   try { data = JSON.parse(offer.description); } catch { return null; }
   return (
     <div className="offer-card">
@@ -431,7 +420,10 @@ function Timeline({ acts, lead }) {
 }
 
 export default function LeadPanel() {
-  const { panLead, setPanLead, openModal, dbVersion, user, refreshDB, showToast } = useApp();
+  const { panLead, setPanLead, openModal, user, refreshDB, showToast, sidebarOpen } = useApp();
+  // Inert while the ≤1023px drawer is open, like the page behind it: the panel
+  // lives outside #app, and even closed (off-canvas) its buttons would take Tab.
+  const drawerOpen = useMediaQuery(DRAWER_MQ) && sidebarOpen;
   // Only Management / Master (admin) may delete a lead. Real agents — Initial
   // Agent, Meeting Agent, Team Lead — cannot delete any lead.
   const canDelete = user?.role === ROLES.MGMT || user?.role === ROLES.MASTER;
@@ -467,9 +459,8 @@ export default function LeadPanel() {
     let alive = true;
     // A lead whose full history is already cached must not flash a spinner.
     setActsReady(hasFullActs(panLead));
-    // The lead row itself may not be cached either — a notification or a
-    // carpool request opens the panel from an id alone, and db.leads only holds
-    // what has been listed so far.
+    // The lead row itself may not be cached either — a notification opens the
+    // panel from an id alone, and db.leads only holds what has been listed so far.
     ensureLead(panLead).then(changed => { if (alive && changed) refreshDB(); });
     ensureLeadActs(panLead).then(changed => {
       if (!alive) return;
@@ -493,7 +484,7 @@ export default function LeadPanel() {
   return (
     <>
       <div id="pov" className={isOpen ? 'on' : ''} onClick={() => setPanLead(null)} />
-      <div id="pan" className={isOpen ? 'on' : ''}>
+      <div id="pan" className={isOpen ? 'on' : ''} inert={drawerOpen}>
         <div className="p-hd">
           <button className="p-back" onClick={() => setPanLead(null)}><Mi>arrow_back</Mi></button>
           <div className="p-ttl">{l ? (l.name || 'Unnamed customer') : 'Customer Details'}</div>

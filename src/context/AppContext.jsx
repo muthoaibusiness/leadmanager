@@ -1,6 +1,6 @@
-import { createContext, useContext, useState, useCallback, useRef } from 'react';
+import { createContext, useContext, useState, useCallback, useRef, useEffect } from 'react';
 import { getDB, getSession } from '../lib/db.js';
-import { ROLES } from '../lib/constants.js';
+import { ROLES, DRAWER_MQ } from '../lib/constants.js';
 import { waCanChat } from '../lib/wa.js';
 import { claimLead, isQuotaLimited } from '../lib/leadQuota.js';
 
@@ -30,12 +30,21 @@ export function AppProvider({ children }) {
   const [leadCounts, setLeadCounts] = useState(null);
   const [propSel, setPropSel] = useState(null);   // property id for detail view
   const [propEdit, setPropEdit] = useState(null);  // property obj for edit, {} for new
+  const [propDraft, setPropDraft] = useState(null); // unsaved new project (Add Property) — stored only once saved
   const [bookSel, setBookSel] = useState(null);    // booking id for detail modal
   const [createUserRoles, setCreateUserRoles] = useState([]);
   const [editUser, setEditUser] = useState(null);   // agent obj for edit-agent modal
   const [deleteUserId, setDeleteUserId] = useState(null);
   const [importData, setImportData] = useState(null);
-  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(false); // the ≤1023px drawer
+  // Desktop (≥1024px) can collapse the docked sidebar away. Read before the
+  // first paint, so a collapsed sidebar is simply absent on load instead of
+  // sliding shut; written by its setter, never by an effect.
+  const [sidebarCollapsed, setSidebarCollapsedState] = useState(() => {
+    try { return localStorage.getItem('sidebar') === 'collapsed'; } catch { return false; }
+  });
+  // Mirrors sidebarCollapsed for toggleSidebar, which can then stay stable.
+  const collapsedRef = useRef(sidebarCollapsed);
   const [notifOpen, setNotifOpen] = useState(false);
   const [toast, setToast] = useState(null);
   const [dbVersion, setDbVersion] = useState(0);
@@ -65,6 +74,34 @@ export function AppProvider({ children }) {
       if (prev) { setUser(prev); setView(prev.role === 'MASTER' ? 'companies' : 'dashboard'); }
       return null;
     });
+    setSidebarOpen(false);
+  }, []);
+
+  const setSidebarCollapsed = useCallback((v) => {
+    collapsedRef.current = v;
+    setSidebarCollapsedState(v);
+    try { localStorage.setItem('sidebar', v ? 'collapsed' : 'expanded'); } catch { /* storage blocked: this session only */ }
+  }, []);
+
+  // Show/hide the sidebar in whichever layout is on screen: below 1024px it is
+  // the overlay drawer (sidebarOpen), from 1024px the docked sidebar collapses.
+  const setSidebarShown = useCallback((show) => {
+    if (window.matchMedia(DRAWER_MQ).matches) setSidebarOpen(show);
+    else setSidebarCollapsed(!show);
+  }, [setSidebarCollapsed]);
+
+  const toggleSidebar = useCallback(() => {
+    if (window.matchMedia(DRAWER_MQ).matches) setSidebarOpen(o => !o);
+    else setSidebarCollapsed(!collapsedRef.current);
+  }, [setSidebarCollapsed]);
+
+  // Widening the window past the drawer breakpoint closes the drawer, so its
+  // backdrop and the inert page behind it never linger over the docked layout.
+  useEffect(() => {
+    const mq = window.matchMedia(DRAWER_MQ);
+    const onChange = (e) => { if (!e.matches) setSidebarOpen(false); };
+    mq.addEventListener('change', onChange);
+    return () => mq.removeEventListener('change', onChange);
   }, []);
 
   const refreshDB = useCallback(() => {
@@ -113,12 +150,14 @@ export function AppProvider({ children }) {
     leadCounts, setLeadCounts,
     propSel, setPropSel,
     propEdit, setPropEdit,
+    propDraft, setPropDraft,
     bookSel, setBookSel,
     createUserRoles, setCreateUserRoles,
     editUser, setEditUser,
     deleteUserId, setDeleteUserId,
     importData, setImportData,
     sidebarOpen, setSidebarOpen,
+    sidebarCollapsed, setSidebarShown, toggleSidebar,
     notifOpen, setNotifOpen,
     toast, showToast,
     dbVersion, refreshDB,
