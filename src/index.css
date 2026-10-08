@@ -42,8 +42,13 @@
   --r-sm: 6px;
   --r-lg: 14px;
   --r-xl: 20px;
-  --sw: 256px;
-  --hh: 58px;
+  /* Responsive shell scale. Fluid between the drawer breakpoint (1024px) and
+     ~1550px, so the shell needs no breakpoints of its own. */
+  --sw: clamp(216px, 8vw + 132px, 256px);      /* docked sidebar width */
+  --hh: 58px;                                   /* header height */
+  --gutter: clamp(12px, 1.25vw + 8px, 28px);    /* page side padding */
+  --gutter-y: clamp(14px, .8vw + 11px, 26px);   /* page top/bottom padding */
+  --content-max: 1760px;                        /* content cap on very wide screens */
   --tr: .15s ease;
   /* sidebar slide: in (show) a touch slower than out (hide), both easing out */
   --sb-ease: cubic-bezier(.2, 0, 0, 1);
@@ -1544,6 +1549,7 @@ a {
 
 @media(max-width:1023px) {
   .sidebar {   /* hidden off-canvas, takes no space */
+    width: min(280px, 85vw);
     transform: translateX(-100%);
     visibility: hidden;
     transition: transform var(--sb-out) var(--sb-ease), box-shadow var(--sb-out) var(--sb-ease), visibility 0s linear var(--sb-out)
@@ -1658,6 +1664,9 @@ a {
     height: 44px;
     margin-right: -7px
   }
+  /* drawer rows are touch targets too */
+  .sb-it, .sb-subit { min-height: 44px }
+  .sb-subit { display: flex; align-items: center }
 }
 
 .sb-nav {
@@ -1681,7 +1690,7 @@ a {
 
 .sb-sec-lbl {
   padding: 16px 12px 7px;
-  font-size: 9.5px;
+  font-size: 10.5px;
   font-weight: 600;
   letter-spacing: .24em;
   text-transform: uppercase;
@@ -1766,7 +1775,7 @@ a {
 .sb-subit {
   position: relative;
   padding: 7px 10px;
-  font-size: 10.5px;
+  font-size: 11px;
   font-weight: 500;
   letter-spacing: .08em;
   text-transform: uppercase;
@@ -2052,7 +2061,6 @@ a {
 }
 .ag-av:focus-visible { outline: 2px solid var(--t1); outline-offset: 1px }
 .ag-img { display: block; width: 100%; height: 100%; object-fit: cover }
-.ag-more { font-size: 11px }
 .ag-tip {
   padding: 6px 12px;
   border-radius: 8px;
@@ -2161,7 +2169,8 @@ a {
   font-size: 24px;
   font-weight: 800;
   letter-spacing: -.5px;
-  margin-bottom: 10px
+  margin-bottom: 10px;
+  overflow-wrap: anywhere
 }
 
 .pf-meta {
@@ -2174,16 +2183,42 @@ a {
   display: inline-flex;
   align-items: center;
   gap: 5px;
+  max-width: 100%;
   background: rgba(255, 255, 255, 0.15);
   padding: 5px 11px;
   border-radius: 20px;
   font-size: 12px;
   font-weight: 500;
-  border: 1px solid rgba(255, 255, 255, 0.18)
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  overflow-wrap: anywhere
 }
 
 .pf-pill .mi {
-  font-size: 14px
+  font-size: 14px;
+  flex-shrink: 0
+}
+
+/* Phones: the avatar column (its demo row is ~300px wide) leaves no room
+   beside it, yet .pf-hero-info's zero flex-basis kept it on the same line,
+   a few px wide, so the name and pills spilled out of the card. Stack the
+   hero instead: avatar block, then name and pills, centred. */
+@media (max-width: 767px) {
+  .pf-hero {
+    flex-direction: column;
+    flex-wrap: nowrap;
+    align-items: stretch;
+    gap: 16px;
+    padding: 20px 16px;
+    text-align: center
+  }
+
+  .pf-hero-info {
+    flex: none
+  }
+
+  .pf-meta {
+    justify-content: center
+  }
 }
 
 .pf-kpi-grid {
@@ -2268,7 +2303,8 @@ a {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 14px;
-  margin-bottom: 14px
+  margin-bottom: 14px;
+  align-items: end
 }
 
 @media(max-width:640px) {
@@ -2277,10 +2313,14 @@ a {
   }
 }
 
+.pf-form .fl label {
+  font-size: 11px
+}
+
 .pf-hint {
   color: var(--t3);
   font-weight: 400;
-  font-size: 10px;
+  font-size: 11px;
   margin-left: 4px
 }
 
@@ -2366,16 +2406,13 @@ a {
   border-bottom: 1px solid var(--bd);
   display: flex;
   align-items: center;
-  padding: 0 20px;
+  /* controls line up with the page content; the right padding also keeps a
+     slot free for the theme toggle (.thtog, 60px wide), which is fixed there
+     one 14px gap after the last control */
+  padding: 0 calc(var(--gutter) + 60px + 14px) 0 var(--gutter);
   gap: 14px;
   flex-shrink: 0
 }
-
-/* The header fox (components/HeaderMascot.jsx): stands on the header's bottom
-   edge; its left is set from the page content's left edge, and it stays
-   hidden until that is measured. */
-.pg-head { position: relative }
-.pg-mascot { position: absolute; bottom: 0; z-index: 1; visibility: hidden }
 
 /* thin separator between the date filter and the notification bell */
 .pg-div {
@@ -2391,7 +2428,7 @@ a {
 .ham {
   width: 34px;
   height: 34px;
-  margin-left: -7px;   /* desktop: the glyph lands at x≈20, where the wordmark sits */
+  margin-left: calc(13px - var(--gutter));   /* desktop: the glyph lands at x≈20, where the wordmark sits */
   display: none;
   flex-shrink: 0;
   align-items: center;
@@ -2420,8 +2457,11 @@ a {
     display: flex;
     width: 44px;
     height: 44px;
-    margin-left: 0
+    margin-left: -12px   /* the 20px glyph, centred in the 44px box, sits on the content edge (x = --gutter) */
   }
+  /* below ~640px that box starts within 4px of the screen edge, which would
+     clip the header's outset focus ring: draw this one inside the box */
+  .pg-head .ham:focus-visible { outline-offset: -2px }
 }
 
 .pg-title {
@@ -2485,32 +2525,43 @@ a {
   white-space: nowrap
 }
 
+/* The page scroller. No zoom: content renders at its real size, and the shell
+   gives it room through the fluid tokens in :root instead. Full-height views
+   (.wa-wrap, .pk-board) take exactly its content box,
+   calc(100dvh - var(--hh) - 2 * var(--gutter-y)): keep them in step. */
 .pg-body {
   flex: 1;
   overflow-y: auto;
-  padding: 26px 22px;
-  zoom: .95
+  padding: var(--gutter-y) var(--gutter)
 }
 
 .pg-inner {
-  max-width: 1240px;
+  max-width: var(--content-max);
   margin: 0 auto;
-  width: 100%
+  width: 100%;
+  min-width: 0
 }
 
 .pg-inner.pg-wide {
   max-width: none;
   margin: 0;
-  width: 100%
+  width: 100%;
+  /* full-height views (Pipeline, Conversations) grow into the scroller as a
+     column, so the view under the hero can take the remaining height */
+  flex: 1 0 auto;
+  display: flex;
+  flex-direction: column
 }
+
+.pg-body:has(> .pg-wide) { display: flex; flex-direction: column }
 
 /* In-body hero header (eyebrow + big title + subtitle) */
 .hero {
   display: flex;
   align-items: flex-end;
   justify-content: space-between;
-  gap: 20px;
-  margin-bottom: 26px;
+  gap: 12px 20px;
+  margin-bottom: clamp(14px, .6vw + 10px, 22px);
   flex-wrap: wrap
 }
 
@@ -2524,7 +2575,7 @@ a {
   letter-spacing: .2em;
   text-transform: uppercase;
   color: var(--volt);
-  margin-bottom: 10px
+  margin-bottom: 8px
 }
 
 .hero-back {
@@ -2539,7 +2590,7 @@ a {
   letter-spacing: .14em;
   text-transform: uppercase;
   color: var(--volt);
-  margin-bottom: 10px;
+  margin-bottom: 8px;
   padding: 0
 }
 
@@ -2553,7 +2604,7 @@ a {
 
 .hero-title {
   font-family: var(--font-display);
-  font-size: clamp(30px, 4.2vw, 46px);
+  font-size: clamp(22px, 1vw + 16px, 32px);
   font-weight: 500;
   text-transform: uppercase;
   letter-spacing: .01em;
@@ -2564,13 +2615,13 @@ a {
 .hero-sub {
   font-size: 14.5px;
   color: var(--t2);
-  margin-top: 11px
+  margin-top: 8px
 }
 
 /* Compact hero (Pipeline) — reclaim vertical space for the board */
 .hero-compact { margin-bottom: 12px }
 .hero-compact .hero-eyebrow { margin-bottom: 2px }
-.hero-compact .hero-title { font-size: clamp(22px, 3vw, 30px) }
+.hero-compact .hero-title { font-size: clamp(20px, .6vw + 15px, 26px) }
 .hero-compact .hero-sub { display: none }
 
 .hero-acts {
@@ -2651,25 +2702,13 @@ a {
   .sidebar, .sb-ov, .page { transition: none !important }
 }
 
-@media(max-width:560px) {
-  .hero-title {
-    font-size: 30px
-  }
-
-  .hero-acts {
-    width: 100%
-  }
-
-  .hero-acts .btn {
-    flex: 1;
-    justify-content: center
-  }
-}
-
-@media(max-width:640px) {
-  .pg-body {
-    padding: 14px
-  }
+/* Phones: hero actions take the full row. The header makes room for the
+   docked theme toggle by dropping the divider and the account faces after
+   your own (that face still opens the menu, which lists every account). */
+@media (max-width: 767px) {
+  .hero-acts { width: 100% }
+  .hero-acts .btn { flex: 1; justify-content: center }
+  .pg-head .pg-div, .hd-um .ag-slot:not(:first-child) { display: none }
 }
 
 /* ── BUTTONS ─────────────────────────────── */
@@ -2807,11 +2846,11 @@ a {
 
 /* ── BADGES ──────────────────────────────── */
 .bdg {
-  padding: 5px 11px;
+  padding: 5px 9px;
   border-radius: 8px;
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 700;
-  letter-spacing: .07em;
+  letter-spacing: .04em;
   text-transform: uppercase;
   display: inline-flex;
   align-items: center;
@@ -3408,7 +3447,7 @@ a {
 }
 
 .agc-sl {
-  font-size: 10px;
+  font-size: 11px;
   color: var(--t3);
   font-weight: 600;
   text-transform: uppercase
@@ -3443,6 +3482,7 @@ a {
 
 .agc-act {
   display: flex;
+  flex-wrap: wrap;
   gap: 7px;
   margin-top: 12px
 }
@@ -3629,18 +3669,29 @@ a {
 }
 
 /* Customers table: seven columns (… Status, Last Follow-up, Create date) on
-   tighter tracks and gaps, so it still fits a 1366px laptop without scrolling
-   sideways. Scoped to .lt-leads — the Projects and Bookings tables keep the
+   tracks sized to their widest real content, so all seven fit a 1280px
+   laptop without scrolling sideways. Minimums, measured at each column's own
+   size and weight in Space Grotesk (the Inter / Arial fallbacks fit too):
+     Lead ID 76    "#HK_001" ≈ 59px, six-character ids ≈ 58–66px; longer
+                   external ids end in an ellipsis (.lt-leads .lt-id)
+     Name 132      fits the phone line ("+8801910000000" ≈ 106px)
+     Source 74     "Team Lead" ≈ 69px, the widest label
+     Property 100  ellipsis, as before
+     Status 126    "Visit Scheduled" badge ≈ 116px (≈ 125px in a fallback)
+     dates 160     "08 Sept 2026, 10:58 AM" ≈ 150px bold (≈ 156px in Inter)
+   Spare room goes to Property and Name first, then the Last Follow-up note,
+   and to Lead ID / Source only on wide screens; Status and Create date stay
+   fixed. Scoped to .lt-leads — the Projects and Bookings tables keep the
    rules above. */
 .lt-leads .lt-hdr,
 .lt-leads .lt-row {
-  grid-template-columns: 110px minmax(160px, 1.7fr) 100px minmax(140px, 1.5fr) 134px 160px 160px;
+  grid-template-columns: minmax(76px, .5fr) minmax(132px, 1.7fr) minmax(74px, .5fr) minmax(100px, 1.5fr) 126px minmax(160px, 1.2fr) 160px;
   column-gap: 12px
 }
 
 .lt-leads.lt-with-cb .lt-hdr,
 .lt-leads.lt-with-cb .lt-row {
-  grid-template-columns: 22px 110px minmax(160px, 1.7fr) 100px minmax(140px, 1.5fr) 134px 160px 160px
+  grid-template-columns: 22px minmax(76px, .5fr) minmax(132px, 1.7fr) minmax(74px, .5fr) minmax(100px, 1.5fr) 126px minmax(160px, 1.2fr) 160px
 }
 
 /* Customers table only — LeadTable puts .lt-leads on every render path
@@ -3650,23 +3701,25 @@ a {
    narrower than that (worst at 1024px, with the sidebar docked). Scroll the
    card sideways instead. Header and rows get the same min-width, so their
    columns stay aligned while scrolled. The min-width covers the left padding,
-   every column and every gap, but not the 28px right padding: as before, the
-   last column may run into that padding, so no scrollbar appears just for it.
-     28 + 110 + 160 + 100 + 140 + 134 + 160 + 160 + 6 gaps × 12 = 1064
-     with the checkbox: + 22 track + 12 gap                       = 1098
-   Keep these in step with the .lt-leads track lists. The card is at most
-   1238px wide (.pg-inner), so a larger total scrolls at every width. At a
-   1366px viewport the card is about 1118px, and only because .pg-body is
-   zoomed to .95; without that zoom both totals would scroll there.
-   ≤768px keeps its card layout. */
+   every column minimum and every gap, but not the 28px right padding: as
+   before, the last column may run into that padding, so no scrollbar appears
+   just for it.
+     28 + 76 + 132 + 74 + 100 + 126 + 160 + 160 + 6 gaps × 12 = 928
+     with the checkbox: + 22 track + 12 gap                   = 962
+   Keep these in step with the .lt-leads track lists. The card spans the page
+   content width (the fluid shell, capped at --content-max): about 993px at a
+   1280px viewport, so both totals fit from roughly 1250px up (1210px without
+   the checkbox) and, in the drawer layout, from about 1015px. Narrower widths
+   — 1024px with the sidebar docked, the smaller drawer widths — scroll inside
+   the card. ≤768px keeps its card layout. */
 @media(min-width:769px) {
   .lt-leads { overflow-x: auto }
 
   .lt-leads .lt-hdr,
-  .lt-leads .lt-row { min-width: 1064px }
+  .lt-leads .lt-row { min-width: 928px }
 
   .lt-leads.lt-with-cb .lt-hdr,
-  .lt-leads.lt-with-cb .lt-row { min-width: 1098px }
+  .lt-leads.lt-with-cb .lt-row { min-width: 962px }
 }
 
 .lt-hdr {
@@ -3725,7 +3778,8 @@ a {
   white-space: nowrap
 }
 
-/* Customers: the Lead ID track is 110px, so a long external id ends in an
+/* Customers: the Lead ID track is 76px at its narrowest (room for "#HK_001"
+   and the usual six-character ids), so a long external id ends in an
    ellipsis (full id in its title) instead of being cut off. */
 .lt-leads .lt-id {
   min-width: 0;
@@ -5508,7 +5562,7 @@ a {
 }
 
 .atl-actor {
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: .5px;
@@ -5545,7 +5599,7 @@ a {
 }
 
 .atl-offer-lbl {
-  font-size: 10px;
+  font-size: 11px;
   text-transform: uppercase;
   letter-spacing: .5px;
   color: var(--t3)
@@ -6088,7 +6142,7 @@ textarea.fi {
 }
 
 .tg-sl {
-  font-size: 10px;
+  font-size: 11px;
   color: var(--t3);
   font-weight: 600;
   text-transform: uppercase;
@@ -6575,7 +6629,7 @@ textarea.fi {
 
 .cd-sub {
   fill: var(--t3);
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: .1em
@@ -6632,7 +6686,7 @@ textarea.fi {
 
 .cr-lbl {
   fill: var(--t3);
-  font-size: 9px;
+  font-size: 11px;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: .12em
@@ -9265,7 +9319,7 @@ textarea.fi {
   align-items: center;
   gap: 12px;
   padding: 11px 18px;
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: .1em;
@@ -9837,7 +9891,8 @@ textarea.fi {
 .pk-wrap {
   display: flex;
   flex-direction: column;
-  gap: 14px
+  gap: 14px;
+  flex: 1 0 auto   /* fills .pg-inner.pg-wide, so the board can take the rest */
 }
 
 .pk-demand {
@@ -10302,7 +10357,11 @@ textarea.fi {
   overflow-y: hidden;
   padding-bottom: 10px;
   align-items: stretch;
-  min-height: calc(100vh - 250px);
+  /* fills what the page leaves under the summary (see .pg-body:has(> .pg-wide)),
+     so on tall screens the whole board, horizontal scrollbar included, is in
+     view without scrolling the page; never less than a header and a card */
+  flex: 1 1 0;
+  min-height: 420px;
   scroll-snap-type: x proximity;
 }
 .pk-board::-webkit-scrollbar { height: 8px }
@@ -10317,9 +10376,10 @@ textarea.fi {
   .pk-board > .pk-col { flex-basis: 84vw; width: 84vw }
 }
 
-/* column body scrolls within a fixed-height column so headers stay aligned */
+/* column body fills its column (stretched to the board's height, .pk-board)
+   and scrolls inside it, so the column headers stay aligned */
 .pk-col-body {
-  max-height: calc(100vh - 320px);
+  min-height: 0;
   overflow-y: auto;
 }
 
@@ -10480,7 +10540,7 @@ textarea.fi {
 /* row table */
 .acc-table { display: flex; flex-direction: column; gap: 8px; overflow-x: auto }
 .acc-tr { display: grid; grid-template-columns: 28px 1.3fr 1.6fr 1fr 1.1fr 1.1fr .8fr 32px; gap: 8px; align-items: center; min-width: 760px }
-.acc-th { font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .6px; color: var(--t3); padding: 0 2px }
+.acc-th { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .6px; color: var(--t3); padding: 0 2px }
 .acc-idx { font-size: 12px; color: var(--t3); text-align: center; font-weight: 600 }
 .acc-tr .fi { padding: 8px 10px; font-size: 13px }
 .acc-na { color: var(--t3); text-align: center; font-size: 13px }
@@ -10596,17 +10656,9 @@ textarea.fi {
    GLOBAL MOBILE OPTIMIZATION PASS — applies to all app pages/admin
    ══════════════════════════════════════════════════════════════════ */
 
-/* Tablet & down: kill the Pipeline page's desktop right-offset (was causing
-   horizontal overflow / cut-off on phones & tablets). */
-@media (max-width: 1024px) {
-  .pg-inner.pg-wide { max-width: 1240px; margin-left: auto; margin-right: auto }
-}
-
 @media (max-width: 768px) {
-  /* tighter page chrome */
-  .pg-head { padding: 0 12px }
+  /* tighter page chrome (the shell's own spacing is fluid, see :root) */
   .pg-title { font-size: 15px }
-  .hero { gap: 12px; margin-bottom: 18px }
   .sec-hd { margin-top: 6px }
 
   /* modals fill more of the screen, content scrolls */
@@ -10643,8 +10695,6 @@ textarea.fi {
 }
 
 @media (max-width: 480px) {
-  .pg-body { padding: 12px 10px }
-  .hero h1, .pg-hero-title { font-size: 22px }
   .btn { padding: 9px 12px }
   /* let long filter/tab bars scroll instead of squashing */
   .ftabs, .imp-stats { flex-wrap: nowrap; overflow-x: auto; -webkit-overflow-scrolling: touch }
@@ -10694,6 +10744,12 @@ textarea.fi {
   .btn { min-height: 44px }
   .ham, .m-x, .sb-tog, .p-back { min-width: 44px; min-height: 44px }
   .fsel, .finp, .fi { min-height: 44px }
+  /* header controls; the theme toggle keeps its look and gets a larger
+     invisible hit area (74 x 44px) that stays inside the header band and the
+     slot .pg-head keeps free for it, so it overlaps no other control */
+  .notif-btn { width: 40px; height: 40px }
+  .drp-trigger { height: 40px }
+  .thtog::after { content: ''; position: absolute; inset: -7px }
 }
 
 /* Data tables that aren't card-stacked — wrap to horizontal scroll, never overflow page */
@@ -10704,7 +10760,7 @@ textarea.fi {
 /* Long text — wrap instead of forcing width */
 @media (max-width: 767px) {
   .pg-title, .hero-title, .sec-t, .m-ttl { overflow-wrap: anywhere }
-  .pg-head { gap: 8px }
+  .pg-head { gap: 8px; padding-right: calc(var(--gutter) + 60px + 8px) }   /* toggle slot at this gap */
   .pg-acts { gap: 6px }
 }
 
@@ -10777,21 +10833,35 @@ textarea.fi {
 .pks-col { flex:1; display:flex; flex-direction:column; align-items:center; gap:6px; height:100%; min-width:0 }
 .pks-bar-wrap { flex:1; width:100%; display:flex; align-items:flex-end; justify-content:center }
 .pks-bar { width:72%; min-height:3px; background:var(--accent); border-radius:4px 4px 0 0 }
-.pks-bar.empty { background:var(--bd2) }
-.pks-bar-lbl { font-size:10.5px; color:var(--t3) }
+/* A zero day. `empty` also matches the global .empty placeholder (padding:44px
+   20px), which made every zero day a 40x88px block: it covered the neighbouring
+   bars and labels, pushed its own label below the bars, and added 40px to the
+   chart's minimum width, which squeezed the gauge and stat cells. */
+.pks-bar.empty { background:var(--bd2); padding:0 }
+.pks-bar-lbl { font-size:11px; color:var(--t3) }
 .pks-gauge { display:flex; align-items:center; justify-content:center }
 .pks-gwrap { position:relative; width:100%; max-width:190px; margin:0 auto }
 .pks-gsvg { width:100%; display:block; overflow:visible }
 .pks-gctr { position:absolute; left:0; right:0; bottom:4px; text-align:center }
 .pks-gpct { font-family:var(--font-display); font-size:26px; font-weight:800; color:var(--t1); line-height:1; letter-spacing:-.5px }
 .pks-glbl { font-size:11.5px; color:var(--t3); margin-top:4px }
+/* Strip only (the dashboard gauge card keeps its overlay): the % sits on the
+   arc's baseline and the caption runs under the arc in normal flow, so it gets
+   the gauge's full width, and a caption that wraps grows downward instead of
+   pushing the % up into the ticks. */
+.pks-gauge .pks-gctr { position:static; margin-top:-36px }
 .pks-stat { display:flex; flex-direction:column; justify-content:center; gap:14px; background:none; border:none; cursor:pointer; text-align:left; width:100% }
-.pks-num { font-family:var(--font-display); font-size:30px; font-weight:800; color:var(--t1); letter-spacing:-1px; line-height:1 }
+.pks-num { font-family:var(--font-display); font-size:30px; font-weight:800; color:var(--t1); letter-spacing:-1px; line-height:1; white-space:nowrap }
 .pks-stat-ft { display:flex; align-items:center; justify-content:space-between; gap:10px }
 .pks-stat-ft .mi { color:var(--t3); font-size:20px; transition:transform var(--tr), color var(--tr) }
 .pks-stat:hover .mi { color:var(--accent); transform:translateX(3px) }
 .pks-lbl { font-size:13px; color:var(--t3) }
-@media (max-width:900px){ .pks { grid-template-columns:1fr 1fr } .pks > * { border-right:none; border-bottom:1px solid var(--bd); padding:14px 16px } .pks > *:nth-last-child(-n+2){ border-bottom:none } .pks-bars{ height:72px } }
+/* 2x2 below 1280px. Four across needs about 975px of content width: each 1fr
+   cell must fit a 30px value such as "BDT 40.00Cr" (~170px) and the gauge with
+   its caption. With the sidebar docked that only happens from 1280 up (1024
+   leaves ~760px), so the 1023px drawer breakpoint alone is not enough. Stretch
+   keeps the row-1 divider straight when the chart and gauge cells differ in height. */
+@media (max-width:1279px){ .pks { grid-template-columns:1fr 1fr; align-items:stretch } .pks > * { border-right:none; border-bottom:1px solid var(--bd); padding:14px 16px } .pks > *:nth-last-child(-n+2){ border-bottom:none } .pks-bars{ height:72px } }
 @media (max-width:560px){ .pks { grid-template-columns:1fr } .pks > * { border-bottom:1px solid var(--bd) } .pks > *:last-child{ border-bottom:none } }
 
 /* ── Live activity radar (Management dash) ─────────────────────────────── */
@@ -10838,7 +10908,7 @@ textarea.fi {
 /* ── Follow-ups due today task table (IA dashboard) ────────────────────── */
 .iad-fu { background: var(--surf); border: 1px solid var(--bd); border-radius: 14px; padding: 14px 16px; margin: 14px 0; overflow-x: auto; }
 .fut { width: 100%; border-collapse: collapse; min-width: 460px; }
-.fut th { text-align: left; font-size: 10.5px; font-weight: 600; color: var(--t3); text-transform: uppercase; letter-spacing: .04em; padding: 4px 8px 8px; border-bottom: 1px solid var(--bd); }
+.fut th { text-align: left; font-size: 11px; font-weight: 600; color: var(--t3); text-transform: uppercase; letter-spacing: .04em; padding: 4px 8px 8px; border-bottom: 1px solid var(--bd); }
 .fut td { padding: 10px 8px; border-bottom: 1px solid var(--bd); vertical-align: middle; }
 .fut tbody tr { cursor: pointer; }
 .fut tbody tr:hover { background: var(--surf2); }
@@ -10872,14 +10942,17 @@ textarea.fi {
 .fpill:hover { border-color: var(--bd2); color: var(--t1); }
 .fpill.on { color: #38BDF8; border-color: rgba(56, 189, 248, .5); background: rgba(56, 189, 248, .10); }
 
-/* ── Theme toggle (floating, bottom-right) ─────────────────────────────── */
-/* z-index under the drawer backdrop (199) and sidebar (200): an open drawer
-   covers it instead of the toggle painting over the drawer on narrow phones. */
+/* ── Theme toggle (docked at the header's right end) ─────────────────────────────── */
+/* ThemeToggle.jsx renders it after .page; it is fixed over the slot that
+   .pg-head keeps free with its right padding, vertically centred in the
+   header. It never floats over the page, so it covers no row action and the
+   page needs no bottom clearance for it. z-index under the drawer backdrop
+   (199) and sidebar (200): an open drawer covers it, as it covers the header. */
 .thtog {
-  position: fixed; right: 18px; bottom: 18px; z-index: 150;
+  position: fixed; top: calc((var(--hh) - 30px) / 2); right: var(--gutter); z-index: 150;
   width: 60px; height: 30px; padding: 3px; border-radius: 999px;
   border: 1px solid var(--bd2); background: var(--surf2);
-  box-shadow: var(--sh-md); cursor: pointer; display: flex; align-items: center;
+  cursor: pointer; display: flex; align-items: center;
   transition: background var(--tr), border-color var(--tr);
 }
 .thtog-knob {
@@ -10889,7 +10962,6 @@ textarea.fi {
 }
 .thtog.light .thtog-knob { transform: translateX(30px); }
 .thtog-knob .mi { font-size: 16px; }
-@media (max-width: 767px) { .thtog { right: 14px; bottom: 78px; } }
 
 /* ── Radar sweep loader (.lr) — app loading screens ────────────────────── */
 .lr {
@@ -11534,7 +11606,7 @@ textarea.fi {
 .rq-main { cursor: pointer; }
 .rq-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .rq-client { font-size: 16px; font-weight: 800; color: var(--t1); }
-.rq-tag { font-size: 10.5px; font-weight: 800; text-transform: uppercase; letter-spacing: .05em; padding: 3px 9px; border-radius: 999px; }
+.rq-tag { font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: .05em; padding: 3px 9px; border-radius: 999px; }
 .rq-tag-pending { color: var(--orange); background: var(--orange-l); }
 .rq-tag-approved { color: var(--green); background: var(--green-l); }
 .rq-tag-rejected { color: var(--red); background: var(--red-l); }
@@ -11758,8 +11830,8 @@ textarea.fi {
 .mip-step{ display:flex; flex-direction:column; align-items:center; gap:9px; flex:1; z-index:1; }
 .mip-step .circ{ border-radius:50%; display:flex; align-items:center; justify-content:center; font-weight:700; color:#fff; border:2px solid transparent; transition:.3s ease; font-size:14px; }
 .mip-step.drop .circ{ border-color:var(--mip-red); box-shadow:0 0 0 4px rgba(239,68,68,.14); }
-.mip-step .nm{ font-size:10px; text-transform:uppercase; letter-spacing:.05em; color:var(--mip-t2); text-align:center; max-width:74px; line-height:1.25; }
-.mip-step .dpct{ font-size:10px; font-weight:700; color:var(--mip-red); min-height:13px; }
+.mip-step .nm{ font-size:11px; text-transform:uppercase; letter-spacing:.05em; color:var(--mip-t2); text-align:center; max-width:74px; line-height:1.25; }
+.mip-step .dpct{ font-size:11px; font-weight:700; color:var(--mip-red); min-height:13px; }
 
 /* conversion thin bars */
 .mip-cv{ display:flex; flex-direction:column; gap:13px; }
@@ -11831,6 +11903,16 @@ textarea.fi {
 .pf-av-demo:hover { transform: translateY(-1px); border-color: var(--bd2); }
 .pf-av-demo.on { border-color: var(--accent); }
 .pf-av-demo img { width: 100%; height: 100%; object-fit: cover; display: block; }
+/* Touch widths: the demo avatars and the icon-only delete button are tap
+   targets, so they get the 44px minimum of the touch-target block. */
+@media (max-width: 1023px) {
+  .pf-av-demo { width: 44px; height: 44px; }
+  .pf-av-acts .btn { min-width: 44px; justify-content: center; }
+}
+/* Phones: six 44px avatars + 6px gaps = 294px, one row down to 360px wide */
+@media (max-width: 767px) {
+  .pf-av-demos-row { gap: 6px; justify-content: center; }
+}
 
 /* ════════════════════════════════════════════════════════════════════════
    MOBILE OPTIMISATION PASS — grids, KPI strips, tables, cards, modals
@@ -11844,9 +11926,8 @@ textarea.fi {
   .iad-layout { grid-template-columns: 1fr; } /* agent dash: stack main + rail */
 }
 
-/* Kill page-level horizontal scroll on mobile; wide things scroll inside their own box. */
+/* Wide things scroll inside their own box on mobile, never the page. */
 @media (max-width: 768px) {
-  html, body, #app, .page, .pg-body, .pg-inner { max-width: 100%; overflow-x: hidden; }
   .pk-wrap, .pk-board { max-width: 100%; }
   .pk-board { overflow-x: auto; } /* kanban columns scroll inside the board, not the page */
   .pk-board > .pk-col { min-width: 250px; }
@@ -11870,11 +11951,7 @@ textarea.fi {
   .pf-card, .pco-box, .qstat, .mip-qstat, .pco-panel { padding: 13px; }
   .pc-body { padding: 0; gap: 16px; }
 
-  /* header / hero / toolbars */
-  .pg-head { padding: 0 12px; gap: 8px; }
-  .hero { margin-bottom: 16px; }
-  .hero-title { font-size: clamp(22px, 7.5vw, 30px); }
-  .hero-acts { width: 100%; }
+  /* toolbars */
   .fbar, .prop-toolbar, .mip-bar, .acc-toolbar { flex-wrap: wrap; gap: 8px; }
   .fbar .fsel, .prop-toolbar .fsel { flex: 1 1 auto; }
 
@@ -11887,116 +11964,70 @@ textarea.fi {
 
 /* ════════════════════════════════════════════════════════════════════════
    USER-REQUESTED RESPONSIVE BUG FIXES
+   Placed after the passes they override, so every rule here wins on source
+   order (the list rows repeat the selectors they override) and none needs
+   the important flag. Breakpoints pair with the rules they override: ≤767
+   and 768–1023 with the PRODUCTION RESPONSIVE PASS grids, ≤768 with the
+   .lt-leads table (min-width: 769px) and the MOBILE OPTIMISATION PASS.
    ════════════════════════════════════════════════════════════════════════ */
+
+/* 1, 2, 5. Dashboard card grids: one card per row on phones, two on tablets,
+   desktop unchanged. Must come after the MOBILE OPTIMISATION PASS, whose 2-up
+   rules (≤820px, ≤560px) would otherwise put agent cards and charts in ~175px
+   columns at 390px. minmax(0, 1fr): a card wider than its track overflows its
+   own box instead of widening the grid and scrolling the page sideways. */
+@media (min-width: 768px) and (max-width: 1023px) {
+  .grid-4, .grid-3, .grid-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 767px) {
+  .grid-3, .grid-2 { grid-template-columns: minmax(0, 1fr); gap: 12px; }
+  .grid-4 { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+}
+
 @media (max-width: 768px) {
-  /* 1, 2, 5. All dashboard cards wrap into 2 columns per row */
-  .grid-4, .grid-3, .grid-2 {
-    display: grid !important;
-    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
-    gap: 12px !important;
-    width: 100% !important;
-  }
-  
-  /* General horizontal scrolling kill switch */
-  body, html, #root, #app, .page, .iad-page, .management-dash, .pipeline-view, .properties-view, .pg-body, .pg-inner, .lt {
-    max-width: 100vw !important;
-    overflow-x: hidden !important;
-    box-sizing: border-box !important;
-  }
-  
-  /* 3. Pipeline dashboard horizontal scroll fix */
-  .pk-board {
-    display: flex !important;
-    max-width: 100vw !important;
-    overflow-x: auto !important;
-    padding-bottom: 16px !important;
-  }
+  /* Dashboards clip their own sideways overflow. The page shell does not: it
+     would hide content (cut-off buttons) instead of fitting it. */
+  .iad-page { overflow-x: hidden; }
 
-  /* 4. Projects List mobile responsive wrapping */
-  .lt-hdr { display: none !important; }
-  .lt-row {
-    display: grid !important;
-    grid-template-columns: auto 1fr auto !important;
-    gap: 6px 12px !important;
-    padding: 14px 16px !important;
-    width: 100% !important;
-    box-sizing: border-box !important;
-    border-bottom: 1px solid var(--bd) !important;
-    align-items: center !important;
+  /* 3. Pipeline: the board scrolls its columns sideways from its own base rule
+     (PIPELINE kanban section); this only leaves room under the columns for
+     the touch scrollbar. */
+  .pk-board { padding-bottom: 16px; }
+
+  /* 4. Customer and Project lists as cards (Bookings rows take the same grid
+     and auto-place). ≤768 pairs with the .lt-leads table, which scrolls from
+     769px. The row selectors repeat each list's own column selector, so this
+     rule wins on source order, also over the ≤760px project-card rule. */
+  .lt-hdr { display: none; }
+  .lt-row,
+  .lt-leads .lt-row,
+  .lt-leads.lt-with-cb .lt-row,
+  .lt-row.bk-grid,
+  .lt-row.prop-row,
+  .lt-row.prop-row.with-cb {
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    gap: 6px 12px;
+    padding: 14px 16px;
   }
-  .lt-cb-col {
-    grid-column: 1 !important;
-    grid-row: 1 !important;
-    padding: 0 !important;
-  }
-  .lt-cell {
-    min-width: 0 !important;
-    font-size: 13px !important;
-    padding: 0 !important;
-    text-align: left !important;
-  }
-  .lt-cell-main {
-    grid-column: 2 !important;
-    grid-row: 1 !important;
-    font-size: 14px !important;
-  }
-  .lt-cell-status {
-    grid-column: 3 !important;
-    grid-row: 1 / span 2 !important;
-    text-align: right !important;
-    align-self: start !important;
-  }
-  .lt-cell-src {
-    grid-column: 2 !important;
-    grid-row: 2 !important;
-    color: var(--t3) !important;
-  }
-  .lt-cell-prop {
-    grid-column: 2 !important;
-    grid-row: 3 !important;
-    color: var(--t3) !important;
-  }
-  .lt-cell-units {
-    grid-column: 3 !important;
-    grid-row: 3 !important;
-    text-align: right !important;
-  }
-  .lt-cell-id, .lt-cell-date, .lt-cell-fu, .lt-date {
-    display: none !important;
-  }
+  .lt-cb-col { grid-column: 1; grid-row: 1; }
+  .lt-cell-main { grid-column: 2; grid-row: 1; }
+  .lt-cell-src { grid-column: 2; grid-row: 2; }
+  .lt-cell-prop { grid-column: 2; grid-row: 3; }
+  .lt-cell-status { grid-column: 3; grid-row: 1 / span 2; align-self: start; justify-content: flex-end; }
+  .lt-cell-units { grid-column: 3; grid-row: 3; justify-content: flex-end; text-align: right; }
+  .lt-row .lt-cell-id, .lt-row .lt-cell-fu, .lt-row .lt-cell-date { display: none; }
 }
 
-/* 6. Lead Details Page - 'Meeting Set' layout breaking bug */
-.s-meeting_set {
-  position: static !important;
-  display: inline-flex !important;
-  float: none !important;
-  height: auto !important;
-  width: auto !important;
-  overflow: visible !important;
-  white-space: nowrap !important;
-}
-
-.p-body {
-  display: flex !important;
-  flex-direction: column !important;
-  gap: 16px !important;
-}
-
-.ld-card, .score-card, .act-card, .offer-card {
-  flex: 0 0 auto !important;
-  min-height: min-content !important;
-  width: 100% !important;
-  box-sizing: border-box !important;
-  overflow: hidden !important;
-}
-
-.ld-tags {
-  display: flex !important;
-  flex-wrap: wrap !important;
-  gap: 8px !important;
-  align-items: center !important;
-}
+/* 6. Lead details drawer: the 'Meeting Set' layout bug. .p-body is a
+   fixed-height, scrolling flex column and .ld-card clips its overflow; a flex
+   item that clips may shrink below its content, so on a long lead (Meeting Set
+   adds rows and actions) the details card was squashed and its badges cut off.
+   The cards keep their content height and the drawer scrolls instead. The
+   badge itself (.bdg.s-meeting_set) never needed an override. */
+.p-body { gap: 16px; }
+.ld-card, .score-card, .act-card, .offer-card { flex-shrink: 0; overflow: hidden; }
+.ld-tags { gap: 8px; align-items: center; }
 
 /* Clickable StatCard + shared KPI drill-down sheet */
 .mc.mc-click { position: relative; cursor: pointer; transition: border-color var(--tr), transform var(--tr); }
@@ -12035,6 +12066,23 @@ textarea.fi {
    and radius — so it lines up with the editable input beside it in a .fg-row. */
 .ro-value { display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 600; color: var(--t1); padding: 10px 12px; background: var(--surf2); border: 1.5px solid var(--bd); border-radius: var(--r); letter-spacing: .2px; }
 .ro-value .ro-lock { font-size: 15px; color: var(--t3); flex-shrink: 0; }
+
+/* Phone field (components/PhoneField.jsx): a country-code chip, the number,
+   and below it the number as it will be saved. The chip's native <select> lies
+   transparently over it, so a click opens the platform's own list. The chip is
+   a div, not a label — `.fg label` would restyle it. */
+.ph + .ph { margin-top: 6px; }
+.ph-row { display: flex; gap: 6px; }
+.ph-row .fi { flex: 1; min-width: 0; }
+.ph-cc { position: relative; display: flex; align-items: center; gap: 2px; flex-shrink: 0; min-width: 100px; padding: 0 6px 0 12px; border: 1.5px solid var(--bd); border-radius: var(--r); background: var(--surf2); font-size: 14px; font-weight: 600; color: var(--t1); white-space: nowrap; cursor: pointer; transition: border-color var(--tr); }
+.ph-cc:hover, .ph-cc:focus-within { border-color: var(--blue); }
+.ph-cc b { margin-right: 4px; font-size: 11px; font-weight: 700; letter-spacing: .4px; color: var(--t3); }
+.ph-cc-i { margin-left: auto; font-size: 18px; color: var(--t3); }
+.ph-cc select { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; font-size: 14px; }
+.ph-cc option { background: var(--surf2); color: var(--t1); }
+.ph-out { display: flex; align-items: center; gap: 5px; margin-top: 5px; font-size: 12px; color: var(--t3); }
+.ph-out .mi { font-size: 15px; color: var(--green); }
+.ph-out.warn, .ph-out.warn .mi { color: var(--orange); }
 
 /* Profile completeness bar (Initial Agent, lead detail) */
 .ld-prof { margin: 2px 0 4px; }
@@ -12095,7 +12143,7 @@ textarea.fi {
 .cal-mnav-today { padding: 0 10px; font: inherit; font-size: 12px; font-weight: 700; }
 .cal-mgrid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; }
 .cal-mwd { margin-bottom: 4px; }
-.cal-mwd-c { text-align: center; font-size: 10.5px; font-weight: 700; color: var(--t3); text-transform: uppercase; letter-spacing: .06em; padding: 2px 0; }
+.cal-mwd-c { text-align: center; font-size: 11px; font-weight: 700; color: var(--t3); text-transform: uppercase; letter-spacing: .06em; padding: 2px 0; }
 .cal-mcell { position: relative; aspect-ratio: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; border: 1px solid transparent; border-radius: 9px; background: none; color: var(--t1); font: inherit; cursor: pointer; padding: 0; transition: background var(--tr), border-color var(--tr); }
 .cal-mcell-pad { cursor: default; }
 .cal-mcell:not(.cal-mcell-pad):hover { background: var(--surf2); }
@@ -12122,7 +12170,7 @@ textarea.fi {
 
 /* Date block on the upcoming rows */
 .cal-date-blk { display: flex; flex-direction: column; align-items: center; justify-content: center; width: 46px; height: 46px; border: 1px solid var(--bd); border-radius: 10px; background: var(--surf2); flex-shrink: 0; }
-.cal-date-m { font-size: 9px; font-weight: 800; color: var(--t3); letter-spacing: .08em; line-height: 1; }
+.cal-date-m { font-size: 11px; font-weight: 800; color: var(--t3); letter-spacing: .08em; line-height: 1; }
 .cal-date-d { font-family: var(--font-display); font-size: 17px; font-weight: 800; color: var(--t1); line-height: 1.15; font-variant-numeric: tabular-nums; }
 
 /* Pills */
@@ -12164,25 +12212,6 @@ input[type="time"]::-webkit-calendar-picker-indicator { opacity: .9; cursor: poi
 .proj-chip button:hover { opacity: 1; }
 .proj-chip .mi { font-size: 15px; }
 
-/* Carpool requests table (admin) */
-.cpool-sum { font-size: 13px; color: var(--t2); font-weight: 600; margin-bottom: 12px; }
-.cpool-tbl { border: 1px solid var(--bd); border-radius: 12px; overflow: hidden; }
-.cpool-hd, .cpool-row { display: grid; grid-template-columns: 1.2fr 1.2fr 1.4fr 1.4fr .8fr 1.4fr; gap: 10px; align-items: center; padding: 12px 14px; }
-.cpool-hd { background: var(--surf2); font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; color: var(--t3); }
-.cpool-row { border-top: 1px solid var(--bd); font-size: 13px; color: var(--t1); }
-.cpool-row > div { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-.cpool-link { border: 0; background: none; color: var(--accent); font: inherit; font-weight: 600; cursor: pointer; padding: 0; text-align: left; }
-.cpool-act { display: flex; gap: 6px; flex-wrap: wrap; }
-.cpool-act-h { text-align: left; }
-.cpool-decided { font-size: 12px; color: var(--t3); }
-@media (max-width: 767px) {
-  .cpool-hd { display: none; }
-  .cpool-row { grid-template-columns: 1fr; gap: 5px; padding: 12px; }
-  .cpool-row > div { display: flex; justify-content: space-between; gap: 10px; white-space: normal; }
-  .cpool-row > div::before { content: attr(data-l); font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .4px; color: var(--t3); flex-shrink: 0; }
-  .cpool-act { justify-content: flex-end; }
-}
-
 /* Meeting Agent pipeline bar — one cohesive card, 5 connected stages */
 .mpipe { display: flex; align-items: stretch; background: var(--surf); border: 1px solid var(--bd); border-radius: 16px; overflow: hidden; margin-bottom: 14px; box-shadow: var(--sh); }
 .mpipe-seg { position: relative; flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 4px; padding: 16px 18px 18px; background: none; border: 0; border-left: 1px solid var(--bd); cursor: pointer; text-align: left; font: inherit; transition: background var(--tr); }
@@ -12191,7 +12220,7 @@ input[type="time"]::-webkit-calendar-picker-indicator { opacity: .9; cursor: poi
 /* directional notch between stages */
 .mpipe-seg:not(:first-child)::before { content: ''; position: absolute; left: -7px; top: 50%; width: 12px; height: 12px; transform: translateY(-50%) rotate(45deg); background: var(--surf); border-right: 1px solid var(--bd); border-bottom: 1px solid var(--bd); z-index: 1; }
 .mpipe-seg:hover::before { background: var(--surf2); }
-.mpipe-step { font-size: 9.5px; font-weight: 700; letter-spacing: .6px; text-transform: uppercase; color: var(--t3); opacity: .65; }
+.mpipe-step { font-size: 11px; font-weight: 700; letter-spacing: .6px; text-transform: uppercase; color: var(--t3); opacity: .65; }
 .mpipe-num { font-family: var(--font-display); font-size: 28px; font-weight: 700; line-height: 1; color: var(--t1); }
 .mpipe-lbl { font-size: 11px; font-weight: 700; color: var(--t2); max-width: 100%; line-height: 1.25; min-height: 2.5em; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .mpipe-bar { width: 26px; height: 3px; border-radius: 99px; margin-top: 3px; opacity: .85; }
@@ -12361,7 +12390,9 @@ input[type="time"]::-webkit-calendar-picker-indicator { opacity: .9; cursor: poi
    Three columns: thread rail, transcript, CRM/ad context. Everything is drawn
    from the same tokens as the rest of the app, so both themes follow along. */
 
-.wa-wrap { display: flex; flex-direction: column; gap: 12px; height: calc(100dvh - 132px); min-height: 520px; }
+/* exactly the page scroller's content box (see .pg-body), so the chat never
+   scrolls the page; with less than 520px of room the page scrolls instead */
+.wa-wrap { display: flex; flex-direction: column; gap: 12px; height: calc(100dvh - var(--hh) - 2 * var(--gutter-y)); min-height: 520px; }
 
 .wa-bar { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 .wa-bar-t { font-family: var(--font-display); font-size: 26px; font-weight: 500; text-transform: uppercase; letter-spacing: .01em; line-height: 1.1; }
@@ -12590,11 +12621,30 @@ input[type="time"]::-webkit-calendar-picker-indicator { opacity: .9; cursor: poi
   .wa-pane { display: none; }
 }
 @media (max-width: 860px) {
-  .wa-wrap { height: calc(100dvh - 108px); }
   .wa-grid, .wa-grid.wa-grid-2 { grid-template-columns: minmax(0, 1fr); }
   /* One pane at a time: the rail until a thread is opened, then the transcript. */
   .wa-list { display: none; }
   .wa-grid-list .wa-list { display: flex; }
   .wa-grid-list .wa-main { display: none; }
   .wa-back { display: flex; }
+}
+
+/* ── Touch targets on touch widths (≤1023px). Last in the file on purpose:
+   each min-size here must beat its module's own size rule, wherever that sits.
+   Search fields: the input itself becomes the target instead of a thin line
+   inside a padded pill (same outer size). ── */
+@media (max-width: 1023px) {
+  .btn { min-width: 40px }
+  .sbox, .wa-search { padding-block: 0 }
+  .sbox input, .wa-search input { min-height: 40px }
+  .mip-fld { height: 40px }
+  .mip-fld input { align-self: stretch }
+  .lt-cb-col input { width: 20px; height: 20px }
+  .ui-link { min-height: 32px }
+  .pg-btn, .pg-item, .cal-mnav button { min-width: 40px; min-height: 40px }
+  .pg { flex-wrap: wrap }   /* a long pager wraps instead of widening the page */
+  .mip-seg button, .ftab { min-height: 40px }
+  .pk-col-name { min-height: 32px }
+  .fut-ico, .acc-del { width: 40px; height: 40px }
+  .iad-q-call { width: 40px; height: 40px; flex-basis: 40px }
 }

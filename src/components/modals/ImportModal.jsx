@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useRef } from 'react';
 import Mi from '../Mi.jsx';
 import { useApp } from '../../context/AppContext.jsx';
 import { processImportCSV, submitImport as doSubmitImport } from '../../lib/db.js';
@@ -30,7 +30,7 @@ export default function ImportModal() {
 
   const submitImport = () => {
     if (!importData || (!importData.leads.length && !(importData.updates || []).length)) return;
-    const count = doSubmitImport(importData, user);
+    doSubmitImport(importData, user);
     const upd = (importData.updates || []).length;
     setImportData(null);
     closeModal();

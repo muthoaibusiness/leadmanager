@@ -5,11 +5,6 @@ import { useApp } from '../context/AppContext.jsx';
 import { clearSession, getDB } from '../lib/db.js';
 import { avc, ini, rlabel } from '../lib/helpers.js';
 import { canSee, ROLES } from '../lib/constants.js';
-import useMediaQuery from '../hooks/useMediaQuery.js';
-
-// Faces shown before the "+N" face, which opens the menu — its search covers
-// every account.
-const MAX_FACES = 4;
 
 // Initials for a face without a photo: "Ada Lovelace" → "AL".
 const initials = (name) => name.trim().split(/\s+/).slice(0, 2).map(w => w[0]?.toUpperCase() ?? '').join('');
@@ -21,18 +16,15 @@ function UAvatar({ u, cls = '' }) {
     : <div className={`sb-av ${cls}`} style={{ background: avc(u.name) }}>{ini(u.name)}</div>;
 }
 
-// Header identity control (top right, before the date filter). An AvatarGroup
-// of real accounts: the signed-in user first, then — for admins — every account
-// they can switch to (Management: own company; Master: all). Clicking yourself
-// opens the menu (switch-account search, Profile, Sign out); clicking anyone
-// else switches to that account, as the menu's list does. Agents and Team Leads
-// see only themselves.
+// Header identity control (top right, before the date filter): the signed-in
+// user's face alone. Clicking it opens the menu — for admins a switch-account
+// search over every account they can switch to (Management: own company;
+// Master: all), then Profile and Sign out.
 export default function UserMenu() {
   const { user, setUser, impersonator, impersonate, stopImpersonate, nav, setSidebarOpen } = useApp();
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState('');
   const ref = useRef(null);
-  const phone = useMediaQuery('(max-width: 767px)');
 
   useEffect(() => {
     if (!open) return;
@@ -69,11 +61,6 @@ export default function UserMenu() {
   const ql = q.trim().toLowerCase();
   const filtered = ql ? accounts.filter(u => (u.name || '').toLowerCase().includes(ql) || String(rlabel(u.role) || '').toLowerCase().includes(ql)) : accounts;
 
-  // The group: you, then the accounts you can switch to; the rest behind "+N".
-  const people = [user, ...accounts];
-  const shown = people.slice(0, phone ? 1 : MAX_FACES);
-  const more = people.length - shown.length;
-
   const switchTo = (u) => {
     // Picking the real admin while viewing as someone else is "go back".
     if (impersonator && u.id === impersonator.id) stopImpersonate();
@@ -81,37 +68,24 @@ export default function UserMenu() {
     setOpen(false);
     setQ('');
   };
-  // A face's tooltip is portalled to <body>, but React still bubbles its events
-  // through the face — only a press on the face itself counts.
-  const onFace = (fn) => (e) => { if (e.currentTarget.contains(e.target)) fn(); };
-  const name = (u) => u.name || u.email || 'User';
-
-  const faces = shown.map((u, i) => (
-    <button key={u.id} type="button" className="ag-av" aria-label={i === 0 ? `${name(u)} — account menu` : `Switch to ${name(u)}`}
-      aria-expanded={i === 0 ? open : undefined}
-      onClick={onFace(i === 0 ? () => setOpen(o => !o) : () => switchTo(u))}>
-      {u.avatar ? <img src={u.avatar} alt="" draggable={false} className="ag-img" /> : <span aria-hidden="true">{initials(name(u))}</span>}
-      <AvatarGroupTooltip>{i === 0 ? (impersonator ? `${name(u)} · viewing` : `${name(u)} (you)`) : name(u)}</AvatarGroupTooltip>
-    </button>
-  ));
-  if (more > 0) {
-    faces.push(
-      <button key="more" type="button" className="ag-av ag-more" aria-label={`${more} more accounts`}
-        onClick={onFace(() => setOpen(true))}>
-        +{more}
-        <AvatarGroupTooltip>{`${more} more — search all`}</AvatarGroupTooltip>
-      </button>,
-    );
-  }
+  // The face's tooltip is portalled to <body>, but React still bubbles its
+  // events through the face — only a press on the face itself counts.
+  const onFace = (e) => { if (e.currentTarget.contains(e.target)) setOpen(o => !o); };
+  const me = user.name || user.email || 'User';
 
   const logout = () => { clearSession(); setSidebarOpen(false); setUser(null); };
 
   return (
     <div className={`hd-um${open ? ' open' : ''}${impersonator ? ' imp' : ''}`} ref={ref} onKeyDown={onEsc}>
-      {/* Your face sits on top of the overlap; tooltips open below, the header
-          being the top edge of the screen. */}
-      <AvatarGroup invertOverlap tooltipProps={{ side: 'bottom', sideOffset: 10 }}>
-        {faces}
+      {/* The tooltip opens below, the header being the top edge of the screen.
+          AvatarGroup maps its children, so the one face goes in as an array. */}
+      <AvatarGroup tooltipProps={{ side: 'bottom', sideOffset: 10 }}>
+        {[
+          <button key="me" type="button" className="ag-av" aria-label={`${me} — account menu`} aria-expanded={open} onClick={onFace}>
+            {user.avatar ? <img src={user.avatar} alt="" draggable={false} className="ag-img" /> : <span aria-hidden="true">{initials(me)}</span>}
+            <AvatarGroupTooltip>{impersonator ? `${me} · viewing` : `${me} (you)`}</AvatarGroupTooltip>
+          </button>,
+        ]}
       </AvatarGroup>
       {open && (
         <div className="umenu">

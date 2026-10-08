@@ -39,8 +39,6 @@ export default function AccountsView() {
   const [roleFilter, setRoleFilter] = useState('ALL');
   const toast = useProjectToast({ always: true });
 
-  if (user.role !== ROLES.MGMT) return null;
-
   // ── KPI counts ──
   const counts = useMemo(() => {
     const c = { total: coUsers.length, [ROLES.TL]: 0, [ROLES.MA]: 0, [ROLES.IA]: 0, [ROLES.MGMT]: 0 };
@@ -112,6 +110,9 @@ export default function AccountsView() {
       .filter(u => !term || (u.name || '').toLowerCase().includes(term) || (u.email || '').toLowerCase().includes(term))
       .sort((a, b) => (a.name || '').localeCompare(b.name || ''));
   }, [dbVersion, q, roleFilter]);
+
+  // After every hook, so the hook order never depends on the role.
+  if (user.role !== ROLES.MGMT) return null;
 
   return (
     <div className="acc">

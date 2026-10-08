@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useApp } from '../../context/AppContext.jsx';
 import { getBookings, getDB, bookingPaid, bookingDue } from '../../lib/db.js';
-import { fmtBDT, fmtD } from '../../lib/helpers.js';
+import { fmtBDT } from '../../lib/helpers.js';
 import { ROLES } from '../../lib/constants.js';
 import Mi from '../Mi.jsx';
 
@@ -9,7 +9,7 @@ const ST = { HOLD: 'On Hold', ACTIVE: 'Active', COMPLETED: 'Completed', EXPIRED:
 const stClass = s => ({ HOLD: 'bs-hold', ACTIVE: 'bs-active', COMPLETED: 'bs-done', EXPIRED: 'bs-cancel', CANCELLED: 'bs-cancel' }[s] || '');
 
 export default function BookingsView() {
-  const { user, openModal, setBookSel, dbVersion } = useApp();
+  const { user, openModal, setBookSel } = useApp();
   const db = getDB();
   const [q, setQ] = useState('');
   const [status, setStatus] = useState('ALL');

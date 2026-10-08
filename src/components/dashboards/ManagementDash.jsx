@@ -1,15 +1,13 @@
 import { useState } from 'react';
 import { useApp } from '../../context/AppContext.jsx';
 import { getDB, getDeletionLog, calcPipelineValue, getBookings, bookingPaid, bookingDue, bookingNextDue } from '../../lib/db.js';
-import StatCard from '../StatCard.jsx';
 import KpiSheet from '../KpiSheet.jsx';
 import DashGreeting from './DashGreeting.jsx';
 import LiveActivity from './LiveActivity.jsx';
 import CustomersTable from '../ui/customers-table.jsx';
 import Mi from '../Mi.jsx';
-import { fmtBDT, fmtDT, startOfMonth, slabel } from '../../lib/helpers.js';
-import { ROLES, STATUS_LABELS, SRC_LABELS } from '../../lib/constants.js';
-import { Funnel } from '../charts/Charts.jsx';
+import { fmtBDT, fmtDT, slabel } from '../../lib/helpers.js';
+import { ROLES, STATUS_LABELS } from '../../lib/constants.js';
 import StatTrend from '../StatTrend.jsx';
 import useActWindow from '../../hooks/useActWindow.js';
 import useLeadBook from '../../hooks/useLeadBook.js';
@@ -23,7 +21,6 @@ export default function ManagementDash() {
   const [activeTab, setActiveTab] = useState(0);
   const [detail, setDetail] = useState(null);
   const db = getDB();
-  const sm = startOfMonth();
   // company sandbox — management only sees their own tenant
   const cid = user.companyId;
   // tolerate missing companyId (unsynced/legacy rows) so data never disappears
@@ -40,7 +37,6 @@ export default function ManagementDash() {
   };
 
   const allLeads = filterByDate(coLeads);
-  const allAgents = coUsers.filter(u => u.role === ROLES.IA || u.role === ROLES.MA || u.role === ROLES.TL);
 
   const won = allLeads.filter(l => l.status === 'DEAL_CLOSED_WON');
   const lost = allLeads.filter(l => l.status === 'DEAL_CLOSED_LOST');
@@ -48,25 +44,6 @@ export default function ManagementDash() {
   const rev = won.reduce((s, l) => s + (l.dealValue || 0), 0);
   const pipe = allLeads.filter(l => ['NEGOTIATING', 'SITE_VISIT_DONE'].includes(l.status)).reduce((s, l) => s + calcPipelineValue(l.id, db), 0);
   const wr = won.length + lost.length > 0 ? Math.round(won.length / (won.length + lost.length) * 100) : 0;
-  const newThisMonth = allLeads.filter(l => new Date(l.createdAt) >= sm).length;
-
-  const srcCounts = {};
-  allLeads.forEach(l => { srcCounts[l.source] = (srcCounts[l.source] || 0) + 1; });
-  const srcColors = { META_ADS: '#FFFFFF', WHATSAPP_ADS: '#34D399', LINKEDIN: '#DDB948', HOTLINE: '#F0A92B', PERSONAL: '#2DD4BF', WEBSITE: '#F87171' };
-
-  const statusCounts = {};
-  allLeads.forEach(l => { statusCounts[l.status] = (statusCounts[l.status] || 0) + 1; });
-
-  // Chart data
-  const srcData = Object.entries(srcCounts).sort((a, b) => b[1] - a[1])
-    .map(([s, c]) => ({ label: SRC_LABELS[s] || s, value: c, color: srcColors[s] || '#9CA3AF' }));
-
-  const FUNNEL = [
-    ['NEW', 'New', '#FFFFFF'], ['CONTACTED', 'Contacted', '#D4D4D8'], ['INTERESTED', 'Interested', '#DDB948'],
-    ['MEETING_SET', 'Meeting Set', '#F0A92B'], ['SITE_VISIT_DONE', 'Visit Done', '#2DD4BF'],
-    ['NEGOTIATING', 'Negotiating', '#34D399'], ['DEAL_CLOSED_WON', 'Won', '#34D399'],
-  ];
-  const funnelData = FUNNEL.map(([k, l, c]) => ({ label: l, value: statusCounts[k] || 0, color: c }));
 
   // 14-day new-lead trend
   const today0 = new Date(); today0.setHours(0, 0, 0, 0);
@@ -84,34 +61,11 @@ export default function ManagementDash() {
 
   // Commerce pipeline (cart → checkout → payment → purchased)
   const carts = allLeads.map(l => l.cart).filter(Boolean);
-  const propPrice = id => coProps.find(p => p.id === id)?.askingPrice || 0;
-  const cartVal = c => c.value || propPrice(c.propertyId);
-  const inStage = (...ss) => carts.filter(c => ss.includes(c.stage));
-  const commerceFunnel = [
-    { label: 'In Cart', value: carts.length, color: '#FFFFFF' },
-    { label: 'Checkout · Offer', value: inStage('CHECKOUT', 'PAYMENT', 'PURCHASED').length, color: '#DDB948' },
-    { label: 'Payment · Lock', value: inStage('PAYMENT', 'PURCHASED').length, color: '#2DD4BF' },
-    { label: 'Purchased', value: inStage('PURCHASED').length, color: '#34D399' },
-  ];
-  const cartPipelineValue = inStage('CART', 'CHECKOUT', 'PAYMENT').reduce((s, c) => s + cartVal(c), 0);
-  const purchasedValue = inStage('PURCHASED').reduce((s, c) => s + cartVal(c), 0);
-  const cartConv = carts.length ? Math.round(inStage('PURCHASED').length / carts.length * 100) : 0;
 
   // Bookings & collections
   const allBookings = getBookings().filter(b => !cid || b.companyId === cid || coLeadIds.has(b.leadId));
   const bookings = allBookings.filter(b => !['EXPIRED', 'CANCELLED'].includes(b.status) && coProps.some(p => p.id === b.propertyId));
   const collected = bookings.reduce((s, b) => s + bookingPaid(b), 0);
-  const outstanding = bookings.reduce((s, b) => s + bookingDue(b), 0);
-  const unitsSold = coProps.reduce((s, p) => s + (p.units || []).filter(u => u.status === 'sold').length, 0);
-
-  // Agent leaderboard
-  const agentStats = allAgents.map(a => {
-    const aLeads = coLeads.filter(l => l.assignedTo === a.id || (l.previousAssignees || []).includes(a.id));
-    const aWon = aLeads.filter(l => l.status === 'DEAL_CLOSED_WON');
-    const aClosed = aLeads.filter(l => ['DEAL_CLOSED_WON', 'DEAL_CLOSED_LOST'].includes(l.status)).length;
-    return { a, leads: aLeads.length, won: aWon.length, rev: aWon.reduce((s, l) => s + (l.dealValue || 0), 0), conv: aClosed ? Math.round(aWon.length / aClosed * 100) : 0 };
-  }).sort((x, y) => y.rev - x.rev || y.won - x.won);
-  const maxAgentRev = Math.max(...agentStats.map(s => s.rev), 1);
 
   // Customers table rows (real recent leads) for the clean dark table
   const statusTone = (s) => s === 'DEAL_CLOSED_WON' ? 'won' : (s === 'DEAL_CLOSED_LOST' || s === 'NOT_INTERESTED') ? 'lost' : 'open';
@@ -147,15 +101,6 @@ export default function ManagementDash() {
     };
   }).sort((a, b) => b.rev - a.rev || b.sold - a.sold);
 
-  // Source performance
-  const srcStats = Object.keys(srcCounts).map(s => {
-    const sl = allLeads.filter(l => l.source === s);
-    const sWon = sl.filter(l => l.status === 'DEAL_CLOSED_WON');
-    const sClosed = sl.filter(l => ['DEAL_CLOSED_WON', 'DEAL_CLOSED_LOST'].includes(l.status)).length;
-    return { s, leads: sl.length, won: sWon.length, conv: sClosed ? Math.round(sWon.length / sClosed * 100) : 0, rev: sWon.reduce((a, l) => a + (l.dealValue || 0), 0), color: srcColors[s] || '#9CA3AF' };
-  }).sort((a, b) => b.leads - a.leads);
-  const maxSrc = Math.max(...srcStats.map(s => s.leads), 1);
-
   // 14-day daily series for trend cards
   const days14 = Array.from({ length: 14 }, (_, i) => { const d = new Date(today0); d.setDate(d.getDate() - (13 - i)); const nx = new Date(d); nx.setDate(nx.getDate() + 1); return [d, nx]; });
   const revSeries = days14.map(([d, nx]) => coLeads.filter(l => l.status === 'DEAL_CLOSED_WON' && l.updatedAt && new Date(l.updatedAt) >= d && new Date(l.updatedAt) < nx).reduce((s, l) => s + (l.dealValue || 0), 0));
@@ -190,24 +135,7 @@ export default function ManagementDash() {
     { ico: 'inventory_2', n: lowStock, label: 'Low stock', sub: '≤3 units left', tone: 'gold', onClick: () => setView('properties') },
   ];
 
-  // Team performance comparison
-  const teamStats = coUsers.filter(u => u.role === ROLES.TL).map(tl => {
-    const tLeads = filterByDate(coLeads.filter(l => l.teamId === tl.teamId));
-    const tWon = tLeads.filter(l => l.status === 'DEAL_CLOSED_WON');
-    const tLost = tLeads.filter(l => l.status === 'DEAL_CLOSED_LOST');
-    const tActive = tLeads.filter(l => !['DEAL_CLOSED_WON', 'DEAL_CLOSED_LOST', 'NOT_INTERESTED'].includes(l.status));
-    const tAgents = coUsers.filter(u => (u.role === ROLES.IA || u.role === ROLES.MA) && u.teamId === tl.teamId);
-    return {
-      tl, leads: tLeads.length, active: tActive.length, won: tWon.length,
-      rev: tWon.reduce((s, l) => s + (l.dealValue || 0), 0), agents: tAgents.length,
-      win: tWon.length + tLost.length ? Math.round(tWon.length / (tWon.length + tLost.length) * 100) : 0,
-    };
-  }).sort((a, b) => b.rev - a.rev);
-  const maxTeamRev = Math.max(...teamStats.map(t => t.rev), 1);
-
   const deletionLog = getDeletionLog();
-
-  const viewTeamLeads = (teamId) => { setView('leads'); setTab(0); setSearch(''); setAgentFilter(null); setTeamFilter(teamId); };
 
   const tabs = ['Overview', <span key="la" className="la-tab"><span className="la-dot" />Live Activity</span>, 'Deletion Log'];
 

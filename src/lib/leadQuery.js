@@ -29,7 +29,7 @@ const lit = (v) => `"${String(v).replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
 const contains = (col, q) => `${col}.ilike.${lit('*' + String(q).replace(/[*%]/g, '') + '*')}`;
 
 // JSONB containment — previous_assignees is jsonb (NOT text[]), so `cs` with a
-// JSON array is the operator. See the note above prevAssignee in supabase.js.
+// JSON array is the operator. See the previous_assignees note above inList in supabase.js.
 const holdsPrev = (id) => `previous_assignees.cs.${JSON.stringify([id])}`;
 
 // The first name in the assignee chain is the lead's originator (see firstOwner

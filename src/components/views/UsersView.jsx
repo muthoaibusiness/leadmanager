@@ -3,8 +3,9 @@ import { getDB } from '../../lib/db.js';
 import Mi from '../Mi.jsx';
 import Avatar from '../Avatar.jsx';
 import { ROLES } from '../../lib/constants.js';
-import UserRow, { EditBtn, DelBtn, useOpenUserLeads } from '../UserRow.jsx';
+import UserRow, { EditBtn, DelBtn } from '../UserRow.jsx';
 import useLeadCounts from '../../hooks/useLeadCounts.js';
+import useOpenUserLeads from '../../hooks/useOpenUserLeads.js';
 import { eq } from '../../lib/leadQuery.js';
 import { useMemo } from 'react';
 
@@ -61,7 +62,7 @@ export default function UsersView() {
               <div className="ui-info">
                 <div className="ui-n" style={{ fontSize: '15px' }}>
                   <button className="ui-link" onClick={() => openLeads(tl.id)} title={`Open ${tl.name}'s customers`}>{tl.name}</button>
-                  <span className="bdg s-negotiating" style={{ marginLeft: '8px', fontSize: '10px' }}>Team Lead</span>
+                  <span className="bdg s-negotiating" style={{ marginLeft: '8px' }}>Team Lead</span>
                 </div>
                 <div className="ui-e">{tl.email}{tl.phone ? ' · ' + tl.phone : ''}</div>
               </div>
@@ -91,7 +92,7 @@ export default function UsersView() {
             <div className="ui-info">
               <div className="ui-n" style={{ fontSize: '15px' }}>
                 Executives
-                <span className="bdg s-negotiating" style={{ marginLeft: '8px', fontSize: '10px' }}>{looseExecs.length}</span>
+                <span className="bdg s-negotiating" style={{ marginLeft: '8px' }}>{looseExecs.length}</span>
               </div>
               <div className="ui-e">Custom-access accounts · not in a team</div>
             </div>

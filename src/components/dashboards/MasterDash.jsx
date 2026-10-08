@@ -18,8 +18,6 @@ export default function MasterDash() {
   const [created, setCreated] = useState(null);
   const [err, setErr] = useState('');
 
-  if (user.role !== ROLES.MASTER) return null;
-
   const companies = getCompanies();
   const rows = useMemo(() => companies.map(c => ({ c, s: companyStats(c.id) })), [dbVersion, companies.length]);
 
@@ -27,6 +25,9 @@ export default function MasterDash() {
   const totals = useMemo(() => rows.reduce((a, { s }) => ({
     accounts: a.accounts + s.accounts, leads: a.leads + s.leads, won: a.won + s.won, collected: a.collected + s.collected,
   }), { accounts: 0, leads: 0, won: 0, collected: 0 }), [rows]);
+
+  // After every hook, so the hook order never depends on the role.
+  if (user.role !== ROLES.MASTER) return null;
 
   const set = (k) => (e) => setForm(f => ({ ...f, [k]: e.target.value }));
   const save = () => {
@@ -49,7 +50,7 @@ export default function MasterDash() {
     <div className="ms">
       <DashGreeting user={user} sub={`${companies.length} ${companies.length === 1 ? 'company' : 'companies'} · ${totals.accounts} accounts · ${totals.leads} leads`} />
 
-      {/* global KPIs */}
+      {/* Global KPIs */}
       <div className="ms-kpis">
         <div className="ms-kpi"><Mi>apartment</Mi><div><div className="ms-kpi-v">{companies.length}</div><div className="ms-kpi-l">Companies</div></div></div>
         <div className="ms-kpi"><Mi>group</Mi><div><div className="ms-kpi-v">{totals.accounts}</div><div className="ms-kpi-l">Total accounts</div></div></div>

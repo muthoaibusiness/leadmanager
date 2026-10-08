@@ -22,7 +22,6 @@ export default function LiveActivity({ db, coLeads, coUsers, dbVersion }) {
     const m = {}; coLeads.forEach(l => { m[l.id] = l; }); return m;
   }, [coLeads]);
 
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   const events = useMemo(() => {
     const out = [];
     const acts = db.activities || {};

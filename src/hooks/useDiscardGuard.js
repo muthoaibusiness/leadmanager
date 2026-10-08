@@ -38,7 +38,7 @@ export default function useDiscardGuard({ isOpen, isDirty, onClose, busy = false
     askReturnRef.current = null;
     onClose();
   };
-  // Cancel (and Esc) hand focus back to where it was, so typing carries on.
+  // Stay (and Esc) hand focus back to where it was, so typing carries on.
   const cancelAsk = () => {
     const el = askReturnRef.current;
     askReturnRef.current = null;
@@ -55,7 +55,8 @@ export default function useDiscardGuard({ isOpen, isDirty, onClose, busy = false
     askIdRef.current = toast.confirm({
       title: ask.title,
       description: ask.description,
-      confirmLabel: 'Discard',
+      confirmLabel: 'Exit',
+      cancelLabel: 'Stay',
       onConfirm: closeNow,
       onCancel: cancelAsk,
       onDismiss: (id) => { if (askIdRef.current === id) askIdRef.current = null; },
@@ -67,7 +68,7 @@ export default function useDiscardGuard({ isOpen, isDirty, onClose, busy = false
     closeNow();
   };
   // Pressing or typing anywhere in the form puts the question away, so editing
-  // carries on without a Cancel first. Tab and modifier keys don't, which keeps
+  // carries on without a Stay first. Tab and modifier keys don't, which keeps
   // the toast's buttons reachable from the keyboard.
   const dismissAsk = (e) => {
     if (askIdRef.current == null) return;

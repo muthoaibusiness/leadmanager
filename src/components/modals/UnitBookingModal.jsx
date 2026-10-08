@@ -9,7 +9,7 @@ import useLeadBook from '../../hooks/useLeadBook.js';
 const LABEL = { available: 'Available', locked: 'On Hold', booked: 'Booked', sold: 'Sold' };
 
 export default function UnitBookingModal() {
-  const { modal, closeModal, propSel, user, refreshDB, showToast, dbVersion } = useApp();
+  const { modal, closeModal, propSel, user, refreshDB, showToast } = useApp();
   const isOpen = modal === 'units';
   // Gated — see the note in ForwardModal: always-mounted modals must not pull
   // the lead book while they are closed.

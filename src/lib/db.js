@@ -16,7 +16,7 @@ export let _DB = null;
 
 export function getDB() {
   if (!_DB) {
-    try { _DB = JSON.parse(localStorage.getItem(KEY)) || null; } catch { }
+    try { _DB = JSON.parse(localStorage.getItem(KEY)) || null; } catch { /* storage blocked or cached JSON corrupt: fall back to the empty DB below */ }
   }
   if (!_DB) {
     _DB = { companies: [], users: [], teams: [], leads: [], targets: [], activities: {}, notifications: {}, properties: [], bookings: [], holdRequests: [] };
@@ -272,16 +272,31 @@ export async function addNotifsToRole(role, scope, make, currentUser) {
   } catch (e) { console.warn('notify ' + role + ' failed:', e); }
 }
 
-export function applyRealtimeEvent(table, eventType, record, oldRecord, user) {
+export function applyRealtimeEvent(table, eventType, record, oldRecord, user, errors) {
   if (!_DB) return false;
+  // A payload over Realtime's size limit arrives with `errors` and its large
+  // values dropped. Applying it would blank those columns here, and a later
+  // full-row save would write the blanks back, so the cached row is left alone;
+  // the next load brings the real one.
+  if (eventType !== 'DELETE' && errors && errors.length) return false;
+  // The bulk load never ships passwords (USER_COLS), and the socket must not
+  // either: the anon role can read the column, so the record carries it.
+  if (table === 'users' && record && 'password' in record) {
+    record = { ...record };
+    delete record.password;
+  }
   if (eventType !== 'DELETE' && !inScope(table, record, user)) return false;
   let changed = false;
-  
-  const handleArrayEvent = (arrName, converter) => {
+
+  const handleArrayEvent = (arrName, converter, toRow) => {
     if (!_DB[arrName]) _DB[arrName] = [];
     if (eventType === 'INSERT' || eventType === 'UPDATE') {
-      const item = converter(record);
-      const idx = _DB[arrName].findIndex(x => x.id === item.id);
+      const idx = _DB[arrName].findIndex(x => x.id === record.id);
+      // Under the default replica identity an UPDATE omits unchanged TOASTed
+      // columns (a project's media and variants, for one). Converted alone they
+      // would default to empty and the next full-row save would write that back,
+      // so the record is laid over the cached row instead.
+      const item = idx >= 0 ? converter({ ...toRow(_DB[arrName][idx]), ...record }) : converter(record);
       if (idx >= 0) _DB[arrName][idx] = item;
       else _DB[arrName].unshift(item);
       changed = true;
@@ -295,14 +310,14 @@ export function applyRealtimeEvent(table, eventType, record, oldRecord, user) {
     }
   };
 
-  if (table === 'users') handleArrayEvent('users', rToU);
-  else if (table === 'teams') handleArrayEvent('teams', rToT);
-  else if (table === 'leads') handleArrayEvent('leads', rToL);
-  else if (table === 'companies') handleArrayEvent('companies', rToC);
-  else if (table === 'properties') handleArrayEvent('properties', rToP);
-  else if (table === 'bookings') handleArrayEvent('bookings', rToBk);
-  else if (table === 'targets') handleArrayEvent('targets', rToTg);
-  else if (table === 'hold_requests') handleArrayEvent('holdRequests', rToHr);
+  if (table === 'users') handleArrayEvent('users', rToU, uToR);
+  else if (table === 'teams') handleArrayEvent('teams', rToT, tToR);
+  else if (table === 'leads') handleArrayEvent('leads', rToL, lToR);
+  else if (table === 'companies') handleArrayEvent('companies', rToC, cToR);
+  else if (table === 'properties') handleArrayEvent('properties', rToP, pToR);
+  else if (table === 'bookings') handleArrayEvent('bookings', rToBk, bkToR);
+  else if (table === 'targets') handleArrayEvent('targets', rToTg, tgToR);
+  else if (table === 'hold_requests') handleArrayEvent('holdRequests', rToHr, hrToR);
   else if (table === 'activities') {
     if (eventType === 'INSERT' || eventType === 'UPDATE') {
       const act = rToA(record);
@@ -349,7 +364,7 @@ export function applyRealtimeEvent(table, eventType, record, oldRecord, user) {
     }
   }
 
-  if (changed) persistLocal(_DB);
+  if (changed) persistSoon();
   return changed;
 }
 
@@ -370,6 +385,16 @@ const _idle = (fn) => (typeof requestIdleCallback === 'function'
 export function saveDBDeferred(db) {
   _DB = db;
   _idle(() => persistLocal(db));
+}
+
+// Realtime delivers bursts (expireHolds touches every property at once), and a
+// full JSON.stringify of the store per event would stall the page. One idle
+// write covers the whole burst.
+let _persistQueued = false;
+function persistSoon() {
+  if (_persistQueued) return;
+  _persistQueued = true;
+  _idle(() => { _persistQueued = false; if (_DB) persistLocal(_DB); });
 }
 
 // localStorage is ~5MB; the full dataset (esp. activities + property media) can
@@ -646,9 +671,9 @@ export async function fetchLeadBook(user, opts = {}) {
 }
 
 // Fetch ONE lead by id into the cache. The detail panel can be opened from a
-// notification or a carpool request — places that hold only an id — and with
-// the book no longer preloaded, that lead may never have been fetched. Resolves
-// to true when the cache gained something worth re-rendering for.
+// notification — which holds only an id — and with the book no longer
+// preloaded, that lead may never have been fetched. Resolves to true when the
+// cache gained something worth re-rendering for.
 export async function ensureLead(id) {
   if (!id || getLead(id)) return false;
   const rows = await sbGet(`leads?id=eq.${encodeURIComponent(id)}&limit=1`);
@@ -1896,45 +1921,6 @@ export function decideHoldRequest(id, approve, user, days = 2) {
   return req;
 }
 
-// ── Carpool requests (Meeting Agent → Management approval for a site-visit ride) ──
-export function getCarpoolRequests() {
-  const cid = currentCompanyId();
-  const all = getDB().carpoolRequests || [];
-  return cid ? all.filter(r => sameCompany(r.companyId, cid)) : all;
-}
-
-export function createCarpoolRequest(payload, user) {
-  const id = 'cp' + uid();
-  const req = {
-    id, companyId: user.companyId, status: 'pending',
-    createdAt: now_(), decidedAt: null, decidedBy: '',
-    ...payload, agentId: user.id, agentName: user.name,
-  };
-  mutate(db => { db.carpoolRequests = db.carpoolRequests || []; db.carpoolRequests.unshift(req); });
-  if (payload.leadId) updLead(payload.leadId, { carpoolRequested: true });
-  addNotifsToRole(ROLES.MGMT, { companyId: user.companyId }, (userId) => ({
-    userId, type: 'CARPOOL_REQUEST', leadId: payload.leadId || null,
-    message: `${user.name} requested a carpool${payload.clientName ? ' for ' + payload.clientName : ''}`,
-  }), user);
-  return id;
-}
-
-export function decideCarpoolRequest(id, approve, user) {
-  let agentId = null, clientName = '';
-  mutate(db => {
-    const r = (db.carpoolRequests || []).find(x => x.id === id);
-    if (!r) return;
-    r.status = approve ? 'approved' : 'rejected';
-    r.decidedAt = now_();
-    r.decidedBy = user.name;
-    agentId = r.agentId; clientName = r.clientName || '';
-  });
-  if (agentId) addNotifs([{
-    userId: agentId, type: 'CARPOOL_REQUEST', leadId: null,
-    message: `Your carpool request${clientName ? ' for ' + clientName : ''} was ${approve ? 'approved' : 'rejected'}`,
-  }], user);
-}
-
 // Mark a follow-up task as done — clears the reminder.
 export function clearFollowup(leadId, user) {
   updLead(leadId, { nextFollowup: null });
@@ -2301,7 +2287,7 @@ export async function addLeadFn(name, phone, phones, email, emails, company, sou
 // ── CSV Import ──
 function parseCSV(text) {
   text = text.replace(/^\uFEFF/, '').replace(/\r\n/g, '\n').replace(/\r/g, '\n');
-  const fields = []; const rows = []; let cur = ''; let inQ = false; let row = [];
+  const rows = []; let cur = ''; let inQ = false; let row = [];
   for (let i = 0; i <= text.length; i++) {
     const c = i < text.length ? text[i] : null;
     if (inQ) {
