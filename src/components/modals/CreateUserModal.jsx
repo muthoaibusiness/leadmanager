@@ -44,7 +44,7 @@ export default function CreateUserModal() {
   // just closes, one with input asks first (Projects → Add Property's structure).
   const guard = useDiscardGuard({
     isOpen, isDirty: () => formKey() !== baselineRef.current, onClose: closeModal,
-    ask: { title: 'Discard this new account?', description: 'It has not been created.' },
+    ask: { title: 'Exit without creating?', description: 'This new account will be lost.' },
   });
 
   const submit = async () => {

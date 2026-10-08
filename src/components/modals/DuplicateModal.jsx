@@ -52,7 +52,7 @@ export default function DuplicateModal() {
                 <span><b>{groups.length}</b> duplicate group(s) · <b>{extraCount}</b> extra lead(s) found. Newest in each group is kept.</span>
               </div>
               <div className="dup-list">
-                {groups.map((g, i) => (
+                {groups.map((g) => (
                   <div key={g.key} className="dup-group">
                     <div className="dup-group-hd">
                       <span className="dup-key"><Mi>content_copy</Mi>{g.leads.length}× · {g.key.startsWith('p:') ? g.key.slice(2) : g.leads[0].name}</span>

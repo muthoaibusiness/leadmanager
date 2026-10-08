@@ -114,14 +114,14 @@ export default function ProjectConsole() {
     if (propDraft) setPropDraft(null);
     closeModal();
   };
-  // Cancel (and Esc) hand focus back to where it was, so typing carries on.
+  // Stay (and Esc) hand focus back to where it was, so typing carries on.
   const cancelAsk = () => {
     const el = askReturnRef.current;
     askReturnRef.current = null;
     dropAsk();
     if (el && el.isConnected && el !== document.body) el.focus({ preventScroll: true });
   };
-  // A save already in flight would land anyway, so Discard waits it out.
+  // A save already in flight would land anyway, so Exit waits it out.
   const discardDraft = () => {
     if (catalogRef.current?.isSaving()) return false;
     closeNow();
@@ -131,9 +131,10 @@ export default function ProjectConsole() {
     askReturnRef.current = document.activeElement;
     setDiscardAsk(true);
     askIdRef.current = toast.confirm({
-      title: isNew ? 'Discard this new property?' : 'Discard unsaved changes?',
-      description: isNew ? 'It has not been saved.' : 'Your edits will be lost.',
-      confirmLabel: 'Discard',
+      title: 'Exit without saving?',
+      description: isNew ? 'This new property will be lost.' : 'Your changes will be lost.',
+      confirmLabel: 'Exit',
+      cancelLabel: 'Stay',
       onConfirm: discardDraft,
       onCancel: cancelAsk,
       onDismiss: (id) => { if (askIdRef.current === id) { askIdRef.current = null; setDiscardAsk(false); } },
@@ -144,12 +145,12 @@ export default function ProjectConsole() {
     if (cat?.isSaving()) return;
     if (cat?.isDirty()) {
       if (toast.on) { askDiscard(); return; }
-      if (!window.confirm('Discard unsaved changes?')) return;
+      if (!window.confirm('Exit without saving? Your changes will be lost.')) return;
     }
     closeNow();
   };
   // Pressing or typing anywhere in the editor puts the question away, so
-  // editing carries on without a Cancel first. Tab and modifier keys don't,
+  // editing carries on without a Stay first. Tab and modifier keys don't,
   // which keeps the toast's buttons reachable from the keyboard.
   const dismissAsk = (e) => {
     if (!discardAsk) return;

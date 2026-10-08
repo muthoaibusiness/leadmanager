@@ -3,15 +3,13 @@ import Mi from './Mi.jsx';
 import { LoadingBlock, LoadingBar } from './Spinner.jsx';
 import Pagination from './Pagination.jsx';
 import { fmtDateTimeAP, leadDisplayStatus } from '../lib/helpers.js';
-import { SRC_LABELS, STATUS_LABELS, ROLES } from '../lib/constants.js';
+import { SRC_LABELS, ROLES } from '../lib/constants.js';
 import { useApp } from '../context/AppContext.jsx';
 import { bulkDeleteLeads, lastFollowupFor } from '../lib/db.js';
 import TransferLeadModal from './modals/TransferLeadModal.jsx';
 
 export const PAGE_SIZE = 15;
 
-function sclass(s) { return 's-' + (s || '').toLowerCase(); }
-function srcclass(s) { return 'src-' + (s || '').toLowerCase(); }
 function leadCode(l) { return l.externalId || ('#' + String(l.id || '').slice(-6).toUpperCase()); }
 
 // One list for the three header copies (loading, empty, rows), so they cannot drift.

@@ -4,7 +4,7 @@ import Avatar from '../Avatar.jsx';
 import { useApp } from '../../context/AppContext.jsx';
 import { getLeads, getTarget, achievement, agentLeadStats } from '../../lib/db.js';
 import { rlabel, progColor, startOfMonth } from '../../lib/helpers.js';
-import { useOpenUserLeads } from '../UserRow.jsx';
+import useOpenUserLeads from '../../hooks/useOpenUserLeads.js';
 
 export default function AgentCard({ agent }) {
   const { user, openModal, setTgtUser, setEditUser } = useApp();

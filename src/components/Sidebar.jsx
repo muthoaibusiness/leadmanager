@@ -12,7 +12,7 @@ import { canSee } from '../lib/constants.js';
 const SECTIONS = [
   { label: null, keys: ['dashboard', 'companies', 'reports', 'agentperf', 'requests'] },
   { label: 'Sales Team', keys: ['leadsGroup', 'conversations', 'calendar', 'properties'] },
-  { label: 'Admin', keys: ['team', 'users', 'accounts', 'carpool'] },
+  { label: 'Admin', keys: ['team', 'users', 'accounts'] },
 ];
 
 // Collapsible groups. The header only opens/closes; each child is a page, and
@@ -57,7 +57,6 @@ export default function Sidebar({ hideBtnRef }) {
     team: { ico: 'groups', lbl: 'Team' },
     users: { ico: 'manage_accounts', lbl: 'Users' },
     accounts: { ico: 'group_add', lbl: 'Accounts' },
-    carpool: { ico: 'directions_car', lbl: 'Carpool Request' },
     companies: { ico: 'corporate_fare', lbl: 'Companies' },
     profile: { ico: 'account_circle', lbl: 'Profile' },
   };

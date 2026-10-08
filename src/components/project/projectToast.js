@@ -45,12 +45,12 @@ export function useProjectToast({ always = false } = {}) {
   };
 
   // Destructive confirmation: the question is the title, its context the line
-  // below, then Cancel and the destructive action side by side. Both buttons
-  // live in the description (goey has one action button, placed on a row of
-  // its own). Cancel takes focus so the question is keyboard-reachable.
-  // onConfirm may return false to keep the toast up. onDismiss(id) fires
-  // however the toast goes away.
-  const confirm = ({ title, description, confirmLabel, onConfirm, onCancel, onDismiss }) => {
+  // below, then the safe button (cancelLabel, "Cancel" by default) and the
+  // destructive action side by side. Both buttons live in the description
+  // (goey has one action button, placed on a row of its own). The safe button
+  // takes focus so the question is keyboard-reachable. onConfirm may return
+  // false to keep the toast up. onDismiss(id) fires however the toast goes away.
+  const confirm = ({ title, description, confirmLabel, cancelLabel = 'Cancel', onConfirm, onCancel, onDismiss }) => {
     if (lastNote != null) gooeyToast.dismiss(lastNote); // the question stands alone
     let id = null;
     const cancel = () => { gooeyToast.dismiss(id); onCancel?.(); };
@@ -58,7 +58,7 @@ export function useProjectToast({ always = false } = {}) {
     const body = h('div', null,
       description && h('p', { className: 'wp-gt-confirm-msg' }, description),
       h('div', { className: 'wp-gt-confirm-acts' },
-        h('button', { type: 'button', className: 'wp-gt-btn wp-gt-cancel', onClick: cancel, ref: el => { el?.focus({ preventScroll: true }); } }, 'Cancel'),
+        h('button', { type: 'button', className: 'wp-gt-btn wp-gt-cancel', onClick: cancel, ref: el => { el?.focus({ preventScroll: true }); } }, cancelLabel),
         h('button', { type: 'button', className: 'wp-gt-btn wp-gt-danger', onClick: accept }, confirmLabel),
       ),
     );

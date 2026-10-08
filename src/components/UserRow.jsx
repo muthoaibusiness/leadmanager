@@ -2,27 +2,11 @@ import { useApp } from '../context/AppContext.jsx';
 import Mi from './Mi.jsx';
 import Avatar from './Avatar.jsx';
 import { ROLES } from '../lib/constants.js';
+import useOpenUserLeads from '../hooks/useOpenUserLeads.js';
 
 // One person as a compact row: avatar, name/email, role badge, phone, actions.
 // Shared by UsersView (admin, company-wide) and TeamView (Team Lead, own team) so the
 // two rosters cannot drift apart.
-
-// Open one person's customers. Sets the app-wide agent drill-down, which
-// LeadsView turns into `assigned_to = <them>` on the server — so this fetches
-// that person's first 15 leads, not everybody's. Exported so the team-lead
-// header in UsersView opens the same way its members do.
-
-export function useOpenUserLeads() {
-  const { setView, setTab, setSearch, setAgentFilter, setTeamFilter, setStatusFilter } = useApp();
-  return (id) => {
-    setAgentFilter(id);
-    setTeamFilter(null);
-    setStatusFilter('ALL');
-    setSearch('');
-    setTab(0);
-    setView('leads');
-  };
-}
 
 export function EditBtn({ u }) {
   const { setEditUser, openModal } = useApp();

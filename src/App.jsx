@@ -5,7 +5,7 @@ import { seedDB, SEED_PROPERTIES, DEMO_PROPERTIES } from './lib/seed.js';
 import { sbLoad, sbSubscribeAll } from './lib/supabase.js';
 import { waLoadSettings } from './lib/wa.js';
 import { pushUnreadSummary, requestNotifyPermission } from './lib/pushNotify.js';
-import { avc, ini, rlabel, kbd } from './lib/helpers.js';
+import { rlabel, kbd } from './lib/helpers.js';
 import { ROLES, canSee, FEATURE_KEYS, effectiveRole, DRAWER_MQ } from './lib/constants.js';
 import useMediaQuery from './hooks/useMediaQuery.js';
 
@@ -19,7 +19,6 @@ import Sidebar from './components/Sidebar.jsx';
 import ThemeToggle from './components/ThemeToggle.jsx';
 import NotifBell from './components/NotifBell.jsx';
 import UserMenu from './components/UserMenu.jsx';
-import HeaderMascot from './components/HeaderMascot.jsx';
 import LeadPanel from './components/LeadPanel.jsx';
 import Toast from './components/Toast.jsx';
 import ProjectsToaster from './components/project/ProjectsToaster.jsx';
@@ -33,7 +32,6 @@ import MasterDash from './components/dashboards/MasterDash.jsx';
 
 import LeadsView from './components/views/LeadsView.jsx';
 import CalendarView from './components/views/CalendarView.jsx';
-import CarpoolView from './components/views/CarpoolView.jsx';
 import TeamView from './components/views/TeamView.jsx';
 import UsersView from './components/views/UsersView.jsx';
 import AccountsView from './components/views/AccountsView.jsx';
@@ -95,7 +93,6 @@ function PostLoginLoader() {
 function LoginPage({ onLogin, onBack }) {
   const [email, setEmail] = useState('');
   const [pw, setPw] = useState('');
-  const [showPw, setShowPw] = useState(false);
   const [err, setErr] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -156,8 +153,6 @@ function PageHeader({ shown, showBtnRef }) {
         title={`Show sidebar (${kbd('\\')})`}>
         <SidebarGlyph />
       </button>
-      {/* the fox: positioned over the header, above the content's left edge */}
-      <HeaderMascot />
       <div style={{ flex: 1 }} />
       {/* account → date filter → notifications */}
       <UserMenu />
@@ -170,7 +165,7 @@ function PageHeader({ shown, showBtnRef }) {
 
 // ── In-body hero header (eyebrow + big title + subtitle + actions) ───────────
 function PageHero() {
-  const { user, view, agentFilter, teamFilter, setAgentFilter, setTeamFilter, setTab, setStatusFilter, setSearch, openModal, setCreateUserRoles, setPropEdit, setPropSel, setPropDraft, setConsoleAdmin, dbVersion, leadCounts } = useApp();
+  const { user, view, agentFilter, teamFilter, setAgentFilter, setTeamFilter, setTab, setStatusFilter, setSearch, openModal, setCreateUserRoles, setPropSel, setPropDraft, setConsoleAdmin, leadCounts } = useApp();
 
   // The Customers count is NOT computed here. It has to agree with the table
   // underneath it, and the table's query is built from filters this component
@@ -208,7 +203,6 @@ function PageHero() {
     team: { eyebrow: 'Team', title: 'My Team', sub: `${teamAgents} agents` },
     users: { eyebrow: 'Administration', title: 'Users', sub: `${db.users.length} accounts` },
     accounts: { eyebrow: 'Administration', title: 'Account Management', sub: 'Create & manage multiple accounts' },
-    carpool: { eyebrow: 'Administration', title: 'Carpool Requests', sub: 'Approve agent ride requests' },
     requests: { eyebrow: 'Administration', title: 'Hold Requests', sub: 'Approve agent unit holds' },
     profile: { eyebrow: 'Account', title: 'My Profile', sub: 'Manage your details & avatar' },
     companies: { eyebrow: 'Master Admin', title: 'Companies', sub: 'Company-wise overview' },
@@ -256,7 +250,7 @@ function PageHero() {
 
 // ── Main page body ──────────────────────────────────────────────────────────
 function PageBody() {
-  const { user, view, dbVersion } = useApp();
+  const { user, view } = useApp();
   if (!user) return null;
 
   if (user.role === ROLES.MASTER && view !== 'profile') return <MasterDash />; // master sees the company-wise overview
@@ -282,7 +276,6 @@ function PageBody() {
   if (view === 'users') return <UsersView />;
   if (view === 'accounts') return <AccountsView />;
   if (view === 'requests') return <RequestsView />;
-  if (view === 'carpool') return <CarpoolView />;
   if (view === 'profile') return <ProfileView />;
   return null;
 }
@@ -493,16 +486,17 @@ export default function App() {
     if (!user) return;
     let unsub = null;
     let cancelled = false; // the effect can tear down before the idle callback runs
+    let refreshFrame = 0;  // one re-render per frame, however many events a burst brings
 
     const open = () => {
       if (cancelled) return;
-      unsub = sbSubscribeAll((table, type, record, oldRecord) => {
+      unsub = sbSubscribeAll((table, type, record, oldRecord, errors) => {
         if (import.meta.env.DEV) console.log(`[Realtime] ${type} ${table}`, record || oldRecord);
         // applyRealtimeEvent re-checks the tenant client-side: the server filter
         // covers INSERT/UPDATE only, since DELETE is subscribed unfiltered.
-        const changed = applyRealtimeEvent(table, type, record, oldRecord, user);
-        if (changed) {
-          refreshDB();
+        const changed = applyRealtimeEvent(table, type, record, oldRecord, user, errors);
+        if (changed && !refreshFrame) {
+          refreshFrame = requestAnimationFrame(() => { refreshFrame = 0; refreshDB(); });
           // No per-notification OS popup: new notifications land in the in-app
           // bell only. The single push is the startup unread summary below.
         }
@@ -512,7 +506,7 @@ export default function App() {
     if (typeof requestIdleCallback === 'function') requestIdleCallback(open, { timeout: 2000 });
     else setTimeout(open, 0);
 
-    return () => { cancelled = true; if (unsub) unsub(); };
+    return () => { cancelled = true; cancelAnimationFrame(refreshFrame); if (unsub) unsub(); };
   }, [user?.id]);
 
   // Auto-release expired unit holds every minute

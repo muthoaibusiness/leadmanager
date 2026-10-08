@@ -28,7 +28,7 @@ function inRange(d,s,e){ return d&&s&&e&&d>=s&&d<=e; }
 function fmtLabel(d){ return d?d.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}):''; }
 function fmtShort(d){ return d?d.toLocaleDateString('en-US',{month:'short',day:'numeric'}):''; }
 
-export function getPresetRange(key) {
+function getPresetRange(key) {
   const t = startOf(new Date());
   switch(key) {
     case 'today':     return { start: startOf(t), end: endOf(t) };

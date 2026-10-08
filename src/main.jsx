@@ -4,7 +4,7 @@ import './index.css';
 import './fixes.css';
 import App from './App.jsx';
 import { AppProvider } from './context/AppContext.jsx';
-import { applyStoredTheme } from './components/ThemeToggle.jsx';
+import { applyStoredTheme } from './lib/theme.js';
 
 applyStoredTheme(); // set data-theme before first paint to avoid a flash
 

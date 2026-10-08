@@ -1,9 +1,11 @@
 import { useRef, useEffect, useState } from 'react';
 import Mi from '../Mi.jsx';
 import { useApp } from '../../context/AppContext.jsx';
-import { getLead, addLeadFn, updLead, addAct, leadByPhone, normalizePhone } from '../../lib/db.js';
+import { getLead, addLeadFn, updLead, addAct, leadByPhone } from '../../lib/db.js';
 import { SRC_LABELS, ROLES, SOURCE_OPTIONS_IA, SOURCE_OPTIONS_DEFAULT } from '../../lib/constants.js';
+import { DEFAULT_COUNTRY, phoneCountry, resolvePhone } from '../../lib/phone.js';
 import ProjectInterestPicker from '../ProjectInterestPicker.jsx';
+import PhoneField from '../PhoneField.jsx';
 import useDiscardGuard from '../../hooks/useDiscardGuard.js';
 
 const leadCode = (l) => l.externalId || ('#' + String(l.id || '').slice(-6).toUpperCase());
@@ -12,7 +14,7 @@ const leadCode = (l) => l.externalId || ('#' + String(l.id || '').slice(-6).toUp
 // is the baseline isDirty() compares against — the Add Property catalog's way.
 const formKey = (f) => JSON.stringify([
   f.name, f.company, f.profession, f.city, f.email,
-  f.phones.map(p => p.trim()).filter(Boolean), f.interest, f.source, f.pending || '',
+  f.phones.map(p => p.text.trim()).filter(Boolean), f.interest, f.source, f.pending || '',
 ].map(v => (typeof v === 'string' ? v.trim() : v)));
 
 export default function AddLeadModal() {
@@ -38,7 +40,9 @@ export default function AddLeadModal() {
   const cityRef = useRef();
   const emailRef = useRef();
 
-  const [phones, setPhones] = useState(['']);
+  // One row per number: the text as typed and the country picked for it
+  // (PhoneField). The country code is worked out on save — see resolvePhone.
+  const [phones, setPhones] = useState([{ text: '', cc: DEFAULT_COUNTRY }]);
   const [interest, setInterest] = useState(''); // multi project-interest tags (comma-joined)
   // State, not a ref: the locked view renders no <select> for a ref to hang off.
   const [source, setSource] = useState(defaultSource);
@@ -52,7 +56,7 @@ export default function AddLeadModal() {
   useEffect(() => {
     if (!isOpen) return;
     setSaving(false); // never reopen stuck in a saving state
-    let f = { name: '', company: '', source: defaultSource, interest: '', profession: '', city: '', email: '', phones: [''] };
+    let f = { name: '', company: '', source: defaultSource, interest: '', profession: '', city: '', email: '', phones: [{ text: '', cc: DEFAULT_COUNTRY }] };
     if (isEdit && panLead) {
       const l = getLead(panLead);
       if (!l) return;
@@ -64,7 +68,7 @@ export default function AddLeadModal() {
         profession: l.profession || '',
         city: l.city || '',
         email: l.email || '',
-        phones: l.phones?.length ? l.phones : [l.phone || ''],
+        phones: (l.phones?.length ? l.phones : [l.phone || '']).map(text => ({ text, cc: DEFAULT_COUNTRY })),
       };
     }
     nameRef.current.value = f.name;
@@ -95,26 +99,34 @@ export default function AddLeadModal() {
   const guard = useDiscardGuard({
     isOpen, isDirty, onClose: closeModal, busy: saving,
     ask: isEdit
-      ? { title: 'Discard unsaved changes?', description: 'Your edits will be lost.' }
-      : { title: 'Discard this new lead?', description: 'It has not been saved.' },
+      ? { title: 'Exit without saving?', description: 'Your changes will be lost.' }
+      : { title: 'Exit without saving?', description: 'This new lead will be lost.' },
   });
 
-  const updatePhone = (i, v) => {
-    const sanitized = v.replace(/[^\d+ ]/g, '');
-    setPhones(p => p.map((x, j) => j === i ? sanitized : x));
-  };
-  const addPhone = () => setPhones(p => [...p, '']);
+  const setRow = (i, patch) => setPhones(p => p.map((x, j) => j === i ? { ...x, ...patch } : x));
+  const updatePhone = (i, v) => setRow(i, { text: v.replace(/[^\d+ ]/g, '') });
+  // A further number starts in the primary's country: a Dubai client's second
+  // number is most likely Emirati too.
+  const addPhone = () => setPhones(p => [...p, { text: '', cc: phoneCountry(p[0].text, p[0].cc).iso || DEFAULT_COUNTRY }]);
   const removePhone = (i) => setPhones(p => p.filter((_, j) => j !== i));
 
   const submit = async () => {
     if (saving) return; // in-flight guard — no double submit
     const name = nameRef.current.value.trim();
-    const cleanPhones = phones.map(p => normalizePhone(p)).filter(Boolean);
     if (!name) { showToast('Name is required', 'err'); return; }
-    // Only enforced where phones can actually be entered. On edit they are locked and
+    // Only resolved where phones can actually be entered. On edit they are locked and
     // echoed back from the lead, so validating them would let one legacy bad number
-    // block every other edit to that lead.
-    if (canEditPhone && !cleanPhones.length) { showToast('A valid phone number is required (e.g. +8801XXXXXXXXX)', 'err'); return; }
+    // block every other edit to that lead. Each number gets its country code here
+    // (resolvePhone), stored as digits with the code — 8801712345678.
+    let cleanPhones = [];
+    if (canEditPhone) {
+      const typed = phones.filter(p => p.text.trim());
+      if (!typed.length) { showToast('A phone number is required', 'err'); return; }
+      const nums = typed.map(p => resolvePhone(p.text, p.cc));
+      const bad = nums.findIndex(n => !n);
+      if (bad >= 0) { showToast(`Check the number ${typed[bad].text.trim()} — it is too short or too long`, 'err'); return; }
+      cleanPhones = [...new Set(nums.map(n => n.digits))];
+    }
 
     const phone = cleanPhones[0];
     const email = emailRef.current.value.trim();
@@ -207,22 +219,16 @@ export default function AddLeadModal() {
             {canEditPhone ? (
               <>
                 {phones.map((p, i) => (
-                  <div key={i} style={{ display: 'flex', gap: '6px', marginBottom: i < phones.length - 1 ? '6px' : '0' }}>
-                    <input
-                      className="fi"
-                      type="tel"
-                      placeholder={i === 0 ? '+971 50 000 0000 (primary)' : 'Additional number'}
-                      value={p}
-                      onChange={e => updatePhone(i, e.target.value)}
-                      style={{ flex: 1 }}
-                    />
+                  <PhoneField key={i} text={p.text} country={p.cc}
+                    onText={v => updatePhone(i, v)} onCountry={cc => setRow(i, { cc })}
+                    placeholder={i === 0 ? '01712-345678 or +971 50 123 4567' : 'Additional number'}>
                     {phones.length > 1 && (
                       <button type="button" onClick={() => removePhone(i)}
                         style={{ padding: '0 10px', borderRadius: 'var(--r-sm)', background: 'var(--red-l)', color: 'var(--red)', border: 'none', cursor: 'pointer', flexShrink: 0 }}>
                         <Mi>remove</Mi>
                       </button>
                     )}
-                  </div>
+                  </PhoneField>
                 ))}
                 <button type="button" onClick={addPhone}
                   style={{ marginTop: '6px', fontSize: '12px', color: 'var(--blue)', background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px', padding: 0 }}>
@@ -232,9 +238,9 @@ export default function AddLeadModal() {
             ) : (
               // Read-only: plain text with a lock icon, no inputs, no Add button.
               <div className="ro-field">
-                {phones.filter(Boolean).length
-                  ? phones.filter(Boolean).map((p, i) => (
-                      <div key={i} className="ro-phone"><Mi className="ro-lock">lock</Mi>{p}</div>
+                {phones.filter(p => p.text).length
+                  ? phones.filter(p => p.text).map((p, i) => (
+                      <div key={i} className="ro-phone"><Mi className="ro-lock">lock</Mi>{p.text}</div>
                     ))
                   : <div className="ro-phone"><Mi className="ro-lock">lock</Mi>—</div>}
               </div>
