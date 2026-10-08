@@ -3,12 +3,45 @@ import { createPortal } from 'react-dom';
 import Mi from '../Mi.jsx';
 import { ColorEmotionSelect } from '../ui/color-emotion-select.jsx';
 import { useApp } from '../../context/AppContext.jsx';
-import { saveNewProject, saveProject, projectTypeOf } from '../../lib/projects.js';
+import { saveNewProject, saveProject, projectTypeOf, placedUnitIds } from '../../lib/projects.js';
 import { PROJECT_TYPES } from '../../lib/constants.js';
 import { useProjectToast } from './projectToast.js';
 import './ProjectCatalog.css';
 
 const nextStatus = (s) => (s === 'available' ? 'hold' : s === 'hold' ? 'sold' : 'available');
+// The number in a code of the form prefix + number ("A12" → 12 for prefix
+// "A"), or null when the code is named some other way.
+const seqNo = (id, prefix) => {
+  if (!id.startsWith(prefix)) return null;
+  const rest = id.slice(prefix.length);
+  return /^[1-9]\d*$/.test(rest) ? Number(rest) : null;
+};
+// The project with type `vid` brought to `want` units — see regenUnits.
+// `kept`: units the count asked to remove that had to stay.
+function withCount(prev, vid, want) {
+  const placed = placedUnitIds(prev);
+  let kept = 0;
+  const variants = prev.variants.map(v => {
+    if (v.id !== vid || want === v.units.length) return v;
+    const prefix = v.unitPrefix || '';
+    if (want > v.units.length) {
+      const taken = new Set(prev.variants.flatMap(x => x.units.map(u => u.id)));
+      const add = [];
+      for (let n = 1; add.length < want - v.units.length; n++) {
+        const code = prefix + n;
+        if (!taken.has(code)) { add.push({ id: code, status: 'available' }); taken.add(code); }
+      }
+      return { ...v, units: [...v.units, ...add] };
+    }
+    const num = (id) => seqNo(id, prefix);
+    const removable = v.units.filter(u => u.status === 'available' && !placed.has(u.id) && num(u.id) != null)
+      .sort((a, b) => num(b.id) - num(a.id));
+    const drop = new Set(removable.slice(0, v.units.length - want).map(u => u.id));
+    kept = v.units.length - drop.size - want;
+    return { ...v, units: v.units.filter(u => !drop.has(u.id)) };
+  });
+  return { next: { ...prev, variants }, kept };
+}
 const TYPE_REQUIRED = 'Project type is required.';
 const TYPE_LOOK = { Residential: { color: '#54B848', emoji: '🏠' }, Commercial: { color: '#3B82F6', emoji: '🏢' } };
 const TYPE_OPTIONS = PROJECT_TYPES.map(t => ({ value: t, label: t, ...TYPE_LOOK[t] }));
@@ -84,22 +117,54 @@ export default function ProjectCatalog({ project, isNew = false, actionsEl, onDo
 
   const addVariant = () => setP(prev => ({ ...prev, variants: [...prev.variants, { id: 'v' + Date.now(), name: 'New type', beds: 0, baths: 0, size: 0, listRate: 0, floorRate: 0, unitPrefix: '', units: [] }] }));
   const updateVariant = (vid, patch) => setP(prev => ({ ...prev, variants: prev.variants.map(v => v.id === vid ? { ...v, ...patch } : v) }));
-  const removeVariant = (vid) => setP(prev => { const left = prev.variants.filter(v => v.id !== vid); return { ...prev, variants: left.length ? left : prev.variants }; });
-  
+  const dropVariant = (vid) => setP(prev => { const left = prev.variants.filter(v => v.id !== vid); return { ...prev, variants: left.length ? left : prev.variants }; });
+  // A type whose units have boxes on a floor plan asks first: those boxes
+  // would be left pointing at nothing.
+  const removeVariant = (vid) => {
+    const v = p.variants.find(x => x.id === vid);
+    const placed = placedUnitIds(p);
+    const n = (v?.units || []).filter(u => placed.has(u.id)).length;
+    if (!n) { dropVariant(vid); return; }
+    toast.confirm({
+      title: `Remove ${v.name || 'this type'}?`,
+      description: `${n} of its units ${n > 1 ? 'are' : 'is'} on a floor plan. Their boxes will no longer point at a unit.`,
+      confirmLabel: 'Remove',
+      onConfirm: () => { dropVariant(vid); },
+    });
+  };
+
+  // "# of units" only adds or removes units named prefix + number. Units named
+  // any other way (SHOP-07, a legacy U-01), units on hold or sold, and units
+  // with a box on a floor plan are never removed by it, and leaving the field
+  // with the number unchanged changes nothing.
   const regenUnits = (vid, count) => {
-    setP(prev => ({
+    const want = Math.max(0, count | 0);
+    const kept = withCount(p, vid, want).kept;
+    setP(prev => withCount(prev, vid, want).next);
+    if (kept > 0) toast.info(`${kept} unit${kept > 1 ? 's' : ''} kept`, 'Units on hold, sold, on a floor plan or named differently are not removed by the count.');
+  };
+
+  // A new prefix renames the units that follow the old prefix + number, as long
+  // as they are still available and not on a floor plan; the rest keep their codes.
+  const setPrefix = (vid, prefix) => setP(prev => {
+    const placed = placedUnitIds(prev);
+    const taken = new Set(prev.variants.flatMap(x => x.units.map(u => u.id)));
+    return {
       ...prev,
       variants: prev.variants.map(v => {
         if (v.id !== vid) return v;
-        const cur = new Map(v.units.map(u => [u.id, u]));
-        const units = Array.from({ length: Math.max(0, count | 0) }, (_, i) => {
-          const code = (v.unitPrefix || '') + (i + 1);
-          return cur.get(code) || { id: code, status: 'available' };
+        const units = v.units.map(u => {
+          const n = seqNo(u.id, v.unitPrefix || '');
+          if (n == null || u.status !== 'available' || placed.has(u.id)) return u;
+          const code = prefix + n;
+          if (code === u.id || taken.has(code)) return u;
+          taken.delete(u.id); taken.add(code);
+          return { ...u, id: code };
         });
-        return { ...v, units };
-      })
-    }));
-  };
+        return { ...v, unitPrefix: prefix, units };
+      }),
+    };
+  });
 
   const cycleUnit = (vid, uid) => {
     setP(prev => ({
@@ -222,11 +287,11 @@ export default function ProjectCatalog({ project, isNew = false, actionsEl, onDo
             </div>
             <div className="pcat-vdiv" />
             <div className="pcat-vrow2">
-              <label className="pcat-f"><span>Unit prefix</span><input value={v.unitPrefix} onChange={e => updateVariant(v.id, { unitPrefix: e.target.value })} placeholder="A" /></label>
+              <label className="pcat-f"><span>Unit prefix</span><input value={v.unitPrefix} onChange={e => setPrefix(v.id, e.target.value)} placeholder="A" /></label>
               <label className="pcat-f"><span># of units</span>
                 <input type="number" min="0" value={counts[v.id] ?? v.units.length}
                   onChange={e => setCounts(c => ({ ...c, [v.id]: e.target.value }))}
-                  onBlur={e => { regenUnits(v.id, parseInt(e.target.value, 10) || 0); setCounts(c => { const n = { ...c }; delete n[v.id]; return n; }); }} /></label>
+                  onBlur={e => { if (e.target.value.trim() !== '') regenUnits(v.id, parseInt(e.target.value, 10) || 0); setCounts(c => { const n = { ...c }; delete n[v.id]; return n; }); }} /></label>
               <div className="pcat-vstat">{open} open · {held} held · {sold} sold</div>
             </div>
             {v.units.length > 0 && (

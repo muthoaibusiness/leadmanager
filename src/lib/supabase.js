@@ -201,7 +201,9 @@ export async function sbInsert(table, row) {
   return { ok: false };
 }
 
-export async function sbUpdate(table, id, updates) {
+// `strict`: an unknown column fails the whole write ({ ok: false, missing })
+// instead of being dropped, for writes that are wrong unless every column lands.
+export async function sbUpdate(table, id, updates, { strict = false } = {}) {
   if (_missingTables.has(table)) return { ok: false, skipped: true };
   let payload = { ...updates };
   const stripped = [];
@@ -241,6 +243,7 @@ export async function sbUpdate(table, id, updates) {
     if (j.code === 'PGRST204') {
       const m = /Could not find the '([^']+)' column/.exec(j.message || '');
       const col = m && m[1];
+      if (col && strict) return { ok: false, status: r.status, body, missing: col };
       if (col) {
         stripped.push(col);
         delete payload[col];
@@ -631,6 +634,9 @@ export function pToR(p) {
     variants: p.variants || [], addons: p.addons || [], media: p.media || {},
     fast_close_pct: p.fastClosePct || 0, fast_close_days: p.fastCloseDays || 0,
     listing: p.listing || '', approval: p.approval || '',
+    // Available Units floor plans (migration 0020). Only patchPropertyChecked
+    // writes this column; the other property writes drop it (see propRow in db.js).
+    floor_plans: p.floorPlans || [],
   };
 }
 export function rToP(r) {
@@ -649,7 +655,47 @@ export function rToP(r) {
     variants: r.variants || [], addons: r.addons || [], media: r.media || {},
     fastClosePct: r.fast_close_pct || 0, fastCloseDays: r.fast_close_days || 0,
     listing: r.listing || '', approval: r.approval || '',
+    floorPlans: Array.isArray(r.floor_plans) ? r.floor_plans : [],
   };
+}
+
+// One property row, straight from the cloud — the floor plan editor merges its
+// save onto this rather than onto the cached copy, so a hold or sale placed
+// while the editor was open is not written back over.
+// { ok: true, row } (row null when it no longer exists) or { ok: false, error }.
+export async function sbGetPropertyRow(id) {
+  if (!SB_URL || !SB_KEY) return { ok: false, error: 'cloud sync is not configured' };
+  try {
+    const r = await sbFetch(`${SB_URL}/rest/v1/properties?id=eq.${encodeURIComponent(id)}&limit=1`, { headers: SB_H });
+    if (!r.ok) return { ok: false, error: `the server rejected it (HTTP ${r.status})` };
+    const rows = await r.json();
+    return { ok: true, row: Array.isArray(rows) && rows[0] ? rToP(rows[0]) : null };
+  } catch {
+    return { ok: false, error: 'network error, check your connection' };
+  }
+}
+
+// Project files in Supabase Storage (bucket from migration 0020): public read,
+// anon insert only, so every upload takes a new path and nothing is replaced.
+export const PROJECT_BUCKET = 'project-media';
+export async function uploadProjectMedia(blob, path) {
+  if (!SB_URL || !SB_KEY) return { ok: false, error: 'cloud sync is not configured' };
+  try {
+    const r = await sbFetch(`${SB_URL}/storage/v1/object/${PROJECT_BUCKET}/${path}`, {
+      method: 'POST',
+      headers: { apikey: SB_KEY, Authorization: 'Bearer ' + SB_KEY, 'Content-Type': blob.type || 'application/octet-stream' },
+      body: blob,
+    });
+    if (!r.ok) {
+      let b = ''; try { b = await r.text(); } catch { /* unreadable body: report the status alone */ }
+      console.error('[storage] project media upload failed', r.status, b);
+      if (r.status === 404 || /bucket not found/i.test(b)) return { ok: false, error: 'the project-media storage bucket is missing (apply migration 0020)' };
+      return { ok: false, error: `the upload was rejected (HTTP ${r.status})` };
+    }
+    return { ok: true, url: `${SB_URL}/storage/v1/object/public/${PROJECT_BUCKET}/${path}` };
+  } catch {
+    return { ok: false, error: 'network error during upload, check your connection' };
+  }
 }
 
 // The bulk load deliberately does NOT request `password`. Every logged-in

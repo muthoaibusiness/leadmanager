@@ -23,7 +23,8 @@ import DateRangePicker from './components/DateRangePicker.jsx';
 
 
 
-import { migrateProjects, newProjectDraft, projectInventory } from './lib/projects.js';
+import { migrateProjects, newProjectDraft, projectInventory, planProjects } from './lib/projects.js';
+import './components/project/AvailableUnitsTab.css';
 import GlobalLoadingBar from './components/GlobalLoadingBar.jsx';
 
 // ── Code-split pages and overlays ───────────────────────────────────────────
@@ -45,6 +46,7 @@ const PAGES = {
   RequestsView: () => import('./components/views/RequestsView.jsx'),
   ProfileView: () => import('./components/views/ProfileView.jsx'),
   PropertiesView: () => import('./components/views/PropertiesView.jsx'),
+  AvailableUnitsView: () => import('./components/project/AvailableUnitsView.jsx'),
   BookingsView: () => import('./components/views/BookingsView.jsx'),
   PipelineView: () => import('./components/views/PipelineView.jsx'),
   ClientsView: () => import('./components/views/ClientsView.jsx'),
@@ -72,6 +74,7 @@ const OVERLAYS = {
   LostModal: () => import('./components/modals/LostModal.jsx'),
   PropertyViewModal: () => import('./components/modals/PropertyViewModal.jsx'),
   ProjectConsole: () => import('./components/project/ProjectConsole.jsx'),
+  FloorPlanEditor: () => import('./components/project/FloorPlanEditor.jsx'),
   PropertyFormModal: () => import('./components/modals/PropertyFormModal.jsx'),
   UnitBookingModal: () => import('./components/modals/UnitBookingModal.jsx'),
   BookingModal: () => import('./components/modals/BookingModal.jsx'),
@@ -81,7 +84,7 @@ const OVERLAYS = {
 
 const lazyAll = (loaders) => Object.fromEntries(Object.entries(loaders).map(([k, f]) => [k, lazyChunk(f)]));
 
-const { InitialAgentDash, MeetingAgentDash, TeamLeadDash, ManagementDash, MasterDash, LeadsView, CalendarView, TeamView, UsersView, AccountsView, RequestsView, ProfileView, PropertiesView, BookingsView, PipelineView, ClientsView, ReportsView, AgentPerformanceView, ConversationsView } = lazyAll(PAGES);
+const { InitialAgentDash, MeetingAgentDash, TeamLeadDash, ManagementDash, MasterDash, LeadsView, CalendarView, TeamView, UsersView, AccountsView, RequestsView, ProfileView, PropertiesView, AvailableUnitsView, BookingsView, PipelineView, ClientsView, ReportsView, AgentPerformanceView, ConversationsView } = lazyAll(PAGES);
 const OVERLAY_COMPONENTS = Object.entries(lazyAll(OVERLAYS));
 const LandingPage = lazyChunk(() => import('./components/LandingPage.jsx'));
 const SignIn1 = lazyChunk(() => import('./components/ui/modern-stunning-sign-in.jsx').then(m => ({ default: m.SignIn1 })));
@@ -209,7 +212,7 @@ function PageHeader({ shown, showBtnRef }) {
 
 // ── In-body hero header (eyebrow + big title + subtitle + actions) ───────────
 function PageHero() {
-  const { user, view, agentFilter, teamFilter, setAgentFilter, setTeamFilter, setTab, setStatusFilter, setSearch, openModal, setCreateUserRoles, setPropSel, setPropDraft, setConsoleAdmin, leadCounts } = useApp();
+  const { user, view, agentFilter, teamFilter, setAgentFilter, setTeamFilter, setTab, setStatusFilter, setSearch, openModal, setCreateUserRoles, setPropSel, setPropDraft, setConsoleAdmin, leadCounts, projTab, setProjTab, planSel, setPlanEdit } = useApp();
 
   // The Customers count is NOT computed here. It has to agree with the table
   // underneath it, and the table's query is built from filters this component
@@ -259,6 +262,13 @@ function PageHero() {
     // count of exactly what is listed below.
     sub = view === 'leads' && leadCounts?.total != null ? `${leadCounts.total} filtered customers` : 'Filtered customers';
   }
+  // Projects → Available Units: the floor plan tab of the same page.
+  const unitsTab = view === 'properties' && projTab === 'units';
+  if (unitsTab) {
+    const plans = props.reduce((s, p) => s + (p.floorPlans || []).length, 0);
+    title = 'Available Units';
+    sub = `${propAvail} unit${propAvail === 1 ? '' : 's'} available · ${plans} floor plan${plans === 1 ? '' : 's'}`;
+  }
 
   // actions
   let actions = [];
@@ -276,14 +286,25 @@ function PageHero() {
   if (view === 'users' && user.role === ROLES.MGMT) actions.push(<button key="add-user" className="btn btn-p" onClick={() => { setCreateUserRoles([ROLES.TL]); openModal('create-user'); }}><Mi>person_add</Mi>Add User</button>);
   // Add Property opens an unsaved draft; the project is created only when the
   // catalog's Save product succeeds (see ProjectCatalog / saveNewProject).
-  if (view === 'properties' && user.role === ROLES.MGMT) actions.push(<button key="add-prop" className="btn btn-p" onClick={() => { const d = newProjectDraft(user.companyId); setPropDraft(d); setConsoleAdmin(true); setPropSel(d.id); openModal('project-console'); }}><Mi>add</Mi>Add Property</button>);
+  // Available Units sits just before it; on that tab Management's Add Property
+  // gives way to Add floor plan, for the project picked there.
+  if (view === 'properties') {
+    actions.push(<button key="units" type="button" className="btn btn-g hero-units" aria-pressed={unitsTab} onClick={() => setProjTab(unitsTab ? 'list' : 'units')}><Mi>map</Mi><span className="hero-units-tx">Available </span>Units</button>);
+  }
+  if (view === 'properties' && user.role === ROLES.MGMT && unitsTab) {
+    const list = planProjects();
+    const target = list.find(p => p.id === planSel.projectId) || list[0];
+    actions.push(<button key="add-plan" type="button" className="btn btn-p" disabled={!target} onClick={() => { setPlanEdit({ projectId: target.id, planId: null }); openModal('floorplan-editor'); }}><Mi>add</Mi>Add floor plan</button>);
+  } else if (view === 'properties' && user.role === ROLES.MGMT) actions.push(<button key="add-prop" className="btn btn-p" onClick={() => { const d = newProjectDraft(user.companyId); setPropDraft(d); setConsoleAdmin(true); setPropSel(d.id); openModal('project-console'); }}><Mi>add</Mi>Add Property</button>);
 
   return (
     <div className={`hero${view === 'pipeline' ? ' hero-compact' : ''}`}>
       <div className="hero-main">
         {drilled
           ? <button className="hero-back" onClick={clearDrill}><Mi>arrow_back</Mi>All Customers</button>
-          : <div className="hero-eyebrow">{eyebrow}</div>}
+          : unitsTab
+            ? <button className="hero-back" onClick={() => setProjTab('list')}><Mi>arrow_back</Mi>All Projects</button>
+            : <div className="hero-eyebrow">{eyebrow}</div>}
         <h1 className="hero-title">{title}</h1>
         {sub && <div className="hero-sub">{sub}</div>}
       </div>
@@ -294,7 +315,7 @@ function PageHero() {
 
 // ── Main page body ──────────────────────────────────────────────────────────
 function PageBody() {
-  const { user, view } = useApp();
+  const { user, view, projTab } = useApp();
   if (!user) return null;
 
   if (user.role === ROLES.MASTER && view !== 'profile') return <MasterDash />; // master sees the company-wise overview
@@ -312,7 +333,7 @@ function PageBody() {
   if (view === 'calendar') return <CalendarView />;
   if (view === 'pipeline') return <PipelineView />;
   if (view === 'clients') return <ClientsView />;
-  if (view === 'properties') return <PropertiesView />;
+  if (view === 'properties') return projTab === 'units' ? <AvailableUnitsView /> : <PropertiesView />;
   if (view === 'bookings') return <BookingsView />;
   if (view === 'reports') return <ReportsView />;
   if (view === 'agentperf') return <AgentPerformanceView />;

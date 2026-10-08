@@ -123,7 +123,12 @@ export function mergeDB(remote, local) {
     leads,
     targets: mergeArr(r.targets, l.targets),
     deletionLog: tomb,
-    properties: mergeArr(r.properties, l.properties).filter(p => !deleted.has(p.id)),
+    // Floor plans are only ever written onto the cloud row (patchPropertyChecked),
+    // so the cloud copy of them wins even when the local row wins the tie.
+    properties: mergeArr(r.properties, l.properties).filter(p => !deleted.has(p.id)).map(p => {
+      const rp = (r.properties || []).find(x => x && x.id === p.id);
+      return rp && rp !== p && Array.isArray(rp.floorPlans) ? { ...p, floorPlans: rp.floorPlans } : p;
+    }),
     bookings: mergeArr(r.bookings, l.bookings),
     holdRequests: mergeArr(r.holdRequests, l.holdRequests),
     activities: mergeActs(r.activities, l.activities),
@@ -1213,20 +1218,38 @@ export function addPropertyFn(p) {
     if (!db.properties) db.properties = [];
     db.properties.unshift(newProp);
   });
-  sbInsert('properties', pToR(newProp));
+  sbInsert('properties', propRow(newProp));
   return id;
+}
+
+// Floor plans are written only by patchPropertyChecked, which merges onto the
+// cloud row. Every other property write sends the whole cached row, and a stale
+// cached copy of the plans would overwrite one another manager just saved, so
+// those writes leave the column (and the local copy) alone. Inserts leave it
+// out too: the column defaults to [] (and may not exist before migration 0020).
+function withoutPlans(upd) {
+  if (!upd || !('floorPlans' in upd)) return upd;
+  const rest = { ...upd };
+  delete rest.floorPlans;
+  return rest;
+}
+function propRow(p) {
+  const row = pToR(p);
+  delete row.floor_plans;
+  return row;
 }
 
 export function updatePropertyFn(id, upd) {
   let updatedProp;
+  const patch = withoutPlans(upd);
   mutate(db => {
     const i = (db.properties || []).findIndex(p => p.id === id);
     if (i >= 0) {
-      db.properties[i] = { ...db.properties[i], ...upd, updatedAt: now_() };
+      db.properties[i] = { ...db.properties[i], ...patch, updatedAt: now_() };
       updatedProp = db.properties[i];
     }
   });
-  if (updatedProp) sbUpdate('properties', id, pToR(updatedProp));
+  if (updatedProp) sbUpdate('properties', id, propRow(updatedProp));
 }
 
 export function deletePropertyFn(id) {
@@ -1254,7 +1277,7 @@ function writeError(res) {
 export async function insertPropertyChecked(p) {
   const ts = now_();
   const row = { ...p, id: p.id || 'p' + uid(), companyId: p.companyId || currentCompanyId(), createdAt: ts, updatedAt: ts };
-  const res = await sbInsert('properties', pToR(row));
+  const res = await sbInsert('properties', propRow(row));
   if (!res.ok) return { ok: false, error: writeError(res) };
   mutate(db => {
     if (!db.properties) db.properties = [];
@@ -1267,7 +1290,39 @@ export async function updatePropertyChecked(id, upd) {
   const cur = getProperty(id);
   if (!cur) return { ok: false, error: 'this project no longer exists' };
   const ts = now_();
-  const res = await sbUpdate('properties', id, pToR({ ...cur, ...upd, updatedAt: ts }));
+  const patch = withoutPlans(upd);
+  const res = await sbUpdate('properties', id, propRow({ ...cur, ...patch, updatedAt: ts }));
+  if (!res.ok) return { ok: false, error: writeError(res) };
+  mutate(db => {
+    const i = (db.properties || []).findIndex(x => x.id === id);
+    if (i >= 0) db.properties[i] = { ...db.properties[i], ...patch, updatedAt: ts };
+  });
+  return { ok: true, id };
+}
+
+// Write only the named columns of a property, and only report success when
+// the cloud kept every one of them. sbUpdate normally drops a column the table
+// lacks and still answers ok — fine for background writes, but for a floor
+// plan it would mean a save that only ever existed in this browser.
+// `upd` is camelCase; the keys must be ones pToR maps (floorPlans, variants…).
+const PROP_COLS = { floorPlans: 'floor_plans', variants: 'variants', units: 'units' };
+export async function patchPropertyChecked(id, upd) {
+  const ts = now_();
+  const full = pToR({ ...upd, updatedAt: ts });
+  const row = { updated_at: ts };
+  Object.keys(upd).forEach(k => {
+    const col = PROP_COLS[k];
+    if (!col) throw new Error(`patchPropertyChecked: unsupported field ${k}`);
+    row[col] = full[col];
+  });
+  // Strict: a missing column fails the whole PATCH, so a refused save never
+  // half-lands (unit changes written, the plan itself not).
+  const res = await sbUpdate('properties', id, row, { strict: true });
+  if (res.missing) {
+    return { ok: false, error: res.missing === 'floor_plans'
+      ? 'the database has no floor_plans column yet (apply migration 0020)'
+      : `the database is missing the ${res.missing} column` };
+  }
   if (!res.ok) return { ok: false, error: writeError(res) };
   mutate(db => {
     const i = (db.properties || []).findIndex(x => x.id === id);

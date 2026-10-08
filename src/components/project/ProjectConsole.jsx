@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import Mi from '../Mi.jsx';
 import { useApp } from '../../context/AppContext.jsx';
-import { getProjectById, setUnitStatus, toProject } from '../../lib/projects.js';
+import { getProjectById, setUnitStatus, toProject, pricedVariant, unitPrice } from '../../lib/projects.js';
 import { createHoldRequest, getLeads } from '../../lib/db.js';
 import { computeDeal, emptyDeal } from '../../lib/deal.js';
 import ProjectCatalog from './ProjectCatalog.jsx';
@@ -88,7 +88,9 @@ export default function ProjectConsole() {
   const fastTarget = startedAt + (p?.fastCloseDays || 0) * 86400000;
   const countdown = useCountdown(fastTarget, isOpen);
 
-  const calc = variant ? computeDeal(deal, variant, p) : null;
+  // The picked unit's own size and price, when it has them, price the deal.
+  const pv = variant && deal.unitId ? pricedVariant(variant, deal.unitId) : variant;
+  const calc = pv ? computeDeal(deal, pv, p) : null;
 
   // ✕, the backdrop and Esc all close through here. Closing never writes: an
   // unsaved new project just goes away, and unsaved catalog edits are dropped
@@ -188,8 +190,9 @@ export default function ProjectConsole() {
   // Floor (bottom) price + total project value are commercially sensitive — only
   // Team Leads and Management see them; initial/meeting agents do not.
   const canSeeFloor = [ROLES.TL, ROLES.MGMT, ROLES.MASTER].includes(user?.role);
-  // Total project value at list rate = Σ blocks (rate × size × units).
-  const projectValue = variants.reduce((s, v) => s + (v.listRate || 0) * (v.size || 0) * (v.units.length || 0), 0);
+  // Total project value at list rate = Σ units (a unit's own price, else its
+  // block's rate × size).
+  const projectValue = variants.reduce((s, v) => s + v.units.reduce((t, u) => t + unitPrice(u, v), 0), 0);
 
   // Offers can only go to an existing customer — search this user's leads.
   const myLeads = getLeads(user);
@@ -352,6 +355,7 @@ export default function ProjectConsole() {
                       const lbl = u.status === 'sold' ? 'SOLD' : u.status === 'hold' ? 'HELD' : 'OPEN';
                       const blocked = u.status !== 'available';
                       const t = [u.status === 'sold' ? 'Sold' : u.status === 'hold' ? 'On hold' : 'Available'];
+                      if (u.size > 0) t.push(u.size + ' sqft');
                       if (u.clientName) t.push('Client: ' + u.clientName);
                       if (u.holdUntil) t.push('Booked by management until ' + new Date(u.holdUntil).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' }));
                       else if (u.heldByName) t.push('By: ' + u.heldByName);
@@ -373,16 +377,16 @@ export default function ProjectConsole() {
                   <div className={`pco-prices${canSeeFloor ? '' : ' solo'}`}>
                     <div className="pco-box">
                       <div className="pco-box-l">Top price · list</div>
-                      <div className="pco-box-v">{fmtBDT(variant.listRate)} <small>/ sqft</small></div>
-                      <div className="pco-box-s">Total {crShort(variant.listRate * variant.size)}</div>
+                      <div className="pco-box-v">{fmtBDT(pv.listRate)} <small>/ sqft</small></div>
+                      <div className="pco-box-s">Total {crShort(pv.listRate * pv.size)}</div>
                     </div>
                     {canSeeFloor && (
                       <div className="pco-box floor">
                         <div className="pco-box-l">Bottom price · floor</div>
-                        {variant.floorRate > 0 ? (
+                        {pv.floorRate > 0 ? (
                           <>
-                            <div className="pco-box-v">{fmtBDT(variant.floorRate)} <small>/ sqft</small></div>
-                            <div className="pco-box-s">Total {crShort(variant.floorRate * variant.size)}</div>
+                            <div className="pco-box-v">{fmtBDT(pv.floorRate)} <small>/ sqft</small></div>
+                            <div className="pco-box-s">Total {crShort(pv.floorRate * pv.size)}</div>
                           </>
                         ) : (
                           <div className="pco-box-v" style={{ opacity: .55 }}>Not set</div>
@@ -397,14 +401,14 @@ export default function ProjectConsole() {
                         <div className="pco-lbl">Your offer · rate</div>
                         <div className="pco-input">
                           <span className="pco-cur">৳</span>
-                          <input type="number" disabled={locked} value={deal.offerRate ?? ''} placeholder={variant.listRate} onChange={e => setRate('offerRate', e.target.value)} />
+                          <input type="number" disabled={locked} value={deal.offerRate ?? ''} placeholder={pv.listRate} onChange={e => setRate('offerRate', e.target.value)} />
                           <span className="pco-suf">/ sqft</span>
                         </div>
                       </div>
                       <div className="pco-cell pco-right">
                         <div className="pco-lbl">Total offer value</div>
                         <div className="pco-total">{fmtBDT(calc.offerValue)}</div>
-                        <div className="pco-total-s">{fmtBDT(calc.offerRate)} × {variant.size} sqft</div>
+                        <div className="pco-total-s">{fmtBDT(calc.offerRate)} × {pv.size} sqft</div>
                       </div>
                     </div>
 
@@ -543,10 +547,10 @@ export default function ProjectConsole() {
                       </div>
                       <div className="pcl-rows">
                         <div className="pcl-row"><span>Offer rate</span><b>{fmtBDT(calc.offerRate)}/sqft</b></div>
-                        <div className="pcl-row"><span>Offer value · {variant.size} sqft</span><b>{fmtBDT(calc.offerValue)}</b></div>
+                        <div className="pcl-row"><span>Offer value · {pv.size} sqft</span><b>{fmtBDT(calc.offerValue)}</b></div>
                         {calc.discountPct > 0 && <div className="pcl-row"><span>Fast-close −{calc.discountPct}%</span><b className="pcl-neg">−{fmtBDT(calc.offerValue - calc.discountedOffer)}</b></div>}
                         {(p.addons || []).filter(a => deal.addons[a.id]).map(a => <div key={a.id} className="pcl-row"><span>{a.name}</span><b>+{fmtBDT(a.amount)}</b></div>)}
-                        <div className="pcl-total"><span>Deal total</span><div className="pcl-total-r"><b>{fmtBDT(calc.dealTotal)}</b><small>{fmtBDT(Math.round(calc.dealTotal / variant.size))}/sqft blended</small></div></div>
+                        <div className="pcl-total"><span>Deal total</span><div className="pcl-total-r"><b>{fmtBDT(calc.dealTotal)}</b><small>{fmtBDT(Math.round(calc.dealTotal / pv.size))}/sqft blended</small></div></div>
                       </div>
                       <div className="pcc-f">
                         <span>Client (existing customer)</span>
@@ -574,7 +578,7 @@ export default function ProjectConsole() {
 
                   {deal.stage === 'offer' && (
                     <>
-                      <ProjectInvoice inline project={p} variant={variant} deal={deal} calc={calc} agent={user} />
+                      <ProjectInvoice inline project={p} variant={pv} deal={deal} calc={calc} agent={user} />
                       {calc.belowFloor && <div className="pc-warn sm"><Mi>warning</Mi>below floor — needs manager approval</div>}
                       <button className="btn btn-g btn-full" onClick={() => setInvoice(true)}><Mi>open_in_full</Mi>Open / print invoice</button>
                       <button className="btn btn-p btn-full" onClick={holdUnit}><Mi>lock</Mi>Hold unit (checkout)</button>
@@ -630,7 +634,7 @@ export default function ProjectConsole() {
       </div>
 
       {lightbox && <div className="pc-lightbox" onClick={() => setLightbox(null)}><img src={lightbox} alt="" /><button className="pc-lb-x" onClick={() => setLightbox(null)}><Mi>close</Mi></button></div>}
-      {invoice && variant && calc && <ProjectInvoice project={p} variant={variant} deal={deal} calc={calc} agent={user} onClose={() => setInvoice(false)} />}
+      {invoice && variant && calc && <ProjectInvoice project={p} variant={pv} deal={deal} calc={calc} agent={user} onClose={() => setInvoice(false)} />}
     </div>
   );
 }

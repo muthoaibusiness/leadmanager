@@ -1,0 +1,184 @@
+/* Projects → Available Units: the plan canvas (FloorPlanCanvas), the viewer
+   (AvailableUnitsView) and the bits the editor shares with it.
+
+   A floor plan drawing is dark lines on white in either theme, so the canvas
+   keeps a light backdrop and its own status colours, picked for contrast on
+   white. Everything outside the canvas uses the app's theme tokens. */
+
+.fp-stage {
+  --fp-av: #2E7D27;
+  --fp-hold: #A87A06;
+  --fp-sold: #D23C3C;
+  --fp-unl: #6B7280;
+  --fp-sel: #1F6FEB;
+  position: relative;
+  min-width: 0;
+  background: #F4F5F4;
+  border: 1px solid var(--bd);
+  border-radius: var(--r);
+  overflow: hidden;
+}
+.fp-svg { display: block; width: 100%; height: 100%; user-select: none; -webkit-user-select: none; }
+
+/* Boxes: a light tint of the status colour with a solid edge; sold is also
+   hatched, so colour is never the only signal. */
+.fp-box { cursor: pointer; outline: none; }
+.fp-box .fp-fill { fill-opacity: .16; transition: fill-opacity .15s; }
+.fp-box .fp-edge { fill: none; stroke-width: 1.5; }
+.fp-box.st-available .fp-fill { fill: var(--fp-av); }
+.fp-box.st-available .fp-edge { stroke: var(--fp-av); }
+.fp-box.st-hold .fp-fill { fill: var(--fp-hold); }
+.fp-box.st-hold .fp-edge { stroke: var(--fp-hold); }
+.fp-box.st-sold .fp-fill { fill: var(--fp-sold); }
+.fp-box.st-sold .fp-edge { stroke: var(--fp-sold); }
+.fp-box.st-unlinked .fp-fill { fill: var(--fp-unl); fill-opacity: .08; }
+.fp-box.st-unlinked .fp-edge { stroke: var(--fp-unl); stroke-dasharray: 5 4; }
+.fp-hatch { pointer-events: none; opacity: .5; }
+.fp-hatch-ln { stroke: var(--fp-sold); }
+.fp-box:hover .fp-fill, .fp-box.hl .fp-fill { fill-opacity: .3; }
+.fp-box:focus-visible .fp-edge { stroke: var(--fp-sel); stroke-width: 3; }
+.fp-box.on .fp-fill { fill-opacity: .36; }
+.fp-box.on .fp-edge { stroke: var(--fp-sel); stroke-width: 3; }
+.fp-box.dim { opacity: .28; }
+.fp-lbl {
+  fill: #111; font-weight: 700; letter-spacing: .02em; pointer-events: none;
+  stroke: #fff; paint-order: stroke; stroke-linejoin: round;
+  font-family: 'Inter', system-ui, sans-serif;
+}
+.fp-draft { fill: rgba(31, 111, 235, .12); stroke: var(--fp-sel); stroke-width: 1.5; stroke-dasharray: 6 4; pointer-events: none; }
+.fp-hd { fill: #fff; stroke: var(--fp-sel); stroke-width: 1.5; }
+
+.fp-zoom {
+  position: absolute; right: 10px; bottom: 10px; display: flex; gap: 4px;
+  background: rgba(255, 255, 255, .92); border: 1px solid rgba(0, 0, 0, .12); border-radius: 10px; padding: 4px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, .12);
+}
+.fp-zoom button {
+  width: 34px; height: 34px; display: grid; place-items: center; border: 0; border-radius: 7px;
+  background: transparent; color: #1c2221; cursor: pointer;
+}
+.fp-zoom button:hover:not(:disabled) { background: rgba(0, 0, 0, .07); }
+.fp-zoom button:disabled { opacity: .35; cursor: default; }
+.fp-zoom button:focus-visible { outline: 2px solid var(--fp-sel); outline-offset: 1px; }
+.fp-zoom .mi { font-size: 20px; }
+
+/* Status marks outside the canvas — theme colours. */
+.fp-dot, .fp-sw { display: inline-block; flex: none; }
+.fp-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--t3); }
+.fp-sw { width: 14px; height: 14px; border-radius: 3px; border: 2px solid var(--t3); background: color-mix(in srgb, var(--t3) 18%, transparent); }
+.fp-dot.st-available { background: var(--green); }
+.fp-dot.st-hold { background: var(--gold); }
+.fp-dot.st-sold { background: var(--red); }
+.fp-sw.st-available { border-color: var(--green); background: color-mix(in srgb, var(--green) 22%, transparent); }
+.fp-sw.st-hold { border-color: var(--gold); background: color-mix(in srgb, var(--gold) 22%, transparent); }
+.fp-sw.st-sold { border-color: var(--red); background: repeating-linear-gradient(45deg, color-mix(in srgb, var(--red) 45%, transparent) 0 2px, color-mix(in srgb, var(--red) 15%, transparent) 2px 5px); }
+.fp-sw.st-unlinked { border-style: dashed; }
+.fp-pill {
+  display: inline-flex; align-items: center; gap: 5px; padding: 3px 10px; border-radius: 999px;
+  font-size: 11.5px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; white-space: nowrap;
+  color: var(--t2); background: var(--surf2);
+}
+.fp-pill.st-available { color: var(--green); background: color-mix(in srgb, var(--green) 15%, transparent); }
+.fp-pill.st-hold { color: var(--gold); background: color-mix(in srgb, var(--gold) 16%, transparent); }
+.fp-pill.st-sold { color: var(--red); background: color-mix(in srgb, var(--red) 14%, transparent); }
+
+.fp-banner {
+  display: flex; gap: 10px; align-items: flex-start; padding: 12px 14px; margin-bottom: 14px;
+  border-radius: var(--r); border: 1px solid color-mix(in srgb, var(--gold) 45%, var(--bd2));
+  background: color-mix(in srgb, var(--gold) 10%, var(--surf)); color: var(--t1); font-size: 13.5px; line-height: 1.45;
+}
+.fp-banner .mi { color: var(--gold); font-size: 20px; }
+.fp-banner code { font-size: 12px; background: var(--surf2); padding: 1px 5px; border-radius: 5px; overflow-wrap: anywhere; }
+
+/* ── Viewer ─────────────────────────────────────────────────────────────── */
+.fpv { min-width: 0; }
+.fpv-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; margin-bottom: 14px; }
+.fpv-proj { max-width: min(100%, 340px); min-width: 0; text-overflow: ellipsis; }
+.fpv-floors { display: flex; gap: 6px; flex-wrap: wrap; min-width: 0; }
+.fpv-floor {
+  height: 36px; padding: 0 14px; border-radius: 999px; border: 1px solid var(--bd2); background: transparent;
+  color: var(--t2); font-size: 12.5px; font-weight: 700; letter-spacing: .04em; cursor: pointer; white-space: nowrap;
+}
+.fpv-floor:hover { color: var(--t1); border-color: var(--accent); }
+.fpv-floor.on { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+.fpv-admin { display: flex; gap: 6px; margin-left: auto; }
+.fpv-del:hover { color: var(--red); border-color: var(--red); }
+.fpv-empty .btn { margin-top: 14px; }
+
+.fpv-grid { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 16px; align-items: start; }
+.fpv-planwrap { min-width: 0; display: flex; flex-direction: column; gap: 10px; }
+/* As tall as the drawing's own shape at this width (--fp-ar comes from the
+   canvas), up to most of the screen. */
+.fpv-stage { aspect-ratio: var(--fp-ar, 4 / 3); max-height: min(72vh, 760px); }
+.fpv-filters { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; }
+.fpv-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.fpv-chip {
+  display: inline-flex; align-items: center; gap: 7px; height: 34px; padding: 0 12px; border-radius: 999px;
+  border: 1px solid var(--bd2); background: transparent; color: var(--t2); font-size: 12.5px; font-weight: 600; cursor: pointer;
+}
+.fpv-chip b { color: var(--t1); font-variant-numeric: tabular-nums; }
+.fpv-chip:hover { border-color: var(--accent); }
+.fpv-chip.on { background: var(--surf2); border-color: var(--accent); color: var(--t1); }
+.fpv-search {
+  display: flex; align-items: center; gap: 6px; height: 34px; padding: 0 12px; margin-left: auto;
+  border: 1px solid var(--bd2); border-radius: 999px; background: var(--surf2); min-width: 0; flex: 0 1 220px;
+}
+.fpv-search .mi { font-size: 18px; color: var(--t3); }
+.fpv-search input { border: 0; outline: 0; background: transparent; color: var(--t1); font-size: 13px; width: 100%; min-width: 0; }
+.fpv-search:focus-within { border-color: var(--accent); }
+.fp-legend { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 12.5px; color: var(--t2); }
+.fp-legend span { display: inline-flex; align-items: center; gap: 7px; }
+
+.fpv-side { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.fpv-card, .fpv-list {
+  background: var(--surf); border: 1px solid var(--bd); border-radius: var(--r-lg, 14px); padding: 16px; min-width: 0;
+}
+.fpv-card { border-top: 3px solid var(--accent); }
+.fpv-eyebrow { font-size: 11px; font-weight: 800; letter-spacing: .14em; text-transform: uppercase; color: var(--t3); }
+.fpv-name { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 4px 0 8px; flex-wrap: wrap; }
+.fpv-name h2 { margin: 0; font-family: var(--font-display); font-size: 28px; font-weight: 600; line-height: 1.05; overflow-wrap: anywhere; }
+.fpv-area { display: flex; align-items: baseline; gap: 7px; font-variant-numeric: tabular-nums; flex-wrap: wrap; }
+.fpv-area .big { font-size: 24px; font-weight: 600; }
+.fpv-area .unit { color: var(--t3); font-size: 13px; }
+.fpv-meta { margin: 12px 0 0; display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; font-size: 13.5px; }
+.fpv-meta dt { color: var(--t3); }
+.fpv-meta dd { margin: 0; min-width: 0; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+.fpv-rate { color: var(--t3); }
+.fpv-nav { display: flex; gap: 8px; margin-top: 14px; }
+.fpv-nav .btn { flex: 1; justify-content: center; }
+.fpv-open { width: 100%; justify-content: center; margin-top: 8px; }
+.fpv-hint { display: flex; gap: 10px; align-items: center; color: var(--t3); font-size: 13.5px; }
+.fpv-hint .mi { font-size: 22px; }
+
+.fpv-list { padding: 6px 0; max-height: min(60vh, 560px); overflow-y: auto; }
+.fpv-none { padding: 14px 16px; color: var(--t3); font-size: 13px; }
+.fpv-ghd {
+  display: flex; justify-content: space-between; padding: 10px 16px 4px;
+  font-size: 11px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; color: var(--t3);
+}
+.fpv-row {
+  width: 100%; display: grid; grid-template-columns: 9px minmax(0, 1fr) auto auto; align-items: center; gap: 10px;
+  min-height: 40px; padding: 6px 16px; border: 0; background: transparent; color: var(--t1); text-align: left; cursor: pointer; font-size: 13.5px;
+}
+.fpv-row:hover:not(:disabled) { background: var(--surf2); }
+.fpv-row.on { background: color-mix(in srgb, var(--accent) 16%, transparent); box-shadow: inset 3px 0 0 var(--accent); }
+.fpv-row:disabled { cursor: default; color: var(--t3); }
+.fpv-row:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.fpv-code { font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fpv-st { font-size: 11.5px; color: var(--t3); font-weight: 600; text-transform: uppercase; letter-spacing: .05em; }
+.fpv-sz { font-size: 12.5px; color: var(--t2); font-variant-numeric: tabular-nums; text-align: right; min-width: 64px; }
+
+@media (max-width: 1100px) {
+  .fpv-grid { grid-template-columns: minmax(0, 1fr) 280px; }
+}
+@media (max-width: 860px) {
+  .fpv-grid { grid-template-columns: minmax(0, 1fr); }
+  .fpv-stage { max-height: 62vh; }
+  .fpv-list { max-height: none; }
+  .fpv-search { margin-left: 0; flex: 1 1 100%; }
+  .fpv-proj { max-width: 100%; flex: 1 1 100%; }
+  .fpv-admin { margin-left: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .fp-box .fp-fill { transition: none; }
+}
