@@ -26,9 +26,12 @@ export default function KpiSheet({ detail, onClose, onLead }) {
 
   const query = detail?.query || null;
   const qKey = query ? JSON.stringify({ ...query, user: query.user?.id }) : null;
+  // Local-mode (leads/rows already in hand) has no query to key off of — key
+  // off the card instead, so switching cards also resets to page 1.
+  const resetKey = qKey || (detail ? detail.title + ':' + (detail.leads?.length ?? detail.rows?.length ?? 0) : null);
 
   // A new card resets to page 1; the sheet is reused across cards.
-  if (useChanged(qKey)) { setPage(0); setFetched(null); }
+  if (useChanged(resetKey)) { setPage(0); setFetched(null); }
 
   // Loading means the page on screen is not the one last fetched.
   const fetchKey = query ? `${qKey}|${page}|${detail.sort || 'newest'}` : null;
@@ -59,7 +62,10 @@ export default function KpiSheet({ detail, onClose, onLead }) {
   // Server mode knows the real total even before the rows arrive; local mode's
   // total is simply how many it was handed.
   const total = query ? (fetched?.total ?? detail.total ?? 0) : rows.length;
-  const paged = query && total > PAGE_SIZE;
+  const paged = total > PAGE_SIZE;
+  // Server mode already fetches one page at a time; local mode has the whole
+  // array in hand, so slice it client-side instead of rendering it all at once.
+  const pageRows = query ? rows : rows.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
 
   return (
     <div className="kpi-ov" onClick={(e) => { if (e.target.classList.contains('kpi-ov')) onClose(); }}>
@@ -69,8 +75,8 @@ export default function KpiSheet({ detail, onClose, onLead }) {
           <button className="kpi-x" onClick={onClose}><Mi>close</Mi></button>
         </div>
         <div className={`kpi-list${loading ? ' kpi-busy' : ''}`}>
-          {loading && rows.length > 0 && <LoadingBar />}
-          {rows.length ? rows.map((it, i) => (
+          {loading && pageRows.length > 0 && <LoadingBar />}
+          {pageRows.length ? pageRows.map((it, i) => (
             <button key={it.leadId || i} className="kpi-row" onClick={() => it.leadId && onLead && onLead(it.leadId)}>
               {it.icon && <span className="kpi-ic"><Mi>{it.icon}</Mi></span>}
               <span className="kpi-rtx">

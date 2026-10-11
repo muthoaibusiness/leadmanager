@@ -57,6 +57,17 @@
   --sb-in: .22s;
   --sb-out: .18s;
   --font-display: 'Space Grotesk', 'Inter', 'Hind Siliguri', sans-serif;
+
+  /* Chart categorical palette — validated (CVD ΔE + contrast) against this
+     theme's dark surface. Fixed slot order; never cycle/reassign by rank. */
+  --chart-1: #3987e5;  /* blue */
+  --chart-2: #d95926;  /* orange */
+  --chart-3: #199e70;  /* aqua */
+  --chart-4: #c98500;  /* yellow */
+  --chart-5: #d55181;  /* magenta */
+  --chart-6: #008300;  /* green */
+  --chart-7: #9085e9;  /* violet */
+  --chart-8: #e66767;  /* red */
 }
 
 /* ── Light theme — overrides the same tokens; toggled via <html data-theme="light"> ── */
@@ -94,6 +105,16 @@
   --sh: 0 1px 3px rgba(17, 20, 24, .10), 0 1px 2px rgba(17, 20, 24, .06);
   --sh-md: 0 6px 22px rgba(17, 20, 24, .10);
   --sh-lg: 0 22px 50px rgba(17, 20, 24, .16);
+
+  /* Chart categorical palette — validated against this theme's light surface. */
+  --chart-1: #2a78d6;  /* blue */
+  --chart-2: #eb6834;  /* orange */
+  --chart-3: #1baf7a;  /* aqua */
+  --chart-4: #eda100;  /* yellow */
+  --chart-5: #e87ba4;  /* magenta */
+  --chart-6: #008300;  /* green */
+  --chart-7: #6250d6;  /* violet */
+  --chart-8: #e34948;  /* red */
 }
 
 *,
@@ -6977,7 +6998,7 @@ textarea.fi {
 .ct-plot {
   position: relative;
   width: 100%;
-  aspect-ratio: 560 / 200
+  aspect-ratio: 560 / 150
 }
 
 .ct-svg {
@@ -6999,7 +7020,7 @@ textarea.fi {
 
 .ct-line {
   fill: none;
-  stroke-width: 2;
+  stroke-width: 3;
   stroke-linejoin: round;
   stroke-linecap: round;
   vector-effect: non-scaling-stroke
@@ -9561,20 +9582,34 @@ textarea.fi {
 
 /* Muthoclo KPI trend card */
 .st-card {
+  --st-accent: var(--volt);
   position: relative;
   display: flex;
   flex-direction: column;
-  background: var(--surf);
+  background:
+    radial-gradient(120% 100% at 100% 0%, color-mix(in srgb, var(--st-accent) 10%, transparent), transparent 60%),
+    var(--surf);
   border: 1px solid var(--bd);
   border-radius: var(--r-lg);
   padding: 16px 18px;
   min-height: 116px;
   overflow: hidden;
-  transition: border-color var(--tr)
+  transition: border-color var(--tr), transform var(--tr), box-shadow var(--tr)
+}
+
+.st-card::before {
+  content: '';
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 3px;
+  background: var(--st-accent);
+  opacity: .9
 }
 
 .st-card:hover {
-  border-color: var(--bd2)
+  border-color: color-mix(in srgb, var(--st-accent) 45%, var(--bd2));
+  transform: translateY(-2px);
+  box-shadow: 0 10px 24px -14px color-mix(in srgb, var(--st-accent) 55%, transparent)
 }
 
 .st-card.has-graph {
@@ -9588,12 +9623,38 @@ textarea.fi {
   gap: 8px
 }
 
+.st-lwrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0
+}
+
+.st-ico {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: var(--r-sm);
+  background: color-mix(in srgb, var(--st-accent) 16%, transparent);
+  color: var(--st-accent);
+  flex: none
+}
+
+.st-ico .mi {
+  font-size: 15px
+}
+
 .st-l {
   font-size: 11px;
   font-weight: 700;
   letter-spacing: .06em;
   text-transform: uppercase;
-  color: var(--t3)
+  color: var(--t3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis
 }
 
 .st-d {
@@ -10390,27 +10451,36 @@ textarea.fi {
 }
 
 .rep-card {
+  --rep-accent: var(--chart-1);
   background: var(--surf);
   border: 1px solid var(--bd);
   border-radius: 16px;
-  padding: 18px 20px
+  overflow: hidden;
+  transition: transform var(--tr), box-shadow var(--tr);
 }
 
+.rep-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 24px -14px color-mix(in srgb, var(--rep-accent) 50%, transparent)
+}
+
+/* Colored title bar — the card's accent carries identity, text/icon stay white on it. */
 .rep-hd {
   display: flex;
   align-items: center;
   gap: 9px;
-  font-size: 13px;
+  font-size: 12.5px;
   font-weight: 800;
   text-transform: uppercase;
   letter-spacing: .05em;
-  color: var(--t1);
-  margin-bottom: 16px
+  color: #fff;
+  background: var(--rep-accent);
+  padding: 11px 18px
 }
 
 .rep-hd .mi {
-  font-size: 18px;
-  color: var(--volt)
+  font-size: 17px;
+  color: #fff
 }
 
 .rep-hd-sub {
@@ -10418,8 +10488,12 @@ textarea.fi {
   font-weight: 600;
   text-transform: none;
   letter-spacing: 0;
-  color: var(--t3);
+  color: rgba(255, 255, 255, .78);
   margin-left: auto
+}
+
+.rep-body {
+  padding: 18px 20px
 }
 
 .rep-empty {

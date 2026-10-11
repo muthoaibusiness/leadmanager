@@ -24,7 +24,9 @@ export const NAV_SCOPES = {
   calendar: ['AGENT', 'TEAM_LEAD', 'MANAGEMENT'],
   pipeline: ALL_ROLES,
   properties: ALL_ROLES,
-  reports: ['MANAGEMENT', 'TEAM_LEAD'],
+  // Management's Reports charts now live on their Home dashboard — the
+  // standalone page is Team Lead only.
+  reports: ['TEAM_LEAD'],
   agentperf: ['MANAGEMENT', 'TEAM_LEAD'],
   requests: ['MANAGEMENT'],
   team: ['TEAM_LEAD'],

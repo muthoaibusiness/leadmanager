@@ -10,8 +10,12 @@ import { pushNotify } from '../../lib/pushNotify.js';
 import useChanged from '../../hooks/useChanged.js';
 import {
   waLoadConversations, waLoadMessages, waMarkRead, waSendMessage, waRetry,
-  waSubscribe, matchLead, mergeStatus, isChatAdmin,
+  waFetchAvatar, waSubscribe, matchLead, mergeStatus, isChatAdmin,
 } from '../../lib/wa.js';
+
+// How many missing avatars to backfill right after the list loads — enough to
+// cover what's on screen without hammering the relay (Wasender is rate-limited).
+const AVATAR_PREFETCH = 8;
 
 export default function ConversationsView() {
   const { user, waSettings, chatOk, setWaUnread, openModal, dbVersion, showToast } = useApp();
@@ -39,11 +43,23 @@ export default function ConversationsView() {
     [active, leads, dbVersion] // eslint-disable-line react-hooks/exhaustive-deps -- db mutates in place; dbVersion is the change signal
   );
 
+  // Fill in missing profile photos for what's on screen, one request at a
+  // time with a short gap — Wasender is rate-limited, and most threads only
+  // ever need this once since the fetched URL is cached on the thread.
+  const backfillAvatars = useCallback(async (list) => {
+    const targets = list.filter(c => !c.avatarUrl).slice(0, AVATAR_PREFETCH);
+    for (const c of targets) {
+      const res = await waFetchAvatar(waSettings, c);
+      if (res.ok) setConvs(prev => prev.map(x => (x.id === c.id ? { ...x, avatarUrl: res.avatarUrl } : x)));
+      await new Promise(r => setTimeout(r, 1200));
+    }
+  }, [waSettings]);
+
   // ── initial load ──────────────────────────────────────────────────────────
   // The fetch alone; reload() and the chatOk switch below put up the spinner.
   const fetchConvs = useCallback(() => waLoadConversations()
-    .then(list => setConvs(list), e => setLoadErr(e.message || 'Could not load conversations.'))
-    .finally(() => setLoadingConvs(false)), []);
+    .then(list => { setConvs(list); backfillAvatars(list); }, e => setLoadErr(e.message || 'Could not load conversations.'))
+    .finally(() => setLoadingConvs(false)), [backfillAvatars]);
   const reload = useCallback(() => {
     setLoadingConvs(true);
     setLoadErr('');
@@ -146,7 +162,14 @@ export default function ConversationsView() {
     } finally {
       setLoadingMsgs(false);
     }
-  }, [showToast]);
+    // Best-effort, doesn't block opening the thread — missing/failed just
+    // keeps the initials avatar.
+    if (!c.avatarUrl) {
+      waFetchAvatar(waSettings, c).then(res => {
+        if (res.ok) setConvs(prev => prev.map(x => (x.id === c.id ? { ...x, avatarUrl: res.avatarUrl } : x)));
+      });
+    }
+  }, [showToast, waSettings]);
 
   // ── send / retry ──────────────────────────────────────────────────────────
   const handleSend = async (payload) => {
