@@ -167,7 +167,7 @@ export default function AvailableUnitsView() {
   const W = chipPlan?.image?.width || 1, H = chipPlan?.image?.height || 1;
   // A unit's custom status (name + colour, project unitStatuses) or its base one.
   const look = (r) => (r?.loc ? statusLook(proj?.unitStatuses, r.loc.unit) : { status: r?.status, label: STATUS[r?.status]?.label || '', color: null });
-  const tint = (r) => { const c = look(r).color; return c ? { '--st-c': c } : undefined; };
+  const tint = (r) => { const l = look(r); return l.color ? { '--st-c': l.color, '--st-ink': l.ink } : undefined; };
   const boxes = rows.map(r => ({
     id: r.box.id, ...toPx(r.box, W, H), label: r.code, sub: r.size ? `${r.size.toLocaleString('en-IN')} sqft` : '', status: r.status, color: look(r).color, dim: !shown(r),
     aria: r.loc ? `${r.code}, ${r.type}, ${r.size} sqft, ${look(r).label}` : `${r.code}, not linked to a unit`,
@@ -327,18 +327,21 @@ export default function AvailableUnitsView() {
                 {mode === 'grid' ? (
                   // The chosen floor's units, between the plan's optional landmarks.
                   <>
+                    {/* Seat-map style: legend on top, then "Select unit · N selected";
+                        free units are outlined, taken ones solid, the pick solid blue. */}
                     <section className="fpv-seats" aria-label={`Units on ${chipName || 'this floor'}`}>
+                      <div className="fp-legend fps-legend">
+                        <span><i className="fps-sw st-available" />Available</span>
+                        <span><i className="fps-sw is-sel" />Selected</span>
+                        <span><i className="fps-sw st-hold" />On hold</span>
+                        <span><i className="fps-sw st-sold" />Sold</span>
+                        {customs.map(s => <span key={s.id}><i className="fps-sw has-c" style={{ '--st-c': s.color }} />{s.name}</span>)}
+                      </div>
+                      <div className="fps-top"><span>Select unit</span><em>{cur ? `${cur.code} selected` : '0 selected'}</em></div>
                       {chipPlan?.topLabel && <div className="fps-mark">{chipPlan.topLabel}</div>}
                       {tiles()}
                       {chipPlan?.bottomLabel && <div className="fps-mark">{chipPlan.bottomLabel}</div>}
                     </section>
-                    <div className="fp-legend">
-                      <span><i className="fps-sw st-available" />Available</span>
-                      <span><i className="fps-sw is-sel" />Selected</span>
-                      <span><i className="fps-sw st-hold" />On hold</span>
-                      <span><i className="fps-sw st-sold" />Sold</span>
-                      {customs.map(s => <span key={s.id}><i className="fps-sw has-c" style={{ '--st-c': s.color }} />{s.name}</span>)}
-                    </div>
                   </>
                 ) : (
                   <>
