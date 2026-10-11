@@ -8,15 +8,13 @@ import useLeadBook from '../../hooks/useLeadBook.js';
 
 // "Minimal Intelligence" redesign — purple palette, scoped under .mip (see index.css).
 const FC = ['#2E7D27', '#3E9A33', '#4AA838', '#54B848', '#6BC95A'];
-const ROLE_TABS = [ROLES.IA, ROLES.MA, ROLES.TL];
+const ROLE_TABS = [ROLES.AGENT, ROLES.TL];
 const tier = c => (c >= 50 ? 'green' : c >= 25 ? 'warn' : 'red');
 const AGG_KEYS = ['sourced', 'contacted', 'qualified', 'untouched', 'calls', 'talkMins', 'followups', 'meetingsSet', 'mReceived', 'visitsSched', 'visitsDone', 'sentTL', 'negotiation', 'proposals', 'won', 'lost', 'revenue'];
 
 const CFG = {
-  [ROLES.IA]: { conv: r => r.contactRate, sub: r => `${r.sourced} sourced · ${r.followups} follow-ups`,
-    stats: r => [['Contacted', r.contacted], ['Follow-ups', r.followups], ['Meetings', r.meetingsSet]] },
-  [ROLES.MA]: { conv: r => r.showRate, sub: r => `${r.mReceived} received · ${r.visitsDone} visits done`,
-    stats: r => [['Received', r.mReceived], ['Visits Done', r.visitsDone], ['Sent TL', r.sentTL]] },
+  [ROLES.AGENT]: { conv: r => r.contactRate, sub: r => `${r.sourced} sourced · ${r.visitsDone} visits done`,
+    stats: r => [['Meetings', r.meetingsSet], ['Visits Done', r.visitsDone], ['Sent TL', r.sentTL]] },
   [ROLES.TL]: { conv: r => r.closeRate, sub: r => `${fmtBDT(r.revenue)} · ${r.won} won`,
     stats: r => [['Won', r.won], ['Lost', r.lost], ['Revenue', fmtBDT(r.revenue)]] },
 };
@@ -39,7 +37,7 @@ export default function AgentPerformanceView() {
   const { user, dbVersion, dateRange } = useApp();
   void dbVersion;
   const db = getDB();
-  const [role, setRole] = useState(user.role === ROLES.MA ? ROLES.MA : ROLES.IA);
+  const [role, setRole] = useState(ROLES.AGENT);
   const [q, setQ] = useState('');
   const [sort, setSort] = useState('best');
   const [open, setOpen] = useState(null);
@@ -92,8 +90,8 @@ export default function AgentPerformanceView() {
     let di = -1, dp = 0; for (let i = 1; i < f.length; i++) { const pv = f[i - 1].value || 0; const d = pv ? 1 - f[i].value / pv : 0; if (d > dp && pv > 0) { dp = d; di = i; } }
     if (di > 0 && dp >= .4) out.push(['r', `🔴 Drops at ${f[di].label}`]);
     if (r.resp != null && r.resp <= 4) out.push(['g', '⚡ Fast responder']);
-    if (role === ROLES.IA && r.untouched > 0) out.push(['w', `🟠 ${r.untouched} untouched`]);
-    if (role === ROLES.IA && r.followups >= 10) out.push(['g', '🔁 Diligent follow-up']);
+    if (role === ROLES.AGENT && r.untouched > 0) out.push(['w', `🟠 ${r.untouched} untouched`]);
+    if (role === ROLES.AGENT && r.followups >= 10) out.push(['g', '🔁 Diligent follow-up']);
     const sp = sparkOf(r.u.id); if (sp[sp.length - 1] > sp[0]) out.push(['g', '📈 Trending up']);
     else if (sp[sp.length - 1] < sp[0]) out.push(['r', '📉 Declining']);
     if (r.score >= 70) out.push(['p', '⭐ Top performer']); else if (r.score < 30) out.push(['w', '⚠️ Needs attention']);

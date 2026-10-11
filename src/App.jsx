@@ -24,8 +24,7 @@ import Toast from './components/Toast.jsx';
 import ProjectsToaster from './components/project/ProjectsToaster.jsx';
 import DateRangePicker from './components/DateRangePicker.jsx';
 
-import InitialAgentDash from './components/dashboards/InitialAgentDash.jsx';
-import MeetingAgentDash from './components/dashboards/MeetingAgentDash.jsx';
+import AgentDash from './components/dashboards/AgentDash.jsx';
 import TeamLeadDash from './components/dashboards/TeamLeadDash.jsx';
 import ManagementDash from './components/dashboards/ManagementDash.jsx';
 import MasterDash from './components/dashboards/MasterDash.jsx';
@@ -33,7 +32,6 @@ import MasterDash from './components/dashboards/MasterDash.jsx';
 import LeadsView from './components/views/LeadsView.jsx';
 import CalendarView from './components/views/CalendarView.jsx';
 import TeamView from './components/views/TeamView.jsx';
-import UsersView from './components/views/UsersView.jsx';
 import AccountsView from './components/views/AccountsView.jsx';
 import RequestsView from './components/views/RequestsView.jsx';
 import ProfileView from './components/views/ProfileView.jsx';
@@ -188,7 +186,7 @@ function PageHero() {
   const props = getProperties();
   // units still for sale, counted from the catalog's blocks like the Projects KPIs
   const propAvail = props.reduce((s, p) => s + projectInventory(p).available, 0);
-  const teamAgents = db.users.filter(u => (u.role === ROLES.IA || u.role === ROLES.MA) && u.teamId === user.teamId).length;
+  const teamAgents = db.users.filter(u => u.role === ROLES.AGENT && u.teamId === user.teamId).length;
 
   const META = {
     dashboard: { eyebrow: rlabel(user.role), title: 'Dashboard', sub: '' },
@@ -201,8 +199,7 @@ function PageHero() {
     agentperf: { eyebrow: 'Insights', title: 'Performance', sub: 'Per-role scorecards & funnels' },
     bookings: { eyebrow: 'Sales', title: 'Sales Activity', sub: 'Payments, instalments & dues' },
     team: { eyebrow: 'Team', title: 'My Team', sub: `${teamAgents} agents` },
-    users: { eyebrow: 'Administration', title: 'Users', sub: `${db.users.length} accounts` },
-    accounts: { eyebrow: 'Administration', title: 'Account Management', sub: 'Create & manage multiple accounts' },
+    accounts: { eyebrow: 'Administration', title: 'Users', sub: 'Team list · create & manage accounts' },
     requests: { eyebrow: 'Administration', title: 'Hold Requests', sub: 'Approve agent unit holds' },
     profile: { eyebrow: 'Account', title: 'My Profile', sub: 'Manage your details & avatar' },
     companies: { eyebrow: 'Master Admin', title: 'Companies', sub: 'Company-wise overview' },
@@ -228,8 +225,7 @@ function PageHero() {
   // Executives are created by a Team Lead, alongside the two agent roles, so they land
   // in that Team Lead's team (createUserFn stamps the creator's teamId). Management only
   // creates Team Leads, each of which starts a team of its own.
-  if (view === 'team' && user.role === ROLES.TL) actions.push(<button key="add-agent" className="btn btn-p" onClick={() => { setCreateUserRoles([ROLES.IA, ROLES.MA, ROLES.EXEC]); openModal('create-user'); }}><Mi>person_add</Mi>Add Agent</button>);
-  if (view === 'users' && user.role === ROLES.MGMT) actions.push(<button key="add-user" className="btn btn-p" onClick={() => { setCreateUserRoles([ROLES.TL]); openModal('create-user'); }}><Mi>person_add</Mi>Add User</button>);
+  if (view === 'team' && user.role === ROLES.TL) actions.push(<button key="add-agent" className="btn btn-p" onClick={() => { setCreateUserRoles([ROLES.AGENT, ROLES.EXEC]); openModal('create-user'); }}><Mi>person_add</Mi>Add Agent</button>);
   // Add Property opens an unsaved draft; the project is created only when the
   // catalog's Save product succeeds (see ProjectCatalog / saveNewProject).
   if (view === 'properties' && user.role === ROLES.MGMT) actions.push(<button key="add-prop" className="btn btn-p" onClick={() => { const d = newProjectDraft(user.companyId); setPropDraft(d); setConsoleAdmin(true); setPropSel(d.id); openModal('project-console'); }}><Mi>add</Mi>Add Property</button>);
@@ -257,8 +253,7 @@ function PageBody() {
   if (view === 'dashboard') {
     // Executives operate as the agent role their granted features imply.
     const er = effectiveRole(user);
-    if (er === ROLES.IA) return <InitialAgentDash />;
-    if (er === ROLES.MA) return <MeetingAgentDash />;
+    if (er === ROLES.AGENT) return <AgentDash />;
     if (er === ROLES.TL) return <TeamLeadDash />;
     if (er === ROLES.MGMT) return <ManagementDash />;
     return null; // no dashboard resolved
@@ -273,7 +268,6 @@ function PageBody() {
   if (view === 'reports') return <ReportsView />;
   if (view === 'agentperf') return <AgentPerformanceView />;
   if (view === 'team') return <TeamView />;
-  if (view === 'users') return <UsersView />;
   if (view === 'accounts') return <AccountsView />;
   if (view === 'requests') return <RequestsView />;
   if (view === 'profile') return <ProfileView />;

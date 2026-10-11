@@ -186,7 +186,7 @@ export default function TeamLeadDash() {
   // same reduction over the book when it is not.
   const byId = {}; (agents || []).forEach(a => { byId[a.userId] = a; });
   const perf = teamUsers
-    .filter(u => [ROLES.IA, ROLES.MA, ROLES.TL].includes(u.role))
+    .filter(u => [ROLES.AGENT, ROLES.TL].includes(u.role))
     .map(u => {
       if (agents) { const a = byId[u.id]; return { u, won: a?.won || 0, rev: a?.revenue || 0 }; }
       const uLeads = leads.filter(l => l.assignedTo === u.id || (l.previousAssignees || []).includes(u.id));

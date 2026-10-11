@@ -142,8 +142,9 @@ export function periodLabel(dateRange) {
 
 export function rlabel(r) {
   const m = {
-    INITIAL_AGENT: 'Initial Agent',
-    MEETING_AGENT: 'Meeting Agent',
+    AGENT: 'Agent',
+    INITIAL_AGENT: 'Agent',   // pre-merge rows (see LEGACY_AGENT_ROLES)
+    MEETING_AGENT: 'Agent',
     TEAM_LEAD: 'Team Lead',
     MANAGEMENT: 'Management',
     MASTER: 'Master Admin',

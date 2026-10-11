@@ -21,8 +21,7 @@ export default function TransferLeadModal({ leadIds = null, open = null, onClose
   const close = onClose || closeModal;
 
   const [selectedTeamId, setSelectedTeamId] = useState('');
-  const [selectedIA, setSelectedIA] = useState('');
-  const [selectedMA, setSelectedMA] = useState('');
+  const [selectedAgent, setSelectedAgent] = useState('');
 
   const db = getDB();
 
@@ -34,40 +33,20 @@ export default function TransferLeadModal({ leadIds = null, open = null, onClose
   }).sort((a, b) => a.tlName.localeCompare(b.tlName));
 
   // Find all agents under the currently selected team
-  const iAgents = selectedTeamId
-    ? (db.users || []).filter(u => u.teamId === selectedTeamId && u.role === ROLES.IA && u.isActive !== false).sort((a, b) => (a.name || '').localeCompare(b.name || ''))
-    : [];
-
-  const mAgents = selectedTeamId
-    ? (db.users || []).filter(u => u.teamId === selectedTeamId && u.role === ROLES.MA && u.isActive !== false).sort((a, b) => (a.name || '').localeCompare(b.name || ''))
+  const agents = selectedTeamId
+    ? (db.users || []).filter(u => u.teamId === selectedTeamId && u.role === ROLES.AGENT && u.isActive !== false).sort((a, b) => (a.name || '').localeCompare(b.name || ''))
     : [];
 
   useEffect(() => {
     if (isOpen) {
       setSelectedTeamId('');
-      setSelectedIA('');
-      setSelectedMA('');
+      setSelectedAgent('');
     }
   }, [isOpen]);
 
-  // Auto-clear agents if team changes
-  useEffect(() => {
-    setSelectedIA('');
-    setSelectedMA('');
-  }, [selectedTeamId]);
-
-  const handleIAChange = (val) => {
-    setSelectedIA(val);
-    if (val) setSelectedMA(''); // clear the other
-  };
-
-  const handleMAChange = (val) => {
-    setSelectedMA(val);
-    if (val) setSelectedIA(''); // clear the other
-  };
 
   const submit = () => {
-    const selectedAgentId = selectedIA || selectedMA;
+    const selectedAgentId = selectedAgent;
     if (!selectedTeamId || !selectedAgentId || !ids.length) return;
 
     const team = (db.teams || []).find(t => t.id === selectedTeamId);
@@ -101,7 +80,7 @@ export default function TransferLeadModal({ leadIds = null, open = null, onClose
           )}
           <div className="fl">
             <label>Select Team (Team Lead)</label>
-            <select className="finp" value={selectedTeamId} onChange={e => setSelectedTeamId(e.target.value)} style={{ backgroundColor: '#1a1a1a', color: '#ffffff' }}>
+            <select className="finp" value={selectedTeamId} onChange={e => { setSelectedTeamId(e.target.value); setSelectedAgent(''); }} style={{ backgroundColor: '#1a1a1a', color: '#ffffff' }}>
               <option value="">— Choose a Team —</option>
               {teamOptions.map(t => (
                 <option key={t.teamId} value={t.teamId}>{t.tlName}'s Team</option>
@@ -110,30 +89,15 @@ export default function TransferLeadModal({ leadIds = null, open = null, onClose
           </div>
 
           <div className="fl" style={{ marginTop: '16px' }}>
-            <label>Select Initial Agent</label>
+            <label>Select Agent</label>
             <select
               className="finp"
-              value={selectedIA}
-              onChange={e => handleIAChange(e.target.value)}
-              disabled={!selectedTeamId || iAgents.length === 0}
+              value={selectedAgent}
+              onChange={e => setSelectedAgent(e.target.value)}
+              disabled={!selectedTeamId || agents.length === 0}
             >
-              <option value="">{selectedTeamId ? (iAgents.length ? '— Choose Initial Agent —' : 'No Initial Agents in this team') : '— Select a Team first —'}</option>
-              {iAgents.map(u => (
-                <option key={u.id} value={u.id}>{u.name}</option>
-              ))}
-            </select>
-          </div>
-
-          <div className="fl" style={{ marginTop: '16px' }}>
-            <label>Select Meeting Agent</label>
-            <select
-              className="finp"
-              value={selectedMA}
-              onChange={e => handleMAChange(e.target.value)}
-              disabled={!selectedTeamId || mAgents.length === 0}
-            >
-              <option value="">{selectedTeamId ? (mAgents.length ? '— Choose Meeting Agent —' : 'No Meeting Agents in this team') : '— Select a Team first —'}</option>
-              {mAgents.map(u => (
+              <option value="">{selectedTeamId ? (agents.length ? '— Choose Agent —' : 'No Agents in this team') : '— Select a Team first —'}</option>
+              {agents.map(u => (
                 <option key={u.id} value={u.id}>{u.name}</option>
               ))}
             </select>
@@ -141,7 +105,7 @@ export default function TransferLeadModal({ leadIds = null, open = null, onClose
         </div>
         <div className="m-ft">
           <button className="btn btn-g" onClick={close}>Cancel</button>
-          <button className="btn btn-p" disabled={!selectedTeamId || (!selectedIA && !selectedMA) || !ids.length} onClick={submit}>
+          <button className="btn btn-p" disabled={!selectedTeamId || !selectedAgent || !ids.length} onClick={submit}>
             {ids.length > 1 ? `Transfer ${ids.length}` : 'Transfer'}
           </button>
         </div>

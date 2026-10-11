@@ -29,10 +29,8 @@ export function DelBtn({ id }) {
 // showDelete is opt-in: Management deletes accounts, a Team Lead does not.
 export default function UserRow({ u, showDelete }) {
   const openLeads = useOpenUserLeads();
-  const roleTag = u.role === ROLES.IA
-    ? <span className="bdg s-new">Initial Agent</span>
-    : u.role === ROLES.MA
-    ? <span className="bdg s-site_visit_done">Meeting Agent</span>
+  const roleTag = u.role === ROLES.AGENT
+    ? <span className="bdg s-new">Agent</span>
     : u.role === ROLES.EXEC
     ? <span className="bdg s-negotiating">Executive</span>
     : null;

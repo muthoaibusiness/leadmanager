@@ -48,18 +48,7 @@ export const TREND_SERIES = {
   siteVisit: { key: 'siteVisit', label: 'Site Visit', color: '#2DD4BF' },
 };
 
-// A Meeting Agent only ever receives leads already at MEETING_SET or later, so
-// showing them Leads/Connected would render three flat 100% bars. Starting their
-// funnel at the rung they actually enter makes the % read as "of the meetings I
-// received, how many converted" — which is their actual job.
 export function panelConfigFor(role) {
-  if (role === ROLES.MA) {
-    return {
-      stages: FUNNEL_STAGES.filter(s => s.stage >= STAGE.MEETING),
-      seriesKeys: ['meetingSet', 'siteVisit'],
-      title: 'Meeting → Visit Funnel',
-    };
-  }
   return {
     stages: FUNNEL_STAGES,
     seriesKeys: ['connected', 'meetingSet', 'siteVisit'],

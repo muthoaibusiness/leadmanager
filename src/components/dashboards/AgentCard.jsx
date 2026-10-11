@@ -23,12 +23,11 @@ export default function AgentCard({ agent }) {
 
   const leads = stats ? null : getLeads(agent);
   const tgt = getTarget(agent.id);
-  const isIA = agent.role === 'INITIAL_AGENT';
-  const ach = stats ? (isIA ? stats.meetingsSet : stats.visitsDone) : achievement(agent.id, agent.role);
+  const ach = stats ? stats.visitsDone : achievement(agent.id, agent.role);
   const tar = tgt ? tgt.value : 0;
   const pct = tar > 0 ? Math.min(100, Math.round(ach / tar * 100)) : 0;
   const col = progColor(pct);
-  const kn = isIA ? 'Meetings Set' : 'Site Visits Done';
+  const kn = 'Site Visits Done';
   const calls = stats ? stats.calls : leads.reduce((s, l) => s + (l.callCount || 0), 0);
   const leadCount = stats ? stats.leads : leads.length;
   const converted = stats

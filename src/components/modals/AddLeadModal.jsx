@@ -21,11 +21,11 @@ export default function AddLeadModal() {
   const { modal, closeModal, user, panLead, refreshDB, showToast, setPanLead } = useApp();
   const isEdit = modal === 'edit-lead';
   const isOpen = modal === 'add-lead' || isEdit;
-  // Initial Agents get a different source list (Event / Walking / Personal / Team Lead).
-  const sourceOpts = user?.role === ROLES.IA ? SOURCE_OPTIONS_IA : SOURCE_OPTIONS_DEFAULT;
+  // Agents get a different source list (Event / Walking / Personal / Team Lead).
+  const sourceOpts = user?.role === ROLES.AGENT ? SOURCE_OPTIONS_IA : SOURCE_OPTIONS_DEFAULT;
   const defaultSource = sourceOpts[0];
   // Only Admin / Management may edit existing phone numbers. For everyone
-  // else (Team Lead, Initial Agent, Meeting Agent) phones are read-only when editing.
+  // else (Team Lead, Agent) phones are read-only when editing.
   // Phone is the lead's identity — it is the dedup key every import and manual add
   // matches on — so it is captured at creation and locked afterwards for every role,
   // Admin and Master included. There is no override.

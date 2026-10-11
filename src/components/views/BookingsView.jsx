@@ -15,7 +15,7 @@ export default function BookingsView() {
   const [status, setStatus] = useState('ALL');
 
   let bks = getBookings();
-  if (user.role === ROLES.IA || user.role === ROLES.MA) bks = bks.filter(b => b.agentId === user.id);
+  if (user.role === ROLES.AGENT) bks = bks.filter(b => b.agentId === user.id);
   else if (user.role === ROLES.TL) {
     const team = new Set(db.users.filter(u => u.teamId === user.teamId).map(u => u.id));
     bks = bks.filter(b => team.has(b.agentId));

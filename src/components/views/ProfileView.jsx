@@ -81,10 +81,6 @@ export default function ProfileView() {
   const talkMins = Math.round(talkSecs / 60);
   const meetingsSet = db.leads.filter(l => l.meetingSetBy === fresh.id && l.meetingSetDate && new Date(l.meetingSetDate) >= sm).length;
   const visitsDone = db.leads.filter(l => l.siteVisitDoneBy === fresh.id && l.siteVisitDoneDate && new Date(l.siteVisitDoneDate) >= sm).length;
-  const won = myLeads.filter(l => l.status === 'DEAL_CLOSED_WON' && l.updatedAt && new Date(l.updatedAt) >= sm);
-  const lost = myLeads.filter(l => l.status === 'DEAL_CLOSED_LOST' && l.updatedAt && new Date(l.updatedAt) >= sm);
-  const rev = won.reduce((s, l) => s + (l.dealValue || 0), 0);
-  const wr = won.length + lost.length > 0 ? Math.round((won.length / (won.length + lost.length)) * 100) : 0;
   const active = myLeads.filter(l => !['DEAL_CLOSED_WON', 'DEAL_CLOSED_LOST', 'NOT_INTERESTED'].includes(l.status)).length;
 
   // For TL: team-wide stats
@@ -97,19 +93,12 @@ export default function ProfileView() {
   const tgt = db.targets?.find(t => t.userId === fresh.id && t.month === curMonth());
 
   let kpis;
-  if (fresh.role === ROLES.IA) {
+  if (fresh.role === ROLES.AGENT) {
     kpis = [
-      { ico: 'call', val: calls, label: 'Calls This Month', color: '#2DD4BF' },
-      { ico: 'schedule', val: talkMins + ' min', label: 'Talk Time', color: '#DDB948' },
-      { ico: 'check_circle', val: meetingsSet, label: 'Meetings Set', color: '#34D399', sub: tgt ? `Target: ${tgt.value}` : '' },
-      { ico: 'person', val: active, label: 'Active Customers', color: '#FFFFFF' },
-    ];
-  } else if (fresh.role === ROLES.MA) {
-    kpis = [
+      { ico: 'call', val: calls, label: 'Calls This Month', color: '#2DD4BF', sub: talkMins + ' min talk' },
+      { ico: 'check_circle', val: meetingsSet, label: 'Meetings Set', color: '#DDB948' },
       { ico: 'location_on', val: visitsDone, label: 'Site Visits Done', color: '#34D399', sub: tgt ? `Target: ${tgt.value}` : '' },
-      { ico: 'handshake', val: won.length, label: 'Deals Won', color: '#F0A92B' },
-      { ico: 'payments', val: fmtBDT(rev), label: 'Revenue', color: '#34D399' },
-      { ico: 'percent', val: wr + '%', label: 'Win Rate', color: '#DDB948' },
+      { ico: 'person', val: active, label: 'Active Prospects', color: '#FFFFFF' },
     ];
   } else if (fresh.role === ROLES.TL) {
     kpis = [

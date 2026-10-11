@@ -1,5 +1,6 @@
 // Supabase config — loaded from environment (Vite exposes VITE_* on import.meta.env).
 // Set these in a local .env file (see .env.example). Never hardcode credentials here.
+import { normRole } from './constants.js';
 import { begin, end } from './netActivity.js';
 
 export const SB_URL = import.meta.env.VITE_SUPABASE_URL;
@@ -321,7 +322,7 @@ export function rToL(r) {
   return {
     id: r.id, name: r.name, phone: r.phone, email: r.email || '', company: r.company || '—',
     source: r.source, status: r.status, assignedTo: r.assigned_to, assignedToName: r.assigned_to_name,
-    assignedRole: r.assigned_role, teamId: r.team_id, previousAssignees: r.previous_assignees || [],
+    assignedRole: normRole(r.assigned_role), teamId: r.team_id, previousAssignees: r.previous_assignees || [],
     propertyInterest: r.property_interest || '', budget: r.budget || 0, profession: r.profession || '',
     city: r.city || '', dealValue: r.deal_value || 0, dealStatus: r.deal_status || null,
     meetingSetBy: r.meeting_set_by || null, meetingSetDate: r.meeting_set_date || null,
@@ -366,7 +367,7 @@ export function uToR(u) {
 // keys off Array.isArray(allowedFeatures): an array means "this list is the whole
 // truth". Turning a null into [] would lock the user out of everything.
 export function rToU(r) {
-  return { id: r.id, name: r.name, email: r.email, password: r.password, phone: r.phone || '', role: r.role, teamId: r.team_id, companyId: r.company_id ?? null, isActive: r.is_active, avatar: r.avatar || '', projects: r.projects ?? undefined, allowedFeatures: r.allowed_features ?? undefined };
+  return { id: r.id, name: r.name, email: r.email, password: r.password, phone: r.phone || '', role: normRole(r.role), teamId: r.team_id, companyId: r.company_id ?? null, isActive: r.is_active, avatar: r.avatar || '', projects: r.projects ?? undefined, allowedFeatures: r.allowed_features ?? undefined };
 }
 
 export function tToR(t) { return { id: t.id, name: t.name, lead_id: t.leadId, company_id: t.companyId || null }; }

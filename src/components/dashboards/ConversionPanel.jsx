@@ -4,7 +4,7 @@ import TrendChart from '../charts/TrendChart.jsx';
 import { buildFunnel, buildStageTrend, FUNNEL_STAGES } from '../../lib/funnel.js';
 import { periodLabel } from '../../lib/helpers.js';
 
-// Funnel + 30-day trend, shared by the Initial Agent / Meeting Agent / Team Lead
+// Funnel + 30-day trend, shared by the Agent / Team Lead
 // dashboards.
 //
 // Takes leads + activities as props rather than calling getDB() itself: every

@@ -212,7 +212,7 @@ export default function ChatSettingsModal() {
               {!shown.length && <div className="cl-none">No account matches.</div>}
             </div>
             <div className="ea-count">
-              Management and Master always have access. With this list empty, only a Dubai Initial Agent account can open
+              Management and Master always have access. With this list empty, only a Dubai agent account can open
               Conversations.
             </div>
           </div>

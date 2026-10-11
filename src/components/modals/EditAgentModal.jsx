@@ -13,7 +13,7 @@ export default function EditAgentModal() {
   const a = editUser;
 
   const isAdmin = user?.role === ROLES.MGMT || user?.role === ROLES.MASTER;
-  const showProjects = a && [ROLES.IA, ROLES.MA].includes(a.role);
+  const showProjects = a && a.role === ROLES.AGENT;
 
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');

@@ -12648,3 +12648,63 @@ input[type="time"]::-webkit-calendar-picker-indicator { opacity: .9; cursor: poi
   .fut-ico, .acc-del { width: 40px; height: 40px }
   .iad-q-call { width: 40px; height: 40px; flex-basis: 40px }
 }
+
+/* ── USERS (merged Users + Accounts) — team-list table ───────────── */
+.ut-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap }
+.ut-search { flex: 1 1 240px; max-width: 340px; background: var(--surf) }
+.ut-search input { width: 100% }
+.ut-sel { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; color: var(--t1) }
+.ut-bar-r { display: flex; gap: 8px; margin-left: auto }
+.ut-bar-r .btn.on { border-color: var(--accent); color: var(--accent) }
+
+.ut-card { background: var(--surf); border: 1px solid var(--bd); border-radius: var(--r-lg); overflow: hidden }
+.ut-scroll { overflow-x: auto }
+.ut { width: 100%; border-collapse: collapse; min-width: 980px; font-size: 13px }
+.ut th { text-align: left; font-size: 13px; font-weight: 600; color: var(--t1); padding: 16px 12px; border-bottom: 1px solid var(--bd); white-space: nowrap }
+.ut td { padding: 12px; border-bottom: 1px solid var(--bd); color: var(--t1); vertical-align: middle }
+.ut-row { transition: background var(--tr) }
+.ut-row:hover, .ut-row.sel { background: var(--surf2) }
+.ut-row.open { background: var(--blue-l); box-shadow: inset 2px 0 0 var(--accent) }
+.ut-row.open td { border-bottom-color: transparent }
+.ut-c-chk { width: 44px; padding-left: 18px !important }
+.ut-c-exp { width: 34px; padding-left: 0 !important; padding-right: 0 !important }
+.ut-c-act { width: 104px; text-align: center !important }
+.ut-chk, .ut-exp { background: none; border: none; padding: 0; cursor: pointer; display: flex; align-items: center; color: var(--t3) }
+.ut-chk .mi { font-size: 21px }
+.ut-chk.on { color: var(--accent) }
+.ut-exp .mi { font-size: 22px }
+.ut-exp:hover, .ut-chk:hover { color: var(--t1) }
+.ut-who { display: flex; align-items: center; gap: 10px; min-width: 0 }
+.ut-name { background: none; border: none; padding: 0; font: inherit; font-weight: 600; color: var(--t1); cursor: pointer; text-align: left; white-space: nowrap }
+.ut-name:hover { color: var(--accent); text-decoration: underline }
+.ut-you { font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; color: var(--t3); background: var(--surf2); border-radius: 999px; padding: 2px 7px }
+.ut-muted { color: var(--t2) !important }
+.ut-nowrap { white-space: nowrap }
+.ut-acts { display: flex; gap: 6px; justify-content: center }
+.ut .ui-del { opacity: 1 }
+
+.ut-dtr { background: var(--blue-l) }
+.ut-dtr > td { padding: 4px 18px 20px 90px; border-bottom: 1px solid var(--accent) }
+.ut-detail { display: flex; gap: 36px; flex-wrap: wrap }
+.ut-dcol { min-width: 180px }
+.ut-dl { font-size: 13px; font-weight: 600; color: var(--t1); margin-bottom: 10px }
+.ut-dlist { display: flex; flex-direction: column; gap: 7px }
+.ut-mate { display: flex; align-items: center; gap: 7px; font-size: 12.5px; color: var(--t2) }
+.ut-mate .mi { font-size: 16px; color: var(--t3) }
+.ut-mate { background: none; border: none; padding: 0; cursor: pointer; font: inherit; font-size: 12.5px; text-align: left }
+.ut-mate:hover { color: var(--accent) }
+.ut-mate-r { font-size: 11px; color: var(--t3); margin-left: 4px }
+.ut-dmuted { font-size: 12.5px; color: var(--t3); font-style: italic }
+.ut-dstats { display: flex; gap: 22px; flex-wrap: wrap }
+.ut-dstat { display: flex; flex-direction: column }
+.ut-dstat b { font-size: 18px; font-weight: 800; color: var(--t1); font-family: var(--font-display) }
+.ut-dstat span { font-size: 11px; color: var(--t3); text-transform: uppercase; letter-spacing: .6px }
+.ut-won { color: var(--green) !important }
+
+.ut-foot { display: flex; align-items: center; justify-content: flex-end; gap: 8px; padding: 12px 18px }
+.ut-range { font-size: 12.5px; color: var(--t2); margin-right: 6px }
+.ut-pg { width: 30px; height: 30px; border-radius: var(--r-sm); border: 1px solid var(--bd); background: var(--surf); color: var(--t1); display: flex; align-items: center; justify-content: center; cursor: pointer }
+.ut-pg:disabled { opacity: .4; cursor: default }
+.ut-pg .mi { font-size: 20px }
+@media(max-width:640px) { .ut-dtr > td { padding-left: 18px } .ut-bar-r { margin-left: 0 } }
+.ag-overdue { background: var(--red-l) !important; color: var(--red) !important; border: 0; cursor: pointer; font: inherit; font-size: 11px; font-weight: 700 }

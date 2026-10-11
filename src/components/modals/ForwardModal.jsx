@@ -1,13 +1,13 @@
 import { useState, useEffect } from 'react';
 import Mi from '../Mi.jsx';
 import { useApp } from '../../context/AppContext.jsx';
-import { getDB, fwdLead, getProperties, updLead, offerComplete } from '../../lib/db.js';
+import { getDB, fwdLead, getProperties, updLead, offerComplete, setMeeting } from '../../lib/db.js';
 import { sbGetUsersLite, rToU } from '../../lib/supabase.js';
 import { avc, ini, rlabel, fmtBDT } from '../../lib/helpers.js';
 import { ROLES, OFFER_MAX } from '../../lib/constants.js';
 import useLeadBook from '../../hooks/useLeadBook.js';
 
-// Things the Initial Agent may have already shared with the client (clickable).
+// Things the agent may have already shared with the client (clickable).
 const SHARED_OPTS = [
   { key: 'price', label: 'Price idea', icon: 'sell' },
   { key: 'brochure', label: 'Brochure', icon: 'description' },
@@ -17,11 +17,18 @@ const SHARED_OPTS = [
 // Working-hour windows by meeting type (24h).
 const HOURS = { ONLINE: { min: 10, max: 22, label: '10 AM – 10 PM' }, OFFLINE: { min: 10, max: 18, label: '10 AM – 6 PM' } };
 
+// Three flows share this modal:
+//   forward-tl     pick a Team Lead, then the offer (the lead changes hands)
+//   forward-agent  pick another agent on the team; the lead changes hands at
+//                  its current stage, no second step
+//   set-meeting  the Agent books the client meeting on their own lead — no
+//                hand-off, so it opens straight on the meeting step
 export default function ForwardModal() {
   const { modal, closeModal, user, panLead, refreshDB, showToast } = useApp();
-  const isMA = modal === 'forward-ma';
+  const isMA = modal === 'set-meeting';
   const isTL = modal === 'forward-tl';
-  const isOpen = isMA || isTL;
+  const isAG = modal === 'forward-agent';
+  const isOpen = isMA || isTL || isAG;
   // Gated on isOpen: this modal is mounted on every page (App.jsx renders it
   // unconditionally and it returns null when closed), so an ungated call pulled
   // the entire lead book on every screen in the app — including before login,
@@ -45,25 +52,28 @@ export default function ForwardModal() {
   // per-account, so its teammates are simply not in it.
   const [targets, setTargets] = useState([]);
 
-  const targetRole = isMA ? ROLES.MA : ROLES.TL;
+  const targetRole = isAG ? ROLES.AGENT : ROLES.TL;
   const toggleShared = (k) => setShared(s => s.includes(k) ? s.filter(x => x !== k) : [...s, k]);
 
   useEffect(() => {
     if (isOpen) {
-      setSelected(null); setStep(1); setProjectId(''); setOurOffer(''); setClientOffer(''); setTotalSft(''); setOfferNotes('');
+      setSelected(null); setStep(isMA ? 2 : 1); setProjectId(''); setOurOffer(''); setClientOffer(''); setTotalSft(''); setOfferNotes('');
       setMeetingType('ONLINE'); setMeetingAt(''); setMeetingLink(''); setShared([]); setTargets([]);
     }
-  }, [isOpen]);
+  }, [isOpen]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const db = getDB();
 
   useEffect(() => {
-    if (!isOpen || !user?.teamId) return;
+    if (!(isTL || isAG) || !user?.teamId) return;
     let live = true;
-    sbGetUsersLite(`role=eq.${targetRole}&team_id=eq.${user.teamId}&is_active=not.eq.false`)
-      .then(rows => { if (live) setTargets((rows || []).map(rToU)); });
+    // Agent hand-off: every other agent on the team — Executives work leads as
+    // agents too (see effectiveRole), so they are valid recipients.
+    const roleQ = isAG ? `role=in.(${ROLES.AGENT},${ROLES.EXEC})` : `role=eq.${targetRole}`;
+    sbGetUsersLite(`${roleQ}&team_id=eq.${user.teamId}&is_active=not.eq.false`)
+      .then(rows => { if (live) setTargets((rows || []).map(rToU).filter(u => u.id !== user.id).sort((a, b) => (a.name || '').localeCompare(b.name || ''))); });
     return () => { live = false; };
-  }, [isOpen, targetRole, user?.teamId]);
+  }, [isTL, isAG, targetRole, user?.teamId, user?.id]);
 
   // Project catalog + live demand (how many leads already interested in each project)
   const projects = [...getProperties()].sort((a, b) => a.name.localeCompare(b.name));
@@ -79,11 +89,9 @@ export default function ForwardModal() {
   const onRate = (set) => (e) => { const v = e.target.value; if (v === '' || (/^\d{1,5}(\.\d*)?$/.test(v) && parseFloat(v) <= OFFER_MAX)) set(v); };
 
   const submit = () => {
-    if (!selected || !panLead) return;
-    const toUser = targets.find(u => u.id === selected);
-    if (!toUser) return;
+    if (!panLead) return;
 
-    // MA hand-off: require a meeting time inside the working-hour window for the type.
+    // Set Meeting: require a meeting time inside the working-hour window for the type.
     if (isMA) {
       if (!meetingAt) { showToast('Pick a meeting date & time', 'err'); return; }
       const d = new Date(meetingAt);
@@ -91,7 +99,15 @@ export default function ForwardModal() {
       const w = HOURS[meetingType];
       if (h < w.min || h > w.max) { showToast(`${meetingType === 'ONLINE' ? 'Online' : 'Offline'} meetings must be within ${w.label}`, 'err'); return; }
       if (meetingType === 'ONLINE' && !meetingLink.trim()) { showToast('Add the online meeting link', 'err'); return; }
+      setMeeting(panLead, { meetingType, meetingAt: d.toISOString(), meetingLink: meetingType === 'ONLINE' ? meetingLink.trim() : '', meetingShared: shared }, user);
+      closeModal();
+      refreshDB();
+      showToast('Meeting set', 'ok');
+      return;
     }
+
+    const toUser = selected ? targets.find(u => u.id === selected) : null;
+    if (!toUser) return;
 
     const offerData = isTL ? {
       ourOffer: parseFloat(ourOffer) || 0,
@@ -114,7 +130,6 @@ export default function ForwardModal() {
     }
     if (!fwdLead(panLead, toUser, user, offerData)) { showToast('Could not forward this lead', 'err'); return; }
     if (isTL && project) updLead(panLead, { dealProjectId: project.id, dealProjectName: project.name, propertyInterest: project.name });
-    if (isMA) updLead(panLead, { meetingType, meetingAt: new Date(meetingAt).toISOString(), meetingLink: meetingType === 'ONLINE' ? meetingLink.trim() : '', meetingShared: shared });
     closeModal();
     refreshDB();
     showToast('Lead forwarded to ' + toUser.name, 'ok');
@@ -126,7 +141,7 @@ export default function ForwardModal() {
     <div className={`mov${isOpen ? ' on' : ''}`} onClick={e => { if (e.target === e.currentTarget) closeModal(); }}>
       <div className="modal">
         <div className="m-hd">
-          <div className="m-ttl">Forward to {rlabel(targetRole)}</div>
+          <div className="m-ttl">{isMA ? 'Set Meeting' : 'Forward to ' + rlabel(targetRole)}</div>
           <button className="m-x" onClick={closeModal}><Mi>close</Mi></button>
         </div>
 
@@ -137,7 +152,7 @@ export default function ForwardModal() {
               <div className="fl">
                 <label>Select {rlabel(targetRole)}</label>
                 <select className="finp" value={selected || ''} onChange={e => setSelected(e.target.value)}>
-                  <option value="">— Choose an agent —</option>
+                  <option value="">{targets.length ? '— Choose an agent —' : 'No other agents in your team'}</option>
                   {targets.map(u => (
                     <option key={u.id} value={u.id}>{u.name} ({u.email})</option>
                   ))}
@@ -152,7 +167,9 @@ export default function ForwardModal() {
             </div>
             <div className="m-ft">
               <button className="btn btn-g" onClick={closeModal}>Cancel</button>
-              <button className="btn btn-p" disabled={!selected} onClick={() => setStep(2)}>Next</button>
+              {isAG
+                ? <button className="btn btn-p" disabled={!selected} onClick={submit}><Mi>swap_horiz</Mi>Forward</button>
+                : <button className="btn btn-p" disabled={!selected} onClick={() => setStep(2)}>Next</button>}
             </div>
           </>
         )}
@@ -221,7 +238,7 @@ export default function ForwardModal() {
           <>
             <div className="m-body">
               <div className="m-hint" style={{ marginBottom: '14px' }}>
-                <Mi>event</Mi>Set up the meeting for <strong>{selectedUser?.name}</strong>.
+                <Mi>event</Mi>Book the client meeting. The lead stays with you and moves to Meeting Set.
               </div>
 
               {/* Meeting type */}
@@ -249,7 +266,7 @@ export default function ForwardModal() {
                 <div className="fl">
                   <label>Meeting link</label>
                   <input className="finp" type="url" placeholder="https://meet.google.com/… or Zoom link" value={meetingLink} onChange={e => setMeetingLink(e.target.value)} />
-                  <div className="fi-hint"><Mi>link</Mi>Shared with the Meeting Agent</div>
+                  <div className="fi-hint"><Mi>link</Mi>Saved on the lead</div>
                 </div>
               )}
 
@@ -267,8 +284,8 @@ export default function ForwardModal() {
               </div>
             </div>
             <div className="m-ft">
-              <button className="btn btn-g" onClick={() => setStep(1)}>Back</button>
-              <button className="btn btn-p" onClick={submit}>Forward</button>
+              <button className="btn btn-g" onClick={closeModal}>Cancel</button>
+              <button className="btn btn-p" onClick={submit}><Mi>event_available</Mi>Set Meeting</button>
             </div>
           </>
         )}

@@ -49,9 +49,9 @@ Every team/user/lead/property carries a `companyId`. `sbLoad()` scopes reads by 
 
 `src/lib/constants.js` defines the model:
 
-- Roles: `INITIAL_AGENT`, `MEETING_AGENT`, `TEAM_LEAD`, `MANAGEMENT`, `MASTER` (super-admin over all companies), `EXECUTIVE`.
+- Roles: `AGENT`, `TEAM_LEAD`, `MANAGEMENT`, `MASTER` (super-admin over all companies), `EXECUTIVE`. `AGENT` replaced `INITIAL_AGENT` + `MEETING_AGENT` (migration 0020); loaders pass roles through `normRole()` so pre-migration rows still read as `AGENT`.
 - `canSee(user, key)` gates nav/features. A user's saved `allowedFeatures` array, when present, **fully overrides** role defaults (`NAV_SCOPES`). Profile is always visible.
-- `EXECUTIVE` is a blank-canvas role (zero default access); `effectiveRole()` resolves it to the agent role its granted features imply (so it decides which dashboard renders) but never to a supervisory role — an Executive can't gain TL/MGMT powers by accident.
+- `EXECUTIVE` is a blank-canvas role (zero default access); `effectiveRole()` resolves it to `AGENT` (so it decides which dashboard renders) but never to a supervisory role — an Executive can't gain TL/MGMT powers by accident.
 - `isNiHandler()` — an account flagged `ni_only` sees only `NOT_INTERESTED` leads; such leads auto-transfer to it.
 - Lead lifecycle is the single `STATUS_FLOW` ladder; funnels and "reached stage X?" helpers (`reachedFrom`, `PAST_CONTACT`, etc.) all derive from it. Keep stage vocabulary in this one place.
 

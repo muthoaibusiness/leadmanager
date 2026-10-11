@@ -10,7 +10,7 @@ import { ActionSwapCascadeButton } from '../ui/action-swap-cascade.jsx';
 
 // Order the admin's people picker groups the way the pipeline runs, so the
 // dropdown reads top-down rather than alphabetically across mixed roles.
-const ROLE_ORDER = [ROLES.TL, ROLES.IA, ROLES.MA, ROLES.EXEC, ROLES.MGMT];
+const ROLE_ORDER = [ROLES.TL, ROLES.AGENT, ROLES.EXEC, ROLES.MGMT];
 
 // This view no longer filters an in-memory array — it asks the server for one
 // page of 15 and the total that matches. Every control below is therefore an
@@ -23,8 +23,8 @@ export default function LeadsView() {
     setLeadCounts,
   } = useApp();
 
-  // Initial/Meeting agents get a My Leads ↔ Forwarded toggle.
-  const isAgent = [ROLES.IA, ROLES.MA].includes(user.role);
+  // Agents get a My Leads ↔ Forwarded toggle.
+  const isAgent = user.role === ROLES.AGENT;
   const isTL = user.role === ROLES.TL;
   const isMgmt = user.role === ROLES.MGMT;
 
