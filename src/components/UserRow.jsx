@@ -5,7 +5,7 @@ import { ROLES } from '../lib/constants.js';
 import useOpenUserLeads from '../hooks/useOpenUserLeads.js';
 
 // One person as a compact row: avatar, name/email, role badge, phone, actions.
-// Shared by UsersView (admin, company-wide) and TeamView (Team Lead, own team) so the
+// Shared by AccountsView (admin, company-wide) and TeamView (Team Lead, own team) so the
 // two rosters cannot drift apart.
 
 export function EditBtn({ u }) {

@@ -44,26 +44,6 @@ export default function Sidebar({ hideBtnRef }) {
   const visible = (k) => (GROUPS[k] ? GROUPS[k].kids.some(c => canSee(user, c.key))
     : k === 'conversations' ? chatOk : canSee(user, k));
 
-<<<<<<< HEAD
-  const META = {
-    dashboard: { ico: 'home', lbl: 'Home' },
-    conversations: { ico: 'forum', lbl: 'Conversations' },
-    calendar: { ico: 'calendar_month', lbl: 'Calendar' },
-    pipeline: { ico: 'view_kanban', lbl: 'Pipeline' },
-    clients: { ico: 'account_circle', lbl: 'Contacts' },
-    bookings: { ico: 'event_note', lbl: 'Sales Activity' },
-    reports: { ico: 'bar_chart', lbl: 'Reports' },
-    agentperf: { ico: 'leaderboard', lbl: 'Performance' },
-    requests: { ico: 'inbox', lbl: 'Requests' },
-    properties: { ico: 'folder', lbl: 'Projects' },
-    team: { ico: 'groups', lbl: 'Team' },
-    accounts: { ico: 'manage_accounts', lbl: 'Users' },
-    companies: { ico: 'corporate_fare', lbl: 'Companies' },
-    profile: { ico: 'account_circle', lbl: 'Profile' },
-  };
-
-=======
->>>>>>> a901325c51a6f78e10a2f0dbd2c719c473137c44
   const pendingHolds = role === 'MANAGEMENT' ? getHoldRequests().filter(r => r.status === 'pending').length : 0;
 
   // A plain function, not a component declared in here: a component type made

@@ -33,7 +33,7 @@ const contains = (col, q) => `${col}.ilike.${lit('*' + String(q).replace(/[*%]/g
 const holdsPrev = (id) => `previous_assignees.cs.${JSON.stringify([id])}`;
 
 // The first name in the assignee chain is the lead's originator (see firstOwner
-// in InitialAgentDash / agentPerf). An empty chain means it never moved, so the
+// in AgentDash / agentPerf). An empty chain means it never moved, so the
 // current assignee is also the originator.
 const sourcedBy = (id) => or(`previous_assignees->>0.eq.${lit(id)}`, and(`previous_assignees->>0.is.null`, `assigned_to.eq.${lit(id)}`));
 

@@ -38,37 +38,10 @@ export default function TransferLeadModal({ leadIds = null, open = null, onClose
     ? (db.users || []).filter(u => u.teamId === selectedTeamId && u.role === ROLES.AGENT && u.isActive !== false).sort((a, b) => (a.name || '').localeCompare(b.name || ''))
     : [];
 
-<<<<<<< HEAD
-  useEffect(() => {
-    if (isOpen) {
-      setSelectedTeamId('');
-      setSelectedAgent('');
-    }
-  }, [isOpen]);
-
-=======
   if (useChanged(isOpen) && isOpen) {
     setSelectedTeamId('');
-    setSelectedIA('');
-    setSelectedMA('');
+    setSelectedAgent('');
   }
-
-  // Auto-clear agents if team changes
-  if (useChanged(selectedTeamId)) {
-    setSelectedIA('');
-    setSelectedMA('');
-  }
-
-  const handleIAChange = (val) => {
-    setSelectedIA(val);
-    if (val) setSelectedMA(''); // clear the other
-  };
-
-  const handleMAChange = (val) => {
-    setSelectedMA(val);
-    if (val) setSelectedIA(''); // clear the other
-  };
->>>>>>> a901325c51a6f78e10a2f0dbd2c719c473137c44
 
   const submit = () => {
     const selectedAgentId = selectedAgent;

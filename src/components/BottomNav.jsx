@@ -13,7 +13,7 @@ import { NAV_META } from '../lib/navMeta.js';
 
 // Candidate tabs in priority order; the first three the user may see are shown.
 const PRIORITY = ['dashboard', 'companies', 'leads', 'properties', 'reports', 'conversations',
-  'calendar', 'pipeline', 'agentperf', 'team', 'requests', 'users', 'accounts'];
+  'calendar', 'pipeline', 'agentperf', 'team', 'requests', 'accounts'];
 
 // `inert`: set while the drawer is open, so Tab stays in the drawer.
 export default function BottomNav({ inert }) {
@@ -46,7 +46,7 @@ export default function BottomNav({ inert }) {
   const actions = [
     canSee(user, 'add_customer') && { key: 'add-lead', ico: 'person_add', lbl: 'Add Customer', run: () => openModal('add-lead') },
     canSee(user, 'add_customer') && { key: 'import', ico: 'upload', lbl: 'Import', run: () => openModal('import') },
-    user.role === ROLES.TL && { key: 'add-agent', ico: 'group_add', lbl: 'Add Agent', run: () => { setCreateUserRoles([ROLES.IA, ROLES.MA, ROLES.EXEC]); openModal('create-user'); } },
+    user.role === ROLES.TL && { key: 'add-agent', ico: 'group_add', lbl: 'Add Agent', run: () => { setCreateUserRoles([ROLES.AGENT, ROLES.EXEC]); openModal('create-user'); } },
     chatOk && { key: 'chat', ico: 'forum', lbl: 'New Chat', run: () => nav('conversations') },
     canSee(user, 'profile') && { key: 'profile', ico: 'settings', lbl: 'Settings', run: () => nav('profile') },
   ].filter(Boolean);

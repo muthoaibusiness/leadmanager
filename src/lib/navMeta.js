@@ -13,8 +13,7 @@ export const NAV_META = {
   requests: { ico: 'inbox', lbl: 'Requests' },
   properties: { ico: 'folder', lbl: 'Projects' },
   team: { ico: 'groups', lbl: 'Team' },
-  users: { ico: 'manage_accounts', lbl: 'Users' },
-  accounts: { ico: 'group_add', lbl: 'Accounts' },
+  accounts: { ico: 'manage_accounts', lbl: 'Users' },
   companies: { ico: 'corporate_fare', lbl: 'Companies' },
   profile: { ico: 'account_circle', lbl: 'Profile' },
 };

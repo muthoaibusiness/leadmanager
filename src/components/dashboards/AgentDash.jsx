@@ -158,7 +158,6 @@ export default function AgentDash() {
     // Oldest never-called lead - one row, fetched above.
     const oldestUntouchedAt = oldestUntouched ? new Date(oldestUntouched.createdAt) : null;
 
-<<<<<<< HEAD:src/components/dashboards/AgentDash.jsx
     // Site visits: today's, and what is coming up after today.
     const sched = visitRows || [];
     const todayVisits = sched
@@ -169,7 +168,7 @@ export default function AgentDash() {
       .sort((a, b) => new Date(a.meetingDate) - new Date(b.meetingDate));
 
     return { now, todayStart, queue, oldestUntouchedAt, active, followToday, todayVisits, upcoming };
-  }, [queueRows, oldestUntouched, visitRows, db, dbVersion]);
+  }, [queueRows, oldestUntouched, visitRows, db, dbVersion]); // eslint-disable-line react-hooks/exhaustive-deps -- db mutates in place; dbVersion is the change signal
 
   // Meeting Set → Attended → Visit Scheduled → Visit Done → Offer Sent
   const STAGES = [
@@ -179,10 +178,6 @@ export default function AgentDash() {
     { key: 'done', label: 'Visit Done', color: '#2DD4BF' },
     { key: 'tl', label: 'Offer Sent', color: 'var(--accent)' },
   ];
-=======
-    return { now, todayStart, queue, oldestUntouchedAt, active, followToday };
-  }, [queueRows, oldestUntouched, db, dbVersion]); // eslint-disable-line react-hooks/exhaustive-deps -- db mutates in place; dbVersion is the change signal
->>>>>>> a901325c51a6f78e10a2f0dbd2c719c473137c44:src/components/dashboards/InitialAgentDash.jsx
 
   const QUEUE_CAP = 8;
   const shown = view.queue.slice(0, QUEUE_CAP);

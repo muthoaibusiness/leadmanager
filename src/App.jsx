@@ -22,28 +22,6 @@ import UserMenu from './components/UserMenu.jsx';
 import Toast from './components/Toast.jsx';
 import DateRangePicker from './components/DateRangePicker.jsx';
 
-<<<<<<< HEAD
-import AgentDash from './components/dashboards/AgentDash.jsx';
-import TeamLeadDash from './components/dashboards/TeamLeadDash.jsx';
-import ManagementDash from './components/dashboards/ManagementDash.jsx';
-import MasterDash from './components/dashboards/MasterDash.jsx';
-
-import LeadsView from './components/views/LeadsView.jsx';
-import CalendarView from './components/views/CalendarView.jsx';
-import TeamView from './components/views/TeamView.jsx';
-import AccountsView from './components/views/AccountsView.jsx';
-import RequestsView from './components/views/RequestsView.jsx';
-import ProfileView from './components/views/ProfileView.jsx';
-import PropertiesView from './components/views/PropertiesView.jsx';
-import BookingsView from './components/views/BookingsView.jsx';
-import PipelineView from './components/views/PipelineView.jsx';
-import ClientsView from './components/views/ClientsView.jsx';
-import ReportsView from './components/views/ReportsView.jsx';
-import AgentPerformanceView from './components/views/AgentPerformanceView.jsx';
-import ConversationsView from './components/views/ConversationsView.jsx';
-=======
-
->>>>>>> a901325c51a6f78e10a2f0dbd2c719c473137c44
 
 import { migrateProjects, newProjectDraft, projectInventory, planProjects } from './lib/projects.js';
 import './components/project/AvailableUnitsTab.css';
@@ -55,15 +33,13 @@ import GlobalLoadingBar from './components/GlobalLoadingBar.jsx';
 // (or the moment one is asked for), and that idle slot also prefetches every
 // page so later navigation never waits on the network.
 const PAGES = {
-  InitialAgentDash: () => import('./components/dashboards/InitialAgentDash.jsx'),
-  MeetingAgentDash: () => import('./components/dashboards/MeetingAgentDash.jsx'),
+  AgentDash: () => import('./components/dashboards/AgentDash.jsx'),
   TeamLeadDash: () => import('./components/dashboards/TeamLeadDash.jsx'),
   ManagementDash: () => import('./components/dashboards/ManagementDash.jsx'),
   MasterDash: () => import('./components/dashboards/MasterDash.jsx'),
   LeadsView: () => import('./components/views/LeadsView.jsx'),
   CalendarView: () => import('./components/views/CalendarView.jsx'),
   TeamView: () => import('./components/views/TeamView.jsx'),
-  UsersView: () => import('./components/views/UsersView.jsx'),
   AccountsView: () => import('./components/views/AccountsView.jsx'),
   RequestsView: () => import('./components/views/RequestsView.jsx'),
   ProfileView: () => import('./components/views/ProfileView.jsx'),
@@ -106,7 +82,7 @@ const OVERLAYS = {
 
 const lazyAll = (loaders) => Object.fromEntries(Object.entries(loaders).map(([k, f]) => [k, lazyChunk(f)]));
 
-const { InitialAgentDash, MeetingAgentDash, TeamLeadDash, ManagementDash, MasterDash, LeadsView, CalendarView, TeamView, UsersView, AccountsView, RequestsView, ProfileView, PropertiesView, AvailableUnitsView, BookingsView, PipelineView, ClientsView, ReportsView, AgentPerformanceView, ConversationsView } = lazyAll(PAGES);
+const { AgentDash, TeamLeadDash, ManagementDash, MasterDash, LeadsView, CalendarView, TeamView, AccountsView, RequestsView, ProfileView, PropertiesView, AvailableUnitsView, BookingsView, PipelineView, ClientsView, ReportsView, AgentPerformanceView, ConversationsView } = lazyAll(PAGES);
 const OVERLAY_COMPONENTS = Object.entries(lazyAll(OVERLAYS));
 const LandingPage = lazyChunk(() => import('./components/LandingPage.jsx'));
 const SignIn1 = lazyChunk(() => import('./components/ui/modern-stunning-sign-in.jsx').then(m => ({ default: m.SignIn1 })));
@@ -302,7 +278,7 @@ function PageHero() {
     actions.push(<button key="import" className="btn btn-g" onClick={() => openModal('import')}><Mi>upload</Mi>Import</button>);
   }
   // Duplicate checker button removed — dedup runs automatically on load/import.
-  // Executives are created by a Team Lead, alongside the two agent roles, so they land
+  // Executives are created by a Team Lead, alongside Agents, so they land
   // in that Team Lead's team (createUserFn stamps the creator's teamId). Management only
   // creates Team Leads, each of which starts a team of its own.
   if (view === 'team' && user.role === ROLES.TL) actions.push(<button key="add-agent" className="btn btn-p" onClick={() => { setCreateUserRoles([ROLES.AGENT, ROLES.EXEC]); openModal('create-user'); }}><Mi>person_add</Mi>Add Agent</button>);
@@ -342,7 +318,7 @@ function PageBody() {
 
   if (user.role === ROLES.MASTER && view !== 'profile') return <MasterDash />; // master sees the company-wise overview
   if (view === 'dashboard') {
-    // Executives operate as the agent role their granted features imply.
+    // Executives operate as an Agent (see effectiveRole).
     const er = effectiveRole(user);
     if (er === ROLES.AGENT) return <AgentDash />;
     if (er === ROLES.TL) return <TeamLeadDash />;
