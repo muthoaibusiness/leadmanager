@@ -36,7 +36,7 @@ function useCountdown(targetMs, active) {
 }
 
 export default function ProjectConsole() {
-  const { modal, closeModal, propSel, propDraft, setPropDraft, user, refreshDB, dbVersion, consoleAdmin } = useApp();
+  const { modal, closeModal, propSel, propDraft, setPropDraft, user, refreshDB, dbVersion, consoleAdmin, consoleUnit, setConsoleUnit } = useApp();
   const toast = useProjectToast();
   const isOpen = modal === 'project-console';
   // Gated on isOpen — App.jsx mounts this on every page and it renders nothing
@@ -63,10 +63,19 @@ export default function ProjectConsole() {
   const variants = useMemo(() => (p ? p.variants : []), [p, dbVersion]); // eslint-disable-line react-hooks/exhaustive-deps
   const variant = variants.find(v => v.id === vid) || variants[0] || null;
 
-  // reset when opening a different project
-  if (useChanged(`${isOpen}:${propSel}`) && isOpen) { setVid(null); setDeal(emptyDeal()); setCq(''); setAdmin(!!consoleAdmin); }
-  // keep deal.variantId in sync; reset unit when variant changes
-  if (useChanged(variant?.id) && variant) setDeal(d => (d.variantId === variant.id ? d : { ...emptyDeal(), variantId: variant.id }));
+  // reset when opening a different project. Available Units → Continue hands
+  // over a unit (consoleUnit) to start the deal with, if it is still available.
+  const opened = useChanged(`${isOpen}:${propSel}`) && isOpen;
+  if (opened) {
+    const pick = consoleUnit && consoleUnit.projectId === propSel ? variants.find(v => v.id === consoleUnit.variantId) : null;
+    const pickOk = !!pick?.units.some(u => u.id === consoleUnit.unitId && u.status === 'available');
+    setVid(pick ? pick.id : null);
+    setDeal(pickOk ? { ...emptyDeal(), variantId: pick.id, unitId: consoleUnit.unitId } : emptyDeal());
+    setCq(''); setAdmin(!!consoleAdmin);
+  }
+  // keep deal.variantId in sync; reset unit when variant changes. Skipped on
+  // the opening render: `variant` there still reflects the old vid.
+  if (useChanged(variant?.id) && variant && !opened) setDeal(d => (d.variantId === variant.id ? d : { ...emptyDeal(), variantId: variant.id }));
 
   // returning to the console after admin edits — sanitize the deal so it can't
   // reference a variant/unit that was deleted or is no longer available.
@@ -113,6 +122,7 @@ export default function ProjectConsole() {
     dropAsk();
     askReturnRef.current = null;
     if (propDraft) setPropDraft(null);
+    if (consoleUnit) setConsoleUnit(null); // the next opening starts with no unit picked
     closeModal();
   };
   // Stay (and Esc) hand focus back to where it was, so typing carries on.

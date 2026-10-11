@@ -60,6 +60,7 @@ export function AppProvider({ children }) {
   const [dateRange, setDateRange] = useState({ preset: 'allTime', range: null });
   const [impersonator, setImpersonator] = useState(null); // the real admin while viewing as another account
   const [consoleAdmin, setConsoleAdmin] = useState(false); // open the project console straight into Admin catalog
+  const [consoleUnit, setConsoleUnit] = useState(null); // { projectId, variantId, unitId } the console opens with already picked (Available Units → Continue)
   // WhatsApp chat config (wa_settings row) — loaded once on login. Null until then.
   const [waSettings, setWaSettings] = useState(null);
   const [waUnread, setWaUnread] = useState(0); // total unread across chat threads
@@ -175,6 +176,7 @@ export function AppProvider({ children }) {
     dateRange, setDateRange,
     impersonator, impersonate, stopImpersonate,
     consoleAdmin, setConsoleAdmin,
+    consoleUnit, setConsoleUnit,
     waSettings, setWaSettings, chatOk,
     waUnread, setWaUnread,
     searchRef,

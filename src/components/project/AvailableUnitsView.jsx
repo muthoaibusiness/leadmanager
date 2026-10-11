@@ -3,7 +3,7 @@ import Mi from '../Mi.jsx';
 import { useApp } from '../../context/AppContext.jsx';
 import { ROLES } from '../../lib/constants.js';
 import { hasColumn } from '../../lib/supabase.js';
-import { planProjects, findUnit, unitSize, unitPrice, deleteFloorPlan } from '../../lib/projects.js';
+import { planProjects, findUnit, unitSize, unitPrice, placedUnitIds, deleteFloorPlan } from '../../lib/projects.js';
 import { toPx, byCode, STATUS, taka } from '../../lib/floorPlan.js';
 import useChanged from '../../hooks/useChanged.js';
 import FloorPlanCanvas from './FloorPlanCanvas.jsx';
@@ -12,18 +12,26 @@ import { useProjectToast } from './projectToast.js';
 import './FloorPlan.css';
 
 // Projects → Available Units. Every signed-in user who can open Projects sees
-// the project's floor plans with each unit's box colored by its live status
-// (the same units the Projects KPIs, the console grid, holds and deals use).
-// Management also adds, edits and deletes plans (FloorPlanEditor).
+// the project's units, each colored by its live status (the same units the
+// Projects KPIs, the console grid, holds and deals use), two ways:
+//  - Grid: a seat-map of unit tiles, one floor chip per floor plan plus
+//    "Other units" for units on no plan. Works with or without plan images.
+//  - Plan: the uploaded floor plan drawing with a box per unit.
+// Picking an available unit and pressing Continue opens the project console
+// with that unit already chosen. Management also adds, edits and deletes
+// plans (FloorPlanEditor).
 
 const SQM = 0.09290304;
+const OTHER = 'other'; // the chip for units on no floor plan
 const sortPlans = (plans) => [...plans].sort((a, b) => (a.order ?? 0) - (b.order ?? 0) || byCode(a.name || '', b.name || ''));
+const unitRow = (loc) => ({ code: loc.unit.id, loc, status: loc.unit.status, type: loc.variant.name || '', size: unitSize(loc.unit, loc.variant), price: unitPrice(loc.unit, loc.variant) });
 
 export default function AvailableUnitsView() {
-  const { user, dbVersion, refreshDB, planSel, setPlanSel, setPlanEdit, openModal, setPropSel, setConsoleAdmin } = useApp();
+  const { user, dbVersion, refreshDB, planSel, setPlanSel, setPlanEdit, openModal, setPropSel, setConsoleAdmin, setConsoleUnit } = useApp();
   void dbVersion; // re-read the store when realtime or a save changes it
   const toast = useProjectToast();
   const isAdmin = user?.role === ROLES.MGMT;
+  const [mode, setMode] = useState('grid'); // 'grid' | 'plan'
   const [stat, setStat] = useState('all');
   const [q, setQ] = useState('');
   const [sel, setSel] = useState(null);     // unit code
@@ -44,12 +52,39 @@ export default function AvailableUnitsView() {
   const proj = projects.find(p => p.id === planSel.projectId) || projects[0] || null;
   const plans = proj ? sortPlans(proj.floorPlans) : [];
   const plan = plans.find(fp => fp.id === planSel.planId) || plans[0] || null;
-  if (useChanged(`${proj?.id}|${plan?.id}`)) { setSel(null); setStat('all'); setQ(''); }
+
+  // Units on no floor plan: the grid's last chip ("All units" when there are no plans).
+  const placed = proj ? placedUnitIds(proj) : new Set();
+  const others = proj ? proj.variants.flatMap(v => (v.units || []).filter(u => !placed.has(u.id)).map(u => unitRow({ variant: v, unit: u }))) : [];
+  const chip = mode === 'plan' ? plan?.id || null
+    : planSel.planId === OTHER && others.length ? OTHER
+    : plan?.id || (others.length ? OTHER : null);
+  const chipPlan = chip === OTHER ? null : plan;
+  if (useChanged(`${proj?.id}|${chip}`)) { setSel(null); setStat('all'); setQ(''); }
+
+  // Every plan image of the open project, fetched once the browser is idle, so
+  // switching floors (or to Plan view) shows the drawing at once instead of
+  // waiting on a ~200 KB download per floor.
+  const planUrls = plans.map(fp => fp.image?.url).filter(Boolean).join('\n');
+  useEffect(() => {
+    if (!planUrls) return;
+    const imgs = [];
+    const go = () => planUrls.split('\n').forEach(u => { const i = new Image(); i.decoding = 'async'; i.src = u; imgs.push(i); });
+    const ric = window.requestIdleCallback || ((f) => setTimeout(f, 300));
+    const id = ric(go);
+    return () => { (window.cancelIdleCallback || clearTimeout)(id); imgs.length = 0; };
+  }, [planUrls]);
 
   const pickProject = (id) => setPlanSel({ projectId: id, planId: null });
   const pickPlan = (id) => setPlanSel({ projectId: proj.id, planId: id });
   const editPlan = (planId) => { setPlanEdit({ projectId: proj.id, planId }); openModal('floorplan-editor'); };
-  const openConsole = () => { setConsoleAdmin(false); setPropSel(proj.id); openModal('project-console'); };
+  // An available unit goes along as the console's picked unit.
+  const openConsole = (r) => {
+    setConsoleAdmin(false);
+    setConsoleUnit(r && r.status === 'available' ? { projectId: proj.id, variantId: r.loc.variant.id, unitId: r.code } : null);
+    setPropSel(proj.id);
+    openModal('project-console');
+  };
 
   const removePlan = () => {
     toast.confirm({
@@ -67,20 +102,21 @@ export default function AvailableUnitsView() {
     });
   };
 
-  // Each box, joined to its unit.
-  const rows = (plan?.boxes || []).map(b => {
+  // Each box of the current plan, joined to its unit.
+  const rows = (chipPlan?.boxes || []).map(b => {
     const loc = proj ? findUnit(proj, b.unitId) : null;
-    const status = loc ? loc.unit.status : 'unlinked';
-    return { box: b, code: b.unitId || '—', loc, status, type: loc?.variant.name || '', size: loc ? unitSize(loc.unit, loc.variant) : 0, price: loc ? unitPrice(loc.unit, loc.variant) : 0 };
+    return loc ? { ...unitRow(loc), box: b } : { box: b, code: b.unitId || '—', loc: null, status: 'unlinked', type: '', size: 0, price: 0 };
   });
+  // What the counts, filters and list cover: the plan's boxes, or the other units.
+  const items = chip === OTHER ? others : rows;
   const counts = { available: 0, hold: 0, sold: 0 };
-  rows.forEach(r => { if (counts[r.status] != null) counts[r.status]++; });
+  items.forEach(r => { if (counts[r.status] != null) counts[r.status]++; });
   const term = q.trim().toUpperCase();
   const shown = (r) => (stat === 'all' || r.status === stat) && (!term || r.code.toUpperCase().includes(term));
 
   // List order: by type, then code; units that point nowhere last.
   const groups = [];
-  rows.filter(shown).sort((a, b) => (a.status === 'unlinked') - (b.status === 'unlinked') || byCode(a.type, b.type) || byCode(a.code, b.code))
+  items.filter(shown).sort((a, b) => (a.status === 'unlinked') - (b.status === 'unlinked') || byCode(a.type, b.type) || byCode(a.code, b.code))
     .forEach(r => {
       const name = r.status === 'unlinked' ? 'Not linked' : r.type || 'Units';
       let g = groups.find(x => x.name === name);
@@ -88,11 +124,12 @@ export default function AvailableUnitsView() {
       g.rows.push(r);
     });
   const flat = groups.flatMap(g => g.rows).filter(r => r.loc);
-  const cur = rows.find(r => r.code === sel && r.loc) || null;
+  const cur = items.find(r => r.code === sel && r.loc) || null;
+  const curFloor = cur ? (chipPlan || plans.find(fp => (fp.boxes || []).some(b => b.unitId === cur.code)))?.name || '' : '';
 
   const select = (code, fromPlan) => {
     setSel(code);
-    if (fromPlan && window.matchMedia('(max-width: 860px)').matches) cardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    if (fromPlan && mode === 'plan' && window.matchMedia('(max-width: 860px)').matches) cardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   };
   const step = (d) => {
     if (!flat.length) return;
@@ -100,12 +137,19 @@ export default function AvailableUnitsView() {
     select(flat[(i + d + flat.length) % flat.length].code);
   };
 
-  const W = plan?.image?.width || 1, H = plan?.image?.height || 1;
+  const W = chipPlan?.image?.width || 1, H = chipPlan?.image?.height || 1;
   const boxes = rows.map(r => ({
-    id: r.box.id, ...toPx(r.box, W, H), label: r.code, status: r.status, dim: !shown(r),
+    id: r.box.id, ...toPx(r.box, W, H), label: r.code, sub: r.size ? `${r.size.toLocaleString('en-IN')} sqft` : '', status: r.status, dim: !shown(r),
     aria: r.loc ? `${r.code}, ${r.type}, ${r.size} sqft, ${STATUS[r.status].label}` : `${r.code}, not linked to a unit`,
   }));
-  const selBoxId = cur ? cur.box.id : null;
+  const selBoxId = cur?.box ? cur.box.id : null;
+  const canGo = cur?.status === 'available';
+  const tileTitle = (r) => [r.code, r.type, r.size ? `${r.size.toLocaleString('en-IN')} sqft` : '', STATUS[r.status].label].filter(Boolean).join(' · ');
+
+  const chips = mode === 'plan' ? plans.map(fp => ({ id: fp.id, name: fp.name || 'Floor plan' }))
+    : [...plans.map(fp => ({ id: fp.id, name: fp.name || 'Floor plan' })), ...(others.length ? [{ id: OTHER, name: plans.length ? 'Other units' : 'All units' }] : [])];
+  const noUnits = mode === 'grid' && !chips.length;
+  const noPlan = mode === 'plan' && !plan;
 
   return (
     <div className="fpv">
@@ -127,33 +171,38 @@ export default function AvailableUnitsView() {
                 <option key={p.id} value={p.id}>{p.name || 'Untitled project'}{p.floorPlans.length ? ` · ${p.floorPlans.length} plan${p.floorPlans.length > 1 ? 's' : ''}` : ' · no plan yet'}</option>
               ))}
             </select>
-            {plans.length > 0 && (
-              <div className="fpv-floors" role="tablist" aria-label="Floor plans">
-                {plans.map(fp => (
-                  <button key={fp.id} type="button" role="tab" aria-selected={fp.id === plan?.id} className={`fpv-floor${fp.id === plan?.id ? ' on' : ''}`} onClick={() => pickPlan(fp.id)}>{fp.name || 'Floor plan'}</button>
-                ))}
-              </div>
-            )}
-            {isAdmin && plan && (
+            <div className="fpv-mode" role="group" aria-label="View">
+              {[['grid', 'grid_view', 'Grid'], ['plan', 'map', 'Plan']].map(([k, ic, l]) => (
+                <button key={k} type="button" aria-pressed={mode === k} className={mode === k ? 'on' : ''} onClick={() => setMode(k)}><Mi>{ic}</Mi>{l}</button>
+              ))}
+            </div>
+            {isAdmin && (
               <div className="fpv-admin">
-                <button type="button" className="btn btn-g btn-sm" onClick={() => editPlan(plan.id)}><Mi>edit</Mi>Edit plan</button>
-                <button type="button" className="btn btn-g btn-sm fpv-del" onClick={removePlan} disabled={canSave === false} aria-label="Delete plan" title="Delete plan"><Mi>delete</Mi></button>
+                {chipPlan && <button type="button" className="btn btn-g btn-sm" onClick={() => editPlan(chipPlan.id)}><Mi>edit</Mi>Edit plan</button>}
+                {chipPlan && <button type="button" className="btn btn-g btn-sm fpv-del" onClick={removePlan} disabled={canSave === false} aria-label="Delete plan" title="Delete plan"><Mi>delete</Mi></button>}
+                {(plans.length > 0 || mode === 'grid') && <button type="button" className="btn btn-g btn-sm" onClick={() => editPlan(null)} disabled={canSave === false} title="Add floor plan"><Mi>add</Mi>Add plan</button>}
               </div>
             )}
           </div>
 
-          {!plan ? (
+          {noPlan || noUnits ? (
             <div className="empty fpv-empty">
-              <Mi>map</Mi>
-              <p>No floor plans yet for {proj.name || 'this project'}.</p>
-              {isAdmin && <button type="button" className="btn btn-p" onClick={() => editPlan(null)} disabled={canSave === false}><Mi>add</Mi>Add floor plan</button>}
+              <Mi>{noUnits ? 'grid_view' : 'map'}</Mi>
+              <p>{noUnits ? `No units in ${proj.name || 'this project'} yet.` : `No floor plans yet for ${proj.name || 'this project'}.`}</p>
+              {isAdmin && noPlan && <button type="button" className="btn btn-p" onClick={() => editPlan(null)} disabled={canSave === false}><Mi>add</Mi>Add floor plan</button>}
             </div>
           ) : (
-            <div className="fpv-grid">
+            <div className={`fpv-grid${mode === 'grid' ? ' is-seats' : ''}`}>
               <div className="fpv-planwrap">
+                <div className="fpv-sechd"><span>Select floor</span>{chips.length > 0 && <em>{chips.find(c => c.id === chip)?.name} selected</em>}</div>
+                <div className="fpv-floors" role="tablist" aria-label="Floors">
+                  {chips.map(c => (
+                    <button key={c.id} type="button" role="tab" aria-selected={c.id === chip} className={`fpv-floor${c.id === chip ? ' on' : ''}`} onClick={() => pickPlan(c.id)}>{c.name}</button>
+                  ))}
+                </div>
                 <div className="fpv-filters">
                   <div className="fpv-chips" role="group" aria-label="Filter by status">
-                    {[['all', 'All', rows.length], ['available', 'Available', counts.available], ['hold', 'On hold', counts.hold], ['sold', 'Sold', counts.sold]].map(([k, l, n]) => (
+                    {[['all', 'All', items.length], ['available', 'Available', counts.available], ['hold', 'On hold', counts.hold], ['sold', 'Sold', counts.sold]].map(([k, l, n]) => (
                       <button key={k} type="button" aria-pressed={stat === k} className={`fpv-chip ch-${k}${stat === k ? ' on' : ''}`} onClick={() => setStat(k)}>
                         {k !== 'all' && <i className={`fp-dot st-${k}`} />}{l}<b>{n}</b>
                       </button>
@@ -161,21 +210,53 @@ export default function AvailableUnitsView() {
                   </div>
                   <label className="fpv-search"><Mi>search</Mi><input value={q} onChange={e => setQ(e.target.value)} placeholder="Find a unit…" aria-label="Find a unit by name" /></label>
                 </div>
-                <FloorPlanCanvas className="fpv-stage" image={plan.image} boxes={boxes} label={`${plan.name || 'Floor plan'} of ${proj.name || 'the project'}`}
-                  selectedId={selBoxId} hoverId={hover}
-                  onSelect={(id) => { const r = rows.find(x => x.box.id === id); if (r) select(r.code, true); }}
-                  onHover={setHover} />
-                <div className="fp-legend">
-                  {['available', 'hold', 'sold'].map(s => <span key={s}><i className={`fp-sw st-${s}`} />{STATUS[s].label}</span>)}
-                  {rows.some(r => r.status === 'unlinked') && <span><i className="fp-sw st-unlinked" />Not linked</span>}
-                </div>
+
+                {mode === 'grid' ? (
+                  <section className="fpv-seats" aria-label={`Units on ${chips.find(c => c.id === chip)?.name || 'this floor'}`}>
+                    <div className="fpv-sechd"><span>Select unit</span><em>{cur ? `${cur.code} selected` : '0 selected'}</em></div>
+                    <div className="fp-legend">
+                      <span><i className="fps-sw st-available" />Available</span>
+                      <span><i className="fps-sw is-sel" />Selected</span>
+                      <span><i className="fps-sw st-hold" />On hold</span>
+                      <span><i className="fps-sw st-sold" />Sold</span>
+                    </div>
+                    {groups.length === 0 && <div className="fpv-none">{items.length ? 'No units match.' : 'No units on this floor yet.'}</div>}
+                    {groups.map(g => (
+                      <div key={g.name} className="fps-group">
+                        {groups.length > 1 && <div className="fpv-ghd"><span>{g.name}</span><span>{g.rows.length}</span></div>}
+                        <div className="fps-tiles">
+                          {g.rows.map(r => {
+                            const on = r.code === sel && !!r.loc;
+                            return (
+                              <button key={r.code + (r.box?.id || '')} type="button" className={`fps-tile st-${r.status}${on ? ' on' : ''}`} aria-pressed={on}
+                                disabled={!r.loc} title={tileTitle(r)} aria-label={tileTitle(r)} onClick={() => select(on ? null : r.code)}>
+                                {r.code}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    ))}
+                  </section>
+                ) : (
+                  <>
+                    <FloorPlanCanvas className="fpv-stage" image={chipPlan.image} boxes={boxes} label={`${chipPlan.name || 'Floor plan'} of ${proj.name || 'the project'}`}
+                      selectedId={selBoxId} hoverId={hover}
+                      onSelect={(id) => { const r = rows.find(x => x.box.id === id); if (r) select(r.code, true); }}
+                      onHover={setHover} />
+                    <div className="fp-legend">
+                      {['available', 'hold', 'sold'].map(s => <span key={s}><i className={`fp-sw st-${s}`} />{STATUS[s].label}</span>)}
+                      {rows.some(r => r.status === 'unlinked') && <span><i className="fp-sw st-unlinked" />Not linked</span>}
+                    </div>
+                  </>
+                )}
               </div>
 
               <aside className="fpv-side">
                 <section className="fpv-card" ref={cardRef} aria-live="polite">
                   {cur ? (
                     <>
-                      <div className="fpv-eyebrow">{plan.name || 'Floor plan'} · {cur.type}</div>
+                      <div className="fpv-eyebrow">{curFloor ? `${curFloor} · ` : ''}{cur.type}</div>
                       <div className="fpv-name"><h2>{cur.code}</h2><span className={`fp-pill st-${cur.status}`}>{STATUS[cur.status].label}</span></div>
                       <div className="fpv-area">
                         <span className="big">{cur.size ? cur.size.toLocaleString('en-IN') : '—'}</span><span className="unit">sqft</span>
@@ -183,7 +264,7 @@ export default function AvailableUnitsView() {
                       </div>
                       <dl className="fpv-meta">
                         <dt>Price</dt><dd>{cur.price ? <>{taka(cur.price)}{cur.size > 0 && <span className="fpv-rate"> · {taka(cur.price / cur.size)}/sqft</span>}</> : '—'}</dd>
-                        <dt>Floor</dt><dd>{plan.name || '—'}</dd>
+                        <dt>Floor</dt><dd>{curFloor || '—'}</dd>
                         {cur.loc.unit.clientName && <><dt>Client</dt><dd>{cur.loc.unit.clientName}</dd></>}
                         {cur.loc.unit.holdUntil
                           ? <><dt>Booked</dt><dd>Until {new Date(cur.loc.unit.holdUntil).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })}</dd></>
@@ -193,31 +274,43 @@ export default function AvailableUnitsView() {
                         <button type="button" className="btn btn-g btn-sm" onClick={() => step(-1)}><Mi>chevron_left</Mi>Prev</button>
                         <button type="button" className="btn btn-g btn-sm" onClick={() => step(1)}>Next<Mi>chevron_right</Mi></button>
                       </div>
-                      <button type="button" className="btn btn-p btn-sm fpv-open" onClick={openConsole}><Mi>storefront</Mi>Open project console</button>
+                      {canGo
+                        ? <button type="button" className="btn btn-p btn-sm fpv-open" onClick={() => openConsole(cur)}><Mi>shopping_cart</Mi>Continue with {cur.code}</button>
+                        : <button type="button" className="btn btn-g btn-sm fpv-open" onClick={() => openConsole(null)}><Mi>storefront</Mi>Open project console</button>}
                     </>
                   ) : (
-                    <div className="fpv-hint"><Mi>touch_app</Mi><span>Pick a unit on the plan or in the list to see its details.</span></div>
+                    <div className="fpv-hint"><Mi>touch_app</Mi><span>{mode === 'grid' ? 'Pick an available unit to continue with it.' : 'Pick a unit on the plan or in the list to see its details.'}</span></div>
                   )}
                 </section>
 
-                <section className="fpv-list" aria-label="Units on this plan">
-                  {groups.length === 0 && <div className="fpv-none">{rows.length ? 'No units match.' : 'No units on this plan yet.'}</div>}
-                  {groups.map(g => (
-                    <div key={g.name} className="fpv-group">
-                      <div className="fpv-ghd"><span>{g.name}</span><span>{g.rows.length}</span></div>
-                      {g.rows.map(r => (
-                        <button key={r.box.id} type="button" className={`fpv-row${r.code === sel && r.loc ? ' on' : ''}`} aria-pressed={r.code === sel && !!r.loc}
-                          disabled={!r.loc} onClick={() => select(r.code)} onMouseEnter={() => setHover(r.box.id)} onMouseLeave={() => setHover(null)}>
-                          <i className={`fp-dot st-${r.status}`} />
-                          <span className="fpv-code">{r.code}</span>
-                          <span className="fpv-st">{STATUS[r.status].short}</span>
-                          <span className="fpv-sz">{r.size ? `${r.size.toLocaleString('en-IN')} sqft` : ''}</span>
-                        </button>
-                      ))}
-                    </div>
-                  ))}
-                </section>
+                {mode === 'plan' && (
+                  <section className="fpv-list" aria-label="Units on this plan">
+                    {groups.length === 0 && <div className="fpv-none">{rows.length ? 'No units match.' : 'No units on this plan yet.'}</div>}
+                    {groups.map(g => (
+                      <div key={g.name} className="fpv-group">
+                        <div className="fpv-ghd"><span>{g.name}</span><span>{g.rows.length}</span></div>
+                        {g.rows.map(r => (
+                          <button key={r.box.id} type="button" className={`fpv-row${r.code === sel && r.loc ? ' on' : ''}`} aria-pressed={r.code === sel && !!r.loc}
+                            disabled={!r.loc} onClick={() => select(r.code)} onMouseEnter={() => setHover(r.box.id)} onMouseLeave={() => setHover(null)}>
+                            <i className={`fp-dot st-${r.status}`} />
+                            <span className="fpv-code">{r.code}</span>
+                            <span className="fpv-st">{STATUS[r.status].short}</span>
+                            <span className="fpv-sz">{r.size ? `${r.size.toLocaleString('en-IN')} sqft` : ''}</span>
+                          </button>
+                        ))}
+                      </div>
+                    ))}
+                  </section>
+                )}
               </aside>
+
+              {mode === 'grid' && (
+                <div className="fpv-cta">
+                  <button type="button" className="btn btn-p" disabled={!canGo} onClick={() => openConsole(cur)}>
+                    <Mi>shopping_cart</Mi>{canGo ? `Continue with ${cur.code}` : cur ? `${cur.code} is ${STATUS[cur.status].label.toLowerCase()}` : 'Pick a unit'}
+                  </button>
+                </div>
+              )}
             </div>
           )}
         </>

@@ -15,6 +15,7 @@ import SidebarGlyph from './components/SidebarGlyph.jsx';
 import RefreshButton from './components/RefreshButton.jsx';
 import LoadingRadar from './components/LoadingRadar.jsx';
 import Sidebar from './components/Sidebar.jsx';
+import BottomNav from './components/BottomNav.jsx';
 import ThemeToggle from './components/ThemeToggle.jsx';
 import NotifBell from './components/NotifBell.jsx';
 import UserMenu from './components/UserMenu.jsx';
@@ -194,18 +195,20 @@ function PageHeader({ shown, showBtnRef }) {
   return (
     <header className="pg-head">
       {/* Show-sidebar button, same glyph as the sidebar's hide button: always
-          there for the ≤1023px drawer, on desktop only while collapsed (CSS). */}
+          there for the 768–1023px drawer, on desktop only while collapsed, and
+          hidden on phones, where the bottom bar's More opens the drawer (CSS). */}
       <button ref={showBtnRef} className="ham" onClick={() => setSidebarShown(true)}
         aria-label="Show sidebar" aria-controls="app-sidebar" aria-expanded={shown}
         title={`Show sidebar (${kbd('\\')})`}>
         <SidebarGlyph />
       </button>
       <div style={{ flex: 1 }} />
-      {/* account → date filter → notifications */}
-      <UserMenu />
+      {/* theme → date filter → notifications → account. Phones (CSS) hide the
+          theme button and move the account to the left, after the show button. */}
+      <ThemeToggle />
       <DateRangePicker />
-      <span className="pg-div" />
       <NotifBell />
+      <UserMenu />
     </header>
   );
 }
@@ -398,7 +401,9 @@ function AppShell() {
       if (drawer || a === showBtnRef.current) hideBtnRef.current?.focus({ preventScroll: true });
     } else if (document.getElementById('app-sidebar')?.contains(a)
       || (a === document.body && lastFocus.current && !lastFocus.current.isConnected)) {
-      showBtnRef.current?.focus({ preventScroll: true });
+      // Phones hide the show button; the bottom bar's More tab opens the drawer there.
+      const back = showBtnRef.current?.getClientRects().length ? showBtnRef.current : document.querySelector('.bnav-more');
+      back?.focus({ preventScroll: true });
     }
   }, [shown, drawer]);
 
@@ -409,7 +414,7 @@ function AppShell() {
         <PageHeader shown={shown} showBtnRef={showBtnRef} />
         <main className="pg-body"><div className={`pg-inner${wide ? ' pg-wide' : ''}`}><PageHero /><Suspense fallback={null}><PageBody /></Suspense></div></main>
       </div>
-      <ThemeToggle inert={drawerOpen} />
+      <BottomNav inert={drawerOpen} />
       {/* goey-toast host for every tab but Projects, which renders its own:
           Accounts' toasts and the form discard questions show here. */}
       {view !== 'properties' && <Suspense fallback={null}><ProjectsToaster /></Suspense>}

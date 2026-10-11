@@ -27,7 +27,8 @@ export default function NotifBell() {
 
   return (
     <>
-      <button className="notif-btn" onClick={() => setNotifOpen(o => !o)}>
+      <button type="button" className="hd-ic notif-btn" onClick={() => setNotifOpen(o => !o)}
+        title="Notifications" aria-label={count > 0 ? `Notifications, ${count} unread` : 'Notifications'}>
         <Mi>notifications</Mi>
         {count > 0 && (
           <span className="notif-ct">{count > 99 ? '99+' : String(count)}</span>

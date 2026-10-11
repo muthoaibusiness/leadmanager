@@ -9,7 +9,7 @@ import { rectFrom, clampMove, resizeRect, HANDLES, handlePoint } from '../../lib
 // move the viewBox.
 //
 //   image     { url, width, height }
-//   boxes     [{ id, x, y, w, h (image px), label, status, aria, dim }]
+//   boxes     [{ id, x, y, w, h (image px), label, sub?, status, aria, dim }]
 //             status: available | hold | sold | unlinked
 //   editable  boxes can be drawn (tool 'draw'), moved and resized
 //   onSelect(id | null), onHover(id | null)
@@ -180,7 +180,6 @@ export default function FloorPlanCanvas({
   const onPointerCancel = (e) => { pointers.current.delete(e.pointerId); setDrag(null); };
 
   const zoomBy = (f) => zoomAt(f, v.x + v.w / 2, v.y + v.h / 2);
-  const fs = 12 / k; // label size: 12 screen px at any zoom
   const live = (b) => (drag && drag.id === b.id && drag.rect ? { ...b, ...pick(drag.rect) } : b);
   const sel = selectedId ? boxes.find(b => b.id === selectedId) : null;
   const selR = sel ? live(sel) : null;
@@ -203,7 +202,7 @@ export default function FloorPlanCanvas({
         {boxes.map(b0 => {
           const b = live(b0);
           const on = b.id === selectedId;
-          const showLabel = b.label && b.w * k >= 30 && b.h * k >= 15;
+          const showLabel = b.label && b.w * k >= 16 && b.h * k >= 12;
           return (
             <g key={b.id} data-box={b.id}
               className={`fp-box st-${b.status}${on ? ' on' : ''}${b.id === hoverId ? ' hl' : ''}${b.dim ? ' dim' : ''}`}
@@ -214,10 +213,18 @@ export default function FloorPlanCanvas({
               <rect className="fp-fill" x={b.x} y={b.y} width={b.w} height={b.h} />
               {b.status === 'sold' && <rect x={b.x} y={b.y} width={b.w} height={b.h} fill={`url(#${hatch})`} className="fp-hatch" />}
               <rect className="fp-edge" x={b.x} y={b.y} width={b.w} height={b.h} vectorEffect="non-scaling-stroke" />
-              {showLabel && (
-                <text className="fp-lbl" x={b.x + b.w / 2} y={b.y + b.h / 2} fontSize={Math.min(fs, b.h * 0.6)}
-                  strokeWidth={3 / k} textAnchor="middle" dominantBaseline="central">{b.label}</text>
-              )}
+              {showLabel && (() => {
+                const t = fitLabel(b.label, b.sub, b.w * k, b.h * k);
+                if (!t) return null;
+                const f = t.fs / k, cy = b.y + b.h / 2;
+                return (
+                  <text className="fp-lbl" x={b.x + b.w / 2} y={t.sub ? cy - f * 0.45 : cy} fontSize={f}
+                    strokeWidth={3 / k} textAnchor="middle" dominantBaseline="central">
+                    {t.text}
+                    {t.sub && <tspan className="fp-lbl-sub" x={b.x + b.w / 2} dy={f * 1.05} fontSize={f * 0.72}>{t.sub}</tspan>}
+                  </text>
+                );
+              })()}
             </g>
           );
         })}
@@ -240,3 +247,19 @@ export default function FloorPlanCanvas({
 }
 
 const pick = (r) => ({ x: r.x, y: r.y, w: r.w, h: r.h });
+
+// A box's label sized to the box, in screen px. Bigger shops get bigger text
+// (11–20px); a name too long for its box drops its prefix (SHOP-411 → 411);
+// a box too small for even that shows none. `sub` (the size) is a second,
+// smaller line, shown only when the box has the room.
+const CH = 0.64; // average glyph width / font size, bold caps and digits
+function fitLabel(label, sub, w, h) {
+  const max = Math.min(20, Math.max(11, Math.min(w, h) * 0.24));
+  const size = (s, lines = 1) => Math.min(max, (h * 0.8) / (lines * 1.25), (w * 0.88) / (s.length * CH));
+  const short = String(label).replace(/^[A-Za-z]+[-\s]+/, '');
+  const text = size(label) >= 10 ? label : short !== label && size(short) >= 9 ? short : null;
+  if (!text) return null;
+  const fs = size(text);
+  const two = sub && size(text, 2) >= 11 && (w * 0.88) / (sub.length * CH * 0.72) >= size(text, 2);
+  return two ? { text, sub, fs: size(text, 2) } : { text, fs };
+}

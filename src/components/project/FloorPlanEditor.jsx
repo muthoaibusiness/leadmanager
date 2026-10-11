@@ -285,7 +285,8 @@ function Editor({ projectId, planId }) {
     setErr('');
     const res = await saveFloorPlan({
       projectId, companyId: proj.companyId || user?.companyId, user,
-      plan: { ...draft.plan, name: draft.plan.name.trim(), order: parseInt(draft.plan.order, 10) || 0 },
+      // The stored image lives beside the plan in the draft, not on it.
+      plan: { ...draft.plan, image: draft.image, name: draft.plan.name.trim(), order: parseInt(draft.plan.order, 10) || 0 },
       pending: draft.pending, types: draft.types,
       units: Object.fromEntries(Object.entries(draft.units).map(([k, u]) => [k, { ...u, code: saveCode(u), size: num(u.size), price: num(u.price) }])),
     });

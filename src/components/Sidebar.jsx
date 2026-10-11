@@ -5,6 +5,7 @@ import { useApp } from '../context/AppContext.jsx';
 import { getHoldRequests } from '../lib/db.js';
 import { kbd } from '../lib/helpers.js';
 import { canSee } from '../lib/constants.js';
+import { NAV_META } from '../lib/navMeta.js';
 
 // Grouped, role-scoped navigation (Muthoclo admin pattern).
 // Sections render a label + their visible items; a group renders a header that
@@ -43,24 +44,6 @@ export default function Sidebar({ hideBtnRef }) {
   const visible = (k) => (GROUPS[k] ? GROUPS[k].kids.some(c => canSee(user, c.key))
     : k === 'conversations' ? chatOk : canSee(user, k));
 
-  const META = {
-    dashboard: { ico: 'home', lbl: 'Home' },
-    conversations: { ico: 'forum', lbl: 'Conversations' },
-    calendar: { ico: 'calendar_month', lbl: 'Calendar' },
-    pipeline: { ico: 'view_kanban', lbl: 'Pipeline' },
-    clients: { ico: 'account_circle', lbl: 'Contacts' },
-    bookings: { ico: 'event_note', lbl: 'Sales Activity' },
-    reports: { ico: 'bar_chart', lbl: 'Reports' },
-    agentperf: { ico: 'leaderboard', lbl: 'Performance' },
-    requests: { ico: 'inbox', lbl: 'Requests' },
-    properties: { ico: 'folder', lbl: 'Projects' },
-    team: { ico: 'groups', lbl: 'Team' },
-    users: { ico: 'manage_accounts', lbl: 'Users' },
-    accounts: { ico: 'group_add', lbl: 'Accounts' },
-    companies: { ico: 'corporate_fare', lbl: 'Companies' },
-    profile: { ico: 'account_circle', lbl: 'Profile' },
-  };
-
   const pendingHolds = role === 'MANAGEMENT' ? getHoldRequests().filter(r => r.status === 'pending').length : 0;
 
   // A plain function, not a component declared in here: a component type made
@@ -96,7 +79,7 @@ export default function Sidebar({ hideBtnRef }) {
         </div>
       );
     }
-    const m = META[k];
+    const m = NAV_META[k];
     let badge = 0;
     if (k === 'requests' && pendingHolds > 0) badge = pendingHolds;
     if (k === 'conversations' && waUnread > 0) badge = waUnread;

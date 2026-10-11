@@ -1,29 +1,21 @@
-import { useState, useEffect } from 'react';
 import Mi from './Mi.jsx';
+import { useTheme, setTheme } from '../lib/theme.js';
 
-// Dark/light theme switch, docked at the header's right end (.thtog). Persists choice and flips the
-// CSS-variable theme by setting data-theme on <html>. Adapted from the shadcn
-// reference to this project's plain-JSX + CSS-variable stack (no Tailwind).
-
-// `inert`: set while the mobile sidebar drawer is open, so Tab cannot reach it.
-export default function ThemeToggle({ inert }) {
-  const [theme, setTheme] = useState(() => localStorage.getItem('theme') || 'dark');
-  const isDark = theme === 'dark';
-
-  useEffect(() => {
-    document.documentElement.dataset.theme = theme;
-    localStorage.setItem('theme', theme);
-  }, [theme]);
-
+// Dark/light theme switch: a round header icon button, first of the header's
+// right-hand controls on wide screens (hidden on phones, where the account
+// menu carries the switch). Flips the CSS-variable theme via data-theme on
+// <html>; the value lives in lib/theme.js, shared with that menu item.
+export default function ThemeToggle() {
+  const isDark = useTheme() === 'dark';
   return (
     <button
-      className={`thtog${isDark ? '' : ' light'}`}
+      type="button"
+      className="hd-ic thtog"
       onClick={() => setTheme(isDark ? 'light' : 'dark')}
       title={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
-      aria-label="Toggle theme"
-      inert={inert}
+      aria-label={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
     >
-      <span className="thtog-knob"><Mi>{isDark ? 'dark_mode' : 'light_mode'}</Mi></span>
+      <Mi aria-hidden="true">{isDark ? 'dark_mode' : 'light_mode'}</Mi>
     </button>
   );
 }
