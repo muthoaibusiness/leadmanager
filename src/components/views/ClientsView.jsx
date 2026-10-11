@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import useNavState from '../../hooks/useNavState.js';
 import Mi from '../Mi.jsx';
 import { useApp } from '../../context/AppContext.jsx';
 import { getLeads, getBookings } from '../../lib/db.js';
@@ -11,7 +11,7 @@ export default function ClientsView() {
   useLeadBook(); // this view reduces over every lead; leads are not in the boot load
   const { user, setPanLead, dbVersion } = useApp();
   void dbVersion;
-  const [q, setQ] = useState('');
+  const [q, setQ] = useNavState('clients.q', '');
 
   const leads = getLeads(user);
   const bkByLead = {};

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import useNavState from '../../hooks/useNavState.js';
 import { useApp } from '../../context/AppContext.jsx';
 import { getDB, userNameById, fetchUserActivity } from '../../lib/db.js';
 import AgentCard from '../dashboards/AgentCard.jsx';
@@ -33,7 +34,7 @@ export default function TeamView() {
   // The Team Lead is first in the list and the default: their own hand-offs are
   // the feed they land on, and it keeps the view useful for a team of one.
   const feedPeople = [user, ...agents, ...execs].filter(Boolean);
-  const [feedUser, setFeedUser] = useState(user.id);
+  const [feedUser, setFeedUser] = useNavState('team.feedUser', user.id);
   // A roster change (someone added or removed) can retire the selection.
   const activeFeedUser = feedPeople.some(p => p.id === feedUser) ? feedUser : user.id;
 

@@ -66,6 +66,17 @@ Every team/user/lead/property carries a `companyId`. `sbLoad()` scopes reads by 
 - `src/components/` — `views/` (one per nav section), `dashboards/` (one per role), `modals/` (opened by name via `openModal`), `chat/`, `project/`, `charts/`, and `ui/` (generic primitives).
 - `src/lib/` holds all domain logic (agent performance, funnels, deals, quotas, rollups, projects, push). Keep business logic here, not in components.
 
+### Navigation & history
+
+There is no router. The page on screen is AppContext state (`view`, `projTab`, the `agentFilter`/`teamFilter` drill-down). `src/hooks/useNavHistory.js` mirrors that state into `window.history` (URLs like `#/leads`, `#/properties/units`), so browser Back/Forward, reload and pasted links work.
+
+- **Pages push, tabs replace.** Changing the page key (`pageKey()` in `src/lib/navHistory.js`) pushes a history entry. Tabs, filters, search and sort only update the current entry (debounced `replaceState`). Keep navigating through the existing setters (`nav()`, `setView`, …): the hook observes state, so callers need no history code.
+- **Per-page state that should survive Back or a reload** uses `useNavState(key, init)` (`src/hooks/useNavState.js`) instead of `useState`. Keys are app-unique (`'leads.page'`), and values must be structured-cloneable. `PageBody` is keyed by the history entry id, so a page remounts per entry and reads its saved state on mount. Beware of reset-on-mount logic such as `useChanged(...) && setPage(0)`: it would wipe restored state. LeadsView keys its page reset on a stored query instead.
+- **Overlays** (modal, lead panel, notifications, phone drawer) get a guard entry above their page. Browser Back closes the top one by dispatching Escape, so each form's discard guard (`useDiscardGuard`) still asks before dropping input.
+- **Redirects** (a view the account may not see) go through `replaceView()`, which replaces the entry instead of pushing one. `homeView(user)` is the fallback home page.
+- **The top header bar** holds the page's navigation. `<BackButton />` (round ←) returns to the previous entry in this tab; with none (direct link, fresh sign-in), it goes to the page above (`parentOf()`), and it is hidden on home. Next to it, `ui/bellows-crumb.jsx` shows the trail from `trailOf()` (Dashboard › Projects › Available Units) and fills the free length of the bar. An ancestor crumb opens that page as a new entry. When the trail outgrows its room (phones), ancestors fold into slivers that open on hover or focus. Page titles, Back labels and crumbs share `VIEW_TITLES`.
+- The history store is module-level state in `useNavHistory.js` (one app, one history), so render code never reads refs, which react-hooks lint forbids.
+
 ### Conventions
 
 - The header lead count is published by `LeadsView` into `leadCounts` context (not recomputed in the header) so the number always agrees with the table beneath it.

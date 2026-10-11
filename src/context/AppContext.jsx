@@ -1,6 +1,8 @@
 import { createContext, useContext, useState, useCallback, useRef, useEffect } from 'react';
 import { getDB, getSession } from '../lib/db.js';
-import { ROLES, DRAWER_MQ } from '../lib/constants.js';
+import { DRAWER_MQ } from '../lib/constants.js';
+import { readBoot } from '../lib/navHistory.js';
+import useNavHistory, { replaceNextPage } from '../hooks/useNavHistory.js';
 import { waCanChat } from '../lib/wa.js';
 import { claimLead, isQuotaLimited } from '../lib/leadQuota.js';
 
@@ -11,17 +13,20 @@ export function AppProvider({ children }) {
   // returning user's shell renders on the first pass instead of after a
   // round-trip. Lazy initialisers — these run once, not per render.
   const [user, setUser] = useState(getSession);
-  const [view, setView] = useState(() => (getSession()?.role === ROLES.MASTER ? 'companies' : 'dashboard'));
-  const [tab, setTab] = useState(0);
-  const [statusFilter, setStatusFilter] = useState('ALL');
-  const [sortBy, setSortBy] = useState('updated');
-  const [search, setSearch] = useState('');
+  // The page to open on: this tab's history entry after a reload, a #/view
+  // URL, or home (see readBoot / useNavHistory).
+  const [boot] = useState(readBoot);
+  const [view, setView] = useState(boot.snap.view);
+  const [tab, setTab] = useState(boot.snap.tab);
+  const [statusFilter, setStatusFilter] = useState(boot.snap.statusFilter);
+  const [sortBy, setSortBy] = useState(boot.snap.sortBy);
+  const [search, setSearch] = useState(boot.snap.search);
   const [panLead, setPanLeadRaw] = useState(null);
   const [modal, setModal] = useState(null);
   const [fwdTarget, setFwdTarget] = useState(null);
   const [tgtUser, setTgtUser] = useState(null);
-  const [agentFilter, setAgentFilter] = useState(null);
-  const [teamFilter, setTeamFilter] = useState(null);
+  const [agentFilter, setAgentFilter] = useState(boot.snap.agentFilter);
+  const [teamFilter, setTeamFilter] = useState(boot.snap.teamFilter);
   // The Customers header used to run its own count query, which knew nothing
   // about the filters on screen — so it reported the whole book while the table
   // below it listed a filtered subset, and the two numbers disagreed. LeadsView
@@ -34,7 +39,7 @@ export function AppProvider({ children }) {
   // Projects → Available Units: which tab the Projects page shows, the project
   // and floor plan picked there, and the plan open in the floor plan editor
   // ({ projectId, planId } — planId null for a new plan).
-  const [projTab, setProjTab] = useState('list'); // 'list' | 'units'
+  const [projTab, setProjTab] = useState(boot.snap.projTab); // 'list' | 'units'
   const [planSel, setPlanSel] = useState({ projectId: null, planId: null });
   const [planEdit, setPlanEdit] = useState(null);
   const [bookSel, setBookSel] = useState(null);    // booking id for detail modal
@@ -138,13 +143,43 @@ export function AppProvider({ children }) {
     setSidebarOpen(false);
   }, []);
 
+  // A redirect (a page this account may not see) replaces the history entry
+  // instead of adding one, so Back does not return to the forbidden page.
+  const replaceView = useCallback((v) => { replaceNextPage(); setView(v); }, []);
+
+  // Put a history entry's page back on screen (Back/Forward, the header's Back).
+  const applySnap = useCallback((s) => {
+    setView(s.view);
+    setProjTab(s.projTab);
+    setAgentFilter(s.agentFilter);
+    setTeamFilter(s.teamFilter);
+    setTab(s.tab);
+    setStatusFilter(s.statusFilter);
+    setSortBy(s.sortBy);
+    setSearch(s.search);
+    setSidebarOpen(false);
+  }, []);
+  const closeAll = useCallback(() => {
+    setModal(null);
+    setPanLeadRaw(null);
+    setNotifOpen(false);
+    setSidebarOpen(false);
+  }, []);
+  const closeNotif = useCallback(() => setNotifOpen(false), []);
+
   const db = getDB();
+  const { pageId, back: navBack, trail: navTrail } = useNavHistory({
+    boot, user, db, apply: applySnap, closeAll, closeNotif,
+    snap: { view, projTab, agentFilter, teamFilter, tab, statusFilter, sortBy, search },
+    overlays: { modal, panLead, notifOpen, sidebarOpen },
+  });
   // Whether the signed-in account may see the Conversations section at all.
   const chatOk = waCanChat(user, waSettings);
 
   const value = {
     user, setUser,
-    view, setView,
+    view, setView, replaceView,
+    pageId, navBack, navTrail,
     tab, setTab,
     statusFilter, setStatusFilter,
     sortBy, setSortBy,

@@ -1,4 +1,4 @@
-import { useRef, useState, useEffect } from 'react';
+import { useRef, useState, useEffect, useId } from 'react';
 import Mi from '../Mi.jsx';
 import { useApp } from '../../context/AppContext.jsx';
 import { getDB, createUserFn, addNotifs } from '../../lib/db.js';
@@ -10,6 +10,7 @@ import useChanged from '../../hooks/useChanged.js';
 
 export default function CreateUserModal() {
   const { modal, closeModal, user, createUserRoles, refreshDB, showToast, setCredInfo, openModal } = useApp();
+  const uid = useId(); // field ids, so each <label htmlFor> points at its field
   const isOpen = modal === 'create-user';
   const [err, setErr] = useState('');
   const [showPw, setShowPw] = useState(false);
@@ -95,21 +96,21 @@ export default function CreateUserModal() {
         </div>
         <div className="m-body">
           {createUserRoles.length > 1 && (
-            <div className="fg"><label>Role</label>
-              <select className="fi" ref={roleRef}>
+            <div className="fg"><label htmlFor={`${uid}role`}>Role</label>
+              <select id={`${uid}role`} className="fi" ref={roleRef}>
                 {createUserRoles.map(r => <option key={r} value={r}>{rlabel(r)}</option>)}
               </select>
             </div>
           )}
           {createUserRoles.length === 1 && <input type="hidden" ref={roleRef} value={createUserRoles[0]} />}
           <div className="fg-row">
-            <div className="fg"><label>Full Name *</label><input className="fi" ref={nameRef} type="text" placeholder="e.g. Masud Rahman" /></div>
-            <div className="fg"><label>Phone</label><input className="fi" ref={phoneRef} type="tel" placeholder="+880 1711 000000" /></div>
+            <div className="fg"><label htmlFor={`${uid}name`}>Full Name *</label><input id={`${uid}name`} className="fi" ref={nameRef} type="text" placeholder="e.g. Masud Rahman" /></div>
+            <div className="fg"><label htmlFor={`${uid}phone`}>Phone</label><input id={`${uid}phone`} className="fi" ref={phoneRef} type="tel" placeholder="+880 1711 000000" /></div>
           </div>
-          <div className="fg"><label>Email *</label><input className="fi" ref={emailRef} type="email" placeholder="user@company.com" /></div>
-          <div className="fg"><label>Password *</label>
+          <div className="fg"><label htmlFor={`${uid}email`}>Email *</label><input id={`${uid}email`} className="fi" ref={emailRef} type="email" placeholder="user@company.com" /></div>
+          <div className="fg"><label htmlFor={`${uid}pass`}>Password *</label>
             <div className="pw-w">
-              <input className="fi" ref={passRef} type={showPw ? 'text' : 'password'} placeholder="Set a password" />
+              <input id={`${uid}pass`} className="fi" ref={passRef} type={showPw ? 'text' : 'password'} placeholder="Set a password" />
               <button className="pw-e" onClick={() => setShowPw(v => !v)}><Mi>{showPw ? 'visibility_off' : 'visibility'}</Mi></button>
             </div>
           </div>

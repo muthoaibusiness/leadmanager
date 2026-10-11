@@ -6,7 +6,8 @@ import { sbLoad, sbSubscribeAll } from './lib/supabase.js';
 import { waLoadSettings } from './lib/wa.js';
 import { pushUnreadSummary, requestNotifyPermission } from './lib/pushNotify.js';
 import { rlabel, kbd } from './lib/helpers.js';
-import { ROLES, canSee, FEATURE_KEYS, effectiveRole, DRAWER_MQ } from './lib/constants.js';
+import { ROLES, canSee, effectiveRole, DRAWER_MQ } from './lib/constants.js';
+import { VIEW_TITLES, homeView } from './lib/navHistory.js';
 import useMediaQuery from './hooks/useMediaQuery.js';
 import lazyChunk from './lib/lazyChunk.js';
 
@@ -21,9 +22,13 @@ import NotifBell from './components/NotifBell.jsx';
 import UserMenu from './components/UserMenu.jsx';
 import Toast from './components/Toast.jsx';
 import DateRangePicker from './components/DateRangePicker.jsx';
+import BackButton from './components/BackButton.jsx';
+import BellowsCrumb from './components/ui/bellows-crumb.jsx';
+import { Menu, MenuItem } from './components/ui/menu.jsx';
+import useProjectNav from './hooks/useProjectNav.js';
 
 
-import { migrateProjects, newProjectDraft, projectInventory, planProjects } from './lib/projects.js';
+import { migrateProjects, projectInventory, planProjects } from './lib/projects.js';
 import './components/project/AvailableUnitsTab.css';
 import GlobalLoadingBar from './components/GlobalLoadingBar.jsx';
 
@@ -188,7 +193,7 @@ function LoginPage({ onLogin, onBack }) {
 // `shown`: the sidebar is on screen. `showBtnRef`: the show button, which the
 // shell moves focus onto when the sidebar hides with focus inside it.
 function PageHeader({ shown, showBtnRef }) {
-  const { setSidebarShown } = useApp();
+  const { setSidebarShown, navTrail } = useApp();
   return (
     <header className="pg-head">
       {/* Show-sidebar button, same glyph as the sidebar's hide button: always
@@ -199,7 +204,10 @@ function PageHeader({ shown, showBtnRef }) {
         title={`Show sidebar (${kbd('\\')})`}>
         <SidebarGlyph />
       </button>
-      <div style={{ flex: 1 }} />
+      {/* Back (the previous page; none on home), then where this page sits:
+          the breadcrumb takes all the room the controls leave. */}
+      <BackButton />
+      <BellowsCrumb className="hd-crumb" items={navTrail} onNavigate={(item) => item.go()} />
       {/* theme → date filter → notifications → account. Phones (CSS) hide the
           theme button and move the account to the left, after the show button. */}
       <ThemeToggle />
@@ -212,7 +220,8 @@ function PageHeader({ shown, showBtnRef }) {
 
 // ── In-body hero header (eyebrow + big title + subtitle + actions) ───────────
 function PageHero() {
-  const { user, view, agentFilter, teamFilter, setAgentFilter, setTeamFilter, setTab, setStatusFilter, setSearch, openModal, setCreateUserRoles, setPropSel, setPropDraft, setConsoleAdmin, leadCounts, projTab, setProjTab, planSel, setPlanEdit } = useApp();
+  const { user, view, agentFilter, teamFilter, openModal, setCreateUserRoles, leadCounts, projTab, setProjTab, planSel } = useApp();
+  const pnav = useProjectNav();
 
   // The Customers count is NOT computed here. It has to agree with the table
   // underneath it, and the table's query is built from filters this component
@@ -229,7 +238,6 @@ function PageHero() {
   const agentName = agentFilter ? db.users.find(u => u.id === agentFilter)?.name : '';
   const tlUser = teamFilter ? db.users.find(u => u.role === 'TEAM_LEAD' && u.teamId === teamFilter) : null;
   const drilled = !!(agentFilter || teamFilter);
-  const clearDrill = () => { setAgentFilter(null); setTeamFilter(null); setTab(0); setStatusFilter('ALL'); setSearch(''); };
 
   // eyebrow / title / subtitle per view
   const props = getProperties();
@@ -237,22 +245,24 @@ function PageHero() {
   const propAvail = props.reduce((s, p) => s + projectInventory(p).available, 0);
   const teamAgents = db.users.filter(u => u.role === ROLES.AGENT && u.teamId === user.teamId).length;
 
+  // Titles come from VIEW_TITLES, which also labels the Back link to each page.
   const META = {
-    dashboard: { eyebrow: rlabel(user.role), title: 'Dashboard', sub: '' },
-    leads: { eyebrow: 'Pipeline', title: 'Prospects', sub: leadCounts?.total == null ? 'Counting…' : `${leadCounts.total} prospects ·${leadCounts.active ?? 0} active` },
-    calendar: { eyebrow: 'Schedule', title: 'Calendar', sub: 'Your scheduled meetings' },
-    pipeline: { eyebrow: 'Sales', title: 'Pipeline', sub: 'Drag deals across stages' },
-    clients: { eyebrow: 'Relationships', title: 'Contacts', sub: '360° customer view' },
-    properties: { eyebrow: 'Catalog', title: 'Projects', sub: `${props.length} project${props.length === 1 ? '' : 's'} · ${propAvail} unit${propAvail === 1 ? '' : 's'} available` },
-    reports: { eyebrow: 'Insights', title: 'Reports', sub: 'Live sales analytics' },
-    agentperf: { eyebrow: 'Insights', title: 'Performance', sub: 'Per-role scorecards & funnels' },
-    bookings: { eyebrow: 'Sales', title: 'Sales Activity', sub: 'Payments, instalments & dues' },
-    team: { eyebrow: 'Team', title: 'My Team', sub: `${teamAgents} agents` },
-    accounts: { eyebrow: 'Administration', title: 'Users', sub: 'Team list · create & manage accounts' },
-    requests: { eyebrow: 'Administration', title: 'Hold Requests', sub: 'Approve agent unit holds' },
-    profile: { eyebrow: 'Account', title: 'My Profile', sub: 'Manage your details & avatar' },
-    companies: { eyebrow: 'Master Admin', title: 'Companies', sub: 'Company-wise overview' },
+    dashboard: { eyebrow: rlabel(user.role), sub: '' },
+    leads: { eyebrow: 'Pipeline', sub: leadCounts?.total == null ? 'Counting…' : `${leadCounts.total} prospects ·${leadCounts.active ?? 0} active` },
+    calendar: { eyebrow: 'Schedule', sub: 'Your scheduled meetings' },
+    pipeline: { eyebrow: 'Sales', sub: 'Drag deals across stages' },
+    clients: { eyebrow: 'Relationships', sub: '360° customer view' },
+    properties: { eyebrow: 'Catalog', sub: `${props.length} project${props.length === 1 ? '' : 's'} · ${propAvail} unit${propAvail === 1 ? '' : 's'} available` },
+    reports: { eyebrow: 'Insights', sub: 'Live sales analytics' },
+    agentperf: { eyebrow: 'Insights', sub: 'Per-role scorecards & funnels' },
+    bookings: { eyebrow: 'Sales', sub: 'Payments, instalments & dues' },
+    team: { eyebrow: 'Team', sub: `${teamAgents} agents` },
+    accounts: { eyebrow: 'Administration', sub: 'Team list · create & manage accounts' },
+    requests: { eyebrow: 'Administration', sub: 'Approve agent unit holds' },
+    profile: { eyebrow: 'Account', sub: 'Manage your details & avatar' },
+    companies: { eyebrow: 'Master Admin', sub: 'Company-wise overview' },
   };
+  for (const k in META) META[k].title = VIEW_TITLES[k];
   let { eyebrow, title, sub } = META[view] || { eyebrow: '', title: view, sub: '' };
   if (user.role === ROLES.MASTER) ({ eyebrow, title, sub } = META.companies); // master only ever sees the company overview
   if (drilled) {
@@ -282,27 +292,33 @@ function PageHero() {
   // in that Team Lead's team (createUserFn stamps the creator's teamId). Management only
   // creates Team Leads, each of which starts a team of its own.
   if (view === 'team' && user.role === ROLES.TL) actions.push(<button key="add-agent" className="btn btn-p" onClick={() => { setCreateUserRoles([ROLES.AGENT, ROLES.EXEC]); openModal('create-user'); }}><Mi>person_add</Mi>Add Agent</button>);
+  // Projects: two tabs, the list and Available Units. Management's actions sit
+  // in one Manage menu: here on the list; on Available Units in its toolbar,
+  // where the project and floor in view are known (AvailableUnitsView).
   // Add Property opens an unsaved draft; the project is created only when the
   // catalog's Save product succeeds (see ProjectCatalog / saveNewProject).
-  // Available Units sits just before it; on that tab Management's Add Property
-  // gives way to Add floor plan, for the project picked there.
   if (view === 'properties') {
-    actions.push(<button key="units" type="button" className="btn btn-g hero-units" aria-pressed={unitsTab} onClick={() => setProjTab(unitsTab ? 'list' : 'units')}><Mi>map</Mi><span className="hero-units-tx">Available </span>Units</button>);
+    actions.push(
+      <div key="tabs" className="hero-tabs" role="tablist" aria-label="Projects view">
+        <button type="button" role="tab" aria-selected={!unitsTab} className={unitsTab ? '' : 'on'} onClick={() => setProjTab('list')}><Mi>apartment</Mi>Projects</button>
+        <button type="button" role="tab" aria-selected={unitsTab} className={`hero-units${unitsTab ? ' on' : ''}`} onClick={() => setProjTab('units')}><Mi>map</Mi><span className="hero-units-tx">Available </span>Units</button>
+      </div>,
+    );
   }
-  if (view === 'properties' && user.role === ROLES.MGMT && unitsTab) {
-    const list = planProjects();
-    const target = list.find(p => p.id === planSel.projectId) || list[0];
-    actions.push(<button key="add-plan" type="button" className="btn btn-p" disabled={!target} onClick={() => { setPlanEdit({ projectId: target.id, planId: null }); openModal('floorplan-editor'); }}><Mi>add</Mi>Add floor plan</button>);
-  } else if (view === 'properties' && user.role === ROLES.MGMT) actions.push(<button key="add-prop" className="btn btn-p" onClick={() => { const d = newProjectDraft(user.companyId); setPropDraft(d); setConsoleAdmin(true); setPropSel(d.id); openModal('project-console'); }}><Mi>add</Mi>Add Property</button>);
+  if (view === 'properties' && user.role === ROLES.MGMT && !unitsTab) {
+    const target = planProjects().find(p => p.id === planSel.projectId) || planProjects()[0];
+    actions.push(
+      <Menu key="manage" label="Manage projects" trigger={<button type="button" className="btn btn-p hero-manage"><Mi>tune</Mi>Manage<Mi className="hero-manage-chev">expand_more</Mi></button>}>
+        <MenuItem icon="add_business" onSelect={pnav.addProperty}>Add property</MenuItem>
+        <MenuItem icon="add_location_alt" disabled={!target} onSelect={() => pnav.addFloorPlan(target.id)} hint={target?.name}>Add floor plan</MenuItem>
+      </Menu>,
+    );
+  }
 
   return (
     <div className={`hero${view === 'pipeline' ? ' hero-compact' : ''}`}>
       <div className="hero-main">
-        {drilled
-          ? <button className="hero-back" onClick={clearDrill}><Mi>arrow_back</Mi>All Prospects</button>
-          : unitsTab
-            ? <button className="hero-back" onClick={() => setProjTab('list')}><Mi>arrow_back</Mi>All Projects</button>
-            : <div className="hero-eyebrow">{eyebrow}</div>}
+        <div className="hero-eyebrow">{eyebrow}</div>
         <h1 className="hero-title">{title}</h1>
         {sub && <div className="hero-sub">{sub}</div>}
       </div>
@@ -343,7 +359,7 @@ function PageBody() {
 
 // ── App shell ───────────────────────────────────────────────────────────────
 function AppShell() {
-  const { view, sidebarOpen, sidebarCollapsed } = useApp();
+  const { view, sidebarOpen, sidebarCollapsed, pageId } = useApp();
   const wide = view === 'pipeline' || view === 'conversations'; // kanban + chat need the full canvas
   // Below 1024px the sidebar is a drawer over the page; from 1024px it is docked
   // and may be collapsed. `shown` is "on screen" in whichever layout applies.
@@ -405,7 +421,7 @@ function AppShell() {
       <Sidebar hideBtnRef={hideBtnRef} />
       <div className="page" inert={drawerOpen}>
         <PageHeader shown={shown} showBtnRef={showBtnRef} />
-        <main className="pg-body"><div className={`pg-inner${wide ? ' pg-wide' : ''}`}><PageHero /><Suspense fallback={null}><PageBody /></Suspense></div></main>
+        <main className="pg-body"><div className={`pg-inner${wide ? ' pg-wide' : ''}`}><PageHero /><Suspense fallback={null}><PageBody key={pageId} /></Suspense></div></main>
       </div>
       <BottomNav inert={drawerOpen} />
       {/* goey-toast host for every tab but Projects, which renders its own:
@@ -422,7 +438,7 @@ const needsBootFetch = () => hasSessionId() && !getSession();
 
 // ── Root App ─────────────────────────────────────────────────────────────────
 export default function App() {
-  const { user, setUser, view, setView, refreshDB, searchRef, panLead, setPanLead, closeModal, modal, setSearch, notifOpen, setNotifOpen, setWaSettings, chatOk, sidebarOpen, setSidebarOpen, toggleSidebar } = useApp();
+  const { user, setUser, view, setView, replaceView, refreshDB, searchRef, panLead, setPanLead, closeModal, modal, setSearch, notifOpen, setNotifOpen, setWaSettings, chatOk, sidebarOpen, setSidebarOpen, toggleSidebar } = useApp();
   // The loader is only for the one case that genuinely has nothing to render:
   // a stored session id whose user is NOT in the local cache. An anonymous
   // visitor gets Landing/Login and a returning user gets the shell, both on the
@@ -430,6 +446,7 @@ export default function App() {
   const [loading, setLoading] = useState(needsBootFetch);
   const [loadVisible, setLoadVisible] = useState(needsBootFetch);
   const [showLogin, setShowLogin] = useState(false); // landing → login gate
+  const [waCheckedFor, setWaCheckedFor] = useState(null); // account whose chat allow-list has answered
   const [entering, setEntering] = useState(false);    // brief loader after login
   const initialized = useRef(false);
 
@@ -581,25 +598,28 @@ export default function App() {
 
   // Keep the user on a view they're allowed to see (e.g. Executives with no
   // dashboard land on their first granted feature instead of a forbidden page).
+  // Replaces the history entry, so Back never returns to the forbidden page
+  // (a pasted #/view URL, or an entry from before "view as").
   useEffect(() => {
     if (!user || !view) return;
     // Conversations is granted by the chat allow-list, not by NAV_SCOPES, so it
     // has to be exempted from the role-based redirect.
-    if (view === 'conversations' && chatOk) return;
-    if (!canSee(user, view)) {
-      const first = FEATURE_KEYS.find(k => canSee(user, k)) || 'profile';
-      setView(first);
-    }
-  }, [user, view, chatOk, setView]);
+    // A reload or a #/conversations link lands here before the allow-list has
+    // loaded, so wait for it before judging.
+    if (view === 'conversations' && (chatOk || waCheckedFor !== user.id)) return;
+    if (!canSee(user, view)) replaceView(homeView(user));
+  }, [user, view, chatOk, waCheckedFor, replaceView]);
 
   // Chat config drives both sidebar visibility and the relay URL. Load it once
   // per signed-in account; a missing table just leaves chat switched off.
   useEffect(() => {
     if (!user?.id) { setWaSettings(null); return; }
     let alive = true;
+    const uid = user.id;
     waLoadSettings()
       .then(s => { if (alive) setWaSettings(s); })
-      .catch(() => { if (alive) setWaSettings(null); });
+      .catch(() => { if (alive) setWaSettings(null); })
+      .finally(() => { if (alive) setWaCheckedFor(uid); });
     return () => { alive = false; };
   }, [user?.id, setWaSettings]);
 

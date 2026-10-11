@@ -61,7 +61,7 @@ export default function ImportModal() {
               <Mi>upload_file</Mi>
               <div style={{ fontSize: '14px', fontWeight: 600 }}>Drop your CSV file here or click to browse</div>
               <div style={{ fontSize: '12px', color: 'var(--t3)', marginTop: '5px' }}>Supports Google Sheets CSV export · Phone required · existing numbers are updated</div>
-              <input type="file" ref={fileRef} accept=".csv,.txt" style={{ display: 'none' }} onChange={e => handleFile(e.target.files[0])} />
+              <input type="file" name="import-file" ref={fileRef} accept=".csv,.txt" style={{ display: 'none' }} onChange={e => handleFile(e.target.files[0])} />
             </div>
           ) : (
             <>

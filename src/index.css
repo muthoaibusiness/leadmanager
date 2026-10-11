@@ -47,7 +47,8 @@
   --sw: clamp(216px, 8vw + 132px, 256px);      /* docked sidebar width */
   --hh: 58px;                                   /* header height */
   --gutter: clamp(12px, 1.25vw + 8px, 28px);    /* page side padding */
-  --gutter-y: clamp(14px, .8vw + 11px, 26px);   /* page top/bottom padding */
+  --gutter-y: clamp(14px, .8vw + 11px, 26px);   /* page bottom padding */
+  --body-top: 6px;                              /* page top padding: the borderless header already spaces the content */
   --inset: 0px;                                 /* gap around the inset page panel (desktop sets it, see APP SHELL) */
   --bnav: 0px;                                  /* height the phone bottom bar covers (phones set it, see .bnav) */
   --content-max: 1760px;                        /* content cap on very wide screens */
@@ -1643,8 +1644,7 @@ a {
   display: flex;
   align-items: center;
   gap: 10px;
-  border-bottom: 1px solid var(--bd);
-  flex-shrink: 0
+  flex-shrink: 0   /* no rule under it: lines up with the borderless page header */
 }
 
 .sb-brand .wlogo-sm {
@@ -2443,28 +2443,28 @@ a {
   .page {
     /* inset panel (see APP SHELL): --inset off every edge, the sidebar's
        included; overflow:hidden clips the header to the radius.
-       The edge is a 1px ring shadow, not a border, so it takes no layout space;
-       flush against the sidebar (z-index 200) the ring's left side and rounded
-       corner were painted under it and vanished, hence the gap there too. */
+       No edge line: the panel is told apart from the sidebar by its fill
+       alone (--bg against the sidebar's), plus the soft drop shadow. */
     height: calc(100dvh - 2 * var(--inset));
     margin: var(--inset) var(--inset) var(--inset) calc(var(--sw) + var(--inset));
     background: var(--bg);
     border-radius: var(--r-xl);
-    /* --bd2: the header shares the canvas colour (--surf), so a --bd ring
-       left the rounded corner near invisible in the dark theme */
-    box-shadow: 0 0 0 1px var(--bd2), var(--sh);
+    box-shadow: var(--sh);
     transition: margin-left var(--sb-in) var(--sb-ease)
   }
+  /* the docked sidebar draws no edge either; the drawer keeps its line */
+  .sidebar { border-right: none }
   #app.sb-collapsed .page {
     margin-left: var(--inset);
     transition: margin-left var(--sb-out) var(--sb-ease)
   }
 }
 
+/* No border and no fill of its own: the header reads as the top of the page,
+   with the breadcrumb sitting just above the content. */
 .pg-head {
   height: var(--hh);
-  background: var(--surf);
-  border-bottom: 1px solid var(--bd);
+  background: transparent;
   display: flex;
   align-items: center;
   /* controls line up with the page content */
@@ -2500,6 +2500,46 @@ a {
 }
 
 .hd-ic .mi { font-size: 19px }
+
+/* Back (BackButton) and the breadcrumb (ui/bellows-crumb), between the
+   show-sidebar button and the controls: the trail takes all the room left.
+   Kept quiet: a bare arrow, no ring, beside small sentence-case crumbs. */
+.pg-head .hd-crumb { flex: 1 1 0; margin-right: 4px }
+
+.hd-back {
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  margin-right: -2px;
+  border: none;
+  border-radius: var(--r-sm);
+  background: none;
+  color: var(--t3);
+  cursor: pointer;
+  transition: background var(--tr), color var(--tr)
+}
+
+.hd-back:hover { background: var(--surf2); color: var(--t1) }
+.hd-back .mi { font-size: 17px }
+
+@media (max-width: 1023px) {
+  .hd-back { width: 36px; height: 36px }   /* touch target */
+}
+
+/* Back gives way to the show-sidebar button (.ham) wherever that is on screen:
+   the collapsed desktop sidebar and the 768–1023px drawer. Phones hide .ham
+   (the bottom bar's More opens the drawer), so Back stays there. */
+@media not all and (max-width: 1023px) {
+  #app.sb-collapsed .hd-back { display: none }
+}
+
+@media (min-width: 768px) and (max-width: 1023px) {
+  .hd-back { display: none }
+}
 
 /* Phones: the account face moves to the left, right after the show-sidebar
    button (order only; the DOM keeps the wide-screen order), and the theme
@@ -2619,11 +2659,11 @@ a {
 /* The page scroller. No zoom: content renders at its real size, and the shell
    gives it room through the fluid tokens in :root instead. Full-height views
    (.wa-wrap, .pk-board) take exactly its content box,
-   calc(100dvh - 2 * var(--inset) - var(--bnav) - var(--hh) - 2 * var(--gutter-y)): keep them in step. */
+   calc(100dvh - 2 * var(--inset) - var(--bnav) - var(--hh) - var(--body-top) - var(--gutter-y)): keep them in step. */
 .pg-body {
   flex: 1;
   overflow-y: auto;
-  padding: var(--gutter-y) var(--gutter)
+  padding: var(--body-top) var(--gutter) var(--gutter-y)
 }
 
 .pg-inner {
@@ -7946,13 +7986,21 @@ textarea.fi {
 /* Property table (minimal, no images) */
 .lt-hdr.prop-row,
 .lt-row.prop-row {
-  grid-template-columns: 1.7fr 100px 1fr 1.5fr 116px 112px
+  grid-template-columns: 1.7fr 100px 1fr 1.5fr 116px 112px 40px
 }
 
 .lt-hdr.prop-row.with-cb,
 .lt-row.prop-row.with-cb {
-  grid-template-columns: 22px 1.7fr 100px 1fr 1.5fr 116px 112px
+  grid-template-columns: 22px 1.7fr 100px 1fr 1.5fr 116px 112px 40px
 }
+
+/* the row's ⋯ menu (ui/menu.jsx) */
+.lt-more {
+  display: inline-grid; place-items: center; width: 32px; height: 32px; padding: 0;
+  border: 1px solid transparent; border-radius: 8px; background: transparent; color: var(--t2); cursor: pointer
+}
+.lt-more:hover, .lt-more[data-state="open"] { border-color: var(--bd2); background: var(--surf2); color: var(--t1) }
+.lt-more:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px }
 
 /* Mobile: projects render as stacked cards — project name on its own line, the
    rest (price · size · units · status · handover) wrap beneath. No scrolling;
@@ -11563,6 +11611,9 @@ textarea.fi {
 .pcu-sold { background: color-mix(in srgb, var(--red) 13%, var(--surf)); border-color: color-mix(in srgb, var(--red) 32%, var(--bd2)); }
 .pcu-sold .pcu-no, .pcu-sold .pcu-st { color: var(--red); }
 /* selected */
+/* custom unit status (project unitStatuses): its colour arrives as --st-c */
+.pcu.has-c { background: color-mix(in srgb, var(--st-c) 14%, var(--surf)); border-color: color-mix(in srgb, var(--st-c) 40%, var(--bd2)); }
+.pcu.has-c .pcu-no, .pcu.has-c .pcu-st { color: var(--st-c); }
 .pcu.sel { border-color: var(--accent); box-shadow: 0 0 0 1.5px var(--accent); background: color-mix(in srgb, var(--accent) 10%, var(--surf)); }
 .pcu.sel .pcu-st { color: var(--accent); }
 /* blocked (hold/sold) — not pickable */
@@ -12147,6 +12198,9 @@ textarea.fi {
   .lt-cell-status { grid-column: 3; grid-row: 1 / span 2; align-self: start; justify-content: flex-end; }
   .lt-cell-units { grid-column: 3; grid-row: 3; justify-content: flex-end; text-align: right; }
   .lt-row .lt-cell-id, .lt-row .lt-cell-fu, .lt-row .lt-cell-date { display: none; }
+  /* project cards: the ⋯ menu in the top-right corner, the status badge under it */
+  .lt-row.prop-row .lt-cell-menu { grid-column: 3; grid-row: 1; justify-self: end; margin: -6px -8px 0 0; }
+  .lt-row.prop-row .lt-cell-status { grid-row: 2; }
 }
 
 /* 6. Lead details drawer: the 'Meeting Set' layout bug. .p-body is a
@@ -12232,6 +12286,37 @@ textarea.fi {
 .chip-sel .mi { font-size: 17px; }
 .chip-sel.on { border-color: var(--accent); color: var(--t1); background: var(--blue-l); }
 .chip-sel .chip-ck { margin-left: auto; color: var(--accent); font-size: 16px; }
+
+/* Forward modal — teammate picker (search + scrollable card list) */
+.fwd-label { font-size: 10px; font-weight: 700; color: var(--t2); display: block; margin-bottom: 8px; letter-spacing: 1.5px; text-transform: uppercase; }
+.fwd-search { display: flex; align-items: center; gap: 8px; padding: 0 12px; border: 1px solid var(--bd); border-radius: var(--r-sm); background: var(--surf2); margin-bottom: 10px; }
+.fwd-search .mi { font-size: 18px; color: var(--t3); flex: none; }
+.fwd-search input { flex: 1; min-width: 0; border: 0; background: transparent; padding: 10px 0; font: inherit; font-size: 13.5px; color: var(--t1); }
+.fwd-search input:focus { outline: none; }
+
+.fwd-list { display: flex; flex-direction: column; gap: 6px; max-height: 320px; overflow-y: auto; }
+
+.fwd-row {
+  display: flex; align-items: center; gap: 10px;
+  width: 100%; padding: 9px 11px;
+  border: 1px solid var(--bd); border-radius: var(--r-sm);
+  background: var(--surf2); color: inherit; font: inherit; text-align: left;
+  cursor: pointer; transition: border-color var(--tr), background var(--tr);
+}
+.fwd-row:hover { border-color: var(--bd2); }
+.fwd-row.on { border-color: var(--accent); background: var(--blue-l); }
+
+.fwd-av { flex: none; width: 34px; height: 34px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 13px; color: #fff; }
+
+.fwd-mid { flex: 1; min-width: 0; }
+.fwd-name { font-weight: 700; font-size: 13.5px; color: var(--t1); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fwd-email { font-size: 11.5px; color: var(--t3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+.fwd-ck { flex: none; font-size: 19px; color: var(--t3); }
+.fwd-row.on .fwd-ck { color: var(--accent); }
+
+.fwd-empty { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 28px 12px; color: var(--t3); font-size: 13px; text-align: center; }
+.fwd-empty .mi { font-size: 26px; }
 
 /* Meeting calendar (Google-style month grid) */
 /* ── CALENDAR DASHBOARD ───────────────────
@@ -12522,7 +12607,7 @@ input[type="time"]::-webkit-calendar-picker-indicator { opacity: .9; cursor: poi
 
 /* exactly the page scroller's content box (see .pg-body), so the chat never
    scrolls the page; with less than 520px of room the page scrolls instead */
-.wa-wrap { display: flex; flex-direction: column; gap: 12px; height: calc(100dvh - 2 * var(--inset) - var(--bnav) - var(--hh) - 2 * var(--gutter-y)); min-height: 520px; }
+.wa-wrap { display: flex; flex-direction: column; gap: 12px; height: calc(100dvh - 2 * var(--inset) - var(--bnav) - var(--hh) - var(--body-top) - var(--gutter-y)); min-height: 520px; }
 
 .wa-bar { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 .wa-bar-t { font-family: var(--font-display); font-size: 26px; font-weight: 500; text-transform: uppercase; letter-spacing: .01em; line-height: 1.1; }

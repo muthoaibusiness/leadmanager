@@ -1,12 +1,27 @@
-/* Projects hero: the Available Units tab button (App.jsx PageHero). Loaded
-   with the shell, since the button shows on the Projects list before the
-   Available Units page has ever been opened. */
-.hero-acts .hero-units[aria-pressed="true"] {
-  border-color: var(--accent);
-  color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 12%, transparent);
+/* Projects hero (App.jsx PageHero): the Projects / Available Units tabs and
+   Management's Manage menu button. Loaded with the shell, since they show on
+   the Projects list before the Available Units page has ever been opened.
+   The tabs are a pill toggle like Available Units' Grid / Plan (.fpv-mode). */
+.hero-tabs {
+  display: inline-flex; align-items: center; gap: 2px; padding: 3px;
+  border: 1px solid var(--bd2); border-radius: 999px; background: var(--surf2);
 }
-/* Phones: "Units". */
+.hero-tabs button {
+  display: inline-flex; align-items: center; gap: 6px; height: 34px; padding: 0 14px;
+  border: 0; border-radius: 999px; background: transparent; color: var(--t2);
+  font: 700 12.5px/1 var(--font-display); letter-spacing: .04em; text-transform: uppercase; cursor: pointer;
+  transition: background var(--tr), color var(--tr);
+}
+.hero-tabs button .mi { font-size: 17px; }
+.hero-tabs button:hover { color: var(--t1); }
+.hero-tabs button.on { background: var(--accent); color: var(--on-accent); }
+.hero-tabs button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.hero-manage-chev { margin-right: -4px; }
+.hero-manage[data-state="open"] .hero-manage-chev { transform: rotate(180deg); }
+
+/* Phones: "Units", and the tabs share the row evenly. */
 @media (max-width: 600px) {
   .hero-units-tx { display: none; }
+  .hero-tabs { flex: 1; }
+  .hero-tabs button { flex: 1; justify-content: center; }
 }

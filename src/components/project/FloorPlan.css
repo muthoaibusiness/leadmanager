@@ -20,24 +20,28 @@
 }
 .fp-svg { display: block; width: 100%; height: 100%; user-select: none; -webkit-user-select: none; }
 
-/* Boxes: a light tint of the status colour with a solid edge; sold is also
-   hatched, so colour is never the only signal. */
+/* Boxes: a clear tint of the status colour with a solid edge, strong enough
+   to tell the statuses apart on a busy drawing; sold is also hatched, so
+   colour is never the only signal. */
 .fp-box { cursor: pointer; outline: none; }
-.fp-box .fp-fill { fill-opacity: .16; transition: fill-opacity .15s; }
-.fp-box .fp-edge { fill: none; stroke-width: 1.5; }
+.fp-box .fp-fill { fill-opacity: .45; transition: fill-opacity .15s; }
+.fp-box .fp-edge { fill: none; stroke-width: 2.5; }
 .fp-box.st-available .fp-fill { fill: var(--fp-av); }
 .fp-box.st-available .fp-edge { stroke: var(--fp-av); }
 .fp-box.st-hold .fp-fill { fill: var(--fp-hold); }
 .fp-box.st-hold .fp-edge { stroke: var(--fp-hold); }
 .fp-box.st-sold .fp-fill { fill: var(--fp-sold); }
 .fp-box.st-sold .fp-edge { stroke: var(--fp-sold); }
+/* custom unit status (project unitStatuses): its colour arrives as --st-c */
+.fp-box.has-c .fp-fill { fill: var(--st-c); }
+.fp-box.has-c .fp-edge { stroke: var(--st-c); }
 .fp-box.st-unlinked .fp-fill { fill: var(--fp-unl); fill-opacity: .08; }
 .fp-box.st-unlinked .fp-edge { stroke: var(--fp-unl); stroke-dasharray: 5 4; }
-.fp-hatch { pointer-events: none; opacity: .5; }
+.fp-hatch { pointer-events: none; opacity: .7; }
 .fp-hatch-ln { stroke: var(--fp-sold); }
-.fp-box:hover .fp-fill, .fp-box.hl .fp-fill { fill-opacity: .3; }
+.fp-box:hover .fp-fill, .fp-box.hl .fp-fill { fill-opacity: .6; }
 .fp-box:focus-visible .fp-edge { stroke: var(--fp-sel); stroke-width: 3; }
-.fp-box.on .fp-fill { fill-opacity: .36; }
+.fp-box.on .fp-fill { fill-opacity: .65; }
 .fp-box.on .fp-edge { stroke: var(--fp-sel); stroke-width: 3; }
 .fp-box.dim { opacity: .28; }
 .fp-lbl-sub { font-weight: 600; }
@@ -74,6 +78,7 @@
 .fp-sw.st-hold { border-color: var(--gold); background: color-mix(in srgb, var(--gold) 22%, transparent); }
 .fp-sw.st-sold { border-color: var(--red); background: repeating-linear-gradient(45deg, color-mix(in srgb, var(--red) 45%, transparent) 0 2px, color-mix(in srgb, var(--red) 15%, transparent) 2px 5px); }
 .fp-sw.st-unlinked { border-style: dashed; }
+.fp-sw.has-c { border-color: var(--st-c); background: color-mix(in srgb, var(--st-c) 22%, transparent); }
 .fp-pill {
   display: inline-flex; align-items: center; gap: 5px; padding: 3px 10px; border-radius: 999px;
   font-size: 11.5px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; white-space: nowrap;
@@ -82,6 +87,7 @@
 .fp-pill.st-available { color: var(--green); background: color-mix(in srgb, var(--green) 15%, transparent); }
 .fp-pill.st-hold { color: var(--gold); background: color-mix(in srgb, var(--gold) 16%, transparent); }
 .fp-pill.st-sold { color: var(--red); background: color-mix(in srgb, var(--red) 14%, transparent); }
+.fp-pill.has-c { color: var(--st-c); background: color-mix(in srgb, var(--st-c) 15%, transparent); }
 
 .fp-banner {
   display: flex; gap: 10px; align-items: flex-start; padding: 12px 14px; margin-bottom: 14px;
@@ -95,22 +101,17 @@
 .fpv { min-width: 0; }
 .fpv-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; margin-bottom: 14px; }
 .fpv-proj { max-width: min(100%, 340px); min-width: 0; text-overflow: ellipsis; }
-.fpv-floors { display: flex; gap: 6px; flex-wrap: wrap; min-width: 0; }
-.fpv-floor {
-  height: 36px; padding: 0 14px; border-radius: 999px; border: 1px solid var(--bd2); background: transparent;
-  color: var(--t2); font-size: 12.5px; font-weight: 700; letter-spacing: .04em; cursor: pointer; white-space: nowrap;
-}
-.fpv-floor:hover { color: var(--t1); border-color: var(--accent); }
-.fpv-floor.on { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
-.fpv-admin { display: flex; gap: 6px; margin-left: auto; }
-.fpv-del:hover { color: var(--red); border-color: var(--red); }
+.fpv-manage { margin-left: auto; }
 .fpv-empty .btn { margin-top: 14px; }
 
-.fpv-grid { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 16px; align-items: start; }
+/* --fp-sel: the selected tile (Grid view and Plan view's side panel) and its legend swatch */
+.fpv-grid { --fp-sel: #1F6FEB; display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 16px; align-items: start; }
+/* Plan view: a wider side panel (4 unit tiles a row), so a smaller drawing */
+.fpv-grid:not(.is-seats) { grid-template-columns: minmax(0, 1fr) 360px; }
 .fpv-planwrap { min-width: 0; display: flex; flex-direction: column; gap: 10px; }
 /* As tall as the drawing's own shape at this width (--fp-ar comes from the
    canvas), up to most of the screen. */
-.fpv-stage { aspect-ratio: var(--fp-ar, 4 / 3); max-height: min(72vh, 760px); }
+.fpv-stage { aspect-ratio: var(--fp-ar, 4 / 3); max-height: min(64vh, 660px); }
 .fpv-filters { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; }
 .fpv-chips { display: flex; flex-wrap: wrap; gap: 6px; }
 .fpv-chip {
@@ -120,6 +121,7 @@
 .fpv-chip b { color: var(--t1); font-variant-numeric: tabular-nums; }
 .fpv-chip:hover { border-color: var(--accent); }
 .fpv-chip.on { background: var(--surf2); border-color: var(--accent); color: var(--t1); }
+.fpv-chip.ch-custom.on { border-color: var(--st-c); }
 .fpv-search {
   display: flex; align-items: center; gap: 6px; height: 34px; padding: 0 12px; margin-left: auto;
   border: 1px solid var(--bd2); border-radius: 999px; background: var(--surf2); min-width: 0; flex: 0 1 220px;
@@ -131,7 +133,7 @@
 .fp-legend span { display: inline-flex; align-items: center; gap: 7px; }
 
 .fpv-side { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
-.fpv-card, .fpv-list {
+.fpv-card {
   background: var(--surf); border: 1px solid var(--bd); border-radius: var(--r-lg, 14px); padding: 16px; min-width: 0;
 }
 .fpv-card { border-top: 3px solid var(--accent); }
@@ -151,23 +153,13 @@
 .fpv-hint { display: flex; gap: 10px; align-items: center; color: var(--t3); font-size: 13.5px; }
 .fpv-hint .mi { font-size: 22px; }
 
-.fpv-list { padding: 6px 0; max-height: min(60vh, 560px); overflow-y: auto; }
+/* Plan view: the unit tiles beside the drawing scroll on their own */
+.fpv-side .fpv-seats { max-height: min(60vh, 560px); overflow-y: auto; }
 .fpv-none { padding: 14px 16px; color: var(--t3); font-size: 13px; }
 .fpv-ghd {
   display: flex; justify-content: space-between; padding: 10px 16px 4px;
   font-size: 11px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; color: var(--t3);
 }
-.fpv-row {
-  width: 100%; display: grid; grid-template-columns: 9px minmax(0, 1fr) auto auto; align-items: center; gap: 10px;
-  min-height: 40px; padding: 6px 16px; border: 0; background: transparent; color: var(--t1); text-align: left; cursor: pointer; font-size: 13.5px;
-}
-.fpv-row:hover:not(:disabled) { background: var(--surf2); }
-.fpv-row.on { background: color-mix(in srgb, var(--accent) 16%, transparent); box-shadow: inset 3px 0 0 var(--accent); }
-.fpv-row:disabled { cursor: default; color: var(--t3); }
-.fpv-row:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
-.fpv-code { font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.fpv-st { font-size: 11.5px; color: var(--t3); font-weight: 600; text-transform: uppercase; letter-spacing: .05em; }
-.fpv-sz { font-size: 12.5px; color: var(--t2); font-variant-numeric: tabular-nums; text-align: right; min-width: 64px; }
 
 /* ── Grid view: a seat-map of unit tiles ───────────────────────────────── */
 .fpv-mode { display: inline-flex; padding: 3px; gap: 2px; border: 1px solid var(--bd2); border-radius: 999px; background: var(--surf2); }
@@ -180,63 +172,83 @@
 .fpv-mode button.on { background: var(--accent); color: var(--on-accent); }
 .fpv-mode button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 
-.fpv-sechd { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; font-size: 15px; font-weight: 600; color: var(--t1); }
-.fpv-sechd em { font-style: normal; font-size: 12.5px; font-weight: 600; color: var(--orange); overflow-wrap: anywhere; text-align: right; }
 
 .fpv-seats {
-  --fp-sel: #1F6FEB;
-  display: flex; flex-direction: column; gap: 12px; min-width: 0;
-  background: var(--surf); border: 1px solid var(--bd); border-radius: var(--r-lg, 14px); padding: 16px;
+  display: flex; flex-direction: column; gap: 10px; min-width: 0;
+  background: var(--surf); border: 1px solid var(--bd); border-radius: var(--r-lg, 14px); padding: 12px;
 }
 .fpv-seats .fpv-ghd { padding: 4px 0 8px; }
 .fpv-seats .fpv-none { padding: 4px 0; }
-.fps-tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(76px, 1fr)); gap: 10px; }
+.fps-tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(68px, 1fr)); gap: 6px; }
+.fpv-side .fps-tiles { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 .fps-tile {
-  min-height: 50px; padding: 6px 4px; border-radius: 10px; border: 1.5px solid var(--green);
-  background: var(--surf); color: var(--t1); font-size: 12px; font-weight: 700; line-height: 1.2;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px;
+  min-height: 44px; padding: 4px 3px; border-radius: 8px; border: 1.5px solid var(--green);
+  background: var(--surf); color: var(--t1); font-size: 11px; font-weight: 700; line-height: 1.2;
   overflow-wrap: anywhere; cursor: pointer; transition: transform .12s, box-shadow .12s;
 }
+.fps-sz { font-size: 9.5px; font-weight: 600; color: var(--t2); }
+.fps-tile.on .fps-sz, .fps-tile.st-sold .fps-sz, .fps-tile.st-unlinked .fps-sz { color: inherit; opacity: .85; }
 .fps-tile:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 3px 10px rgba(0, 0, 0, .12); }
 .fps-tile:focus-visible { outline: 2px solid var(--fp-sel); outline-offset: 2px; }
 .fps-tile.st-hold { border-color: var(--gold); background: color-mix(in srgb, var(--gold) 26%, var(--surf)); }
 .fps-tile.st-sold { border-color: var(--red); background: color-mix(in srgb, var(--red) 22%, var(--surf)); color: var(--t2); }
 .fps-tile.st-unlinked { border: 1.5px dashed var(--bd2); color: var(--t3); cursor: default; }
+.fps-tile.has-c { border-color: var(--st-c); background: color-mix(in srgb, var(--st-c) 22%, var(--surf)); color: var(--t1); }
 .fps-tile.on { border-color: var(--fp-sel); background: var(--fp-sel); color: #fff; box-shadow: 0 0 0 3px color-mix(in srgb, var(--fp-sel) 25%, transparent); }
 
 .fps-sw { width: 14px; height: 14px; border-radius: 4px; border: 1.5px solid var(--green); background: var(--surf); flex: none; }
 .fps-sw.st-hold { border-color: var(--gold); background: color-mix(in srgb, var(--gold) 26%, var(--surf)); }
 .fps-sw.st-sold { border-color: var(--red); background: color-mix(in srgb, var(--red) 22%, var(--surf)); }
 .fps-sw.is-sel { border-color: var(--fp-sel); background: var(--fp-sel); }
+.fps-sw.has-c { border-color: var(--st-c); background: color-mix(in srgb, var(--st-c) 30%, var(--surf)); }
 
-/* Phones: Continue rides along the bottom of the screen, like a checkout bar.
-   Wider screens use the button in the unit card. */
+/* Floor dropdown (ui/select.jsx) in the toolbar row, a pill like the project picker (.fsel) */
+.fpv-floorsel { flex: 0 1 220px; }
+.fpv-floorsel .sel-trigger { width: 100%; min-height: 40px; height: 40px; padding: 0 14px 0 18px; border-color: var(--bd); border-radius: 999px; font: 600 13px/1.2 var(--font-display); }
+/* the plan's optional landmarks, above / below the units */
+.fps-mark {
+  padding: 7px 10px; border-radius: 8px; background: var(--surf2); color: var(--t2);
+  font-size: 11.5px; font-weight: 600; letter-spacing: .04em; text-align: center; overflow-wrap: anywhere;
+}
+
+/* Phones: Continue rides along the bottom of the screen, like a checkout bar,
+   until the unit card (with its own Continue) scrolls up to it; then the bar
+   empties (AvailableUnitsView). Wider screens use the button in the unit card. */
 .fpv-cta { display: none; }
 
 @media (max-width: 1100px) {
   .fpv-grid { grid-template-columns: minmax(0, 1fr) 280px; }
+  .fpv-grid:not(.is-seats) { grid-template-columns: minmax(0, 1fr) 320px; }
 }
 @media (max-width: 860px) {
-  .fpv-grid { grid-template-columns: minmax(0, 1fr); }
-  .fpv-stage { max-height: 62vh; }
-  .fpv-list { max-height: none; }
+  .fpv-grid, .fpv-grid:not(.is-seats) { grid-template-columns: minmax(0, 1fr); }
+  .fpv-stage { max-height: 56vh; }
+  .fpv-side .fpv-seats { max-height: none; }
   .fpv-search { margin-left: 0; flex: 1 1 100%; }
   .fpv-proj { max-width: 100%; flex: 1 1 100%; }
-  .fpv-admin { margin-left: 0; }
-  /* one swipeable row of floor chips instead of several wrapped rows */
-  .fpv-floors { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; margin: 0 -4px; padding: 0 4px 2px; scroll-snap-type: x proximity; }
-  .fpv-floors::-webkit-scrollbar { display: none; }
-  .fpv-floor { flex: none; scroll-snap-align: start; }
-  .fps-tiles { grid-template-columns: repeat(auto-fill, minmax(64px, 1fr)); gap: 8px; }
-  .fpv-seats { padding: 12px; }
+  .fpv-floorsel { flex: 1 1 140px; }   /* fills the line beside Grid / Plan */
+  .fpv-manage { margin-left: 0; }
+  .fps-tiles { grid-template-columns: repeat(auto-fill, minmax(60px, 1fr)); }
+  .fps-tile { min-height: 42px; padding: 4px 2px; font-size: 10.5px; }
+  .fpv-seats { padding: 10px; }
   .fpv-cta {
-    /* bottom: --bnav keeps it above the phone bottom bar (sticky ignores the
-       scroller's padding, so it would otherwise sit behind the bar) */
-    display: block; position: sticky; bottom: var(--bnav); z-index: 5; margin: 0 -4px;
+    /* Sticky offsets count from inside the scroller's padding. .pg-body's
+       padding-bottom is --gutter-y, plus --bnav on phones, so pulling the
+       bar back down by --gutter-y lands it right above the phone bottom bar
+       (or on the screen's edge when there is no bar). bottom: --bnav on top
+       of that padding doubled it and left the bar floating mid-screen. */
+    display: block; position: sticky; bottom: calc(-1 * var(--gutter-y)); z-index: 5; margin: 0 -4px;
     padding: 10px 4px calc(10px + env(safe-area-inset-bottom, 0px));
     background: linear-gradient(to top, var(--bg) 70%, transparent);
   }
   .fpv-cta .btn { width: 100%; justify-content: center; min-height: 48px; border-radius: 999px; }
-  .is-seats .fpv-card .fpv-open { display: none; }
+  /* no bar: the empty box only marks the bar's line, so it takes no room */
+  .fpv-cta:empty { padding: 0; background: none; }
+}
+@media (max-width: 767px) {
+  /* the bottom bar's --bnav already clears the home indicator */
+  .fpv-cta { padding-bottom: 10px; }
 }
 @media (prefers-reduced-motion: reduce) {
   .fp-box .fp-fill { transition: none; }

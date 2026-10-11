@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, useRef } from 'react';
 import Mi from '../Mi.jsx';
 import { useApp } from '../../context/AppContext.jsx';
 import { getProjectById, setUnitStatus, toProject, pricedVariant, unitPrice } from '../../lib/projects.js';
+import { statusLook } from '../../lib/floorPlan.js';
 import { createHoldRequest, getLeads } from '../../lib/db.js';
 import { computeDeal, emptyDeal } from '../../lib/deal.js';
 import ProjectCatalog from './ProjectCatalog.jsx';
@@ -261,7 +262,7 @@ export default function ProjectConsole() {
             {isAdmin && !isNew && (
               <div className="pc-toggle">
                 <button className={!admin ? 'on' : ''} onClick={() => setAdmin(false)}>Agent console</button>
-                <button className={admin ? 'on' : ''} onClick={() => setAdmin(true)}>Admin catalog</button>
+                <button className={admin ? 'on' : ''} onClick={() => setAdmin(true)}>Admin console</button>
               </div>
             )}
             {/* The catalog editor's Discard and Save (ProjectCatalog portals
@@ -362,15 +363,18 @@ export default function ProjectConsole() {
                   </div>
                   <div className="pcu-grid">
                     {variant.units.map(u => {
-                      const lbl = u.status === 'sold' ? 'SOLD' : u.status === 'hold' ? 'HELD' : 'OPEN';
+                      // A custom status (project unitStatuses) shows its own name and colour.
+                      const lk = statusLook(p.unitStatuses, u);
+                      const lbl = lk.color ? lk.label.toUpperCase() : u.status === 'sold' ? 'SOLD' : u.status === 'hold' ? 'HELD' : 'OPEN';
                       const blocked = u.status !== 'available';
-                      const t = [u.status === 'sold' ? 'Sold' : u.status === 'hold' ? 'On hold' : 'Available'];
+                      const t = [lk.color ? lk.label : u.status === 'sold' ? 'Sold' : u.status === 'hold' ? 'On hold' : 'Available'];
                       if (u.size > 0) t.push(u.size + ' sqft');
                       if (u.clientName) t.push('Client: ' + u.clientName);
                       if (u.holdUntil) t.push('Booked by management until ' + new Date(u.holdUntil).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' }));
                       else if (u.heldByName) t.push('By: ' + u.heldByName);
                       return (
-                        <button key={u.id} className={`pcu pcu-${u.status}${deal.unitId === u.id ? ' sel' : ''}${blocked ? ' blocked' : ''}`}
+                        <button key={u.id} className={`pcu pcu-${u.status}${lk.color ? ' has-c' : ''}${deal.unitId === u.id ? ' sel' : ''}${blocked ? ' blocked' : ''}`}
+                          style={lk.color ? { '--st-c': lk.color } : undefined}
                           title={t.join('\n')} aria-disabled={blocked || locked} onClick={() => setUnit(u)}>
                           <div className="pcu-no">{u.id.replace(/^U-/, '')}</div>
                           <div className="pcu-st">{lbl}</div>

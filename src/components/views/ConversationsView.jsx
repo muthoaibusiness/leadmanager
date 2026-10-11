@@ -276,7 +276,7 @@ export default function ConversationsView() {
           {active && (
             <>
               <header className="wa-head">
-                <button className="wa-back" title="Back to chats" onClick={() => setActiveId(null)}><Mi>arrow_back</Mi></button>
+                <button className="wa-back" title="Back to chats" aria-label="Back to chats" onClick={() => setActiveId(null)}><Mi aria-hidden="true">arrow_back</Mi></button>
                 <div className="wa-head-id">
                   <div className="wa-head-name">{active.name || active.phone}</div>
                   <div className="wa-head-sub">

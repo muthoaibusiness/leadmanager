@@ -184,7 +184,15 @@ export default function ProjectCatalog({ project, isNew = false, actionsEl, onDo
     if (saving) return;
     const name = (p.name || '').trim();
     if (!name) { setErr('Property name is required.'); toast.warning('Name required', 'Add a property name before saving.'); return; }
-    if (!ptype) { setErr(TYPE_REQUIRED); toast.warning(TYPE_REQUIRED, 'Choose Residential or Commercial, then save.', TYPE_REQUIRED); return; }
+    if (!ptype) {
+      setErr(TYPE_REQUIRED);
+      toast.warning(TYPE_REQUIRED, 'Choose Residential or Commercial, then save.', TYPE_REQUIRED);
+      // Bring the (now red) type select into view and focus it, wherever the form is scrolled to.
+      const t = document.querySelector('.pcat-ptype .ces-trigger');
+      t?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      t?.focus({ preventScroll: true });
+      return;
+    }
     setErr('');
     setSaving(true);
     const draft = { ...p, name };

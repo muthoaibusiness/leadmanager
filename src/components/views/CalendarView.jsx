@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import useNavState from '../../hooks/useNavState.js';
 import { useApp } from '../../context/AppContext.jsx';
 import SummaryCards from './calendar/SummaryCards.jsx';
 import MonthCalendar from './calendar/MonthCalendar.jsx';
@@ -14,8 +14,8 @@ import useLeadBook from '../../hooks/useLeadBook.js';
 export default function CalendarView() {
   useLeadBook(); // this view reduces over every lead; leads are not in the boot load
   const { user, setPanLead, dbVersion } = useApp();
-  const [cursor, setCursor] = useState(() => startOfDay(new Date()));
-  const [month, setMonth] = useState(() => { const d = new Date(); return new Date(d.getFullYear(), d.getMonth(), 1); });
+  const [cursor, setCursor] = useNavState('calendar.day', () => startOfDay(new Date()));
+  const [month, setMonth] = useNavState('calendar.month', () => { const d = new Date(); return new Date(d.getFullYear(), d.getMonth(), 1); });
 
   // Built fresh each render: buildEvents reads the mutable in-memory DB, which
   // React can't track — dbVersion is the app's signal that it changed. The data

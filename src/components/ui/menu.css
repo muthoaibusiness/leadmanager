@@ -1,0 +1,19 @@
+/* Action menu (ui/menu.jsx); the list itself shares .sel-content (select.css). */
+.menu-content { min-width: 220px; display: flex; flex-direction: column; gap: 2px; }
+.menu-item {
+  display: flex; align-items: center; gap: 10px; min-height: 38px; padding: 0 10px;
+  border-radius: 8px; font-size: 13.5px; font-weight: 700; cursor: pointer; outline: none; user-select: none;
+}
+.menu-item .mi { font-size: 18px; color: var(--t2); }
+.menu-item[data-highlighted] { background: color-mix(in srgb, var(--accent) 16%, transparent); }
+.menu-item[data-highlighted] .mi { color: var(--t1); }
+.menu-item[data-disabled] { opacity: .45; cursor: default; }
+.menu-tx { flex: 1; min-width: 0; }
+.menu-danger, .menu-danger .mi { color: var(--red); }
+.menu-danger[data-highlighted] { background: color-mix(in srgb, var(--red) 14%, transparent); }
+.menu-danger[data-highlighted] .mi { color: var(--red); }
+.menu-sep { height: 1px; margin: 4px 6px; background: var(--bd2); }
+
+@media (max-width: 1023px) {
+  .menu-item { min-height: 44px; }
+}

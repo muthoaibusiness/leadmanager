@@ -1,10 +1,11 @@
-import { useRef, useEffect } from 'react';
+import { useRef, useEffect, useId } from 'react';
 import Mi from '../Mi.jsx';
 import { useApp } from '../../context/AppContext.jsx';
 import { getDB, getTarget, setTargetFn } from '../../lib/db.js';
 
 export default function TargetModal() {
   const { modal, closeModal, tgtUser, refreshDB, showToast } = useApp();
+  const uid = useId(); // field ids, so each <label htmlFor> points at its field
   const isOpen = modal === 'target';
   const valRef = useRef();
 
@@ -39,7 +40,7 @@ export default function TargetModal() {
         </div>
         <div className="m-body">
           <div className="m-hint"><Mi>info</Mi>{kn} target for {new Date().toLocaleString('default', { month: 'long' })}</div>
-          <div className="fg"><label>Target ({kn.toLowerCase()})</label><input className="fi" ref={valRef} type="number" min="1" max="200" placeholder="e.g. 15" /></div>
+          <div className="fg"><label htmlFor={`${uid}target`}>Target ({kn.toLowerCase()})</label><input id={`${uid}target`} className="fi" ref={valRef} type="number" min="1" max="200" placeholder="e.g. 15" /></div>
         </div>
         <div className="m-ft">
           <button className="btn btn-g" onClick={closeModal}>Cancel</button>

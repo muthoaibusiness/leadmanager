@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import useNavState from '../../hooks/useNavState.js';
 import Mi from '../Mi.jsx';
 import Avatar from '../Avatar.jsx';
 import { useApp } from '../../context/AppContext.jsx';
@@ -55,12 +56,12 @@ export default function AccountsView() {
   const [bulkOpen, setBulkOpen] = useState(false);
   const [pasteOpen, setPasteOpen] = useState(false);
   const [paste, setPaste] = useState('');
-  const [q, setQ] = useState('');
-  const [roleFilter, setRoleFilter] = useState('ALL');
-  const [teamFilter, setTeamFilter] = useState('ALL');
+  const [q, setQ] = useNavState('accounts.q', '');
+  const [roleFilter, setRoleFilter] = useNavState('accounts.role', 'ALL');
+  const [teamFilter, setTeamFilter] = useNavState('accounts.team', 'ALL');
   const [selected, setSelected] = useState(() => new Set());
   const [expanded, setExpanded] = useState(() => new Set());
-  const [page, setPage] = useState(0);
+  const [page, setPage] = useNavState('accounts.page', 0);
   const toast = useProjectToast({ always: true });
 
   // ── KPI counts ──
