@@ -1,7 +1,6 @@
 import Mi from '../Mi.jsx';
 import { getTarget, achievement } from '../../lib/db.js';
 import { daysLeftInMonth } from '../../lib/helpers.js';
-import { ROLES } from '../../lib/constants.js';
 
 export default function TargetCard({ user }) {
   const tgt = getTarget(user.id);
@@ -12,7 +11,7 @@ export default function TargetCard({ user }) {
   const left = daysLeftInMonth();
   const needed = Math.max(0, tar - ach);
   const daily = left > 0 ? (needed / left).toFixed(1) : '-';
-  const kpiName = user.role === ROLES.IA ? 'Meetings Set' : 'Site Visits Done';
+  const kpiName = 'Site Visits Done';
 
   return (
     <div className="tc">

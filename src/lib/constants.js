@@ -1,29 +1,34 @@
 export const ROLES = {
-  IA: 'INITIAL_AGENT',
-  MA: 'MEETING_AGENT',
+  AGENT: 'AGENT',          // front-line agent — owns a lead from New to Site Visit Done
   TL: 'TEAM_LEAD',
   MGMT: 'MANAGEMENT',
   MASTER: 'MASTER',        // super-admin above Management — oversees all companies
   EXEC: 'EXECUTIVE',       // blank-canvas role — zero default access, admin grants features
 };
 
+// Initial Agent and Meeting Agent were merged into the single AGENT role
+// (migration 0020). Rows written before it still carry the old values, so
+// every loader passes roles through normRole() to read them as AGENT.
+export const LEGACY_AGENT_ROLES = ['INITIAL_AGENT', 'MEETING_AGENT'];
+export const normRole = (r) => (LEGACY_AGENT_ROLES.includes(r) ? ROLES.AGENT : r);
+
 // Role-scoped navigation (mirrors Muthoclo admin can(role, scope)).
-const ALL_ROLES = ['INITIAL_AGENT', 'MEETING_AGENT', 'TEAM_LEAD', 'MANAGEMENT'];
+const ALL_ROLES = ['AGENT', 'TEAM_LEAD', 'MANAGEMENT'];
 export const NAV_SCOPES = {
   dashboard: ALL_ROLES,
   leads: ALL_ROLES,
-  add_customer: ['INITIAL_AGENT', 'TEAM_LEAD'],
+  add_customer: ['AGENT', 'TEAM_LEAD'],
   // WhatsApp chat is never granted by role — access comes from the allow-list in
   // wa_settings (or an explicit allowedFeatures grant). See waCanChat() in wa.js.
   conversations: [],
-  calendar: ['MEETING_AGENT', 'TEAM_LEAD', 'MANAGEMENT'],
+  calendar: ['AGENT', 'TEAM_LEAD', 'MANAGEMENT'],
   pipeline: ALL_ROLES,
   properties: ALL_ROLES,
   reports: ['MANAGEMENT', 'TEAM_LEAD'],
   agentperf: ['MANAGEMENT', 'TEAM_LEAD'],
   requests: ['MANAGEMENT'],
   team: ['TEAM_LEAD'],
-  users: ['MANAGEMENT'],
+  // The old separate Users tab is merged into Accounts (one roster page).
   accounts: ['MANAGEMENT'],
   companies: ['MASTER'],   // master-admin company-wise overview
   profile: [...ALL_ROLES, 'MASTER'],
@@ -34,7 +39,11 @@ export const NAV_SCOPES = {
 export const canSee = (user, key) => {
   if (!user) return false;
   if (key === 'profile') return true;
-  if (Array.isArray(user.allowedFeatures)) return user.allowedFeatures.includes(key);
+  if (Array.isArray(user.allowedFeatures)) {
+    // A grant saved before Users merged into Accounts still opens the merged page.
+    if (key === 'accounts' && user.allowedFeatures.includes('users')) return true;
+    return user.allowedFeatures.includes(key);
+  }
   return (NAV_SCOPES[key] || []).includes(user.role);
 };
 
@@ -44,18 +53,13 @@ export const DRAWER_MQ = '(max-width: 1023px)';
 
 // Behavioural role — decides which dashboard and which lead-action set a user
 // gets. EXECUTIVE is a blank-canvas role with no dashboard/actions of its own, so
-// it operates as whichever front-line agent role its granted features imply:
-// add_customer ⇒ Initial Agent (sources & works new leads), else calendar ⇒
-// Meeting Agent (handles meetings/visits), else Initial Agent. It never resolves
-// to a supervisory role, so an Executive can't gain TL/MGMT-only powers
-// (deal-closing, transfer, delete) by accident. Every other role is itself.
+// it operates as a front-line Agent. It never resolves to a supervisory role, so
+// an Executive can't gain TL/MGMT-only powers (deal-closing, transfer, delete)
+// by accident. Every other role is itself.
 export const effectiveRole = (user) => {
   if (!user) return null;
-  if (user.role !== ROLES.EXEC) return user.role;
-  const f = Array.isArray(user.allowedFeatures) ? user.allowedFeatures : [];
-  if (f.includes('add_customer')) return ROLES.IA;
-  if (f.includes('calendar')) return ROLES.MA;
-  return ROLES.IA;
+  if (user.role !== ROLES.EXEC) return normRole(user.role);
+  return ROLES.AGENT;
 };
 
 // Marker kept in allowedFeatures (not a nav feature): the account is the
@@ -66,11 +70,11 @@ export const isNiHandler = (user) => !!user && Array.isArray(user.allowedFeature
 
 // Features an admin can grant/revoke per user, in display order (nav features only;
 // 'companies' is master-only overview and 'profile' is always-on, so both excluded).
-export const FEATURE_KEYS = ['dashboard', 'leads', 'add_customer', 'conversations', 'calendar', 'pipeline', 'properties', 'reports', 'agentperf', 'requests', 'team', 'users', 'accounts'];
+export const FEATURE_KEYS = ['dashboard', 'leads', 'add_customer', 'conversations', 'calendar', 'pipeline', 'properties', 'reports', 'agentperf', 'requests', 'team', 'accounts'];
 export const FEATURE_LABELS = {
   dashboard: 'Home', leads: 'Leads', add_customer: 'Add Customer', conversations: 'Conversations', calendar: 'Calendar', pipeline: 'Pipeline', properties: 'Projects',
   reports: 'Reports', agentperf: 'Performance', requests: 'Requests', team: 'Team',
-  users: 'Users', accounts: 'Accounts',
+  accounts: 'Users & Accounts',
 };
 // Default features for a standard role (from NAV_SCOPES). Executive resolves to none.
 export const defaultFeatures = (role) => FEATURE_KEYS.filter(k => (NAV_SCOPES[k] || []).includes(role));

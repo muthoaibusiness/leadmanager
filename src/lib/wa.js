@@ -119,7 +119,7 @@ export async function waSaveToken(settings, { apiToken, webhookSecret }, user) {
 // ── access control ──────────────────────────────────────────────────────────
 // Admins manage the allow-list from Chat Settings. Before that list is
 // configured the feature still needs to reach its first user, so a Dubai
-// Initial Agent is recognised by name as a fallback.
+// Agent is recognised by name as a fallback.
 export function isChatAdmin(user) {
   return !!user && (user.role === 'MANAGEMENT' || user.role === 'MASTER');
 }
@@ -132,10 +132,10 @@ export function waCanChat(user, settings) {
   if (Array.isArray(user.allowedFeatures) && user.allowedFeatures.includes('conversations')) return true;
   const list = settings?.allowedUserIds || [];
   if (list.length) return list.includes(user.id);
-  // Not configured yet → Dubai (Initial Agent) only, per the rollout scope.
+  // Not configured yet → Dubai agent only, per the rollout scope.
   const name = (user.name || '').toLowerCase();
   const email = (user.email || '').toLowerCase();
-  return user.role === 'INITIAL_AGENT' && (name.includes('dubai') || email.includes('dubai'));
+  return user.role === 'AGENT' && (name.includes('dubai') || email.includes('dubai'));
 }
 
 // ── reads ───────────────────────────────────────────────────────────────────

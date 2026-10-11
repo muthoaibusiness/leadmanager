@@ -17,9 +17,7 @@ export default function TeamView() {
   useLeadBook();
   const { user, dbVersion, setPanLead } = useApp();
   const db = getDB();
-  const agents = db.users.filter(u => (u.role === ROLES.IA || u.role === ROLES.MA) && u.teamId === user.teamId);
-  const iAgents = agents.filter(u => u.role === ROLES.IA);
-  const mAgents = agents.filter(u => u.role === ROLES.MA);
+  const agents = db.users.filter(u => u.role === ROLES.AGENT && u.teamId === user.teamId);
   // Executives are created here too, so they have to be visible here — otherwise a Team
   // Lead adds one and it vanishes. They get a plain row rather than an AgentCard: that
   // card is all targets, calls and conversions, none of which apply to an Executive.
@@ -56,13 +54,9 @@ export default function TeamView() {
 
   return (
     <div>
-      <div className="sec-hd"><div className="sec-t"><Mi>record_voice_over</Mi>Initial Agents</div></div>
+      <div className="sec-hd"><div className="sec-t"><Mi>record_voice_over</Mi>Agents</div></div>
       <div className="grid-2" style={{ marginBottom: '20px' }}>
-        {iAgents.map(a => <AgentCard key={a.id} agent={a} />)}
-      </div>
-      <div className="sec-hd"><div className="sec-t"><Mi>handshake</Mi>Meeting Agents</div></div>
-      <div className="grid-2" style={{ marginBottom: '20px' }}>
-        {mAgents.map(a => <AgentCard key={a.id} agent={a} />)}
+        {agents.map(a => <AgentCard key={a.id} agent={a} />)}
       </div>
       {execs.length > 0 && (
         <>

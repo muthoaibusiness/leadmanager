@@ -1,4 +1,4 @@
-import { ROLES, isNiHandler, STATUS_LABELS, SRC_LABELS, PAST_CONTACT, OFFER_MAX } from './constants.js';
+import { ROLES, normRole, isNiHandler, STATUS_LABELS, SRC_LABELS, PAST_CONTACT, OFFER_MAX } from './constants.js';
 import { setOfferResolver } from './offerRegistry.js';
 import { uid, now_, fmtBDT, fmtDT, curMonth, startOfMonth, rlabel } from './helpers.js';
 import { leadFilterParam, ORDER } from './leadQuery.js';
@@ -26,6 +26,12 @@ export function getDB() {
   if (!_DB.notifications) _DB.notifications = {};
   if (!_DB.properties) _DB.properties = [];
   if (!_DB.bookings) _DB.bookings = [];
+  if (!_DB._agentRolesMerged) {
+    // A cache written before the agent-role merge: read its old roles as AGENT.
+    _DB.users.forEach(u => { u.role = normRole(u.role); });
+    (_DB.leads || []).forEach(l => { l.assignedRole = normRole(l.assignedRole); });
+    _DB._agentRolesMerged = true;
+  }
   return _DB;
 }
 
@@ -1149,10 +1155,9 @@ export function getTarget(userId) {
 export function achievement(userId, role) {
   const db = getDB();
   const sm = startOfMonth();
-  if (role === ROLES.IA) {
-    return db.leads.filter(l => l.meetingSetBy === userId && l.meetingSetDate && new Date(l.meetingSetDate) >= sm).length;
-  }
-  if (role === ROLES.MA) {
+  // An Agent's monthly target is site visits done — the last rung they own
+  // before the lead goes to the Team Lead.
+  if (role === ROLES.AGENT) {
     return db.leads.filter(l => l.siteVisitDoneBy === userId && l.siteVisitDoneDate && new Date(l.siteVisitDoneDate) >= sm).length;
   }
   return 0;
@@ -1575,7 +1580,7 @@ export function bulkDeleteLeads(leadIds, user) {
 export function bulkTransferLeads(leadIds, target, user) {
   const { teamId, agent, teamLabel } = target;
   if (!leadIds?.length || !teamId || !agent) return 0;
-  const roleName = agent.role === ROLES.IA ? 'Initial Agent' : agent.role === ROLES.MA ? 'Meeting Agent' : rlabel(agent.role);
+  const roleName = rlabel(agent.role);
   leadIds.forEach(id => {
     updLead(id, {
       teamId,
@@ -1698,13 +1703,9 @@ export function fwdLead(leadId, toUser, currentUser, offerData) {
   const l = getLead(leadId);
   const isTL = toUser.role === ROLES.TL;
   if (isTL && !offerComplete(offerData)) return false;
-  const isMeetingSet = toUser.role === ROLES.MA;
   updLead(leadId, {
     assignedTo: toUser.id, assignedToName: toUser.name, assignedRole: toUser.role,
     previousAssignees: [...l.previousAssignees, currentUser.id],
-    status: isMeetingSet ? 'MEETING_SET' : l.status,
-    meetingSetBy: isMeetingSet ? currentUser.id : l.meetingSetBy,
-    meetingSetDate: isMeetingSet ? now_() : l.meetingSetDate,
     // Stamped on the row so the pipeline can filter and sum server-side.
     ...(isTL ? { offerSentAt: now_(), offerValue: offerData.pipelineValue || 0 } : {}),
   });
@@ -1718,6 +1719,23 @@ export function fwdLead(leadId, toUser, currentUser, offerData) {
     if (iaId) notifList.push({ userId: iaId, type: 'FORWARDED', message: 'Your lead moved to negotiation: ' + l.name, leadId });
   }
   addNotifs(notifList, currentUser);
+  return true;
+}
+
+// The Agent books the client meeting on their own lead (it used to be the
+// Initial → Meeting Agent hand-off). Ownership stays put; the lead moves to
+// Meeting Set and meetingSetBy credits the agent, as the hand-off did.
+export function setMeeting(leadId, m, user) {
+  const l = getLead(leadId);
+  if (!l) return false;
+  updLead(leadId, {
+    status: 'MEETING_SET', noAnswerCount: 0, noAnswerLockUntil: null,
+    meetingSetBy: user.id, meetingSetDate: now_(),
+    meetingType: m.meetingType, meetingAt: m.meetingAt, meetingLink: m.meetingLink || '', meetingShared: m.meetingShared || [],
+    meetingAttended: false,
+  });
+  const when = new Date(m.meetingAt).toLocaleString('en-GB', { weekday: 'short', day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
+  addAct(leadId, { type: 'STATUS_CHANGE', description: 'Meeting set · ' + (m.meetingType === 'OFFLINE' ? 'Offline' : 'Online') + ' · ' + when, userId: user.id, userName: user.name, durationSeconds: 0 });
   return true;
 }
 
@@ -1843,7 +1861,7 @@ export function logNoAnswer(leadId, user, maxAttempts = 7) {
   return { attempts, hitCap, locked: false, lockUntil: hitCap ? patch.noAnswerLockUntil : null };
 }
 
-// Meeting Agent attended the scheduled meeting — flag it + log to the timeline.
+// Agent attended the scheduled meeting — flag it + log to the timeline.
 // Status stays so the agent can then Schedule the Site Visit (booking).
 export function attendMeeting(leadId, user) {
   const lead = getLead(leadId);
@@ -1852,7 +1870,7 @@ export function attendMeeting(leadId, user) {
   addAct(leadId, { type: 'VISIT', description: 'Meeting attended', userId: user.id, userName: user.name, durationSeconds: 0 });
 }
 
-// Meeting Agent reschedules a hand-off meeting to a new time/day. Logs the change
+// Agent reschedules the client meeting to a new time/day. Logs the change
 // to the lead's activity timeline (old → new).
 export function rescheduleMeeting(leadId, iso, user, link, type) {
   const lead = getLead(leadId);
@@ -2006,8 +2024,7 @@ export function setTargetFn(userId, val) {
   let saved;
   mutate(db => {
     const i = db.targets.findIndex(t => t.userId === userId && t.month === mo);
-    const role = db.users.find(u => u.id === userId)?.role;
-    const type = role === ROLES.IA ? 'MEETINGS_SET' : 'SITE_VISITS';
+    const type = 'SITE_VISITS'; // an Agent's target (see achievement)
     // Reuse the existing row's id when replacing, so the upsert updates that row
     // rather than leaving an orphan behind under a fresh id.
     const entry = { id: i >= 0 ? db.targets[i].id : 'tg' + uid(), userId, month: mo, type, value: parseInt(val), companyId: db.users.find(u => u.id === userId)?.companyId ?? null };
@@ -2104,7 +2121,7 @@ export function companyStats(cid) {
     accounts: users.length,
     managers: users.filter(u => u.role === ROLES.MGMT).length,
     teamLeads: users.filter(u => u.role === ROLES.TL).length,
-    agents: users.filter(u => u.role === ROLES.IA || u.role === ROLES.MA).length,
+    agents: users.filter(u => u.role === ROLES.AGENT).length,
     teams: teams.length,
     leads: leads.length,
     active: active.length,
@@ -2158,7 +2175,7 @@ export async function bulkCreateUsers(rows, currentUser) {
     const line = i + 1;
     const name = (r.name || '').trim();
     const email = (r.email || '').trim();
-    const role = r.role || ROLES.IA;
+    const role = normRole(r.role || ROLES.AGENT);
     const pass = (r.password || '').trim() || '1234';
     const phone = (r.phone || '').trim();
 

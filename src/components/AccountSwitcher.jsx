@@ -35,15 +35,14 @@ export default function AccountSwitcher() {
       : (u.companyId === admin.companyId && u.role !== ROLES.MASTER))
     .filter(u => u.id !== user.id);
 
-  // Group by team: the Team Lead is the header, their Meeting/Initial agents nest
+  // Group by team: the Team Lead is the header, their agents nest
   // under it. Admins and team-less accounts get their own groups.
-  const field = accounts.filter(u => [ROLES.TL, ROLES.MA, ROLES.IA].includes(u.role));
-  const memOrder = { [ROLES.MA]: 0, [ROLES.IA]: 1 };
+  const field = accounts.filter(u => [ROLES.TL, ROLES.AGENT].includes(u.role));
   const teamIds = [...new Set(field.map(u => u.teamId).filter(Boolean))];
   const teams = teamIds.map(tid => {
     const tl = field.find(u => u.role === ROLES.TL && u.teamId === tid);
     const members = field.filter(u => u.teamId === tid && u.role !== ROLES.TL)
-      .sort((a, b) => (memOrder[a.role] - memOrder[b.role]) || (a.name || '').localeCompare(b.name || ''));
+      .sort((a, b) => (a.name || '').localeCompare(b.name || ''));
     const name = tl ? tl.name : ((db.teams || []).find(t => t.id === tid)?.name || 'Team');
     return { tid, tl, members, name };
   }).sort((a, b) => a.name.localeCompare(b.name));

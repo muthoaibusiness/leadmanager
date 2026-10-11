@@ -8,10 +8,10 @@ import DashGreeting from './DashGreeting.jsx';
 import SuccessGauge from '../SuccessGauge.jsx';
 import ConversionPanel from './ConversionPanel.jsx';
 import Mi from '../Mi.jsx';
-import { LoadingBlock } from '../Spinner.jsx';
+import Spinner, { LoadingBlock } from '../Spinner.jsx';
 import { scoreLead, scoreLabel, periodLabel, leadDisplayStatus } from '../../lib/helpers.js';
-import { SRC_LABELS, PAST_CONTACT } from '../../lib/constants.js';
-import { or, and, KPI } from '../../lib/leadQuery.js';
+import { SRC_LABELS, PAST_CONTACT, ROLES } from '../../lib/constants.js';
+import { or, and, eq, is, lt, KPI, forwardedToRole } from '../../lib/leadQuery.js';
 import { panelConfigFor } from '../../lib/funnel.js';
 import useActWindow from '../../hooks/useActWindow.js';
 import useLeadCounts from '../../hooks/useLeadCounts.js';
@@ -32,7 +32,11 @@ function queueReason(lead, touched, todayStart, todayEnd) {
   return null;
 }
 
-export default function InitialAgentDash() {
+// The Agent's home. One agent works a lead end to end — call list and
+// follow-ups first, then meetings and site visits, then the hand-off to the
+// Team Lead — so this page carries both halves (it merged the old Initial
+// Agent and Meeting Agent dashboards).
+export default function AgentDash() {
   useActWindow(); // pull the recent-activity window; activities are not in the boot load
   const { user, dbVersion, setPanLead, nav, refreshDB, showToast, dateRange } = useApp();
   const [detail, setDetail] = useState(null);
@@ -66,6 +70,24 @@ export default function InitialAgentDash() {
       sourcedContacted: { ...base, kpi: 'sourced', kpiArg: user.id, extra: [CONTACTED_TERM] },
     };
   }, [user, win?.start, win?.end]);
+
+  // ── Meeting → visit pipeline: leads this agent HOLDS at each later rung ──
+  // "Offer Sent" is by definition a lead they no longer hold, so it needs the
+  // involved superset. meeting_attended is null on rows written before the
+  // column existed, and null is not false to Postgres — hence the or().
+  const pipeQ = useMemo(() => {
+    const mine = { user, involved: false };
+    const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
+    return {
+      set: { ...mine, extra: [eq('status', 'MEETING_SET'), or(is('meeting_attended', 'false'), is('meeting_attended', 'null'))] },
+      att: { ...mine, extra: [eq('status', 'MEETING_SET'), is('meeting_attended', 'true')] },
+      sched: { ...mine, extra: [eq('status', 'SITE_VISIT_SCHEDULED')] },
+      done: { ...mine, extra: [eq('status', 'SITE_VISIT_DONE')] },
+      tl: { user, involved: true, extra: [forwardedToRole(user.id, ROLES.TL)] },
+      overdue: { ...mine, extra: [eq('status', 'SITE_VISIT_SCHEDULED'), lt('meeting_date', todayStart.toISOString())] },
+    };
+  }, [user]);
+  const pipe = useLeadCounts(pipeQ);
   const counts = useLeadCounts(cardQ);
   const contactRate = counts.sourced ? Math.round((counts.sourcedContacted || 0) / counts.sourced * 100) : 0;
   // A card shows the count the moment it lands; until then an em dash, which
@@ -100,6 +122,17 @@ export default function InitialAgentDash() {
   }, [user, dbVersion]);
   const bookReady = queueRows !== null;
 
+  // Scheduled site visits: one bounded query, split into today / upcoming below.
+  const VISITS_FETCH = 100;
+  const [visitRows, setVisitRows] = useState(null);
+  useEffect(() => {
+    let alive = true;
+    queryLeads({ user, involved: false, extra: [eq('status', 'SITE_VISIT_SCHEDULED')] },
+      { page: 0, size: VISITS_FETCH, sort: 'oldest' })
+      .then(res => { if (alive && res) setVisitRows(res.rows); });
+    return () => { alive = false; };
+  }, [user, dbVersion]);
+
   const view = useMemo(() => {
     const now = new Date();
     const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
@@ -125,8 +158,26 @@ export default function InitialAgentDash() {
     // Oldest never-called lead - one row, fetched above.
     const oldestUntouchedAt = oldestUntouched ? new Date(oldestUntouched.createdAt) : null;
 
-    return { now, todayStart, queue, oldestUntouchedAt, active, followToday };
-  }, [queueRows, oldestUntouched, db, dbVersion]);
+    // Site visits: today's, and what is coming up after today.
+    const sched = visitRows || [];
+    const todayVisits = sched
+      .filter(l => l.meetingDate && new Date(l.meetingDate) >= todayStart && new Date(l.meetingDate) <= todayEnd)
+      .sort((a, b) => new Date(a.meetingDate) - new Date(b.meetingDate));
+    const upcoming = sched
+      .filter(l => l.meetingDate && new Date(l.meetingDate) > todayEnd)
+      .sort((a, b) => new Date(a.meetingDate) - new Date(b.meetingDate));
+
+    return { now, todayStart, queue, oldestUntouchedAt, active, followToday, todayVisits, upcoming };
+  }, [queueRows, oldestUntouched, visitRows, db, dbVersion]);
+
+  // Meeting Set → Attended → Visit Scheduled → Visit Done → Offer Sent
+  const STAGES = [
+    { key: 'set', label: 'Meeting Set', color: 'var(--orange)' },
+    { key: 'att', label: 'Meeting Attended', color: 'var(--accent)' },
+    { key: 'sched', label: 'Visit Scheduled' },
+    { key: 'done', label: 'Visit Done', color: '#2DD4BF' },
+    { key: 'tl', label: 'Offer Sent', color: 'var(--accent)' },
+  ];
 
   const QUEUE_CAP = 8;
   const shown = view.queue.slice(0, QUEUE_CAP);
@@ -137,9 +188,10 @@ export default function InitialAgentDash() {
     <>
       <div className="iad-page">
       {/* Greeting */}
-      <DashGreeting user={user} sub={view.queue.length > 0
-        ? `${view.queue.length} ${view.queue.length === 1 ? 'lead' : 'leads'} to work today`
-        : "You're all caught up."} />
+      <DashGreeting user={user} sub={[
+        view.queue.length > 0 ? `${view.queue.length} ${view.queue.length === 1 ? 'lead' : 'leads'} to work today` : "You're all caught up.",
+        view.todayVisits.length > 0 ? `${view.todayVisits.length} ${view.todayVisits.length === 1 ? 'visit' : 'visits'} today` : '',
+      ].filter(Boolean).join(' · ')} />
 
       {/* All-time totals — every lead received / actioned.
           Each value is a server-side count and each click fetches that set one
@@ -164,6 +216,20 @@ export default function InitialAgentDash() {
         />
         <StatCard val={n('followPending')} label="Follow-Up Pending" tone={counts.followPending ? 'accent' : ''} sub="scheduled in pipeline" onClick={() => setDetail({ title: 'Follow-Up Pending', query: cardQ.followPending, total: counts.followPending })} />
         <StatCard val={n('meetings')} label="Meetings Set" tone={counts.meetings ? 'good' : ''} sub={periodSub} onClick={() => setDetail({ title: 'Meetings Set', query: cardQ.meetings, total: counts.meetings })} />
+      </div>
+
+      {/* Meeting → visit pipeline */}
+      <div className="mpipe">
+        {STAGES.map((s, i) => (
+          <button key={s.key} className="mpipe-seg" onClick={() => setDetail({ title: s.label, query: pipeQ[s.key], total: pipe[s.key] })}>
+            <span className="mpipe-step">Step {i + 1}</span>
+            <span className="mpipe-num" style={pipe[s.key] && s.color ? { color: s.color } : undefined}>
+              {pipe[s.key] == null ? <Spinner size={16} /> : pipe[s.key]}
+            </span>
+            <span className="mpipe-lbl">{s.label}</span>
+            <span className="mpipe-bar" style={{ background: s.color || 'var(--t3)' }} />
+          </button>
+        ))}
       </div>
 
       {/* Where leads drop off, and the last 30 days of stage events */}
@@ -258,10 +324,61 @@ export default function InitialAgentDash() {
           </div>
         </div>
 
-        {/* Rail: monthly target + success rate */}
+        {/* Rail: monthly target + success rate + site visits */}
         <aside className="iad-rail">
           <TargetCard user={user} />
           <SuccessGauge user={user} />
+          <div className="iad-queue">
+            <div className="iad-q-hd">
+              <span className="iad-q-ttl">Today's visits</span>
+              {pipe.overdue > 0 && (
+                <button className="iad-q-ct ag-overdue" onClick={() => setDetail({ title: 'Overdue Visits', query: pipeQ.overdue, total: pipe.overdue })}>
+                  {pipe.overdue} overdue
+                </button>
+              )}
+            </div>
+            {visitRows === null ? (
+              <LoadingBlock label="Loading visits…" />
+            ) : view.todayVisits.length === 0 ? (
+              <div className="iad-q-empty iad-q-empty-quiet"><span>No visits scheduled today.</span></div>
+            ) : (
+              <div className="iad-q-list">
+                {view.todayVisits.map(l => (
+                  <div key={l.id} className="iad-q-row" onClick={() => setPanLead(l.id)}>
+                    <div className="iad-mt-time">{new Date(l.meetingDate).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })}</div>
+                    <div className="iad-q-info">
+                      <div className="iad-q-name">{l.name}</div>
+                      <div className="iad-q-meta">{l.meetingLocation || 'Site visit'} · {l.propertyInterest || 'No project'}</div>
+                    </div>
+                    <a className="iad-q-call" href={`tel:${l.phone}`} title="Call" onClick={e => e.stopPropagation()}><Mi>call</Mi></a>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+          <div className="iad-queue">
+            <div className="iad-q-hd">
+              <span className="iad-q-ttl">Upcoming visits</span>
+              {view.upcoming.length > 0 && <span className="iad-q-ct">{view.upcoming.length}</span>}
+            </div>
+            {view.upcoming.length === 0 ? (
+              <div className="iad-q-empty iad-q-empty-quiet"><span>No future visits scheduled.</span></div>
+            ) : (
+              <div className="iad-q-list">
+                {view.upcoming.slice(0, 6).map(l => (
+                  <div key={l.id} className="iad-q-row" onClick={() => setPanLead(l.id)}>
+                    <div className="iad-mt-time">{new Date(l.meetingDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })}</div>
+                    <div className="iad-q-info">
+                      <div className="iad-q-name">{l.name}</div>
+                      <div className="iad-q-meta">{l.meetingLocation || 'Site visit'} · {leadDisplayStatus(l).label}</div>
+                    </div>
+                    <a className="iad-q-call" href={`tel:${l.phone}`} title="Call" onClick={e => e.stopPropagation()}><Mi>call</Mi></a>
+                  </div>
+                ))}
+                <div className="iad-q-more" onClick={() => nav('calendar')}>Open calendar</div>
+              </div>
+            )}
+          </div>
         </aside>
       </div>
 

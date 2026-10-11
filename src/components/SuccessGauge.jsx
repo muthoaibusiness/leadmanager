@@ -29,30 +29,21 @@ export function TickGauge({ pct = 0, label }) {
 // than imported from successRate.js because these are now query terms, not
 // Array.filter predicates — the numerator and denominator are two counts, so
 // the gauge no longer needs a single lead row in memory.
-const REACHED_MEETING = ['MEETING_SET', 'SITE_VISIT_SCHEDULED', 'SITE_VISIT_DONE', 'NEGOTIATING', 'DEAL_CLOSED_WON'];
 const REACHED_TL = ['NEGOTIATING', 'DEAL_CLOSED_WON', 'DEAL_CLOSED_LOST'];
 const inList = (col, vals) => `${col}.in.(${vals.join(',')})`;
 
 // Success rate is role-specific — each role is measured on its own objective,
 // as a share of every lead they handled.
-//   Initial Agent  → got a meeting set
-//   Meeting Agent  → forwarded the lead on to a Team Lead
+//   Agent          → worked the lead through to a Team Lead
 //   Team Lead      → closed the deal (won) out of the whole team's leads
 //   Management/…   → classic win rate on resolved deals
 //
-// `involved` (IA/MA) is the superset that keeps their credit after a hand-off;
+// `involved` (Agent) is the superset that keeps their credit after a hand-off;
 // TL and Management measure their own board scope.
 function specFor(user) {
   const involved = { user, involved: true };
   const mine = { user, involved: false };
-  if (user.role === ROLES.IA) {
-    return {
-      label: 'Meetings set',
-      num: { ...involved, extra: [or(eq('meeting_set_by', user.id), inList('status', REACHED_MEETING))] },
-      den: involved,
-    };
-  }
-  if (user.role === ROLES.MA) {
+  if (user.role === ROLES.AGENT) {
     return {
       label: 'Forwarded to TL',
       num: { ...involved, extra: [or(eq('assigned_role', ROLES.TL), inList('status', REACHED_TL))] },

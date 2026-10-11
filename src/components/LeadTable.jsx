@@ -55,7 +55,7 @@ export default function LeadTable({ leads, total = null, page: pageProp, onPage,
   // must not wipe the checkboxes the admin just ticked.
   const [xferOpen, setXferOpen] = useState(false);
   // Multi-select bulk delete/transfer is Management / Master (admin) only. Real
-  // agents — Initial Agent, Meeting Agent, Team Lead — cannot select leads.
+  // agents — Agent, Team Lead — cannot select leads.
   const canSelect = user?.role === ROLES.MGMT || user?.role === ROLES.MASTER;
 
   const CMP = {

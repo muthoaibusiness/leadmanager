@@ -1,8 +1,7 @@
 // Agent performance metrics — role-aware. Pure (no React/DOM) so it stays testable.
-// Three sales roles run different plays, so each gets its own KPIs, funnel and table:
-//   Initial Agent  → sourcing + first contact (calls, qualify, hand to Meeting Agent)
-//   Meeting Agent  → meetings + site visits (schedule, run, hand to Team Lead)
-//   Team Lead      → negotiation + closing (offers, deals won/lost, revenue)
+// Two sales roles run different plays, so each gets its own KPIs, funnel and table:
+//   Agent      → sourcing, first contact, meetings, site visits, hand to Team Lead
+//   Team Lead  → negotiation + closing (offers, deals won/lost, revenue)
 import { ROLES, CLOSED_LOST, PAST_CONTACT, PAST_QUALIFY, REACHED_MEETING } from './constants.js';
 
 const ts = (s) => (s ? new Date(s).getTime() : 0);
@@ -37,7 +36,7 @@ export function buildAgentPerf(db, { periodDays = 30, start = null, end = null, 
   const bookings = db.bookings || [];
   const bookTotal = (leadId) => { const b = bookings.find(x => x.leadId === leadId); return b ? b.total || 0 : 0; };
 
-  const users = (db.users || []).filter(u => [ROLES.IA, ROLES.MA, ROLES.TL].includes(u.role) && (!teamId || u.teamId === teamId));
+  const users = (db.users || []).filter(u => [ROLES.AGENT, ROLES.TL].includes(u.role) && (!teamId || u.teamId === teamId));
   const stat = {};
   users.forEach(u => { stat[u.id] = blank(u); });
 
@@ -67,9 +66,9 @@ export function buildAgentPerf(db, { periodDays = 30, start = null, end = null, 
     const offerByLead = {};
     la.forEach(a => { if (a.type === 'OFFER') offerByLead[a.userId] = true; });
 
-    // ── Initial Agent: credit the originator ──
+    // ── Agent: credit the originator for sourcing + first contact ──
     const fo = firstOwner(l);
-    if (stat[fo] && stat[fo].u.role === ROLES.IA) {
+    if (stat[fo] && stat[fo].u.role === ROLES.AGENT) {
       const s = stat[fo];
       s.sourced++;
       if (!contacted) s.untouched++;
@@ -77,11 +76,11 @@ export function buildAgentPerf(db, { periodDays = 30, start = null, end = null, 
       if (qualified) s.qualified++;
       if (resp != null) { s._respSum += resp; s._respN++; }
     }
-    // Meetings set credited to whoever set the meeting (an IA hand-off).
-    if (stat[l.meetingSetBy] && stat[l.meetingSetBy].u.role === ROLES.IA) stat[l.meetingSetBy].meetingsSet++;
+    // Meetings set credited to whoever set the meeting.
+    if (stat[l.meetingSetBy] && stat[l.meetingSetBy].u.role === ROLES.AGENT) stat[l.meetingSetBy].meetingsSet++;
 
-    // ── Meeting Agent: leads that reached the meeting stage and they handled ──
-    users.filter(u => u.role === ROLES.MA).forEach(u => {
+    // ── Agent: leads that reached the meeting stage and they handled ──
+    users.filter(u => u.role === ROLES.AGENT).forEach(u => {
       if (!involves(l, u.id)) return;
       const didVisitAct = la.some(a => a.userId === u.id && ['VISIT_SCHED', 'VISIT_DONE', 'VISIT'].includes(a.type));
       if (!reachedMeeting && !didVisitAct) return;
@@ -120,15 +119,13 @@ export function buildAgentPerf(db, { periodDays = 30, start = null, end = null, 
 
   // Role-relative score (0–100), normalised against the active cohort for that role.
   const maxOf = (role, f) => Math.max(1, ...rows.filter(r => r.u.role === role).map(f));
-  const mxSourced = maxOf(ROLES.IA, r => r.sourced);
-  const mxRecv = maxOf(ROLES.MA, r => r.mReceived);
+  const mxSourced = maxOf(ROLES.AGENT, r => r.sourced);
   const mxRev = maxOf(ROLES.TL, r => r.revenue);
   const speed = (r) => r.resp == null ? 0.4 : 1 - Math.min(r.resp / 48, 1);
   rows.forEach(r => {
-    if (r.u.role === ROLES.IA) {
-      r.score = Math.round(100 * (0.4 * (r.contactRate / 100) + 0.25 * (r.sourced / mxSourced) + 0.2 * (r.meetingsSet / Math.max(1, r.sourced)) + 0.15 * speed(r)));
-    } else if (r.u.role === ROLES.MA) {
-      r.score = Math.round(100 * (0.45 * (r.showRate / 100) + 0.3 * (r.mReceived / mxRecv) + 0.25 * (r.sentTL / Math.max(1, r.mReceived))));
+    if (r.u.role === ROLES.AGENT) {
+      r.score = Math.round(100 * (0.25 * (r.contactRate / 100) + 0.2 * (r.sourced / mxSourced) + 0.2 * (r.meetingsSet / Math.max(1, r.sourced))
+        + 0.15 * (r.showRate / 100) + 0.1 * (r.sentTL / Math.max(1, r.mReceived)) + 0.1 * speed(r)));
     } else {
       r.score = Math.round(100 * (0.45 * (r.closeRate / 100) + 0.35 * (r.revenue / mxRev) + 0.2 * (r.won / Math.max(1, r.won + r.lost + r.negotiation))));
     }
@@ -149,41 +146,24 @@ const pct = (v) => (v == null ? '—' : v.toFixed(1) + '%');
 const hrs = (v) => (v == null ? '—' : v.toFixed(1) + 'h');
 
 export const ROLE_VIEWS = {
-  [ROLES.IA]: {
-    label: 'Initial Agent', ico: 'person_search', volume: 'sourced',
+  [ROLES.AGENT]: {
+    label: 'Agent', ico: 'person_search', volume: 'sourced',
     kpis: (t) => [
-      { label: 'Leads Sourced', val: t.sourced, sub: 'this period' },
-      { label: 'Calls Logged', val: t.calls, sub: t.talkMins + ' min talk' },
-      { label: 'Follow-ups', val: t.followups, tone: t.followups ? 'accent' : '', sub: 'reminders worked' },
-      { label: 'Meetings Set', val: t.meetingsSet, tone: t.meetingsSet ? 'good' : '', sub: 'handed to MA' },
+      { label: 'Leads Sourced', val: t.sourced, sub: t.calls + ' calls · ' + t.talkMins + ' min' },
+      { label: 'Meetings Set', val: t.meetingsSet, tone: t.meetingsSet ? 'accent' : '', sub: t.followups + ' follow-ups' },
+      { label: 'Visits Done', val: t.visitsDone, tone: t.visitsDone ? 'good' : '', sub: t.visitsSched + ' scheduled' },
+      { label: 'Sent to Team Lead', val: t.sentTL, tone: 'accent', sub: 'handed up' },
     ],
     columns: [
       { k: 'sourced', t: 'Sourced', fmt: num }, { k: 'contacted', t: 'Contacted', fmt: num },
-      { k: 'qualified', t: 'Qualified', fmt: num }, { k: 'followups', t: 'Follow-ups', fmt: num },
-      { k: 'meetingsSet', t: 'Meetings Set', fmt: num }, { k: 'calls', t: 'Calls', fmt: num },
+      { k: 'meetingsSet', t: 'Meetings Set', fmt: num }, { k: 'visitsDone', t: 'Visits Done', fmt: num },
+      { k: 'sentTL', t: 'Sent to TL', fmt: num }, { k: 'calls', t: 'Calls', fmt: num },
       { k: 'contactRate', t: 'Contact %', fmt: pct, rate: true }, { k: 'resp', t: 'Avg Resp', fmt: hrs },
     ],
     funnel: (t, C) => [
       { label: 'Sourced', value: t.sourced, color: C[0] }, { label: 'Contacted', value: t.contacted, color: C[3] },
-      { label: 'Qualified', value: t.qualified, color: C[1] }, { label: 'Meeting Set', value: t.meetingsSet, color: C[2] },
-    ],
-  },
-  [ROLES.MA]: {
-    label: 'Meeting Agent', ico: 'event_available', volume: 'mReceived',
-    kpis: (t) => [
-      { label: 'Meetings Received', val: t.mReceived, sub: 'this period' },
-      { label: 'Visits Scheduled', val: t.visitsSched, sub: 'booked' },
-      { label: 'Visits Done', val: t.visitsDone, tone: t.visitsDone ? 'good' : '', sub: 'completed' },
-      { label: 'Sent to Team Lead', val: t.sentTL, tone: 'accent', sub: 'handed up' },
-    ],
-    columns: [
-      { k: 'mReceived', t: 'Received', fmt: num }, { k: 'visitsSched', t: 'Scheduled', fmt: num },
-      { k: 'visitsDone', t: 'Visits Done', fmt: num }, { k: 'showRate', t: 'Show-up %', fmt: pct, rate: true },
-      { k: 'sentTL', t: 'Sent to TL', fmt: num }, { k: 'resp', t: 'Avg Resp', fmt: hrs },
-    ],
-    funnel: (t, C) => [
-      { label: 'Received', value: t.mReceived, color: C[0] }, { label: 'Visit Scheduled', value: t.visitsSched, color: C[3] },
-      { label: 'Visit Done', value: t.visitsDone, color: C[1] }, { label: 'Sent to TL', value: t.sentTL, color: C[2] },
+      { label: 'Meeting Set', value: t.meetingsSet, color: C[2] }, { label: 'Visit Done', value: t.visitsDone, color: C[1] },
+      { label: 'Sent to TL', value: t.sentTL, color: C[4] },
     ],
   },
   [ROLES.TL]: {

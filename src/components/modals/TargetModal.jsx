@@ -2,7 +2,6 @@ import { useRef, useEffect } from 'react';
 import Mi from '../Mi.jsx';
 import { useApp } from '../../context/AppContext.jsx';
 import { getDB, getTarget, setTargetFn } from '../../lib/db.js';
-import { ROLES } from '../../lib/constants.js';
 
 export default function TargetModal() {
   const { modal, closeModal, tgtUser, refreshDB, showToast } = useApp();
@@ -12,7 +11,7 @@ export default function TargetModal() {
   const db = getDB();
   const u = tgtUser ? db.users.find(x => x.id === tgtUser) : null;
   const tgt = tgtUser ? getTarget(tgtUser) : null;
-  const kn = u?.role === ROLES.IA ? 'Meetings Set' : 'Site Visits Done';
+  const kn = 'Site Visits Done';
 
   useEffect(() => {
     if (isOpen && valRef.current) {

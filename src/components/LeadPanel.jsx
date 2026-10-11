@@ -17,7 +17,7 @@ function LeadInfo({ l }) {
   const phones = (l.phones?.length ? l.phones : [l.phone]).filter(Boolean);
   const emails = (l.emails?.length ? l.emails : l.email ? [l.email] : []).filter(Boolean);
 
-  // Profile completeness (Initial Agent) — 6 optional fields; Name + Phone are
+  // Profile completeness (Agent) — 6 optional fields; Name + Phone are
   // always required so they don't count. Every check must map to something the
   // agent can actually fill in, or the meter can never reach Complete.
   const profChecks = [
@@ -43,7 +43,7 @@ function LeadInfo({ l }) {
   if (l.company && l.company !== '—') specs.push(['Company', l.company]);
   if (l.propertyInterest) specs.push(['Property', l.propertyInterest]);
   if (l.dealValue > 0) specs.push(['Deal value', fmtBDT(l.dealValue)]);
-  // Meeting hand-off info set by the Initial Agent (shown to the Meeting Agent).
+  // Client meeting the agent booked (Set Meeting).
   if (l.meetingAt) specs.push(['Meeting', (l.meetingType === 'OFFLINE' ? 'Offline' : 'Online') + ' · ' + fmtDateTimeAP(l.meetingAt)]);
   if (l.meetingLink) specs.push(['Meeting link', <a href={l.meetingLink} target="_blank" rel="noreferrer" className="ld-link">Join online meeting</a>]);
   if (l.meetingShared?.length) specs.push(['Already shared', l.meetingShared.map(k => SHARED_LABEL[k] || k).join(', ')]);
@@ -66,7 +66,7 @@ function LeadInfo({ l }) {
           {(() => { const ds = leadDisplayStatus(l); return <span className={`bdg ${ds.cls}`}>{ds.label}</span>; })()}
           {l.nextFollowup && ['NEW', 'CONTACTED', 'INTERESTED'].includes(l.status) &&
             <span className="bdg s-follow_up"><Mi>alarm</Mi>{fmtDT(l.nextFollowup)}</span>}
-          {effectiveRole(user) === ROLES.IA &&
+          {effectiveRole(user) === ROLES.AGENT &&
             <span className="ld-prof-tag" style={{ color: prof.color, marginLeft: 'auto' }}>{prof.label}</span>}
         </div>
       </div>
@@ -123,7 +123,7 @@ function LeadInfo({ l }) {
 function Actions({ l }) {
   const { user, openModal, refreshDB, showToast } = useApp();
   // Behavioural role: an Executive works leads with the action set its features
-  // imply (e.g. add_customer ⇒ Initial Agent). Delete stays on the raw role below.
+  // imply (always Agent). Delete stays on the raw role below.
   const r = effectiveRole(user);
 
   const doStatus = (s) => {
@@ -160,9 +160,9 @@ function Actions({ l }) {
   };
 
   // A lead that has burned through its 7 attempts is locked for 24h: the entire
-  // action set is frozen for the agent (IA/MA) until the cool-off lifts. Only the
-  // attempting roles are locked — supervisors (TL/MGMT) are never blocked.
-  const lockUntil = (r === ROLES.IA || r === ROLES.MA) ? noAnswerLock(l) : null;
+  // action set is frozen for the agent until the cool-off lifts. Only the
+  // attempting role is locked — supervisors (TL/MGMT) are never blocked.
+  const lockUntil = r === ROLES.AGENT ? noAnswerLock(l) : null;
   if (lockUntil) {
     const retry = lockUntil.toLocaleString('en-GB', { weekday: 'short', day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
     return (
@@ -181,7 +181,9 @@ function Actions({ l }) {
 
   const btns = [];
 
-  if (r === ROLES.IA) {
+  // The Agent works a lead end to end: first contact → Interested → Set Meeting
+  // → Attend → Site Visit → Visit Done → Forward to Team Lead.
+  if (r === ROLES.AGENT) {
     if (l.status === 'NEW') btns.push(
       <button key="contacted" className="btn btn-p btn-full" onClick={() => doStatus('CONTACTED')}>
         <Mi>phone_callback</Mi>Connected
@@ -192,14 +194,14 @@ function Actions({ l }) {
         <Mi>thumb_up</Mi>Interested
       </button>
     );
-    if (l.status === 'INTERESTED' && l.assignedRole === ROLES.IA) btns.push(
-      <button key="fwd-ma" className="btn btn-teal btn-full" onClick={() => openModal('forward-ma')}>
-        <Mi>forward_to_inbox</Mi>FW to Next Agent
+    if (l.status === 'INTERESTED') btns.push(
+      <button key="set-meeting" className="btn btn-teal btn-full" onClick={() => openModal('set-meeting')}>
+        <Mi>event</Mi>Set Meeting
       </button>
     );
     // Not Interested — manual disqualify, available before contact (NEW), after
     // connecting (CONTACTED), and once interested (INTERESTED): a client who
-    // showed interest can still back out before the hand-off, and the agent must
+    // showed interest can still back out before the meeting, and the agent must
     // be able to record it as a status, not only as a note.
     if (['NEW', 'CONTACTED', 'INTERESTED'].includes(l.status)) btns.push(
       <button key="notint" className="btn btn-g btn-full" onClick={doNotInterested}>
@@ -209,7 +211,7 @@ function Actions({ l }) {
     // Attempt — neutral grey outcome: logs a 0-min call attempt, books a next-day
     // follow-up, keeps current status. Available while chasing first contact (NEW),
     // after connecting (CONTACTED), and once interested (3rd stage, confirming
-    // before hand-off). Counter restarts each stage; 7 in a stage → the lead is
+    // before the meeting). Counter restarts each stage; 7 in a stage → the lead is
     // locked for 24h (status unchanged), then a fresh batch of 7 is granted.
     if (['NEW', 'CONTACTED', 'INTERESTED'].includes(l.status)) {
       // A lapsed lock (noAnswerLockUntil in the past) means the next attempt starts
@@ -222,15 +224,13 @@ function Actions({ l }) {
       );
     }
     // After contact — follow-up to keep nurturing. Not at INTERESTED (3rd stage):
-    // that lead is qualified and ready to forward to a Meeting Agent.
+    // that lead is qualified and ready for a meeting.
     if (l.status === 'CONTACTED') btns.push(
       <button key="followup" className="btn btn-full" style={{ background: 'var(--orange-l)', color: 'var(--orange)' }} onClick={() => openModal('follow-up')}>
         <Mi>alarm</Mi>Follow-up
       </button>
     );
-  }
 
-  if (r === ROLES.MA) {
     // Attended the scheduled meeting → log it, then schedule the site visit/booking.
     if (l.status === 'MEETING_SET' && !l.meetingAttended) btns.push(
       <button key="attend" className="btn btn-success btn-full" onClick={doAttend}>
@@ -244,7 +244,7 @@ function Actions({ l }) {
         <Mi>event_repeat</Mi>Reschedule Meeting
       </button>
     );
-    if (!['SITE_VISIT_SCHEDULED', 'SITE_VISIT_DONE', 'NEGOTIATING', 'DEAL_CLOSED_WON', 'DEAL_CLOSED_LOST', 'NOT_INTERESTED'].includes(l.status)) btns.push(
+    if (l.status === 'MEETING_SET') btns.push(
       <button key="sched" className="btn btn-teal btn-full" onClick={() => openModal('sched')}>
         <Mi>calendar_month</Mi>Schedule Site Visit
       </button>
@@ -259,7 +259,7 @@ function Actions({ l }) {
     if (['MEETING_SET', 'SITE_VISIT_SCHEDULED'].includes(l.status)) {
       const att = l.noAnswerLockUntil ? 0 : (l.noAnswerCount || 0);
       btns.push(
-        <button key="ma-attempt" className="btn btn-neutral btn-full" onClick={doNoAnswer}>
+        <button key="mt-attempt" className="btn btn-neutral btn-full" onClick={doNoAnswer}>
           <Mi>phone_missed</Mi>Attempt{att > 0 ? ` (${att}/7)` : ''}
         </button>
       );
@@ -270,10 +270,17 @@ function Actions({ l }) {
         <Mi>forward_to_inbox</Mi>Forward to Team Lead
       </button>
     );
+    // Hand the lead to another agent on the team, at any open stage up to the
+    // Team Lead hand-off. Status is kept; the new agent picks up where it is.
+    if (l.assignedTo === user.id && !['NEGOTIATING', 'DEAL_CLOSED_WON', 'DEAL_CLOSED_LOST', 'NOT_INTERESTED'].includes(l.status)) btns.push(
+      <button key="fwd-agent" className="btn btn-g btn-full" onClick={() => openModal('forward-agent')}>
+        <Mi>swap_horiz</Mi>Forward to Agent
+      </button>
+    );
   }
 
-  // Not Interested handler: re-engages the lead with the same buttons an Initial
-  // Agent uses. Moving it off Not Interested takes it out of their (Not
+  // Not Interested handler: re-engages the lead with the same first-contact
+  // buttons an Agent uses. Moving it off Not Interested takes it out of their (Not
   // Interested-only) list, but it stays assigned to them.
   if (isNiHandler(user) && l.status === 'NOT_INTERESTED') {
     btns.push(
@@ -293,7 +300,7 @@ function Actions({ l }) {
   }
 
   if (r === ROLES.TL || r === ROLES.MGMT) {
-    // A lead in the Team Lead's hands (forwarded from MA arrives at Meeting Set /
+    // A lead in the Team Lead's hands (forwarded by an Agent arrives at Meeting Set /
     // Visit Scheduled / Visit Done) — let the TL act on any deal-stage lead, not
     // only Visit Done / Negotiating, so a forwarded lead can always be closed.
     const DEAL_STAGE = ['MEETING_SET', 'SITE_VISIT_SCHEDULED', 'SITE_VISIT_DONE', 'NEGOTIATING'];
@@ -425,7 +432,7 @@ export default function LeadPanel() {
   // lives outside #app, and even closed (off-canvas) its buttons would take Tab.
   const drawerOpen = useMediaQuery(DRAWER_MQ) && sidebarOpen;
   // Only Management / Master (admin) may delete a lead. Real agents — Initial
-  // Agent, Meeting Agent, Team Lead — cannot delete any lead.
+  // Agent, Team Lead — cannot delete any lead.
   const canDelete = user?.role === ROLES.MGMT || user?.role === ROLES.MASTER;
 
   function handleDelete() {

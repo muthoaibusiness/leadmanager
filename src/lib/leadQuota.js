@@ -17,7 +17,7 @@ const LIMITED_TEAM_IDS = ['txxsz5ycjmqnpec8x'];
 const cache = {};
 
 export function isQuotaLimited(user) {
-  if (!user || ![ROLES.IA, ROLES.MA].includes(effectiveRole(user))) return false;
+  if (!user || effectiveRole(user) !== ROLES.AGENT) return false;
   if (LIMITED_TEAM_IDS.includes(user.teamId)) return true;
   const team = getDB().teams.find(t => t.id === user.teamId);
   const name = (team?.name || '').toLowerCase();
