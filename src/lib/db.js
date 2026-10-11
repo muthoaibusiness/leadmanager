@@ -1752,24 +1752,30 @@ export function hasOffer(lead, db) {
 // the app, not only on the screens that already know about the offer.
 setOfferResolver(leadId => (getDB().activities?.[leadId] || []).some(a => a.type === 'OFFER'));
 
-// Returns false and changes nothing when a Team Lead hand-off arrives without a
-// complete offer — the caller surfaces that; the modal blocks it first.
+// Returns false and changes nothing when a Team Lead *closing* hand-off
+// (offerData given) arrives without a complete offer — the caller surfaces
+// that; the modal blocks it first. A plain reassignment to a Team Lead
+// (Forward to Agent/Teammate, no offerData) is just a normal hand-off — the
+// Team Lead is a valid teammate to receive a lead from, same as any Agent.
 export function fwdLead(leadId, toUser, currentUser, offerData) {
   const l = getLead(leadId);
-  const isTL = toUser.role === ROLES.TL;
-  if (isTL && !offerComplete(offerData)) return false;
+  // "Closing hand-off" = forwarding to a Team Lead WITH an offer attached —
+  // that's what routes the lead into the negotiation/closing pipeline and
+  // notifies the original agent. Without an offer it's a plain reassignment.
+  const isClosingHandoff = toUser.role === ROLES.TL && !!offerData;
+  if (isClosingHandoff && !offerComplete(offerData)) return false;
   updLead(leadId, {
     assignedTo: toUser.id, assignedToName: toUser.name, assignedRole: toUser.role,
     previousAssignees: [...l.previousAssignees, currentUser.id],
     // Stamped on the row so the pipeline can filter and sum server-side.
-    ...(isTL ? { offerSentAt: now_(), offerValue: offerData.pipelineValue || 0 } : {}),
+    ...(isClosingHandoff ? { offerSentAt: now_(), offerValue: offerData.pipelineValue || 0 } : {}),
   });
   addAct(leadId, { type: 'FORWARDED', description: 'Forwarded to ' + toUser.name + ' (' + rlabel(toUser.role) + ')', userId: currentUser.id, userName: currentUser.name, durationSeconds: 0 });
-  if (isTL) {
+  if (isClosingHandoff) {
     addAct(leadId, { type: 'OFFER', description: JSON.stringify({ ourOffer: offerData.ourOffer || 0, clientOffer: offerData.clientOffer || 0, totalSft: offerData.totalSft || 0, pipelineValue: offerData.pipelineValue || 0, notes: offerData.notes || '' }), userId: currentUser.id, userName: currentUser.name, durationSeconds: 0 });
   }
   const notifList = [{ userId: toUser.id, type: 'ASSIGNED', message: 'New lead assigned: ' + l.name + ' (from ' + currentUser.name + ')', leadId }];
-  if (isTL) {
+  if (isClosingHandoff) {
     const iaId = l.previousAssignees[0];
     if (iaId) notifList.push({ userId: iaId, type: 'FORWARDED', message: 'Your lead moved to negotiation: ' + l.name, leadId });
   }

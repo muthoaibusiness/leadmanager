@@ -10,7 +10,7 @@ import { useState } from 'react';
 //         same length as labels[].
 // labels: string[] — one x label per point (e.g. 'Jul 15').
 
-const W = 560, H = 200;
+const W = 560, H = 150;
 const padL = 28, padR = 8, padT = 10, padB = 20;
 const x0 = padL, x1 = W - padR, y0 = padT, y1 = H - padB;
 

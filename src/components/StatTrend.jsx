@@ -1,7 +1,7 @@
 import Mi from './Mi.jsx';
 
-// Muthoclo-style KPI card: label + delta + big value + full-width area sparkline w/ glow dot.
-export default function StatTrend({ label, value, delta, points, color = 'var(--volt)', gid, onClick }) {
+// Muthoclo-style KPI card: icon badge + label + delta + big value + full-width area sparkline w/ glow dot.
+export default function StatTrend({ label, value, delta, points, color = 'var(--volt)', icon, gid, onClick }) {
   const hasGraph = Array.isArray(points) && points.length > 1;
   const up = (delta ?? 0) >= 0;
   const clickable = typeof onClick === 'function';
@@ -36,13 +36,17 @@ export default function StatTrend({ label, value, delta, points, color = 'var(--
   return (
     <div
       className={`st-card${hasGraph ? ' has-graph' : ''}${clickable ? ' mc-click' : ''}`}
+      style={{ '--st-accent': color }}
       onClick={onClick}
       role={clickable ? 'button' : undefined}
       tabIndex={clickable ? 0 : undefined}
       onKeyDown={clickable ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick(); } } : undefined}
     >
       <div className="st-top">
-        <span className="st-l">{label}</span>
+        <div className="st-lwrap">
+          {icon && <span className="st-ico"><Mi>{icon}</Mi></span>}
+          <span className="st-l">{label}</span>
+        </div>
         {delta != null && (
           <span className={`st-d ${up ? 'up' : 'down'}`}>
             <Mi>{up ? 'arrow_upward' : 'arrow_downward'}</Mi>{Math.abs(delta)}%
