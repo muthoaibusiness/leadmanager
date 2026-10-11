@@ -7,6 +7,7 @@ import { rlabel } from '../../lib/helpers.js';
 import LeadTable, { PAGE_SIZE } from '../LeadTable.jsx';
 import SearchBox from '../SearchBox.jsx';
 import { ActionSwapCascadeButton } from '../ui/action-swap-cascade.jsx';
+import useChanged from '../../hooks/useChanged.js';
 
 // Order the admin's people picker groups the way the pipeline runs, so the
 // dropdown reads top-down rather than alphabetically across mixed roles.
@@ -37,7 +38,7 @@ export default function LeadsView() {
   const [projectOptions, setProjectOptions] = useState([]);
   const [page, setPage] = useState(0);
   const [result, setResult] = useState({ rows: [], total: 0 });
-  const [loading, setLoading] = useState(true);
+  const [doneKey, setDoneKey] = useState(null); // fetchKey of the last answered fetch
   const [fwdCount, setFwdCount] = useState(null); // null until the first count lands
 
   useEffect(() => { fetchLeadProjects(user).then(setProjectOptions); }, [user]);
@@ -51,7 +52,7 @@ export default function LeadsView() {
   // TL is exactly their team (see sbLoad's tiers).
   const teamUsers = useMemo(
     () => (isTL ? (db.users || []).filter(u => u.teamId === user.teamId && u.id !== user.id) : []),
-    [isTL, db.users, user.teamId],
+    [isTL, db.users, user.teamId, user.id],
   );
   const activeAgent = agentFilter === 'ALL' || teamUsers.some(u => u.id === agentFilter) ? agentFilter : user.id;
 
@@ -64,7 +65,7 @@ export default function LeadsView() {
       .filter(u => u.role !== ROLES.MASTER
         && (!user.companyId || !u.companyId || u.companyId === user.companyId))
       .sort((a, b) => (a.name || '').localeCompare(b.name || ''))
-    : []), [isMgmt, db.users, user.companyId, user.id]);
+    : []), [isMgmt, db.users, user.companyId]);
   const [userFilter, setUserFilter] = useState('ALL');
   // A roster change (someone deactivated, or a company switch) can retire the
   // selection; fall back rather than render the select on a dead value.
@@ -102,24 +103,26 @@ export default function LeadsView() {
   // Any filter change invalidates the page number: page 4 of the old result set
   // is meaningless in the new one.
   const qKey = JSON.stringify({ ...query, user: user.id });
-  const lastKey = useRef(qKey);
-  if (lastKey.current !== qKey) { lastKey.current = qKey; if (page !== 0) setPage(0); }
+  if (useChanged(qKey) && page !== 0) setPage(0);
+
+  // Loading until the newest fetch for what is on screen has answered.
+  const fetchKey = `${qKey}|${page}|${sortBy}|${dbVersion}`;
+  const loading = doneKey !== fetchKey;
 
   // The fetch. `seq` guards against out-of-order responses: typing in the search
   // box fires several, and a slow early one must not overwrite a fast later one.
   const seq = useRef(0);
   useEffect(() => {
     const mine = ++seq.current;
-    setLoading(true);
     queryLeads(query, { page, size: PAGE_SIZE, sort: sortBy })
       .then(res => {
         if (mine !== seq.current) return;
         // null = the request failed. Keep whatever is on screen rather than
         // blanking the table and claiming there are no customers.
         if (res) setResult(res);
-        setLoading(false);
+        setDoneKey(fetchKey);
       });
-  }, [qKey, page, sortBy, dbVersion, query]);
+  }, [fetchKey, qKey, page, sortBy, dbVersion, query]);
 
   // The Last Follow-up column: the newest FOLLOW_UP and Add Note for the rows on
   // screen, fetched for this page's ids once its rows land. A separate request,
@@ -150,9 +153,12 @@ export default function LeadsView() {
   // `active` is the same predicate plus the non-closed arm, so it costs one
   // count query per filter change, the same as the header used to spend.
   const [activeCount, setActiveCount] = useState(null);
+  // A new query or a data change clears the count until it is asked again.
+  const queryChanged = useChanged(query);
+  const versionChanged = useChanged(dbVersion);
+  if ((queryChanged || versionChanged) && activeCount !== null) setActiveCount(null);
   useEffect(() => {
     let alive = true;
-    setActiveCount(null);
     countLeads({ ...query, kpi: 'active' }).then(n => { if (alive) setActiveCount(n); });
     return () => { alive = false; };
   }, [query, dbVersion]);
@@ -168,8 +174,9 @@ export default function LeadsView() {
   // The Forwarded tab's badge is a count, so it costs a count query, not rows.
   // It is live: realtime lead changes the agent is involved in (inScope keeps
   // leads they held before) bump dbVersion, and the count is asked again.
+  if (!isAgent && fwdCount !== 0) setFwdCount(0);
   useEffect(() => {
-    if (!isAgent) { setFwdCount(0); return; }
+    if (!isAgent) return;
     let alive = true;
     countLeads({ user, involved: true, ownTab: 'fwd' }).then(n => { if (alive && n != null) setFwdCount(n); });
     return () => { alive = false; };

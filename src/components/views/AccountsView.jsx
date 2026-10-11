@@ -68,7 +68,7 @@ export default function AccountsView() {
     const c = { total: coUsers.length, [ROLES.TL]: 0, [ROLES.AGENT]: 0, [ROLES.MGMT]: 0 };
     coUsers.forEach(u => { c[u.role] = (c[u.role] || 0) + 1; });
     return c;
-  }, [dbVersion]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [dbVersion]); // eslint-disable-line react-hooks/exhaustive-deps -- coUsers is re-derived from db each render; dbVersion tracks it
 
   // Won / Active per team, shown when a Team Lead row is expanded. Two count
   // queries per team rather than downloading the company's leads.
@@ -156,7 +156,7 @@ export default function AccountsView() {
         if (ta !== tb) return !ta ? 1 : !tb ? -1 : ta.localeCompare(tb);
         return (ROLE_ORDER[a.role] ?? 9) - (ROLE_ORDER[b.role] ?? 9) || (a.name || '').localeCompare(b.name || '');
       });
-  }, [dbVersion, q, roleFilter, teamFilter]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [dbVersion, q, roleFilter, teamFilter]); // eslint-disable-line react-hooks/exhaustive-deps -- coUsers is re-derived from db each render; dbVersion tracks it
 
   const pages = Math.max(1, Math.ceil(list.length / PAGE));
   const curPage = Math.min(page, pages - 1);

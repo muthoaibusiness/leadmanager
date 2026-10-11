@@ -1,10 +1,14 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, Suspense } from 'react';
 import Mi from './Mi.jsx';
-import { AvatarGroup, AvatarGroupTooltip } from './ui/avatar-group.jsx';
 import { useApp } from '../context/AppContext.jsx';
 import { clearSession, getDB } from '../lib/db.js';
 import { avc, ini, rlabel } from '../lib/helpers.js';
 import { canSee, ROLES } from '../lib/constants.js';
+import lazyChunk from '../lib/lazyChunk.js';
+import { useTheme, setTheme } from '../lib/theme.js';
+
+// Lazy: AvatarGroup pulls in motion and the tooltip primitives.
+const HeaderFace = lazyChunk(() => import('./HeaderFace.jsx'));
 
 // Initials for a face without a photo: "Ada Lovelace" → "AL".
 const initials = (name) => name.trim().split(/\s+/).slice(0, 2).map(w => w[0]?.toUpperCase() ?? '').join('');
@@ -16,7 +20,7 @@ function UAvatar({ u, cls = '' }) {
     : <div className={`sb-av ${cls}`} style={{ background: avc(u.name) }}>{ini(u.name)}</div>;
 }
 
-// Header identity control (top right, before the date filter): the signed-in
+// Header identity control (top right, last; phones: top left): the signed-in
 // user's face alone. Clicking it opens the menu — for admins a switch-account
 // search over every account they can switch to (Management: own company;
 // Master: all), then Profile and Sign out.
@@ -25,6 +29,7 @@ export default function UserMenu() {
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState('');
   const ref = useRef(null);
+  const isDark = useTheme() === 'dark';
 
   useEffect(() => {
     if (!open) return;
@@ -72,21 +77,26 @@ export default function UserMenu() {
   // events through the face — only a press on the face itself counts.
   const onFace = (e) => { if (e.currentTarget.contains(e.target)) setOpen(o => !o); };
   const me = user.name || user.email || 'User';
+  const face = (tip) => (
+    <button key="me" type="button" className="ag-av" aria-label={`${me} — account menu`} aria-expanded={open} onClick={onFace}>
+      {user.avatar ? <img src={user.avatar} alt="" draggable={false} className="ag-img" /> : <span aria-hidden="true">{initials(me)}</span>}
+      {tip}
+    </button>
+  );
 
   const logout = () => { clearSession(); setSidebarOpen(false); setUser(null); };
 
   return (
     <div className={`hd-um${open ? ' open' : ''}${impersonator ? ' imp' : ''}`} ref={ref} onKeyDown={onEsc}>
-      {/* The tooltip opens below, the header being the top edge of the screen.
-          AvatarGroup maps its children, so the one face goes in as an array. */}
-      <AvatarGroup tooltipProps={{ side: 'bottom', sideOffset: 10 }}>
-        {[
-          <button key="me" type="button" className="ag-av" aria-label={`${me} — account menu`} aria-expanded={open} onClick={onFace}>
-            {user.avatar ? <img src={user.avatar} alt="" draggable={false} className="ag-img" /> : <span aria-hidden="true">{initials(me)}</span>}
-            <AvatarGroupTooltip>{impersonator ? `${me} · viewing` : `${me} (you)`}</AvatarGroupTooltip>
-          </button>,
-        ]}
-      </AvatarGroup>
+      {/* Until HeaderFace loads, the same markup AvatarGroup renders, minus the
+          lift and the tooltip. */}
+      <Suspense fallback={(
+        <div data-slot="avatar-group" className="ag">
+          <div data-slot="avatar-container" className="ag-slot" style={{ zIndex: 0 }}><div>{face(null)}</div></div>
+        </div>
+      )}>
+        <HeaderFace face={face} tip={impersonator ? `${me} · viewing` : `${me} (you)`} />
+      </Suspense>
       {open && (
         <div className="umenu">
           <div className="um-me">
@@ -121,6 +131,10 @@ export default function UserMenu() {
               <div className="umenu-div" />
             </>
           )}
+          {/* Phones only (CSS): the header drops its theme button there. */}
+          <button className="umenu-item umenu-theme" onClick={() => setTheme(isDark ? 'light' : 'dark')}>
+            <Mi aria-hidden="true">{isDark ? 'light_mode' : 'dark_mode'}</Mi><span>{isDark ? 'Light mode' : 'Dark mode'}</span>
+          </button>
           {canSee(user, 'profile') && (
             <button className="umenu-item" onClick={() => { nav('profile'); setOpen(false); }}>
               <Mi aria-hidden="true">person</Mi><span>Profile</span>

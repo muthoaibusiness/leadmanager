@@ -48,6 +48,8 @@
   --hh: 58px;                                   /* header height */
   --gutter: clamp(12px, 1.25vw + 8px, 28px);    /* page side padding */
   --gutter-y: clamp(14px, .8vw + 11px, 26px);   /* page top/bottom padding */
+  --inset: 0px;                                 /* gap around the inset page panel (desktop sets it, see APP SHELL) */
+  --bnav: 0px;                                  /* height the phone bottom bar covers (phones set it, see .bnav) */
   --content-max: 1760px;                        /* content cap on very wide screens */
   --tr: .15s ease;
   /* sidebar slide: in (show) a touch slower than out (hide), both easing out */
@@ -169,10 +171,20 @@ a {
   text-decoration: none
 }
 
+/* The reset below is Google's own for the icon font. text-transform matters
+   most: the subset font (icon_names= in index.html) only knows lower-case
+   names, so an icon inside an uppercase label (the sidebar) would render as
+   its name. The full font happened to accept any case and hid this. */
 .mi {
   font-family: 'Material Symbols Rounded';
   font-size: 20px;
   line-height: 1;
+  text-transform: none;
+  letter-spacing: normal;
+  white-space: nowrap;
+  word-wrap: normal;
+  direction: ltr;
+  font-feature-settings: 'liga';
   user-select: none;
   -webkit-font-smoothing: antialiased;
   vertical-align: middle;
@@ -1484,6 +1496,15 @@ a {
   position: relative
 }
 
+/* Desktop inset shell: the sidebar sits flush on the canvas (same surface, no
+   divider) and the page is a rounded, bordered panel held --inset off the
+   viewport's top, right and bottom edges. The ≤1023px drawer layout keeps
+   --inset at 0 and is unchanged. */
+@media not all and (max-width: 1023px) {
+  :root { --inset: 8px }
+  #app { background: var(--surf) }
+}
+
 /* Aurora WebGL background behind all admin pages */
 .app-aurora { position: fixed; inset: 0; z-index: 0; pointer-events: none }
 .app-aurora .aurora-canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block }
@@ -1569,6 +1590,11 @@ a {
    min-width:1024px, zoomed widths between 1023 and 1024px would be in neither
    layout, JS treating them as desktop while these rules stay off. */
 @media not all and (max-width: 1023px) {
+  .sidebar { border-right: none }   /* inset shell: the page panel's own border separates them */
+  /* The header sits --inset lower inside the panel; grow the brand row by the
+     same amount (padding on top, so its content stays level with the header's)
+     and its rule continues the header's rule across the panel edge. */
+  .sidebar .sb-brand { height: calc(var(--inset) + var(--hh)); padding-top: var(--inset) }   /* .sidebar: outranks the base .sb-brand rule below */
   #app.sb-collapsed .sidebar {
     transform: translateX(-100%);
     visibility: hidden;
@@ -2393,9 +2419,23 @@ a {
 /* Desktop: the content slides over as the sidebar collapses/expands, in step
    with the sidebar's own timing. (Desktop = not the drawer query, see .sidebar.) */
 @media not all and (max-width: 1023px) {
-  .page { transition: margin-left var(--sb-in) var(--sb-ease) }
+  .page {
+    /* inset panel (see APP SHELL): --inset off every edge, the sidebar's
+       included; overflow:hidden clips the header to the radius.
+       The edge is a 1px ring shadow, not a border, so it takes no layout space;
+       flush against the sidebar (z-index 200) the ring's left side and rounded
+       corner were painted under it and vanished, hence the gap there too. */
+    height: calc(100dvh - 2 * var(--inset));
+    margin: var(--inset) var(--inset) var(--inset) calc(var(--sw) + var(--inset));
+    background: var(--bg);
+    border-radius: var(--r-xl);
+    /* --bd2: the header shares the canvas colour (--surf), so a --bd ring
+       left the rounded corner near invisible in the dark theme */
+    box-shadow: 0 0 0 1px var(--bd2), var(--sh);
+    transition: margin-left var(--sb-in) var(--sb-ease)
+  }
   #app.sb-collapsed .page {
-    margin-left: 0;
+    margin-left: var(--inset);
     transition: margin-left var(--sb-out) var(--sb-ease)
   }
 }
@@ -2406,20 +2446,50 @@ a {
   border-bottom: 1px solid var(--bd);
   display: flex;
   align-items: center;
-  /* controls line up with the page content; the right padding also keeps a
-     slot free for the theme toggle (.thtog, 60px wide), which is fixed there
-     one 14px gap after the last control */
-  padding: 0 calc(var(--gutter) + 60px + 14px) 0 var(--gutter);
-  gap: 14px;
+  /* controls line up with the page content */
+  padding: 0 var(--gutter);
+  gap: 8px;
   flex-shrink: 0
 }
 
-/* thin separator between the date filter and the notification bell */
-.pg-div {
-  width: 1px;
-  height: 22px;
-  background: var(--bd);
-  flex-shrink: 0
+/* Round header icon buttons (theme, date filter, notifications), sized to the
+   account face (.ag-av, 36px) that ends the row. */
+.hd-ic {
+  position: relative;
+  width: 36px;
+  height: 36px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border-radius: 50%;
+  border: 1px solid var(--bd2);
+  background: transparent;
+  color: var(--t2);
+  cursor: pointer;
+  transition: background var(--tr), color var(--tr), border-color var(--tr)
+}
+
+.hd-ic:hover,
+.hd-ic.open {
+  background: var(--surf2);
+  color: var(--t1);
+  border-color: var(--t3)
+}
+
+.hd-ic .mi { font-size: 19px }
+
+/* Phones: the account face moves to the left, right after the show-sidebar
+   button (order only; the DOM keeps the wide-screen order), and the theme
+   button gives way to the account menu's theme item. */
+.umenu-theme { display: none }
+
+@media (max-width: 767px) {
+  .pg-head .ham { order: -2 }
+  .pg-head .hd-um { order: -1 }
+  .pg-head .thtog { display: none }
+  .umenu-theme { display: flex }
 }
 
 /* Show-sidebar button, first in the header, with the hide button's glyph and
@@ -2528,7 +2598,7 @@ a {
 /* The page scroller. No zoom: content renders at its real size, and the shell
    gives it room through the fluid tokens in :root instead. Full-height views
    (.wa-wrap, .pk-board) take exactly its content box,
-   calc(100dvh - var(--hh) - 2 * var(--gutter-y)): keep them in step. */
+   calc(100dvh - 2 * var(--inset) - var(--bnav) - var(--hh) - 2 * var(--gutter-y)): keep them in step. */
 .pg-body {
   flex: 1;
   overflow-y: auto;
@@ -2554,6 +2624,97 @@ a {
 }
 
 .pg-body:has(> .pg-wide) { display: flex; flex-direction: column }
+
+/* ── Phone bottom bar (components/BottomNav.jsx) ──────────────────────────
+   Below 768px only: a floating pill of round icon buttons, centred and held
+   off the screen's bottom edge (and the iOS home indicator); the middle "+"
+   is filled with the accent and opens a quick-actions menu above it.
+   --bnav is the height it covers; the page body pads by it so the last row
+   can scroll clear, and full-height views (.wa-wrap) subtract it. z-index
+   under the drawer backdrop (199) and every overlay (lead panel, modals). */
+.bnav { display: none }
+
+@media (max-width: 767px) {
+  /* 58px pill + 16px off the bottom + 12px clearance above it */
+  :root { --bnav: calc(58px + 16px + 12px + env(safe-area-inset-bottom, 0px)) }
+  .pg-head .ham { display: none }   /* More in the bar opens the drawer */
+  .page .pg-body { padding-bottom: calc(var(--gutter-y) + var(--bnav)) }
+
+  .bnav {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;   /* buttons spread across the set width */
+    width: min(340px, calc(100vw - 32px));
+    position: fixed;
+    left: 50%;
+    bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+    transform: translateX(-50%);
+    height: 58px;
+    padding: 8px 12px;
+    border-radius: 999px;
+    background: var(--surf);
+    border: 1px solid var(--bd2);
+    box-shadow: var(--sh-lg);
+    z-index: 150
+  }
+  .bnav-it, .bnav-add {
+    position: relative;
+    width: 40px;
+    height: 40px;
+    flex-shrink: 0;
+    display: grid;
+    place-items: center;
+    padding: 0;
+    border: 0;
+    border-radius: 50%;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+    transition: background var(--tr), color var(--tr), transform var(--tr)
+  }
+  .bnav-it { background: none; color: var(--t2) }
+  .bnav-it:hover { background: var(--surf2); color: var(--t1) }
+  .bnav-it.on { background: var(--surf2); color: var(--accent) }   /* current page */
+  .bnav-add {
+    background: var(--accent);
+    color: var(--on-accent);
+    box-shadow: 0 4px 14px color-mix(in srgb, var(--accent) 40%, transparent)
+  }
+  .bnav-add.open { transform: rotate(45deg) }   /* "+" turns into "×" while the menu is open */
+  .bnav-it .mi, .bnav-add .mi { font-size: 21px }
+  .bnav-it:focus-visible, .bnav-add:focus-visible { outline: 2px solid var(--t1); outline-offset: 2px }
+
+  .bnav-addwrap { position: relative }
+  /* the quick-actions menu rises above "+", centred on it (.umenu: look) */
+  .bnav .bnav-menu {
+    left: calc(50% - 105px);
+    right: auto;
+    width: 210px;
+    bottom: calc(100% + 18px)
+  }
+  .bnav-badge {
+    position: absolute;
+    top: -3px;
+    right: -3px;
+    min-width: 16px;
+    height: 16px;
+    padding: 0 4px;
+    border-radius: 8px;
+    background: var(--red);
+    color: #fff;
+    font: 800 9.5px/16px var(--font-display);
+    text-align: center
+  }
+  .bnav-dot {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--red);
+    box-shadow: 0 0 0 2px var(--surf)
+  }
+}
 
 /* In-body hero header (eyebrow + big title + subtitle) */
 .hero {
@@ -2702,13 +2863,12 @@ a {
   .sidebar, .sb-ov, .page { transition: none !important }
 }
 
-/* Phones: hero actions take the full row. The header makes room for the
-   docked theme toggle by dropping the divider and the account faces after
-   your own (that face still opens the menu, which lists every account). */
+/* Phones: hero actions take the full row. The header keeps only your own
+   account face (it still opens the menu, which lists every account). */
 @media (max-width: 767px) {
   .hero-acts { width: 100% }
   .hero-acts .btn { flex: 1; justify-content: center }
-  .pg-head .pg-div, .hd-um .ag-slot:not(:first-child) { display: none }
+  .hd-um .ag-slot:not(:first-child) { display: none }
 }
 
 /* ── BUTTONS ─────────────────────────────── */
@@ -5907,7 +6067,7 @@ textarea.fi {
 /* ── TOAST ────────────────────────────────── */
 .toast {
   position: fixed;
-  bottom: 22px;
+  bottom: calc(22px + var(--bnav));   /* phones: above the bottom bar */
   left: 50%;
   transform: translateX(-50%) translateY(12px);
   background: #1C1C1C;
@@ -6269,37 +6429,11 @@ textarea.fi {
 }
 
 /* ── NOTIFICATION BELL ───────────────────── */
-.notif-btn {
-  position: relative;
-  width: 36px;
-  height: 36px;
-  border-radius: var(--r);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--t2);
-  cursor: pointer;
-  transition: all var(--tr);
-  border: 1.5px solid transparent;
-  flex-shrink: 0;
-  margin-left: 4px;
-  background: none
-}
-
-.notif-btn:hover {
-  background: var(--surf2);
-  color: var(--t1);
-  border-color: var(--bd)
-}
-
-.notif-btn .mi {
-  font-size: 20px
-}
-
+/* The button itself is a round header icon (.hd-ic); only its count is here. */
 .notif-ct {
   position: absolute;
-  top: 1px;
-  right: 1px;
+  top: -4px;   /* on the round button's rim */
+  right: -4px;
   background: var(--red);
   color: #fff;
   font-size: 10px;
@@ -7210,71 +7344,18 @@ textarea.fi {
   flex-shrink: 0
 }
 
-.drp-trigger {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  padding: 0 14px;
-  height: 34px;
-  border-radius: 999px;
-  border: 1px solid var(--bd2);
-  background: transparent;
-  cursor: pointer;
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: .06em;
-  text-transform: uppercase;
-  color: var(--t1);
-  transition: all var(--tr);
-  white-space: nowrap
-}
-
-.drp-trigger:hover,
-.drp-trigger.open {
-  border-color: var(--t1);
-  background: var(--surf2);
-  color: var(--t1)
-}
-
-.drp-trigger .mi {
-  font-size: 17px;
-  color: inherit
-}
-
-.drp-trigger-preset {
-  font-weight: 600
-}
-
-.drp-trigger-range {
-  font-size: 12px;
-  color: var(--t2);
-  border-left: 1px solid var(--bd);
-  padding-left: 8px;
-  margin-left: 3px
-}
-
-/* Phones: a range preset ("Last 7 days | Oct 1 – Oct 7") made the trigger
-   ~254px wide and pushed the bell out of the header. Drop the dates here (the
-   panel still shows them) and let a long preset label ellipsize instead. */
-@media(max-width:560px) {
-  .drp-wrap {
-    flex-shrink: 1;
-    min-width: 0
-  }
-
-  .drp-trigger {
-    max-width: 100%
-  }
-
-  .drp-trigger-preset {
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis
-  }
-
-  .drp-trigger-range {
-    display: none
-  }
+/* The trigger is a round header icon (.hd-ic): the calendar alone. A dot
+   on its corner marks any filter other than All time; the tooltip names it. */
+.drp-dot {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 2px var(--surf);
+  pointer-events: none
 }
 
 .drp-panel {
@@ -10744,12 +10825,8 @@ textarea.fi {
   .btn { min-height: 44px }
   .ham, .m-x, .sb-tog, .p-back { min-width: 44px; min-height: 44px }
   .fsel, .finp, .fi { min-height: 44px }
-  /* header controls; the theme toggle keeps its look and gets a larger
-     invisible hit area (74 x 44px) that stays inside the header band and the
-     slot .pg-head keeps free for it, so it overlaps no other control */
-  .notif-btn { width: 40px; height: 40px }
-  .drp-trigger { height: 40px }
-  .thtog::after { content: ''; position: absolute; inset: -7px }
+  /* round header icons (theme, date filter, notifications) */
+  .hd-ic { width: 40px; height: 40px }
 }
 
 /* Data tables that aren't card-stacked — wrap to horizontal scroll, never overflow page */
@@ -10760,7 +10837,6 @@ textarea.fi {
 /* Long text — wrap instead of forcing width */
 @media (max-width: 767px) {
   .pg-title, .hero-title, .sec-t, .m-ttl { overflow-wrap: anywhere }
-  .pg-head { gap: 8px; padding-right: calc(var(--gutter) + 60px + 8px) }   /* toggle slot at this gap */
   .pg-acts { gap: 6px }
 }
 
@@ -10942,26 +11018,6 @@ textarea.fi {
 .fpill:hover { border-color: var(--bd2); color: var(--t1); }
 .fpill.on { color: #38BDF8; border-color: rgba(56, 189, 248, .5); background: rgba(56, 189, 248, .10); }
 
-/* ── Theme toggle (docked at the header's right end) ─────────────────────────────── */
-/* ThemeToggle.jsx renders it after .page; it is fixed over the slot that
-   .pg-head keeps free with its right padding, vertically centred in the
-   header. It never floats over the page, so it covers no row action and the
-   page needs no bottom clearance for it. z-index under the drawer backdrop
-   (199) and sidebar (200): an open drawer covers it, as it covers the header. */
-.thtog {
-  position: fixed; top: calc((var(--hh) - 30px) / 2); right: var(--gutter); z-index: 150;
-  width: 60px; height: 30px; padding: 3px; border-radius: 999px;
-  border: 1px solid var(--bd2); background: var(--surf2);
-  cursor: pointer; display: flex; align-items: center;
-  transition: background var(--tr), border-color var(--tr);
-}
-.thtog-knob {
-  width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center;
-  background: var(--accent); color: var(--on-accent);
-  transition: transform .3s ease, background var(--tr);
-}
-.thtog.light .thtog-knob { transform: translateX(30px); }
-.thtog-knob .mi { font-size: 16px; }
 
 /* ── Radar sweep loader (.lr) — app loading screens ────────────────────── */
 .lr {
@@ -12392,7 +12448,7 @@ input[type="time"]::-webkit-calendar-picker-indicator { opacity: .9; cursor: poi
 
 /* exactly the page scroller's content box (see .pg-body), so the chat never
    scrolls the page; with less than 520px of room the page scrolls instead */
-.wa-wrap { display: flex; flex-direction: column; gap: 12px; height: calc(100dvh - var(--hh) - 2 * var(--gutter-y)); min-height: 520px; }
+.wa-wrap { display: flex; flex-direction: column; gap: 12px; height: calc(100dvh - 2 * var(--inset) - var(--bnav) - var(--hh) - 2 * var(--gutter-y)); min-height: 520px; }
 
 .wa-bar { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 .wa-bar-t { font-family: var(--font-display); font-size: 26px; font-weight: 500; text-transform: uppercase; letter-spacing: .01em; line-height: 1.1; }

@@ -7,6 +7,7 @@ import ChatLeadPane from '../chat/ChatLeadPane.jsx';
 import { useApp } from '../../context/AppContext.jsx';
 import { getDB, getLead } from '../../lib/db.js';
 import { pushNotify } from '../../lib/pushNotify.js';
+import useChanged from '../../hooks/useChanged.js';
 import {
   waLoadConversations, waLoadMessages, waMarkRead, waSendMessage, waRetry,
   waSubscribe, matchLead, mergeStatus, isChatAdmin,
@@ -35,24 +36,22 @@ export default function ConversationsView() {
   // dbVersion is a dependency so a lead created elsewhere re-resolves the link.
   const lead = useMemo(
     () => (active ? (active.leadId ? getLead(active.leadId) || matchLead(active, leads) : matchLead(active, leads)) : null),
-    [active, leads, dbVersion]
+    [active, leads, dbVersion] // eslint-disable-line react-hooks/exhaustive-deps -- db mutates in place; dbVersion is the change signal
   );
 
   // ── initial load ──────────────────────────────────────────────────────────
-  const reload = useCallback(async () => {
+  // The fetch alone; reload() and the chatOk switch below put up the spinner.
+  const fetchConvs = useCallback(() => waLoadConversations()
+    .then(list => setConvs(list), e => setLoadErr(e.message || 'Could not load conversations.'))
+    .finally(() => setLoadingConvs(false)), []);
+  const reload = useCallback(() => {
     setLoadingConvs(true);
     setLoadErr('');
-    try {
-      const list = await waLoadConversations();
-      setConvs(list);
-    } catch (e) {
-      setLoadErr(e.message || 'Could not load conversations.');
-    } finally {
-      setLoadingConvs(false);
-    }
-  }, []);
+    return fetchConvs();
+  }, [fetchConvs]);
 
-  useEffect(() => { if (chatOk) reload(); }, [chatOk, reload]);
+  if (useChanged(chatOk) && chatOk) { setLoadingConvs(true); setLoadErr(''); }
+  useEffect(() => { if (chatOk) fetchConvs(); }, [chatOk, fetchConvs]);
 
   // Publish the unread total so the sidebar badge stays in step.
   useEffect(() => {

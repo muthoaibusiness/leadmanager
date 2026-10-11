@@ -4,6 +4,7 @@ import { LoadingBlock, LoadingBar } from './Spinner.jsx';
 import Pagination from './Pagination.jsx';
 import { queryLeads } from '../lib/db.js';
 import { leadDisplayStatus, fmtDT } from '../lib/helpers.js';
+import useChanged from '../hooks/useChanged.js';
 
 const PAGE_SIZE = 15;
 
@@ -21,22 +22,25 @@ const PAGE_SIZE = 15;
 export default function KpiSheet({ detail, onClose, onLead }) {
   const [page, setPage] = useState(0);
   const [fetched, setFetched] = useState(null);
-  const [loading, setLoading] = useState(false);
+  const [doneKey, setDoneKey] = useState(null);
 
   const query = detail?.query || null;
   const qKey = query ? JSON.stringify({ ...query, user: query.user?.id }) : null;
 
   // A new card resets to page 1; the sheet is reused across cards.
-  useEffect(() => { setPage(0); setFetched(null); }, [qKey]);
+  if (useChanged(qKey)) { setPage(0); setFetched(null); }
+
+  // Loading means the page on screen is not the one last fetched.
+  const fetchKey = query ? `${qKey}|${page}|${detail.sort || 'newest'}` : null;
+  const loading = !!fetchKey && doneKey !== fetchKey;
 
   useEffect(() => {
     if (!query) return;
     let alive = true;
-    setLoading(true);
     queryLeads(query, { page, size: PAGE_SIZE, sort: detail.sort || 'newest' }).then(res => {
       if (!alive) return;
       if (res) setFetched(res);
-      setLoading(false);
+      setDoneKey(fetchKey);
     });
     return () => { alive = false; };
     // qKey stands in for `query`: a fresh object each render would refetch forever.

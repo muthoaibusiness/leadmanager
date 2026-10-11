@@ -168,7 +168,7 @@ export default function AgentDash() {
       .sort((a, b) => new Date(a.meetingDate) - new Date(b.meetingDate));
 
     return { now, todayStart, queue, oldestUntouchedAt, active, followToday, todayVisits, upcoming };
-  }, [queueRows, oldestUntouched, visitRows, db, dbVersion]);
+  }, [queueRows, oldestUntouched, visitRows, db, dbVersion]); // eslint-disable-line react-hooks/exhaustive-deps -- db mutates in place; dbVersion is the change signal
 
   // Meeting Set → Attended → Visit Scheduled → Visit Done → Offer Sent
   const STAGES = [

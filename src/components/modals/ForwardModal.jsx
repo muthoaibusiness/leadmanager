@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import Mi from '../Mi.jsx';
 import { useApp } from '../../context/AppContext.jsx';
+import useChanged from '../../hooks/useChanged.js';
 import { getDB, fwdLead, getProperties, updLead, offerComplete, setMeeting } from '../../lib/db.js';
 import { sbGetUsersLite, rToU } from '../../lib/supabase.js';
 import { avc, ini, rlabel, fmtBDT } from '../../lib/helpers.js';
@@ -55,12 +56,10 @@ export default function ForwardModal() {
   const targetRole = isAG ? ROLES.AGENT : ROLES.TL;
   const toggleShared = (k) => setShared(s => s.includes(k) ? s.filter(x => x !== k) : [...s, k]);
 
-  useEffect(() => {
-    if (isOpen) {
-      setSelected(null); setStep(isMA ? 2 : 1); setProjectId(''); setOurOffer(''); setClientOffer(''); setTotalSft(''); setOfferNotes('');
-      setMeetingType('ONLINE'); setMeetingAt(''); setMeetingLink(''); setShared([]); setTargets([]);
-    }
-  }, [isOpen]); // eslint-disable-line react-hooks/exhaustive-deps
+  if (useChanged(isOpen && modal) && isOpen) {
+    setSelected(null); setStep(isMA ? 2 : 1); setProjectId(''); setOurOffer(''); setClientOffer(''); setTotalSft(''); setOfferNotes('');
+    setMeetingType('ONLINE'); setMeetingAt(''); setMeetingLink(''); setShared([]); setTargets([]);
+  }
 
   const db = getDB();
 

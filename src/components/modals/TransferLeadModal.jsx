@@ -1,6 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import Mi from '../Mi.jsx';
 import { useApp } from '../../context/AppContext.jsx';
+import useChanged from '../../hooks/useChanged.js';
 import { getDB, bulkTransferLeads } from '../../lib/db.js';
 import { ROLES } from '../../lib/constants.js';
 
@@ -37,13 +38,10 @@ export default function TransferLeadModal({ leadIds = null, open = null, onClose
     ? (db.users || []).filter(u => u.teamId === selectedTeamId && u.role === ROLES.AGENT && u.isActive !== false).sort((a, b) => (a.name || '').localeCompare(b.name || ''))
     : [];
 
-  useEffect(() => {
-    if (isOpen) {
-      setSelectedTeamId('');
-      setSelectedAgent('');
-    }
-  }, [isOpen]);
-
+  if (useChanged(isOpen) && isOpen) {
+    setSelectedTeamId('');
+    setSelectedAgent('');
+  }
 
   const submit = () => {
     const selectedAgentId = selectedAgent;

@@ -1,6 +1,7 @@
-import { useRef, useState, useEffect } from 'react';
+import { useRef, useState } from 'react';
 import Mi from '../Mi.jsx';
 import { useApp } from '../../context/AppContext.jsx';
+import useChanged from '../../hooks/useChanged.js';
 import { schedVisit, getProperties, getLead } from '../../lib/db.js';
 
 export default function SchedModal() {
@@ -14,12 +15,10 @@ export default function SchedModal() {
   const projects = [...getProperties()].sort((a, b) => (a.name || '').localeCompare(b.name || ''));
 
   // Default to the projects the agent last entered for this lead.
-  useEffect(() => {
-    if (isOpen) {
-      const prev = lead?.visitProjects;
-      setPicked(Array.isArray(prev) ? prev.map(p => ({ id: p.id, name: p.name })) : []);
-    }
-  }, [isOpen, panLead]);
+  if (useChanged(isOpen && panLead) && isOpen) {
+    const prev = lead?.visitProjects;
+    setPicked(Array.isArray(prev) ? prev.map(p => ({ id: p.id, name: p.name })) : []);
+  }
 
   const addProject = (id) => {
     if (!id) return;

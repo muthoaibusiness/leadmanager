@@ -1,6 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import Mi from '../Mi.jsx';
 import { useApp } from '../../context/AppContext.jsx';
+import useChanged from '../../hooks/useChanged.js';
 import { getLead, rescheduleMeeting } from '../../lib/db.js';
 
 const HOURS = { ONLINE: { min: 10, max: 22, label: '10 AM – 10 PM' }, OFFLINE: { min: 10, max: 18, label: '10 AM – 6 PM' } };
@@ -20,13 +21,11 @@ export default function RescheduleModal() {
   const [at, setAt] = useState('');
   const [link, setLink] = useState('');
 
-  useEffect(() => {
-    if (isOpen && lead) {
-      setType(lead.meetingType === 'OFFLINE' ? 'OFFLINE' : 'ONLINE');
-      setAt(lead.meetingAt ? toLocalInput(lead.meetingAt) : '');
-      setLink(lead.meetingLink || '');
-    }
-  }, [isOpen, panLead]);
+  if (useChanged(isOpen && panLead) && isOpen && lead) {
+    setType(lead.meetingType === 'OFFLINE' ? 'OFFLINE' : 'ONLINE');
+    setAt(lead.meetingAt ? toLocalInput(lead.meetingAt) : '');
+    setLink(lead.meetingLink || '');
+  }
 
   const save = () => {
     if (!at) { showToast('Pick a new date & time', 'err'); return; }

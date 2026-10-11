@@ -56,7 +56,8 @@ export default function ChatThread({ messages, loading, onRetry }) {
     );
   }
 
-  let lastDay = '';
+  // A day separator goes above the first message of each day.
+  const days = messages.map(m => dayLabel(m.waTimestamp));
 
   return (
     <div className="wa-thread-wrap">
@@ -69,10 +70,9 @@ export default function ChatThread({ messages, loading, onRetry }) {
           </div>
         )}
 
-        {messages.map((m) => {
-          const day = dayLabel(m.waTimestamp);
-          const sep = day !== lastDay;
-          lastDay = day;
+        {messages.map((m, i) => {
+          const day = days[i];
+          const sep = day !== (i ? days[i - 1] : '');
           return (
             <div key={m.id}>
               {sep && <div className="wa-day"><span>{day}</span></div>}

@@ -1,6 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import Mi from '../Mi.jsx';
 import { useApp } from '../../context/AppContext.jsx';
+import useChanged from '../../hooks/useChanged.js';
 import { getProperty, genUnits, unitsFromCodes, setUnitStatus, getLeads } from '../../lib/db.js';
 import { fmtBDT } from '../../lib/helpers.js';
 import { ROLES } from '../../lib/constants.js';
@@ -21,8 +22,8 @@ export default function UnitBookingModal() {
   const [days, setDays] = useState('7');
   const [est, setEst] = useState('');
 
-  useEffect(() => { setSel(null); }, [propSel, isOpen]);
-  useEffect(() => { setCq(''); setClient(null); setOffer(''); setDays('7'); setEst(''); }, [sel]);
+  if (useChanged(`${isOpen}:${propSel}`)) setSel(null);
+  if (useChanged(sel)) { setCq(''); setClient(null); setOffer(''); setDays('7'); setEst(''); }
 
   if (!isOpen) return <div className="mov" onClick={closeModal} />;
   const p = propSel ? getProperty(propSel) : null;

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import Mi from './Mi.jsx';
 import { LoadingBlock, LoadingBar } from './Spinner.jsx';
 import Pagination from './Pagination.jsx';
@@ -7,6 +7,7 @@ import { SRC_LABELS, ROLES } from '../lib/constants.js';
 import { useApp } from '../context/AppContext.jsx';
 import { bulkDeleteLeads, lastFollowupFor } from '../lib/db.js';
 import TransferLeadModal from './modals/TransferLeadModal.jsx';
+import useChanged from '../hooks/useChanged.js';
 
 export const PAGE_SIZE = 15;
 
@@ -69,10 +70,10 @@ export default function LeadTable({ leads, total = null, page: pageProp, onPage,
   // Server mode owns its own page state (the query changes it), so only the
   // selection is cleared here. Resetting the page from inside would fight the
   // caller and bounce the user back to page 1 on every fetch.
-  useEffect(() => {
+  if (useChanged(`${server}|${leads.length}|${leads.map(l => l.id).join()}`)) {
     if (!server) setOwnPage(0);
     setSelected(new Set());
-  }, [server, leads.length, leads.map(l => l.id).join()]);
+  }
 
   const slice = server ? sorted : sorted.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
 
