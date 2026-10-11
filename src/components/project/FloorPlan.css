@@ -101,8 +101,7 @@
 .fpv { min-width: 0; }
 .fpv-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; margin-bottom: 14px; }
 .fpv-proj { max-width: min(100%, 340px); min-width: 0; text-overflow: ellipsis; }
-.fpv-admin { display: flex; gap: 6px; margin-left: auto; }
-.fpv-del:hover { color: var(--red); border-color: var(--red); }
+.fpv-manage { margin-left: auto; }
 .fpv-empty .btn { margin-top: 14px; }
 
 /* --fp-sel: the selected tile (Grid view and Plan view's side panel) and its legend swatch */
@@ -229,7 +228,7 @@
   .fpv-search { margin-left: 0; flex: 1 1 100%; }
   .fpv-proj { max-width: 100%; flex: 1 1 100%; }
   .fpv-floorsel { flex: 1 1 140px; }   /* fills the line beside Grid / Plan */
-  .fpv-admin { margin-left: 0; }
+  .fpv-manage { margin-left: 0; }
   .fps-tiles { grid-template-columns: repeat(auto-fill, minmax(60px, 1fr)); }
   .fps-tile { min-height: 42px; padding: 4px 2px; font-size: 10.5px; }
   .fpv-seats { padding: 10px; }

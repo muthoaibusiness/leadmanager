@@ -24,9 +24,11 @@ import Toast from './components/Toast.jsx';
 import DateRangePicker from './components/DateRangePicker.jsx';
 import BackButton from './components/BackButton.jsx';
 import BellowsCrumb from './components/ui/bellows-crumb.jsx';
+import { Menu, MenuItem } from './components/ui/menu.jsx';
+import useProjectNav from './hooks/useProjectNav.js';
 
 
-import { migrateProjects, newProjectDraft, projectInventory, planProjects } from './lib/projects.js';
+import { migrateProjects, projectInventory, planProjects } from './lib/projects.js';
 import './components/project/AvailableUnitsTab.css';
 import GlobalLoadingBar from './components/GlobalLoadingBar.jsx';
 
@@ -218,7 +220,8 @@ function PageHeader({ shown, showBtnRef }) {
 
 // ── In-body hero header (eyebrow + big title + subtitle + actions) ───────────
 function PageHero() {
-  const { user, view, agentFilter, teamFilter, openModal, setCreateUserRoles, setPropSel, setPropDraft, setConsoleAdmin, leadCounts, projTab, setProjTab, planSel, setPlanEdit } = useApp();
+  const { user, view, agentFilter, teamFilter, openModal, setCreateUserRoles, leadCounts, projTab, setProjTab, planSel } = useApp();
+  const pnav = useProjectNav();
 
   // The Customers count is NOT computed here. It has to agree with the table
   // underneath it, and the table's query is built from filters this component
@@ -289,18 +292,28 @@ function PageHero() {
   // in that Team Lead's team (createUserFn stamps the creator's teamId). Management only
   // creates Team Leads, each of which starts a team of its own.
   if (view === 'team' && user.role === ROLES.TL) actions.push(<button key="add-agent" className="btn btn-p" onClick={() => { setCreateUserRoles([ROLES.AGENT, ROLES.EXEC]); openModal('create-user'); }}><Mi>person_add</Mi>Add Agent</button>);
+  // Projects: two tabs, the list and Available Units. Management's actions sit
+  // in one Manage menu: here on the list; on Available Units in its toolbar,
+  // where the project and floor in view are known (AvailableUnitsView).
   // Add Property opens an unsaved draft; the project is created only when the
   // catalog's Save product succeeds (see ProjectCatalog / saveNewProject).
-  // Available Units sits just before it; on that tab Management's Add Property
-  // gives way to Add floor plan, for the project picked there.
   if (view === 'properties') {
-    actions.push(<button key="units" type="button" className="btn btn-g hero-units" aria-pressed={unitsTab} onClick={() => setProjTab(unitsTab ? 'list' : 'units')}><Mi>map</Mi><span className="hero-units-tx">Available </span>Units</button>);
+    actions.push(
+      <div key="tabs" className="hero-tabs" role="tablist" aria-label="Projects view">
+        <button type="button" role="tab" aria-selected={!unitsTab} className={unitsTab ? '' : 'on'} onClick={() => setProjTab('list')}><Mi>apartment</Mi>Projects</button>
+        <button type="button" role="tab" aria-selected={unitsTab} className={`hero-units${unitsTab ? ' on' : ''}`} onClick={() => setProjTab('units')}><Mi>map</Mi><span className="hero-units-tx">Available </span>Units</button>
+      </div>,
+    );
   }
-  if (view === 'properties' && user.role === ROLES.MGMT && unitsTab) {
-    const list = planProjects();
-    const target = list.find(p => p.id === planSel.projectId) || list[0];
-    actions.push(<button key="add-plan" type="button" className="btn btn-p" disabled={!target} onClick={() => { setPlanEdit({ projectId: target.id, planId: null }); openModal('floorplan-editor'); }}><Mi>add</Mi>Add floor plan</button>);
-  } else if (view === 'properties' && user.role === ROLES.MGMT) actions.push(<button key="add-prop" className="btn btn-p" onClick={() => { const d = newProjectDraft(user.companyId); setPropDraft(d); setConsoleAdmin(true); setPropSel(d.id); openModal('project-console'); }}><Mi>add</Mi>Add Property</button>);
+  if (view === 'properties' && user.role === ROLES.MGMT && !unitsTab) {
+    const target = planProjects().find(p => p.id === planSel.projectId) || planProjects()[0];
+    actions.push(
+      <Menu key="manage" label="Manage projects" trigger={<button type="button" className="btn btn-p hero-manage"><Mi>tune</Mi>Manage<Mi className="hero-manage-chev">expand_more</Mi></button>}>
+        <MenuItem icon="add_business" onSelect={pnav.addProperty}>Add property</MenuItem>
+        <MenuItem icon="add_location_alt" disabled={!target} onSelect={() => pnav.addFloorPlan(target.id)} hint={target?.name}>Add floor plan</MenuItem>
+      </Menu>,
+    );
+  }
 
   return (
     <div className={`hero${view === 'pipeline' ? ' hero-compact' : ''}`}>

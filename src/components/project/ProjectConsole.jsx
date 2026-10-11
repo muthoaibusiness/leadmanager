@@ -262,7 +262,7 @@ export default function ProjectConsole() {
             {isAdmin && !isNew && (
               <div className="pc-toggle">
                 <button className={!admin ? 'on' : ''} onClick={() => setAdmin(false)}>Agent console</button>
-                <button className={admin ? 'on' : ''} onClick={() => setAdmin(true)}>Admin catalog</button>
+                <button className={admin ? 'on' : ''} onClick={() => setAdmin(true)}>Admin console</button>
               </div>
             )}
             {/* The catalog editor's Discard and Save (ProjectCatalog portals

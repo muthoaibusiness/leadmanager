@@ -24,7 +24,7 @@ import './bellows-crumb.css';
 //   items: [{ id, label }] root → current; the last item is the current page.
 //   onNavigate(item, index): a non-current crumb was activated.
 
-const SEP_WIDTH = 26; // the chevron and its margins: fixed, so never measured
+const SEP_WIDTH = 14; // the "/" separator's box (.bcr-sep): fixed, so never measured
 const PLEAT = 20;     // the width a folded segment rests at
 
 function computeWidths(natural, available, expandedIndex, pleat) {
@@ -113,11 +113,7 @@ export default function BellowsCrumb({ items, onNavigate, pleat = PLEAT, ariaLab
     );
     if (!current) {
       trail.push(
-        <li key={`sep-${item.id}`} className="bcr-sep" aria-hidden="true" data-bellows-sep="" onPointerLeave={onLeave}>
-          <svg viewBox="0 0 12 12" width="12" height="12" style={{ transform: `rotate(${expandedIndex > i ? 15 : -15}deg)` }}>
-            <path d="M4.5 2.5 8 6l-3.5 3.5" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
-        </li>,
+        <li key={`sep-${item.id}`} className="bcr-sep" aria-hidden="true" data-bellows-sep="" onPointerLeave={onLeave}>/</li>,
       );
     }
   });

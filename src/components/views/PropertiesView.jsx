@@ -5,11 +5,17 @@ import { getProperties, deletePropertyFn } from '../../lib/db.js';
 import { ROLES, PROPERTY_TYPES, PROPERTY_STATUS } from '../../lib/constants.js';
 import { projectInventory } from '../../lib/projects.js';
 import Mi from '../Mi.jsx';
+import { Menu, MenuItem } from '../ui/menu.jsx';
+import useProjectNav from '../../hooks/useProjectNav.js';
 import ProjectsToaster from '../project/ProjectsToaster.jsx';
 import { useProjectToast } from '../project/projectToast.js';
 
 const PS_CLASS = { AVAILABLE: 'ps-available', FEW_LEFT: 'ps-few', SOLD_OUT: 'ps-sold', UPCOMING: 'ps-upcoming' };
-const fmtSft = n => n >= 1000 ? (n / 1000).toFixed(n >= 100000 ? 0 : 1) + 'k' : String(n);
+// 1,250 · 12.5k · 144k · 1.4M · 144M — a total area never runs to 7 digits.
+const fmtSft = (n) => {
+  const short = (v, s) => (v >= 100 ? Math.round(v) : +v.toFixed(1)) + s;
+  return n >= 1e6 ? short(n / 1e6, 'M') : n >= 1e4 ? short(n / 1e3, 'k') : Math.round(n).toLocaleString('en-IN');
+};
 // "৳9,500" or "৳9,500 – 12,500"; same shape for sizes.
 const span = (min, max, pre = '', post = '') =>
   min == null ? '—' : min === max ? `${pre}${min.toLocaleString()}${post}` : `${pre}${min.toLocaleString()} – ${max.toLocaleString()}${post}`;
@@ -19,6 +25,7 @@ export default function PropertiesView() {
   const toast = useProjectToast();
   const deleteAskRef = useRef(null); // the open delete confirmation, if any
   const isAdmin = user?.role === ROLES.MGMT;
+  const pnav = useProjectNav();
   const [q, setQ] = useNavState('properties.q', '');
   const [city, setCity] = useNavState('properties.city', 'ALL');
   const [type, setType] = useNavState('properties.type', 'ALL');
@@ -138,7 +145,7 @@ export default function PropertiesView() {
                 <input type="checkbox" name="select-all-projects" checked={allSelected} onChange={() => {}} onClick={e => { e.stopPropagation(); toggleAll(); }} />
               </div>
             )}
-            <div>Project</div><div>৳/sqft</div><div>Size</div><div>Saleable Units</div><div>Status</div><div>Handover</div>
+            <div>Project</div><div>৳/sqft</div><div>Size</div><div>Saleable Units</div><div>Status</div><div>Handover</div><div aria-hidden="true" />
           </div>
           {props.map(p => (
             <div key={p.id} className={`lt-row prop-row${canSelect ? ' with-cb' : ''}${sel.has(p.id) ? ' lt-sel' : ''}`}
@@ -179,6 +186,15 @@ export default function PropertiesView() {
                 );
               })()}
               <div className="lt-cell lt-cell-date"><span className="lt-date">{p.handover || '—'}</span></div>
+              {/* Row menu: every way into this project (the row itself opens the agent console). */}
+              <div className="lt-cell lt-cell-menu" onClick={e => e.stopPropagation()}>
+                <Menu label={`${p.name} actions`} trigger={<button type="button" className="lt-more" title="Actions"><Mi>more_horiz</Mi></button>}>
+                  <MenuItem icon="storefront" onSelect={() => pnav.openConsole(p.id, false)}>Agent console</MenuItem>
+                  {isAdmin && <MenuItem icon="settings" onSelect={() => pnav.openConsole(p.id, true)}>Admin console</MenuItem>}
+                  <MenuItem icon="map" onSelect={() => pnav.openUnits(p.id)}>Available units</MenuItem>
+                  {isAdmin && <MenuItem icon="add_location_alt" onSelect={() => pnav.addFloorPlan(p.id)}>Add floor plan</MenuItem>}
+                </Menu>
+              </div>
             </div>
           ))}
         </div>

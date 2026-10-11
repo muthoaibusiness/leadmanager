@@ -34,15 +34,14 @@
   display: block;
   width: 100%;
   white-space: nowrap;
-  padding: 4px 8px;
+  padding: 3px 4px;
   border: none;
   border-radius: var(--r-sm);
   background: none;
   font: inherit;
-  font-size: 12px;
-  font-weight: 800;
-  letter-spacing: .12em;
-  text-transform: uppercase;
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: 0;
   text-align: left;
   color: var(--t3);
   cursor: pointer;
@@ -50,6 +49,7 @@
 }
 
 .bcr-seg:hover { color: var(--t1) }
+/* colour only: a heavier weight would measure wider than the ghost */
 .bcr-cur { color: var(--t1); cursor: default }
 
 /* inset: each segment clips its overflow, which would cut an outer ring
@@ -88,14 +88,15 @@
 .bcr-folds i:nth-child(3) { left: 75% }
 
 .bcr-sep {
-  flex: 0 0 26px;   /* SEP_WIDTH in bellows-crumb.jsx */
+  flex: 0 0 14px;   /* SEP_WIDTH in bellows-crumb.jsx */
   display: flex;
   align-items: center;
   justify-content: center;
-  color: var(--t3)
+  font-size: 13px;
+  color: var(--t3);
+  opacity: .7;
+  user-select: none
 }
-
-.bcr-sep svg { transition: transform 420ms cubic-bezier(.34, 1.56, .64, 1) }
 
 .bcr-ghost {
   position: absolute;
@@ -113,6 +114,5 @@
 .bcr-ghost .bcr-seg { width: auto }
 
 @media (prefers-reduced-motion: reduce) {
-  .bcr-li,
-  .bcr-sep svg { transition: none }
+  .bcr-li { transition: none }
 }

@@ -7,6 +7,8 @@ import { hasColumn } from '../../lib/supabase.js';
 import { planProjects, findUnit, unitSize, unitPrice, placedUnitIds, deleteFloorPlan } from '../../lib/projects.js';
 import { toPx, byCode, STATUS, taka, statusLook } from '../../lib/floorPlan.js';
 import { Select, SelectTrigger, SelectValue, SelectPopover, SelectListBox, SelectItem } from '../ui/select.jsx';
+import { Menu, MenuItem, MenuSep } from '../ui/menu.jsx';
+import useProjectNav from '../../hooks/useProjectNav.js';
 import useChanged from '../../hooks/useChanged.js';
 import FloorPlanCanvas from './FloorPlanCanvas.jsx';
 import ProjectsToaster from './ProjectsToaster.jsx';
@@ -41,6 +43,7 @@ export default function AvailableUnitsView() {
   const [hover, setHover] = useState(null); // box id
   const [canSave, setCanSave] = useState(null); // floor_plans column present (null = still asking)
   const cardRef = useRef(null);
+  const pnav = useProjectNav();
   const ctaRef = useRef(null);
   const [ctaOn, setCtaOn] = useState(false); // phone Continue bar: the unit card is still below it
 
@@ -276,13 +279,22 @@ export default function AvailableUnitsView() {
                 </SelectPopover>
               </Select>
             )}
-            {isAdmin && (
-              <div className="fpv-admin">
-                {chipPlan && <button type="button" className="btn btn-g btn-sm" onClick={() => editPlan(chipPlan.id)}><Mi>edit</Mi>Edit plan</button>}
-                {chipPlan && <button type="button" className="btn btn-g btn-sm fpv-del" onClick={removePlan} disabled={canSave === false} aria-label="Delete plan" title="Delete plan"><Mi>delete</Mi></button>}
-                {(plans.length > 0 || mode === 'grid') && <button type="button" className="btn btn-g btn-sm" onClick={() => editPlan(null)} disabled={canSave === false} title="Add floor plan"><Mi>add</Mi>Add plan</button>}
-              </div>
-            )}
+            {/* One Manage menu: this project's consoles and floor plans, and new
+                properties (Management). Edit / Delete need a single floor picked. */}
+            <Menu label="Manage this project" trigger={<button type="button" className="btn btn-g btn-sm fpv-manage"><Mi>tune</Mi>Manage<Mi>expand_more</Mi></button>}>
+              {isAdmin && <MenuItem icon="settings" onSelect={() => pnav.openConsole(proj.id, true)}>Admin console</MenuItem>}
+              <MenuItem icon="storefront" onSelect={() => pnav.openConsole(proj.id, false)}>Agent console</MenuItem>
+              {isAdmin && (
+                <>
+                  <MenuSep />
+                  <MenuItem icon="add_location_alt" disabled={canSave === false} onSelect={() => editPlan(null)}>Add floor plan</MenuItem>
+                  <MenuItem icon="edit" disabled={!chipPlan} hint={chipPlan ? chipPlan.name : 'pick a floor'} onSelect={() => editPlan(chipPlan.id)}>Edit floor plan</MenuItem>
+                  <MenuItem icon="delete" danger disabled={!chipPlan || canSave === false} onSelect={removePlan}>Delete floor plan</MenuItem>
+                  <MenuSep />
+                  <MenuItem icon="add_business" onSelect={pnav.addProperty}>Add property</MenuItem>
+                </>
+              )}
+            </Menu>
           </div>
 
           {noPlan || noUnits ? (
