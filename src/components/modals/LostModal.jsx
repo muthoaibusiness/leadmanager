@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useId } from 'react';
 import Mi from '../Mi.jsx';
 import { useApp } from '../../context/AppContext.jsx';
 import { markLostFn } from '../../lib/db.js';
@@ -6,6 +6,7 @@ import useChanged from '../../hooks/useChanged.js';
 
 export default function LostModal() {
   const { modal, closeModal, user, panLead, refreshDB, showToast } = useApp();
+  const uid = useId(); // field ids, so each <label htmlFor> points at its field
   const isOpen = modal === 'lost';
   const [reason, setReason] = useState('');
   const reasonRef = useRef(null);
@@ -38,8 +39,9 @@ export default function LostModal() {
             <Mi>warning</Mi>This will close the lead as lost. Please provide a reason so the team can learn and improve.
           </div>
           <div className="fl" style={{ marginTop: '14px' }}>
-            <label>Why was this lead lost? *</label>
+            <label htmlFor={`${uid}reason`}>Why was this lead lost? *</label>
             <textarea
+              id={`${uid}reason`}
               ref={reasonRef}
               className="finp"
               rows={4}

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useId } from 'react';
 import Mi from '../Mi.jsx';
 import { useApp } from '../../context/AppContext.jsx';
 import useChanged from '../../hooks/useChanged.js';
@@ -26,6 +26,7 @@ const HOURS = { ONLINE: { min: 10, max: 22, label: '10 AM – 10 PM' }, OFFLINE:
 //                hand-off, so it opens straight on the meeting step
 export default function ForwardModal() {
   const { modal, closeModal, user, panLead, refreshDB, showToast } = useApp();
+  const uid = useId(); // field ids, so each <label htmlFor> points at its field
   const isMA = modal === 'set-meeting';
   const isTL = modal === 'forward-tl';
   const isAG = modal === 'forward-agent';
@@ -149,8 +150,8 @@ export default function ForwardModal() {
           <>
             <div className="m-body">
               <div className="fl">
-                <label>Select {rlabel(targetRole)}</label>
-                <select className="finp" value={selected || ''} onChange={e => setSelected(e.target.value)}>
+                <label htmlFor={`${uid}target`}>Select {rlabel(targetRole)}</label>
+                <select id={`${uid}target`} className="finp" value={selected || ''} onChange={e => setSelected(e.target.value)}>
                   <option value="">{targets.length ? '— Choose an agent —' : 'No other agents in your team'}</option>
                   {targets.map(u => (
                     <option key={u.id} value={u.id}>{u.name} ({u.email})</option>

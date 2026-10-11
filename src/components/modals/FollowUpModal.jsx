@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useId } from 'react';
 import Mi from '../Mi.jsx';
 import { useApp } from '../../context/AppContext.jsx';
 import useChanged from '../../hooks/useChanged.js';
@@ -17,6 +17,7 @@ function defaultWhen() {
 
 export default function FollowUpModal() {
   const { modal, closeModal, user, panLead, refreshDB, showToast } = useApp();
+  const uid = useId(); // field ids, so each <label htmlFor> points at its field
   const isOpen = modal === 'follow-up';
   const [when, setWhen] = useState(defaultWhen);
   const whenRef = useRef(null);
@@ -62,8 +63,8 @@ export default function FollowUpModal() {
         <div className="m-body">
           <div className="m-hint"><Mi>alarm</Mi>You'll get a reminder, and it appears on the home page task list.</div>
           <div className="fl" style={{ marginTop: '14px' }}>
-            <label>Follow-up date &amp; time</label>
-            <input ref={whenRef} className="finp" type="datetime-local" value={when} onChange={e => setWhen(e.target.value)} />
+            <label htmlFor={`${uid}when`}>Follow-up date &amp; time</label>
+            <input id={`${uid}when`} ref={whenRef} className="finp" type="datetime-local" value={when} onChange={e => setWhen(e.target.value)} />
             {preview && <div className="fi-hint">Reminder on {preview}</div>}
           </div>
           <div className="fu-presets">

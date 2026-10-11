@@ -1,4 +1,4 @@
-import { useRef, useEffect, useState } from 'react';
+import { useRef, useEffect, useState, useId } from 'react';
 import Mi from '../Mi.jsx';
 import { useApp } from '../../context/AppContext.jsx';
 import { getLead, addLeadFn, updLead, addAct, leadByPhone } from '../../lib/db.js';
@@ -42,6 +42,7 @@ export default function AddLeadModal() {
   const { modal, closeModal, user, panLead, refreshDB, showToast, setPanLead } = useApp();
   const isEdit = modal === 'edit-lead';
   const isOpen = modal === 'add-lead' || isEdit;
+  const uid = useId(); // field ids, so each <label htmlFor> points at its field
   // Agents get a different source list (Event / Walking / Personal / Team Lead).
   const sourceOpts = user?.role === ROLES.AGENT ? SOURCE_OPTIONS_IA : SOURCE_OPTIONS_DEFAULT;
   const defaultSource = sourceOpts[0];
@@ -221,20 +222,20 @@ export default function AddLeadModal() {
         </div>
         <div className="m-body">
           <div className="fg">
-            <label>Full Name *</label>
-            <input className="fi" ref={nameRef} type="text" placeholder="e.g. Rahim Ahmed" />
+            <label htmlFor={`${uid}name`}>Full Name *</label>
+            <input id={`${uid}name`} className="fi" ref={nameRef} type="text" placeholder="e.g. Rahim Ahmed" />
           </div>
 
           {/* Phone numbers — entered at creation, read-only once the lead exists. */}
           <div className="fg">
-            <label style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+            <label htmlFor={canEditPhone ? `${uid}phone` : undefined} style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
               Phone Number(s){canEditPhone ? ' *' : ''}
               {!canEditPhone && <Mi style={{ fontSize: '14px', color: 'var(--t3)' }}>lock</Mi>}
             </label>
             {canEditPhone ? (
               <>
                 {phones.map((p, i) => (
-                  <PhoneField key={i} text={p.text} country={p.cc}
+                  <PhoneField key={i} id={i === 0 ? `${uid}phone` : undefined} text={p.text} country={p.cc}
                     onText={v => updatePhone(i, v)} onCountry={cc => setRow(i, { cc })}
                     placeholder={i === 0 ? '01712-345678 or +971 50 123 4567' : 'Additional number'}>
                     {phones.length > 1 && (
@@ -264,22 +265,22 @@ export default function AddLeadModal() {
 
           {/* Email */}
           <div className="fg">
-            <label>Email</label>
-            <input className="fi" ref={emailRef} type="email" placeholder="e.g. primary@email.com" />
+            <label htmlFor={`${uid}email`}>Email</label>
+            <input id={`${uid}email`} className="fi" ref={emailRef} type="email" placeholder="e.g. primary@email.com" />
           </div>
 
           <div className="fg-row">
-            <div className="fg"><label>Company</label><input className="fi" ref={companyRef} type="text" placeholder="optional" /></div>
-            <div className="fg"><label>Profession</label><input className="fi" ref={profRef} type="text" placeholder="e.g. Business Owner" /></div>
+            <div className="fg"><label htmlFor={`${uid}company`}>Company</label><input id={`${uid}company`} className="fi" ref={companyRef} type="text" placeholder="optional" /></div>
+            <div className="fg"><label htmlFor={`${uid}prof`}>Profession</label><input id={`${uid}prof`} className="fi" ref={profRef} type="text" placeholder="e.g. Business Owner" /></div>
           </div>
           <div className="fg-row">
             <div className="fg">
-              <label style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+              <label htmlFor={canEditSource ? `${uid}source` : undefined} style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
                 Source
                 {!canEditSource && <Mi style={{ fontSize: '14px', color: 'var(--t3)' }}>lock</Mi>}
               </label>
               {canEditSource ? (
-                <select className="fi" value={source} onChange={e => setSource(e.target.value)}>
+                <select id={`${uid}source`} className="fi" value={source} onChange={e => setSource(e.target.value)}>
                   {sourceOpts.map(s => <option key={s} value={s}>{SRC_LABELS[s] || s}</option>)}
                 </select>
               ) : (
@@ -287,11 +288,11 @@ export default function AddLeadModal() {
                 <div className="ro-value"><Mi className="ro-lock">lock</Mi>{SRC_LABELS[source] || source || '—'}</div>
               )}
             </div>
-            <div className="fg"><label>Customer Location</label><input className="fi" ref={cityRef} type="text" placeholder="e.g. Dhaka, Chattogram" /></div>
+            <div className="fg"><label htmlFor={`${uid}city`}>Customer Location</label><input id={`${uid}city`} className="fi" ref={cityRef} type="text" placeholder="e.g. Dhaka, Chattogram" /></div>
           </div>
           <div className="fg">
-            <label>Project Interest <span className="fg-hint">— add one or more</span></label>
-            <ProjectInterestPicker value={interest} onChange={setInterest} />
+            <label htmlFor={`${uid}interest`}>Project Interest <span className="fg-hint">— add one or more</span></label>
+            <ProjectInterestPicker id={`${uid}interest`} value={interest} onChange={setInterest} />
           </div>
         </div>
         <div className="m-ft">

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useId } from 'react';
 import Mi from '../Mi.jsx';
 import { useApp } from '../../context/AppContext.jsx';
 import useChanged from '../../hooks/useChanged.js';
@@ -16,6 +16,7 @@ import { ROLES } from '../../lib/constants.js';
 // the button and the toast differ.
 export default function TransferLeadModal({ leadIds = null, open = null, onClose = null, onDone = null }) {
   const { modal, closeModal, panLead, user, refreshDB, showToast } = useApp();
+  const uid = useId(); // field ids, so each <label htmlFor> points at its field
   const bulk = leadIds != null;
   const isOpen = bulk ? !!open : modal === 'transfer-lead';
   const ids = bulk ? leadIds : (panLead ? [panLead] : []);
@@ -77,8 +78,8 @@ export default function TransferLeadModal({ leadIds = null, open = null, onClose
             </div>
           )}
           <div className="fl">
-            <label>Select Team (Team Lead)</label>
-            <select className="finp" value={selectedTeamId} onChange={e => { setSelectedTeamId(e.target.value); setSelectedAgent(''); }} style={{ backgroundColor: '#1a1a1a', color: '#ffffff' }}>
+            <label htmlFor={`${uid}team`}>Select Team (Team Lead)</label>
+            <select id={`${uid}team`} className="finp" value={selectedTeamId} onChange={e => { setSelectedTeamId(e.target.value); setSelectedAgent(''); }} style={{ backgroundColor: '#1a1a1a', color: '#ffffff' }}>
               <option value="">— Choose a Team —</option>
               {teamOptions.map(t => (
                 <option key={t.teamId} value={t.teamId}>{t.tlName}'s Team</option>
@@ -87,8 +88,9 @@ export default function TransferLeadModal({ leadIds = null, open = null, onClose
           </div>
 
           <div className="fl" style={{ marginTop: '16px' }}>
-            <label>Select Agent</label>
+            <label htmlFor={`${uid}agent`}>Select Agent</label>
             <select
+              id={`${uid}agent`}
               className="finp"
               value={selectedAgent}
               onChange={e => setSelectedAgent(e.target.value)}

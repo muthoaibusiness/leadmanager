@@ -208,8 +208,9 @@
 .fps-sw.st-sold { border-color: var(--red); background: color-mix(in srgb, var(--red) 22%, var(--surf)); }
 .fps-sw.is-sel { border-color: var(--fp-sel); background: var(--fp-sel); }
 
-/* Phones: Continue rides along the bottom of the screen, like a checkout bar.
-   Wider screens use the button in the unit card. */
+/* Phones: Continue rides along the bottom of the screen, like a checkout bar,
+   until the unit card (with its own Continue) scrolls up to it; then the bar
+   empties (AvailableUnitsView). Wider screens use the button in the unit card. */
 .fpv-cta { display: none; }
 
 @media (max-width: 1100px) {
@@ -229,14 +230,22 @@
   .fps-tiles { grid-template-columns: repeat(auto-fill, minmax(64px, 1fr)); gap: 8px; }
   .fpv-seats { padding: 12px; }
   .fpv-cta {
-    /* bottom: --bnav keeps it above the phone bottom bar (sticky ignores the
-       scroller's padding, so it would otherwise sit behind the bar) */
-    display: block; position: sticky; bottom: var(--bnav); z-index: 5; margin: 0 -4px;
+    /* Sticky offsets count from inside the scroller's padding. .pg-body's
+       padding-bottom is --gutter-y, plus --bnav on phones, so pulling the
+       bar back down by --gutter-y lands it right above the phone bottom bar
+       (or on the screen's edge when there is no bar). bottom: --bnav on top
+       of that padding doubled it and left the bar floating mid-screen. */
+    display: block; position: sticky; bottom: calc(-1 * var(--gutter-y)); z-index: 5; margin: 0 -4px;
     padding: 10px 4px calc(10px + env(safe-area-inset-bottom, 0px));
     background: linear-gradient(to top, var(--bg) 70%, transparent);
   }
   .fpv-cta .btn { width: 100%; justify-content: center; min-height: 48px; border-radius: 999px; }
-  .is-seats .fpv-card .fpv-open { display: none; }
+  /* no bar: the empty box only marks the bar's line, so it takes no room */
+  .fpv-cta:empty { padding: 0; background: none; }
+}
+@media (max-width: 767px) {
+  /* the bottom bar's --bnav already clears the home indicator */
+  .fpv-cta { padding-bottom: 10px; }
 }
 @media (prefers-reduced-motion: reduce) {
   .fp-box .fp-fill { transition: none; }

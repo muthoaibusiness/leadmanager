@@ -38,6 +38,8 @@ export default function AvailableUnitsView() {
   const [hover, setHover] = useState(null); // box id
   const [canSave, setCanSave] = useState(null); // floor_plans column present (null = still asking)
   const cardRef = useRef(null);
+  const ctaRef = useRef(null);
+  const [ctaOn, setCtaOn] = useState(false); // phone Continue bar: the unit card is still below it
 
   // Saving needs migration 0021's column; only Management is told about it.
   useEffect(() => {
@@ -144,6 +146,32 @@ export default function AvailableUnitsView() {
   }));
   const selBoxId = cur?.box ? cur.box.id : null;
   const canGo = cur?.status === 'available';
+
+  // Phones (grid): the Continue bar rides the bottom of the screen only while
+  // the unit card, which has its own Continue, is still below the bar's line.
+  // Once the card reaches that line the bar goes, so it never covers the card.
+  // The bar's box stays mounted (empty, zero height) to mark the line.
+  useEffect(() => {
+    if (mode !== 'grid' || !canGo) return;
+    let raf = 0;
+    const check = () => {
+      raf = 0;
+      const c = cardRef.current, b = ctaRef.current;
+      if (c && b) setCtaOn(c.getBoundingClientRect().top >= b.getBoundingClientRect().bottom);
+    };
+    const queue = () => { if (!raf) raf = requestAnimationFrame(check); };
+    queue();
+    // capture: scroll does not bubble, and the page scroller is an app-shell element
+    document.addEventListener('scroll', queue, { capture: true, passive: true });
+    window.addEventListener('resize', queue);
+    return () => {
+      cancelAnimationFrame(raf);
+      document.removeEventListener('scroll', queue, { capture: true });
+      window.removeEventListener('resize', queue);
+      setCtaOn(false);
+    };
+  }, [mode, canGo]);
+
   const tileTitle = (r) => [r.code, r.type, r.size ? `${r.size.toLocaleString('en-IN')} sqft` : '', STATUS[r.status].label].filter(Boolean).join(' · ');
 
   const chips = mode === 'plan' ? plans.map(fp => ({ id: fp.id, name: fp.name || 'Floor plan' }))
@@ -166,7 +194,7 @@ export default function AvailableUnitsView() {
       ) : (
         <>
           <div className="fpv-bar">
-            <select className="fsel fpv-proj" value={proj.id} onChange={e => pickProject(e.target.value)} aria-label="Project">
+            <select name="project" className="fsel fpv-proj" value={proj.id} onChange={e => pickProject(e.target.value)} aria-label="Project">
               {projects.map(p => (
                 <option key={p.id} value={p.id}>{p.name || 'Untitled project'}{p.floorPlans.length ? ` · ${p.floorPlans.length} plan${p.floorPlans.length > 1 ? 's' : ''}` : ' · no plan yet'}</option>
               ))}
@@ -208,7 +236,7 @@ export default function AvailableUnitsView() {
                       </button>
                     ))}
                   </div>
-                  <label className="fpv-search"><Mi>search</Mi><input value={q} onChange={e => setQ(e.target.value)} placeholder="Find a unit…" aria-label="Find a unit by name" /></label>
+                  <label className="fpv-search"><Mi>search</Mi><input name="unit-search" value={q} onChange={e => setQ(e.target.value)} placeholder="Find a unit…" aria-label="Find a unit by name" /></label>
                 </div>
 
                 {mode === 'grid' ? (
@@ -305,10 +333,12 @@ export default function AvailableUnitsView() {
               </aside>
 
               {mode === 'grid' && (
-                <div className="fpv-cta">
-                  <button type="button" className="btn btn-p" disabled={!canGo} onClick={() => openConsole(cur)}>
-                    <Mi>shopping_cart</Mi>{canGo ? `Continue with ${cur.code}` : cur ? `${cur.code} is ${STATUS[cur.status].label.toLowerCase()}` : 'Pick a unit'}
-                  </button>
+                <div className="fpv-cta" ref={ctaRef}>
+                  {canGo && ctaOn && (
+                    <button type="button" className="btn btn-p" onClick={() => openConsole(cur)}>
+                      <Mi>shopping_cart</Mi>Continue with {cur.code}
+                    </button>
+                  )}
                 </div>
               )}
             </div>

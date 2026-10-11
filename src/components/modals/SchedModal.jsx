@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useRef, useState, useId } from 'react';
 import Mi from '../Mi.jsx';
 import { useApp } from '../../context/AppContext.jsx';
 import useChanged from '../../hooks/useChanged.js';
@@ -6,6 +6,7 @@ import { schedVisit, getProperties, getLead } from '../../lib/db.js';
 
 export default function SchedModal() {
   const { modal, closeModal, user, panLead, refreshDB, showToast } = useApp();
+  const uid = useId(); // field ids, so each <label htmlFor> points at its field
   const isOpen = modal === 'sched';
   const dtRef = useRef();
   const locRef = useRef();
@@ -46,11 +47,11 @@ export default function SchedModal() {
           <button className="m-x" onClick={closeModal}><Mi>close</Mi></button>
         </div>
         <div className="m-body">
-          <div className="fg"><label>Date &amp; Time</label><input className="fi" ref={dtRef} type="datetime-local" /></div>
+          <div className="fg"><label htmlFor={`${uid}when`}>Date &amp; Time</label><input id={`${uid}when`} className="fi" ref={dtRef} type="datetime-local" /></div>
 
           <div className="fg">
-            <label>Project(s) to visit</label>
-            <select className="fi" value="" onChange={e => { addProject(e.target.value); e.target.value = ''; }}>
+            <label htmlFor={`${uid}proj`}>Project(s) to visit</label>
+            <select id={`${uid}proj`} className="fi" value="" onChange={e => { addProject(e.target.value); e.target.value = ''; }}>
               <option value="">— Add a project —</option>
               {projects.filter(p => !picked.some(x => x.id === p.id)).map(p => (
                 <option key={p.id} value={p.id}>{p.name}{p.area ? ' · ' + p.area : ''}</option>
@@ -69,7 +70,7 @@ export default function SchedModal() {
             {projects.length === 0 && <div className="fi-hint">No projects in the catalog yet — add them on the Projects page.</div>}
           </div>
 
-          <div className="fg"><label>Location</label><input className="fi" ref={locRef} type="text" placeholder="e.g. Plot 12, Block C, Bashundhara R/A" /></div>
+          <div className="fg"><label htmlFor={`${uid}loc`}>Location</label><input id={`${uid}loc`} className="fi" ref={locRef} type="text" placeholder="e.g. Plot 12, Block C, Bashundhara R/A" /></div>
         </div>
         <div className="m-ft">
           <button className="btn btn-g" onClick={closeModal}>Cancel</button>

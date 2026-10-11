@@ -9,8 +9,10 @@ import { COMMON_COUNTRIES, allCountries, countryName, dialCode, phoneCountry, re
 // only once the field is left, so it does not flash up mid-typing. The picker
 // is a native <select> laid transparently over its chip, so the list is the
 // platform's own (type-to-find included). `children` (the row's remove button)
-// sits at the end of the row.
-export default function PhoneField({ text, country, onText, onCountry, placeholder, children }) {
+// sits at the end of the row. `id` goes on the number input, for a <label htmlFor>.
+// autoComplete off: these rows hold a customer's or a new user's number, never
+// the signed-in user's own, so the browser should not fill them in.
+export default function PhoneField({ id, text, country, onText, onCountry, placeholder, children }) {
   const [typing, setTyping] = useState(false);
   const shown = phoneCountry(text, country);
   const num = resolvePhone(text, country);
@@ -20,7 +22,7 @@ export default function PhoneField({ text, country, onText, onCountry, placehold
         <div className="ph-cc" title={shown.iso ? countryName(shown.iso) : undefined}>
           {shown.iso && <b>{shown.iso}</b>}{shown.dial}
           <Mi className="ph-cc-i" aria-hidden="true">expand_more</Mi>
-          <select aria-label="Country code" value={shown.iso || country} onChange={e => onCountry(e.target.value)}>
+          <select name="country" autoComplete="off" aria-label="Country code" value={shown.iso || country} onChange={e => onCountry(e.target.value)}>
             <optgroup label="Common">
               {COMMON_COUNTRIES.map(iso => <option key={iso} value={iso}>{countryName(iso)} {dialCode(iso)}</option>)}
             </optgroup>
@@ -29,7 +31,7 @@ export default function PhoneField({ text, country, onText, onCountry, placehold
             </optgroup>
           </select>
         </div>
-        <input className="fi" type="tel" inputMode="tel" placeholder={placeholder} value={text} onChange={e => onText(e.target.value)}
+        <input id={id} name="phone" autoComplete="off" className="fi" type="tel" inputMode="tel" placeholder={placeholder} value={text} onChange={e => onText(e.target.value)}
           onFocus={() => setTyping(true)} onBlur={() => setTyping(false)} />
         {children}
       </div>
