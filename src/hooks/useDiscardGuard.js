@@ -83,6 +83,8 @@ export default function useDiscardGuard({ isOpen, isDirty, onClose, busy = false
     if (!isOpen) return;
     const onKey = (e) => {
       if (e.key !== 'Escape') return;
+      // An open dropdown list (radix Select) owns Esc: it closes the list only.
+      if (e.target instanceof Element && e.target.closest('[data-radix-popper-content-wrapper]')) return;
       e.stopPropagation();
       if (askIdRef.current != null) cancelAsk();
       else requestClose();

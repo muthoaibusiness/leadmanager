@@ -3,7 +3,7 @@ import Mi from '../Mi.jsx';
 import { useApp } from '../../context/AppContext.jsx';
 import { uid } from '../../lib/helpers.js';
 import { hasColumn } from '../../lib/supabase.js';
-import { getProjectById, findUnit, unitSize, isUnitLocked, projectTypeOf, saveFloorPlan } from '../../lib/projects.js';
+import { getProjectById, findUnit, unitSize, isUnitLocked, projectTypeOf, saveFloorPlan, setUnitStatus } from '../../lib/projects.js';
 import {
   toPx, toFrac, clampMove, saveCode, nextCode, byCode, STATUS, taka,
   historyOf, record, undo, redo, planProblems,
@@ -11,6 +11,8 @@ import {
 } from '../../lib/floorPlan.js';
 import useDiscardGuard from '../../hooks/useDiscardGuard.js';
 import FloorPlanCanvas from './FloorPlanCanvas.jsx';
+import UnitStatusPanel from './UnitStatusPanel.jsx';
+import { Select, SelectLabel, SelectTrigger, SelectValue, SelectPopover, SelectListBox, SelectItem } from '../ui/select.jsx';
 import { useProjectToast } from './projectToast.js';
 import './FloorPlan.css';
 import './FloorPlanEditor.css';
@@ -58,7 +60,7 @@ function initDraft(proj, planId) {
   });
   const n = proj.floorPlans.length;
   return {
-    plan: { id: fp?.id || 'fp' + uid(), name: fp?.name || `Floor ${n + 1}`, order: fp?.order ?? n + 1, boxes },
+    plan: { id: fp?.id || 'fp' + uid(), name: fp?.name || `Floor ${n + 1}`, order: fp?.order ?? n + 1, topLabel: fp?.topLabel || '', bottomLabel: fp?.bottomLabel || '', boxes },
     image: fp?.image || null,
     pending: null,
     units,
@@ -83,6 +85,8 @@ function Editor({ projectId, planId }) {
   const [err, setErr] = useState('');
   const [showProblems, setShowProblems] = useState(false);
   const [canSave, setCanSave] = useState(null);
+  const [canStatus, setCanStatus] = useState(null); // unit_statuses column present (migration 0022)
+  const [stEdit, setStEdit] = useState(null);       // custom-status panel: null | 'list' | 'new' | status id
   const [pdf, setPdf] = useState(null);           // { file, numPages, thumbs: [] } while picking a page
   const [newType, setNewType] = useState(null);   // the "New type…" name being typed
   const pdfRef = useRef(null);
@@ -96,8 +100,10 @@ function Editor({ projectId, planId }) {
 
   useEffect(() => {
     let live = true;
-    hasColumn('properties', 'floor_plans', 'Floor plans cannot be saved. Apply supabase/migrations/0020_floor_plans.sql.')
+    hasColumn('properties', 'floor_plans', 'Floor plans cannot be saved. Apply supabase/migrations/0021_floor_plans.sql.')
       .then(ok => { if (live) setCanSave(ok); });
+    hasColumn('properties', 'unit_statuses', 'Custom unit statuses cannot be saved. Apply supabase/migrations/0022_unit_statuses.sql.')
+      .then(ok => { if (live) setCanStatus(ok); });
     return () => { live = false; };
   }, []);
   // Object URLs for previews (kept for undo) and an open PDF go when the editor does.
@@ -120,6 +126,15 @@ function Editor({ projectId, planId }) {
   const entry = sel?.unitKey ? draft.units[sel.unitKey] : null;
   const liveOf = (e) => (e?.orig ? findUnit(proj, e.orig.code) : null);
   const statusOf = (e) => (!e ? 'unlinked' : e.orig ? (liveOf(e)?.unit.status || 'available') : 'available');
+  // A unit's status pick: a base key, or 'c:<id>' for one of the project's
+  // custom statuses (unitStatuses), which carries its own name and colour.
+  const customs = proj.unitStatuses || [];
+  const livePickOf = (e) => { const u = liveOf(e)?.unit; return u?.tag && customs.some(c => c.id === u.tag) ? 'c:' + u.tag : statusOf(e); };
+  const pickInfo = (pk) => {
+    if (!pk?.startsWith('c:')) return { status: pk, tag: undefined, label: STATUS[pk]?.label || pk, color: null };
+    const c = customs.find(x => 'c:' + x.id === pk);
+    return c ? { status: c.base, tag: c.id, label: c.name, color: c.color } : null; // null: deleted meanwhile
+  };
 
   const allCodes = () => {
     const s = new Set();
@@ -280,9 +295,12 @@ function Editor({ projectId, planId }) {
       toast.warning('Not saved yet', problems[0]);
       return;
     }
-    if (canSave === false) { toast.error('Cannot save', 'Floor plans need database update 0020 first.'); return; }
+    if (canSave === false) { toast.error('Cannot save', 'Floor plans need database update 0021 first.'); return; }
     setSaving(true);
     setErr('');
+    // Status changes (draft units' `status`), by box: the box keeps its id through
+    // the save, so the saved plan says which code each one ended up with.
+    const statusEdits = draft.plan.boxes.map(b => ({ boxId: b.id, info: pickInfo(draft.units[b.unitKey]?.status) })).filter(x => x.info?.status);
     const res = await saveFloorPlan({
       projectId, companyId: proj.companyId || user?.companyId, user,
       // The stored image lives beside the plan in the draft, not on it.
@@ -296,9 +314,26 @@ function Editor({ projectId, planId }) {
       toast.error('Floor plan not saved', `${cap(res.error)}. Your drawing is still here.`);
       return;
     }
+    // Then each changed status, the way the project console sets one (stamps
+    // who did it). Re-read live first: a hold placed meanwhile is not undone by
+    // a pick that matches it. Moving between hold and sold keeps the client.
+    const fresh = getProjectById(projectId);
+    const applied = [];
+    statusEdits.forEach(({ boxId, info: { status, tag, label } }) => {
+      const code = res.plan.boxes.find(b => b.id === boxId)?.unitId;
+      const loc = code && findUnit(fresh, code);
+      if (!loc || (loc.unit.status === status && (loc.unit.tag || undefined) === tag)) return;
+      const u = loc.unit, keep = status !== 'available';
+      setUnitStatus(projectId, loc.variant.id, code, status, {
+        user, tag, client: keep && u.clientName ? { id: u.clientId || null, name: u.clientName } : null,
+        holdUntil: status === 'hold' ? u.holdUntil || null : null, note: keep ? u.note || 'Set on the floor plan' : '',
+      });
+      applied.push(`${code} ${label.toLowerCase()}`);
+    });
     refreshDB();
     setPlanSel({ projectId, planId: res.plan.id });
     const notes = [];
+    if (applied.length) notes.push(`Status: ${applied.join(', ')}.`);
     if (res.skipped.length) notes.push(`${res.skipped.join(', ')} kept ${res.skipped.length > 1 ? 'their names and types' : 'its name and type'}: on hold or sold meanwhile.`);
     if (res.recreated.length) notes.push(`${res.recreated.join(', ')} had been removed and ${res.recreated.length > 1 ? 'were' : 'was'} added back as available.`);
     toast.success('Floor plan saved', notes.join(' ') || `${res.plan.name} · ${res.plan.boxes.length} unit${res.plan.boxes.length === 1 ? '' : 's'}.`);
@@ -311,6 +346,13 @@ function Editor({ projectId, planId }) {
   // pending placement or clears the selection, and only then closes.
   useEffect(() => {
     const onKey = (e) => {
+      // An open dropdown list owns its keys (Esc closes it; arrows move in it), and
+      // a focused dropdown button or the custom-status panel keeps plain keys
+      // (arrows, Delete, letters) for itself: none of them nudge or delete the
+      // selected box. Undo / redo still work from there.
+      const t = e.target instanceof Element ? e.target : null;
+      if (t?.closest('[data-radix-popper-content-wrapper]')) return;
+      if (e.key !== 'Escape' && !(e.ctrlKey || e.metaKey) && t?.closest('[role="combobox"], .usp')) return;
       if (e.key === 'Escape') {
         if (pdf) { e.stopImmediatePropagation(); cancelPdf(); return; }
         if (inField(e.target)) { e.stopImmediatePropagation(); e.target.blur(); return; }
@@ -359,9 +401,11 @@ function Editor({ projectId, planId }) {
   // ── what the canvas shows ──
   const boxes = draft.plan.boxes.map(b => {
     const e = b.unitKey ? draft.units[b.unitKey] : null;
-    const st = statusOf(e);
-    return { id: b.id, ...toPx(b, W, H), status: st, label: e ? e.code || '?' : (b.lost ? `${b.lost}?` : '?'),
-      aria: e ? `${e.code || 'Unnamed unit'}, ${STATUS[st].label}` : 'Box not linked to a unit' };
+    // a pending status change shows already, a custom one in its own colour
+    const pk = e ? pickInfo(e.status || livePickOf(e)) || pickInfo(statusOf(e)) : null;
+    const st = pk?.status || statusOf(e);
+    return { id: b.id, ...toPx(b, W, H), status: st, color: pk?.color || null, label: e ? e.code || '?' : (b.lost ? `${b.lost}?` : '?'),
+      aria: e ? `${e.code || 'Unnamed unit'}, ${pk?.label || STATUS[st].label}` : 'Box not linked to a unit' };
   });
 
   // Units of this project with no box on any plan (this plan as it now stands).
@@ -373,6 +417,7 @@ function Editor({ projectId, planId }) {
 
   const typeObj = entry ? proj.variants.find(v => v.id === entry.variantId) : null;
   const st = statusOf(entry);
+  const livePick = livePickOf(entry);
   const locked = !!entry?.orig && isUnitLocked(liveOf(entry)?.unit);
   // Judged on the code as it will be saved, like planProblems.
   const myCode = entry ? saveCode(entry) : '';
@@ -394,14 +439,14 @@ function Editor({ projectId, planId }) {
             {err && <div className="pc-warn fpe-err"><Mi>error</Mi>{err}</div>}
             <button type="button" className="btn btn-g" onClick={guard.requestClose} disabled={saving}><Mi>close</Mi><span className="fpe-tx">Discard</span></button>
             <button type="button" className="btn btn-p" onClick={save} disabled={saving || !!busy || canSave === false}
-              title={canSave === false ? 'Needs database update 0020' : undefined}>
+              title={canSave === false ? 'Needs database update 0021' : undefined}>
               <Mi>save</Mi>{saving ? (draft.pending ? 'Uploading…' : 'Saving…') : <>Save<span className="fpe-tx"> plan</span></>}
             </button>
           </div>
         </header>
 
         {canSave === false && (
-          <div className="fp-banner fpe-banner" role="status"><Mi>database</Mi><div><b>Saving is off.</b> Floor plans need database update 0020 (<code>supabase/migrations/0020_floor_plans.sql</code>).</div></div>
+          <div className="fp-banner fpe-banner" role="status"><Mi>database</Mi><div><b>Saving is off.</b> Floor plans need database update 0021 (<code>supabase/migrations/0021_floor_plans.sql</code>).</div></div>
         )}
 
         <div className="fpe-body">
@@ -493,8 +538,37 @@ function Editor({ projectId, planId }) {
                     </div>
                     <div className="fpe-calc">{rate ? `${taka(rate)} / sqft` : effSize ? `${effSize} sqft${typeObj?.listRate ? ` · ${taka(typeObj.listRate * effSize)} at the type's rate` : ''}` : 'Leave blank to use the type\'s size and rate.'}</div>
 
-                    <div className="fpe-status"><span>Status</span><span className={`fp-pill st-${st}`}>{STATUS[st].label}</span>
-                      {!entry.orig && <em>new units start available</em>}</div>
+                    {/* Status: part of the edit (Undo / Discard revert it); applied on Save.
+                        The project's custom statuses are picked here too; Management
+                        makes and edits those in the panel below, saved straight away. */}
+                    <div className="fpe-status">
+                      <Select className="fpe-stsel" value={entry.status || livePick} name="unit-status"
+                        onChange={v => (v === '__new' ? setStEdit('new') : setField('status', v === livePick ? undefined : v))}>
+                        <SelectLabel>Status</SelectLabel>
+                        <SelectTrigger><SelectValue /></SelectTrigger>
+                        <SelectPopover>
+                          <SelectListBox>
+                            {['available', 'hold', 'sold'].map(s => <SelectItem key={s} value={s}><i className={`fp-dot st-${s}`} />{STATUS[s].label}</SelectItem>)}
+                            {customs.map(s => <SelectItem key={s.id} value={'c:' + s.id} description={STATUS[s.base].label}><i className="fp-dot" style={{ background: s.color }} />{s.name}</SelectItem>)}
+                            <SelectItem value="__new" disabled={canStatus === false} description={canStatus === false ? 'needs update 0022' : undefined}>+ New status…</SelectItem>
+                          </SelectListBox>
+                        </SelectPopover>
+                      </Select>
+                      {entry.status && entry.status !== livePick
+                        ? <em>was {(pickInfo(livePick)?.label || '').toLowerCase()} · applies on Save</em>
+                        : !entry.orig && <em>new units start available</em>}
+                      {customs.length > 0 && !stEdit && <button type="button" className="fpe-link" onClick={() => setStEdit('list')}>Manage statuses ({customs.length})</button>}
+                    </div>
+                    {stEdit && (
+                      <UnitStatusPanel key={stEdit} projectId={projectId} statuses={customs} editing={stEdit} onEditing={setStEdit}
+                        toast={toast} refreshDB={refreshDB}
+                        inUse={(id) => proj.variants.reduce((n, v) => n + (v.units || []).filter(u => u.tag === id).length, 0)}
+                        onSaved={(s) => {
+                          // A status made from this unit's dropdown is picked for it.
+                          if (s && stEdit === 'new') setField('status', 'c:' + s.id);
+                          setStEdit(null);
+                        }} />
+                    )}
                   </>
                 )}
               </section>
@@ -507,6 +581,15 @@ function Editor({ projectId, planId }) {
                   </label>
                   <label className="fpe-f fpe-ord"><span>Order</span>
                     <input type="number" value={draft.plan.order} onChange={e => commitField({ ...draft, plan: { ...draft.plan, order: e.target.value } }, 'plan:order')} title="Floor tabs are sorted by this number" />
+                  </label>
+                </div>
+                {/* Optional landmarks, shown above / below this floor's unit grid. */}
+                <div className="fpe-two">
+                  <label className="fpe-f fpe-grow"><span>Top label</span>
+                    <input name="top-label" value={draft.plan.topLabel} placeholder="e.g. Escalator · Lift" onChange={e => commitField({ ...draft, plan: { ...draft.plan, topLabel: e.target.value } }, 'plan:top')} />
+                  </label>
+                  <label className="fpe-f fpe-grow"><span>Bottom label</span>
+                    <input name="bottom-label" value={draft.plan.bottomLabel} placeholder="e.g. Main corridor" onChange={e => commitField({ ...draft, plan: { ...draft.plan, bottomLabel: e.target.value } }, 'plan:bottom')} />
                   </label>
                 </div>
                 {img && (

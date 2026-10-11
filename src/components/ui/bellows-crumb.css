@@ -1,0 +1,118 @@
+/* BellowsCrumb (bellows-crumb.jsx). Every segment shares one flex-basis
+   transition: same duration, same easing. The row's total width only holds
+   still mid-spring because of that, so keep them identical. */
+.bcr {
+  position: relative;
+  min-width: 0;
+  width: 100%
+}
+
+.bcr-ol {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  min-width: 0;
+  overflow: hidden;
+  margin: 0;
+  padding: 0;
+  list-style: none
+}
+
+.bcr-li {
+  position: relative;
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  flex: 0 0 auto;
+  overflow: hidden;
+  transition: flex-basis 420ms cubic-bezier(.34, 1.56, .64, 1)
+}
+
+/* Segment type. The ghost copy measures with these same rules, so weight and
+   tracking must not differ between the current segment and its ancestors. */
+.bcr-seg {
+  display: block;
+  width: 100%;
+  white-space: nowrap;
+  padding: 3px 4px;
+  border: none;
+  border-radius: var(--r-sm);
+  background: none;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: 0;
+  text-align: left;
+  color: var(--t3);
+  cursor: pointer;
+  transition: color var(--tr)
+}
+
+.bcr-seg:hover { color: var(--t1) }
+/* colour only: a heavier weight would measure wider than the ghost */
+.bcr-cur { color: var(--t1); cursor: default }
+
+/* inset: each segment clips its overflow, which would cut an outer ring
+   (and this outranks the header's outset ring rule) */
+.bcr .bcr-seg:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px
+}
+
+/* Folded: the label is clipped and fades out at its edge, with three fold lines. */
+.bcr-li[data-pleated] .bcr-seg {
+  overflow: hidden;
+  -webkit-mask-image: linear-gradient(to right, #000 60%, transparent 100%);
+  mask-image: linear-gradient(to right, #000 60%, transparent 100%)
+}
+
+.bcr-folds {
+  display: none;
+  position: absolute;
+  inset: 6px 0;
+  pointer-events: none
+}
+
+.bcr-li[data-pleated] .bcr-folds { display: block }
+
+.bcr-folds i {
+  position: absolute;
+  top: 0;
+  width: 1px;
+  height: 100%;
+  background: var(--bd)
+}
+
+.bcr-folds i:nth-child(1) { left: 25% }
+.bcr-folds i:nth-child(2) { left: 50% }
+.bcr-folds i:nth-child(3) { left: 75% }
+
+.bcr-sep {
+  flex: 0 0 14px;   /* SEP_WIDTH in bellows-crumb.jsx */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  color: var(--t3);
+  opacity: .7;
+  user-select: none
+}
+
+.bcr-ghost {
+  position: absolute;
+  left: 0;
+  top: 0;
+  display: flex;
+  flex-wrap: nowrap;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  visibility: hidden;
+  pointer-events: none
+}
+
+.bcr-ghost .bcr-seg { width: auto }
+
+@media (prefers-reduced-motion: reduce) {
+  .bcr-li { transition: none }
+}

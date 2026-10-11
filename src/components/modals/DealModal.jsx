@@ -1,10 +1,11 @@
-import { useRef } from 'react';
+import { useRef, useId } from 'react';
 import Mi from '../Mi.jsx';
 import { useApp } from '../../context/AppContext.jsx';
 import { closeDealFn } from '../../lib/db.js';
 
 export default function DealModal() {
   const { modal, closeModal, user, panLead, refreshDB, showToast } = useApp();
+  const uid = useId(); // field ids, so each <label htmlFor> points at its field
   const isOpen = modal === 'deal';
   const valRef = useRef();
 
@@ -25,7 +26,7 @@ export default function DealModal() {
           <button className="m-x" onClick={closeModal}><Mi>close</Mi></button>
         </div>
         <div className="m-body">
-          <div className="fg"><label>Deal Value (BDT)</label><input className="fi" ref={valRef} type="number" min="0" placeholder="e.g. 4500000" /></div>
+          <div className="fg"><label htmlFor={`${uid}value`}>Deal Value (BDT)</label><input id={`${uid}value`} className="fi" ref={valRef} type="number" min="0" placeholder="e.g. 4500000" /></div>
           <div className="do-btns">
             <button className="do-btn do-won" onClick={() => submit(true)}><Mi>emoji_events</Mi>Closed Won</button>
             <button className="do-btn do-lost" onClick={() => submit(false)}><Mi>thumb_down</Mi>Closed Lost</button>

@@ -83,6 +83,9 @@
 .fpe-status { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 12px; color: var(--t3); }
 .fpe-status > span:first-child { font-weight: 800; letter-spacing: .1em; text-transform: uppercase; font-size: 11px; }
 .fpe-status em { font-style: normal; }
+.fpe-stsel { flex: 1 1 100%; }
+.fpe-stsel .sel-trigger { width: 100%; }
+.fpe-stsel .fp-dot, .sel-content .fp-dot { margin-right: 8px; vertical-align: 1px; }
 
 .fpe-seg { display: grid; grid-template-columns: 1fr 1fr; border: 1px solid var(--bd2); border-radius: 10px; overflow: hidden; }
 .fpe-seg button { height: 36px; border: 0; background: transparent; color: var(--t2); font-size: 12.5px; font-weight: 700; cursor: pointer; }
@@ -148,3 +151,25 @@
   .fpe-proj { display: none; }
   .fpe-two { grid-template-columns: 1fr 1fr; }
 }
+
+/* Custom unit statuses (UnitStatusPanel.jsx): the list, and the create / edit form */
+.fpe-link { border: 0; background: none; padding: 0; color: var(--accent); font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; }
+.fpe-link:hover { text-decoration: underline; }
+.usp { display: flex; flex-direction: column; gap: 8px; padding: 12px; border: 1px solid var(--bd2); border-radius: 12px; background: var(--surf2); }
+.usp-row { display: flex; align-items: center; gap: 8px; min-height: 34px; font-size: 13px; }
+.usp-name { flex: 1; min-width: 0; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.usp-base { font-size: 11.5px; color: var(--t3); white-space: nowrap; }
+.usp-ic { display: inline-grid; place-items: center; width: 30px; height: 30px; border: 1px solid var(--bd2); border-radius: 8px; background: transparent; color: var(--t2); cursor: pointer; }
+.usp-ic:hover { color: var(--t1); border-color: var(--accent); }
+.usp-del:hover { color: var(--red); border-color: var(--red); }
+.usp-in { height: 38px; padding: 0 12px; border: 1px solid var(--bd2); border-radius: 10px; background: var(--surf); color: var(--t1); font: inherit; font-size: 13.5px; }
+.usp-in:focus { outline: none; border-color: var(--accent); }
+.usp-colors { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.usp-sw { width: 26px; height: 26px; border-radius: 50%; border: 2px solid transparent; cursor: pointer; box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .2); }
+.usp-sw.on { border-color: var(--t1); }
+.usp-sw:focus-visible, .usp-pick:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.usp-pick { width: 34px; height: 28px; padding: 0; border: 1px solid var(--bd2); border-radius: 8px; background: none; cursor: pointer; }
+.usp-base-sel { width: 100%; }
+.usp-base-sel .sel-trigger { width: 100%; }
+.usp-hint { font-size: 12px; color: var(--t3); }
+.usp-acts { display: flex; justify-content: flex-end; gap: 8px; }

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import useNavState from '../../hooks/useNavState.js';
 import { useApp } from '../../context/AppContext.jsx';
 import { getBookings, getDB, bookingPaid, bookingDue } from '../../lib/db.js';
 import { fmtBDT } from '../../lib/helpers.js';
@@ -11,8 +11,8 @@ const stClass = s => ({ HOLD: 'bs-hold', ACTIVE: 'bs-active', COMPLETED: 'bs-don
 export default function BookingsView() {
   const { user, openModal, setBookSel } = useApp();
   const db = getDB();
-  const [q, setQ] = useState('');
-  const [status, setStatus] = useState('ALL');
+  const [q, setQ] = useNavState('bookings.q', '');
+  const [status, setStatus] = useNavState('bookings.status', 'ALL');
 
   let bks = getBookings();
   if (user.role === ROLES.AGENT) bks = bks.filter(b => b.agentId === user.id);

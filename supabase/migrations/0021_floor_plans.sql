@@ -1,4 +1,4 @@
--- 0020 · Floor plans for Projects → Available Units
+-- 0021 · Floor plans for Projects → Available Units
 --
 -- Adds `properties.floor_plans` (the clickable plans: an image URL plus boxes
 -- that point at inventory units) and the `project-media` Storage bucket that

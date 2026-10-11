@@ -5,7 +5,8 @@ import { getProperties } from '../lib/db.js';
 // Multi-select project-interest field — works like a search box: type to filter the
 // project catalog, click a match (or Enter) to add it as a tag. Stored back as a
 // comma-joined string in `propertyInterest` so the rest of the app stays unchanged.
-export default function ProjectInterestPicker({ value, onChange, placeholder = 'Search projects to add…' }) {
+// `id` goes on the search input, for a <label htmlFor>.
+export default function ProjectInterestPicker({ id, value, onChange, placeholder = 'Search projects to add…' }) {
   const tags = (value || '').split(',').map(s => s.trim()).filter(Boolean);
   const [q, setQ] = useState('');
   const [open, setOpen] = useState(false);
@@ -40,6 +41,8 @@ export default function ProjectInterestPicker({ value, onChange, placeholder = '
           </span>
         ))}
         <input
+          id={id}
+          name="project-interest"
           className="pip-input"
           value={q}
           placeholder={tags.length ? 'Add another…' : placeholder}

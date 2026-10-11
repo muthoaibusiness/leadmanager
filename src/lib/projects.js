@@ -3,7 +3,10 @@
 //   Project { name, location, handover, listing, approval, fastClosePct,
 //             fastCloseDays, media:{images,docs,links}, variants[], addons[] }
 //   Variant { id, name, beds, baths, size, listRate, floorRate, unitPrefix, units[] }
-//   Unit    { id, status: 'available'|'hold'|'sold', size?, price? }
+//   Unit    { id, status: 'available'|'hold'|'sold', tag?, size?, price? } — tag: a custom
+//           status id (UnitStatus below); `status` stays its base, so counts and
+//           holds are unchanged
+//   UnitStatus { id, name, color, base: 'available'|'hold'|'sold' } — project's own (unitStatuses)
 //           size (sqft) and price (৳ total) are optional per-unit overrides —
 //           shops on one floor share a type but not a size. Without them the
 //           unit takes its type's size and list rate × size (unitSize/unitPrice).
@@ -11,8 +14,11 @@
 //   Media   { name?, label?, url }
 //   FloorPlan { id, name, order, image: { url, width, height, mime, fileName,
 //               source, pdfPage }, boxes: [{ id, unitId, x, y, w, h }],
-//               updatedAt, updatedBy } — Projects → Available Units. A box
-//               points at a unit by code; x/y/w/h are 0–1 fractions of the image.
+//               topLabel?, bottomLabel?, updatedAt, updatedBy } — Projects →
+//               Available Units. A box points at a unit by code; x/y/w/h are
+//               0–1 fractions of the image. topLabel / bottomLabel: optional
+//               landmarks shown above / below the floor's unit grid
+//               ("Escalator · Lift", "Main corridor").
 //
 // Backed today by the in-memory + localStorage + Supabase store (via db.js).
 // Everything goes through this module, so swapping to a real API = change the
@@ -66,6 +72,7 @@ export function toProject(p) {
     listing: p.listing || '',
     approval: p.approval || '',
     floorPlans: Array.isArray(p.floorPlans) ? p.floorPlans : [],
+    unitStatuses: Array.isArray(p.unitStatuses) ? p.unitStatuses : [],
   };
 }
 
@@ -224,7 +231,9 @@ export function regenUnits(id, vid, count) {
 
 // Set a unit's status (available|hold|sold); stamps holder/client. Mirrors to the
 // flat `units` array too so legacy views + cloud (which stores units) stay in sync.
-export function setUnitStatus(id, vid, unitId, status, { user, client, holdUntil, note } = {}) {
+// `tag`: a custom status (unitStatuses id) shown in place of the base; any other
+// status change drops it.
+export function setUnitStatus(id, vid, unitId, status, { user, client, holdUntil, note, tag } = {}) {
   const p = getProperty(id); if (!p) return;
   const base = p.variants && p.variants.length ? p.variants : defaultVariants(p);
   // The type the unit is in now. A hold request names the type it was made
@@ -240,6 +249,7 @@ export function setUnitStatus(id, vid, unitId, status, { user, client, holdUntil
         if (u.id !== unitId) return u;
         // A unit's own size and price (set on the floor plan) outlive its status.
         const own = { ...(u.size > 0 ? { size: u.size } : {}), ...(u.price > 0 ? { price: u.price } : {}) };
+        if (tag) own.tag = tag;
         if (status === 'available') return { id: u.id, status: 'available', ...own };
         return { id: u.id, status, ...own, heldBy: user?.id || null, heldByName: user?.name || '', clientId: client?.id || null, clientName: client?.name || '', holdUntil: holdUntil || null, note: note || '', at: nowISO() };
       }),
@@ -265,7 +275,7 @@ export const newTypeShape = (id, name) => ({ id, name, beds: 0, baths: 0, size: 
 // and only floor_plans + variants are written back, so a hold or a sale placed
 // while the editor was open survives.
 //
-//   plan     { id, name, order, image (stored image or null), boxes: [{ id, unitKey, x, y, w, h }] }
+//   plan     { id, name, order, topLabel, bottomLabel, image (stored image or null), boxes: [{ id, unitKey, x, y, w, h }] }
 //   pending  { blob, width, height, mime, fileName, source, pdfPage } — a new image to upload, or null
 //   units    { [unitKey]: { code, variantId, size, price, orig: { code } | null } }
 //   types    [{ id, name, isNew }] — the editor's list, new ones included
@@ -357,8 +367,10 @@ export async function saveFloorPlan({ projectId, companyId, plan, pending, units
   const clash = p.floorPlans.filter(fp => fp.id !== plan.id).flatMap(fp => fp.boxes || []).find(b => mine.has(b.unitId));
   if (clash) return { ok: false, error: `${clash.unitId} is already on another floor plan` };
 
+  const topLabel = (plan.topLabel || '').trim(), bottomLabel = (plan.bottomLabel || '').trim();
   const saved = {
     id: plan.id, name: (plan.name || '').trim() || 'Floor plan', order: Number(plan.order) || 0,
+    ...(topLabel && { topLabel }), ...(bottomLabel && { bottomLabel }),
     image, boxes, updatedAt: nowISO(), updatedBy: user?.id || null,
   };
   const exists = p.floorPlans.some(fp => fp.id === plan.id);
@@ -366,6 +378,19 @@ export async function saveFloorPlan({ projectId, companyId, plan, pending, units
   const res = await patchPropertyChecked(projectId, { floorPlans, variants });
   if (!res.ok) return { ok: false, error: res.error };
   return { ok: true, plan: saved, skipped, recreated };
+}
+
+// Changes the project's custom unit statuses: `fn` gets the list as stored now
+// (read fresh, so two managers' edits never overwrite each other) and returns
+// the new one. Units tagged with a removed status show their base status again.
+// Resolves { ok, list } or { ok: false, error }.
+export async function editUnitStatuses(projectId, fn) {
+  const got = await sbGetPropertyRow(projectId);
+  if (!got.ok) return { ok: false, error: got.error };
+  if (!got.row) return { ok: false, error: 'this project no longer exists' };
+  const list = fn(toProject(got.row).unitStatuses);
+  const res = await patchPropertyChecked(projectId, { unitStatuses: list });
+  return res.ok ? { ok: true, list } : res;
 }
 
 // Removes the plan only. Its units stay in the inventory, and its image stays

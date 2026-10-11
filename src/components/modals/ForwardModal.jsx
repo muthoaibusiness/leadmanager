@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useId } from 'react';
 import Mi from '../Mi.jsx';
 import { useApp } from '../../context/AppContext.jsx';
 import useChanged from '../../hooks/useChanged.js';
@@ -29,6 +29,7 @@ const ROLE_BADGE_CLS = { AGENT: 's-new', TEAM_LEAD: 's-negotiating', MANAGEMENT:
 //                hand-off, so it opens straight on the meeting step
 export default function ForwardModal() {
   const { modal, closeModal, user, panLead, refreshDB, showToast } = useApp();
+  const uid = useId(); // field ids, so each <label htmlFor> points at its field
   const isMA = modal === 'set-meeting';
   const isTL = modal === 'forward-tl';
   const isAG = modal === 'forward-agent';
@@ -154,9 +155,11 @@ export default function ForwardModal() {
         {step === 1 && (
           <>
             <div className="m-body">
+              <label htmlFor={`${uid}target`} className="fwd-label">{isAG ? 'Select teammate' : 'Select ' + rlabel(targetRole)}</label>
               <div className="fwd-search">
                 <Mi>search</Mi>
                 <input
+                  id={`${uid}target`}
                   placeholder={isAG ? 'Search teammate…' : 'Search ' + rlabel(targetRole).toLowerCase() + '…'}
                   value={pq} onChange={e => setPq(e.target.value)} autoFocus
                 />

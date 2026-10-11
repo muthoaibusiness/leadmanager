@@ -1,10 +1,11 @@
-import { useRef } from 'react';
+import { useRef, useId } from 'react';
 import Mi from '../Mi.jsx';
 import { useApp } from '../../context/AppContext.jsx';
 import { addNote } from '../../lib/db.js';
 
 export default function NoteModal() {
   const { modal, closeModal, user, panLead, refreshDB, showToast } = useApp();
+  const uid = useId(); // field ids, so each <label htmlFor> points at its field
   const isOpen = modal === 'note';
   const txtRef = useRef();
 
@@ -26,7 +27,7 @@ export default function NoteModal() {
           <button className="m-x" onClick={closeModal}><Mi>close</Mi></button>
         </div>
         <div className="m-body">
-          <div className="fg"><label>Note</label><textarea className="fi" ref={txtRef} placeholder="Write your note..." /></div>
+          <div className="fg"><label htmlFor={`${uid}note`}>Note</label><textarea id={`${uid}note`} className="fi" ref={txtRef} placeholder="Write your note..." /></div>
         </div>
         <div className="m-ft">
           <button className="btn btn-g" onClick={closeModal}>Cancel</button>
