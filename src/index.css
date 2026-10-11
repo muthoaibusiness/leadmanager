@@ -2480,6 +2480,10 @@ a {
 
 .hd-ic .mi { font-size: 19px }
 
+/* Back (BackButton) and the breadcrumb (ui/bellows-crumb), between the
+   show-sidebar button and the controls: the trail takes all the room left. */
+.pg-head .hd-crumb { flex: 1 1 0; margin-right: 4px }
+
 /* Phones: the account face moves to the left, right after the show-sidebar
    button (order only; the DOM keeps the wide-screen order), and the theme
    button gives way to the account menu's theme item. */
@@ -11489,6 +11493,9 @@ textarea.fi {
 .pcu-sold { background: color-mix(in srgb, var(--red) 13%, var(--surf)); border-color: color-mix(in srgb, var(--red) 32%, var(--bd2)); }
 .pcu-sold .pcu-no, .pcu-sold .pcu-st { color: var(--red); }
 /* selected */
+/* custom unit status (project unitStatuses): its colour arrives as --st-c */
+.pcu.has-c { background: color-mix(in srgb, var(--st-c) 14%, var(--surf)); border-color: color-mix(in srgb, var(--st-c) 40%, var(--bd2)); }
+.pcu.has-c .pcu-no, .pcu.has-c .pcu-st { color: var(--st-c); }
 .pcu.sel { border-color: var(--accent); box-shadow: 0 0 0 1.5px var(--accent); background: color-mix(in srgb, var(--accent) 10%, var(--surf)); }
 .pcu.sel .pcu-st { color: var(--accent); }
 /* blocked (hold/sold) — not pickable */

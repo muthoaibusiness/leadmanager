@@ -1,0 +1,48 @@
+/* Select (ui/select.jsx): radix Select with theme tokens. */
+.sel { display: inline-flex; flex-direction: column; gap: 6px; min-width: 0; }
+.sel-label { font-size: 11px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: var(--t3); }
+
+.sel-trigger {
+  display: inline-flex; align-items: center; justify-content: space-between; gap: 10px;
+  min-width: 0; min-height: 40px; padding: 0 12px 0 14px;
+  border: 1px solid var(--bd2); border-radius: 10px;
+  background: var(--surf2); color: var(--t1);
+  font: 700 14px/1.2 var(--font-display); cursor: pointer; text-align: left;
+  transition: border-color var(--tr), box-shadow var(--tr);
+}
+.sel-trigger:hover, .sel-trigger[data-state="open"] { border-color: var(--accent); }
+.sel-trigger:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.sel-trigger[data-disabled] { opacity: .5; cursor: not-allowed; }
+.sel-value { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sel-ph { color: var(--t3); }
+.sel-chev { display: inline-flex; flex: none; color: var(--t2); transition: transform var(--tr); }
+.sel-trigger[data-state="open"] .sel-chev { transform: rotate(180deg); }
+
+/* The list renders in a portal above everything, modals included (.mov: 500). */
+.sel-content {
+  z-index: 1000; min-width: var(--radix-select-trigger-width);
+  max-height: min(var(--radix-select-content-available-height), 420px);
+  padding: 6px; border: 1px solid var(--bd2); border-radius: 12px;
+  background: var(--surf2); color: var(--t1); font-family: var(--font-display);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, .35), 0 2px 8px rgba(0, 0, 0, .25);
+}
+.sel-list { display: flex; flex-direction: column; gap: 2px; }
+.sel-item {
+  display: flex; align-items: center; gap: 10px; min-height: 40px; padding: 0 10px;
+  border-radius: 8px; font-size: 13.5px; font-weight: 700; cursor: pointer; outline: none; user-select: none;
+}
+.sel-item[data-highlighted] { background: color-mix(in srgb, var(--accent) 16%, transparent); }
+.sel-item[data-state="checked"] { color: var(--accent); }
+.sel-item[data-disabled] { opacity: .5; cursor: default; }
+/* the item text (radix ItemText, first child) takes the room; description and check sit right */
+.sel-item > :first-child { flex: 1; min-width: 0; }
+.sel-desc { font-size: 12px; font-weight: 600; color: var(--t2); white-space: nowrap; }
+.sel-check { display: inline-flex; color: var(--accent); }
+.sel-header { padding: 8px 10px 4px; font-size: 11px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: var(--t3); }
+.sel-help { font-size: 12px; color: var(--t2); }
+.sel-error { font-size: 12px; font-weight: 600; color: var(--red); }
+
+/* Touch screens: 44px targets. */
+@media (max-width: 1023px) {
+  .sel-trigger, .sel-item { min-height: 44px; }
+}

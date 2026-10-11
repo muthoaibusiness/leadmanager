@@ -129,11 +129,17 @@ export function mergeDB(remote, local) {
     leads,
     targets: mergeArr(r.targets, l.targets),
     deletionLog: tomb,
-    // Floor plans are only ever written onto the cloud row (patchPropertyChecked),
-    // so the cloud copy of them wins even when the local row wins the tie.
+    // Floor plans and custom unit statuses are only ever written onto the cloud
+    // row (patchPropertyChecked), so the cloud copy of them wins even when the
+    // local row wins the tie.
     properties: mergeArr(r.properties, l.properties).filter(p => !deleted.has(p.id)).map(p => {
       const rp = (r.properties || []).find(x => x && x.id === p.id);
-      return rp && rp !== p && Array.isArray(rp.floorPlans) ? { ...p, floorPlans: rp.floorPlans } : p;
+      if (!rp || rp === p) return p;
+      return {
+        ...p,
+        ...(Array.isArray(rp.floorPlans) && { floorPlans: rp.floorPlans }),
+        ...(Array.isArray(rp.unitStatuses) && { unitStatuses: rp.unitStatuses }),
+      };
     }),
     bookings: mergeArr(r.bookings, l.bookings),
     holdRequests: mergeArr(r.holdRequests, l.holdRequests),
@@ -1227,20 +1233,23 @@ export function addPropertyFn(p) {
   return id;
 }
 
-// Floor plans are written only by patchPropertyChecked, which merges onto the
-// cloud row. Every other property write sends the whole cached row, and a stale
-// cached copy of the plans would overwrite one another manager just saved, so
-// those writes leave the column (and the local copy) alone. Inserts leave it
-// out too: the column defaults to [] (and may not exist before migration 0021).
+// Floor plans and custom unit statuses are written only by patchPropertyChecked,
+// which merges onto the cloud row. Every other property write sends the whole
+// cached row, and a stale cached copy would overwrite what another manager just
+// saved, so those writes leave the columns (and the local copy) alone. Inserts
+// leave them out too: the columns default to [] (and may not exist before
+// migrations 0021 / 0022).
 function withoutPlans(upd) {
-  if (!upd || !('floorPlans' in upd)) return upd;
+  if (!upd || !('floorPlans' in upd || 'unitStatuses' in upd)) return upd;
   const rest = { ...upd };
   delete rest.floorPlans;
+  delete rest.unitStatuses;
   return rest;
 }
 function propRow(p) {
   const row = pToR(p);
   delete row.floor_plans;
+  delete row.unit_statuses;
   return row;
 }
 
@@ -1310,7 +1319,7 @@ export async function updatePropertyChecked(id, upd) {
 // lacks and still answers ok — fine for background writes, but for a floor
 // plan it would mean a save that only ever existed in this browser.
 // `upd` is camelCase; the keys must be ones pToR maps (floorPlans, variants…).
-const PROP_COLS = { floorPlans: 'floor_plans', variants: 'variants', units: 'units' };
+const PROP_COLS = { floorPlans: 'floor_plans', unitStatuses: 'unit_statuses', variants: 'variants', units: 'units' };
 export async function patchPropertyChecked(id, upd) {
   const ts = now_();
   const full = pToR({ ...upd, updatedAt: ts });
@@ -1324,8 +1333,9 @@ export async function patchPropertyChecked(id, upd) {
   // half-lands (unit changes written, the plan itself not).
   const res = await sbUpdate('properties', id, row, { strict: true });
   if (res.missing) {
-    return { ok: false, error: res.missing === 'floor_plans'
-      ? 'the database has no floor_plans column yet (apply migration 0021)'
+    const mig = { floor_plans: '0021', unit_statuses: '0022' }[res.missing];
+    return { ok: false, error: mig
+      ? `the database has no ${res.missing} column yet (apply migration ${mig})`
       : `the database is missing the ${res.missing} column` };
   }
   if (!res.ok) return { ok: false, error: writeError(res) };

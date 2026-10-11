@@ -495,7 +495,7 @@ export default function LeadPanel() {
       <div id="pov" className={isOpen ? 'on' : ''} onClick={() => setPanLead(null)} />
       <div id="pan" className={isOpen ? 'on' : ''} inert={drawerOpen}>
         <div className="p-hd">
-          <button className="p-back" onClick={() => setPanLead(null)}><Mi>arrow_back</Mi></button>
+          <button className="p-back" onClick={() => setPanLead(null)} aria-label="Back" title="Back"><Mi aria-hidden="true">arrow_back</Mi></button>
           <div className="p-ttl">{l ? (l.name || 'Unnamed customer') : 'Customer Details'}</div>
           <div style={{ display: 'flex', gap: '7px' }}>
             {l && (

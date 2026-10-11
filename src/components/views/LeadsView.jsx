@@ -8,6 +8,7 @@ import LeadTable, { PAGE_SIZE } from '../LeadTable.jsx';
 import SearchBox from '../SearchBox.jsx';
 import { ActionSwapCascadeButton } from '../ui/action-swap-cascade.jsx';
 import useChanged from '../../hooks/useChanged.js';
+import useNavState from '../../hooks/useNavState.js';
 
 // Order the admin's people picker groups the way the pipeline runs, so the
 // dropdown reads top-down rather than alphabetically across mixed roles.
@@ -29,14 +30,16 @@ export default function LeadsView() {
   const isTL = user.role === ROLES.TL;
   const isMgmt = user.role === ROLES.MGMT;
 
-  const [tab, setTab] = useState('mine');
+  // Tabs, pickers and the page number are kept in the history entry
+  // (useNavState), so Back to this list returns to the same page of it.
+  const [tab, setTab] = useNavState('leads.tab', 'mine');
   // The Team Lead's own agent picker. Distinct from `drillAgent`, the app-wide
   // drill-down set by clicking a person on a dashboard (AgentCard) — that one
   // wins when present, because it is an explicit "show me THIS person's book".
-  const [agentFilter, setAgentFilter] = useState(user.id);
-  const [projectFilter, setProjectFilter] = useState('ALL');
+  const [agentFilter, setAgentFilter] = useNavState('leads.agent', user.id);
+  const [projectFilter, setProjectFilter] = useNavState('leads.project', 'ALL');
   const [projectOptions, setProjectOptions] = useState([]);
-  const [page, setPage] = useState(0);
+  const [page, setPage] = useNavState('leads.page', 0);
   const [result, setResult] = useState({ rows: [], total: 0 });
   const [doneKey, setDoneKey] = useState(null); // fetchKey of the last answered fetch
   const [fwdCount, setFwdCount] = useState(null); // null until the first count lands
@@ -66,7 +69,7 @@ export default function LeadsView() {
         && (!user.companyId || !u.companyId || u.companyId === user.companyId))
       .sort((a, b) => (a.name || '').localeCompare(b.name || ''))
     : []), [isMgmt, db.users, user.companyId]);
-  const [userFilter, setUserFilter] = useState('ALL');
+  const [userFilter, setUserFilter] = useNavState('leads.user', 'ALL');
   // A roster change (someone deactivated, or a company switch) can retire the
   // selection; fall back rather than render the select on a dead value.
   const activeUser = userFilter === 'ALL' || mgmtUsers.some(u => u.id === userFilter) ? userFilter : 'ALL';
@@ -101,9 +104,17 @@ export default function LeadsView() {
   const query = q;
 
   // Any filter change invalidates the page number: page 4 of the old result set
-  // is meaningless in the new one.
+  // is meaningless in the new one. The query the page belongs to is kept with
+  // it, so a page restored by Back survives the remount while its query matches.
+  // It names the project picked rather than activeProject, which reads ALL until
+  // the project list loads and would otherwise reset a restored page.
   const qKey = JSON.stringify({ ...query, user: user.id });
-  if (useChanged(qKey) && page !== 0) setPage(0);
+  const pageForKey = JSON.stringify({ ...query, project: projectFilter, user: user.id });
+  const [pageFor, setPageFor] = useNavState('leads.pageFor', pageForKey);
+  if (pageFor !== pageForKey) {
+    setPageFor(pageForKey);
+    if (page !== 0) setPage(0);
+  }
 
   // Loading until the newest fetch for what is on screen has answered.
   const fetchKey = `${qKey}|${page}|${sortBy}|${dbVersion}`;

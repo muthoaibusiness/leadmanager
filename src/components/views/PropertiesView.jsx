@@ -1,4 +1,5 @@
 import { useState, useRef } from 'react';
+import useNavState from '../../hooks/useNavState.js';
 import { useApp } from '../../context/AppContext.jsx';
 import { getProperties, deletePropertyFn } from '../../lib/db.js';
 import { ROLES, PROPERTY_TYPES, PROPERTY_STATUS } from '../../lib/constants.js';
@@ -18,10 +19,10 @@ export default function PropertiesView() {
   const toast = useProjectToast();
   const deleteAskRef = useRef(null); // the open delete confirmation, if any
   const isAdmin = user?.role === ROLES.MGMT;
-  const [q, setQ] = useState('');
-  const [city, setCity] = useState('ALL');
-  const [type, setType] = useState('ALL');
-  const [status, setStatus] = useState('ALL');
+  const [q, setQ] = useNavState('properties.q', '');
+  const [city, setCity] = useNavState('properties.city', 'ALL');
+  const [type, setType] = useNavState('properties.type', 'ALL');
+  const [status, setStatus] = useNavState('properties.status', 'ALL');
   const [sel, setSel] = useState(new Set());
 
   // selecting is an admin-only control (only admins may delete projects)

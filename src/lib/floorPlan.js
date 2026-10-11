@@ -47,6 +47,14 @@ export const STATUS = {
   sold: { label: 'Sold', short: 'Sold' },
   unlinked: { label: 'Not linked', short: '—' },
 };
+// A unit's look: its custom status (project unitStatuses, by the unit's tag) or
+// its base. { status: base key, label, color: custom colour or null }.
+export function statusLook(statuses, unit) {
+  const base = unit?.status || 'available';
+  const c = unit?.tag ? (statuses || []).find(s => s.id === unit.tag) : null;
+  return c ? { status: base, label: c.name, color: c.color } : { status: base, label: STATUS[base]?.label || base, color: null };
+}
+
 export const taka = (n) => '৳' + Math.round(n || 0).toLocaleString('en-IN');
 
 // ── unit codes ───────────────────────────────────────────────────────────────

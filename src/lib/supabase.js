@@ -635,9 +635,11 @@ export function pToR(p) {
     variants: p.variants || [], addons: p.addons || [], media: p.media || {},
     fast_close_pct: p.fastClosePct || 0, fast_close_days: p.fastCloseDays || 0,
     listing: p.listing || '', approval: p.approval || '',
-    // Available Units floor plans (migration 0021). Only patchPropertyChecked
-    // writes this column; the other property writes drop it (see propRow in db.js).
+    // Available Units floor plans (migration 0021) and custom unit statuses
+    // (0022). Only patchPropertyChecked writes these columns; the other property
+    // writes drop them (see propRow in db.js).
     floor_plans: p.floorPlans || [],
+    unit_statuses: p.unitStatuses || [],
   };
 }
 export function rToP(r) {
@@ -657,6 +659,7 @@ export function rToP(r) {
     fastClosePct: r.fast_close_pct || 0, fastCloseDays: r.fast_close_days || 0,
     listing: r.listing || '', approval: r.approval || '',
     floorPlans: Array.isArray(r.floor_plans) ? r.floor_plans : [],
+    unitStatuses: Array.isArray(r.unit_statuses) ? r.unit_statuses : [],
   };
 }
 

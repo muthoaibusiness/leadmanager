@@ -205,7 +205,8 @@ export default function FloorPlanCanvas({
           const showLabel = b.label && b.w * k >= 16 && b.h * k >= 12;
           return (
             <g key={b.id} data-box={b.id}
-              className={`fp-box st-${b.status}${on ? ' on' : ''}${b.id === hoverId ? ' hl' : ''}${b.dim ? ' dim' : ''}`}
+              className={`fp-box st-${b.status}${b.color ? ' has-c' : ''}${on ? ' on' : ''}${b.id === hoverId ? ' hl' : ''}${b.dim ? ' dim' : ''}`}
+              style={b.color ? { '--st-c': b.color } : undefined}
               role="button" tabIndex={0} aria-label={b.aria || b.label} aria-pressed={on}
               onPointerEnter={() => onHover?.(b.id)} onPointerLeave={() => onHover?.(null)}
               onFocus={() => { if (editable) onSelect?.(b.id); }}

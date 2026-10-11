@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import useNavState from '../../hooks/useNavState.js';
 import { useApp } from '../../context/AppContext.jsx';
 import { getDB } from '../../lib/db.js';
 import { ROLES } from '../../lib/constants.js';
@@ -37,9 +38,9 @@ export default function AgentPerformanceView() {
   const { user, dbVersion, dateRange } = useApp();
   void dbVersion;
   const db = getDB();
-  const [role, setRole] = useState(ROLES.AGENT);
-  const [q, setQ] = useState('');
-  const [sort, setSort] = useState('best');
+  const [role, setRole] = useNavState('agentperf.role', ROLES.AGENT);
+  const [q, setQ] = useNavState('agentperf.q', '');
+  const [sort, setSort] = useNavState('agentperf.sort', 'best');
   const [open, setOpen] = useState(null);
 
   const teamId = user.role === ROLES.TL ? user.teamId : null;
