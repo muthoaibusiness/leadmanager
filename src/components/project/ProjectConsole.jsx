@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import Mi from '../Mi.jsx';
 import { useApp } from '../../context/AppContext.jsx';
-import { getProjectById, setUnitStatus, toProject } from '../../lib/projects.js';
+import { getProjectById, setUnitStatus, toProject, pricedVariant, unitPrice } from '../../lib/projects.js';
 import { createHoldRequest, getLeads } from '../../lib/db.js';
 import { computeDeal, emptyDeal } from '../../lib/deal.js';
 import ProjectCatalog from './ProjectCatalog.jsx';
@@ -11,6 +11,8 @@ import './ProjectConsole.css';
 import { fmtBDT } from '../../lib/helpers.js';
 import { ROLES } from '../../lib/constants.js';
 import useLeadBook from '../../hooks/useLeadBook.js';
+import useChanged from '../../hooks/useChanged.js';
+import useNow from '../../hooks/useNow.js';
 
 const STAGES = [
   { key: 'offer', label: 'Offer' },
@@ -25,17 +27,16 @@ const crShort = (n) => (n >= 1e7 ? (n / 1e7).toFixed(2) + ' Cr' : n >= 1e5 ? (n 
 const amtShort = (n) => (n >= 1e7 ? +(n / 1e7).toFixed(2) + ' Cr' : n >= 1e5 ? +(n / 1e5).toFixed(1) + ' L' : fmtBDT(n));
 
 // Live countdown to a target ISO time → {d,h,m,s} string, or 'expired'.
-function useCountdown(targetMs) {
-  const [, tick] = useState(0);
-  useEffect(() => { const t = setInterval(() => tick(n => n + 1), 1000); return () => clearInterval(t); }, []);
-  const diff = targetMs - Date.now();
+// Ticks only while `active`: the console stays mounted on every page.
+function useCountdown(targetMs, active) {
+  const diff = targetMs - useNow(1000, active);
   if (diff <= 0) return 'expired';
   const d = Math.floor(diff / 86400000), h = Math.floor(diff / 3600000) % 24, m = Math.floor(diff / 60000) % 60, s = Math.floor(diff / 1000) % 60;
   return `${d}d ${h}h ${m}m ${s}s`;
 }
 
 export default function ProjectConsole() {
-  const { modal, closeModal, propSel, propDraft, setPropDraft, user, refreshDB, dbVersion, consoleAdmin } = useApp();
+  const { modal, closeModal, propSel, propDraft, setPropDraft, user, refreshDB, dbVersion, consoleAdmin, consoleUnit, setConsoleUnit } = useApp();
   const toast = useProjectToast();
   const isOpen = modal === 'project-console';
   // Gated on isOpen — App.jsx mounts this on every page and it renders nothing
@@ -58,20 +59,28 @@ export default function ProjectConsole() {
   const stored = isOpen && propSel ? getProjectById(propSel) : null;
   const isNew = isOpen && !stored && !!propDraft && propDraft.id === propSel;
   const p = stored || (isNew ? toProject(propDraft) : null);
-  const variants = useMemo(() => (p ? p.variants : []), [p, dbVersion]);
+  // dbVersion: `p` can be the same cached object after an in-place edit.
+  const variants = useMemo(() => (p ? p.variants : []), [p, dbVersion]); // eslint-disable-line react-hooks/exhaustive-deps
   const variant = variants.find(v => v.id === vid) || variants[0] || null;
 
-  // reset when opening a different project
-  useEffect(() => { if (isOpen) { setVid(null); setDeal(emptyDeal()); setCq(''); setAdmin(!!consoleAdmin); } }, [propSel, isOpen]);
-  // keep deal.variantId in sync; reset unit when variant changes
-  useEffect(() => { if (variant) setDeal(d => (d.variantId === variant.id ? d : { ...emptyDeal(), variantId: variant.id })); }, [variant?.id]);
+  // reset when opening a different project. Available Units → Continue hands
+  // over a unit (consoleUnit) to start the deal with, if it is still available.
+  const opened = useChanged(`${isOpen}:${propSel}`) && isOpen;
+  if (opened) {
+    const pick = consoleUnit && consoleUnit.projectId === propSel ? variants.find(v => v.id === consoleUnit.variantId) : null;
+    const pickOk = !!pick?.units.some(u => u.id === consoleUnit.unitId && u.status === 'available');
+    setVid(pick ? pick.id : null);
+    setDeal(pickOk ? { ...emptyDeal(), variantId: pick.id, unitId: consoleUnit.unitId } : emptyDeal());
+    setCq(''); setAdmin(!!consoleAdmin);
+  }
+  // keep deal.variantId in sync; reset unit when variant changes. Skipped on
+  // the opening render: `variant` there still reflects the old vid.
+  if (useChanged(variant?.id) && variant && !opened) setDeal(d => (d.variantId === variant.id ? d : { ...emptyDeal(), variantId: variant.id }));
 
   // returning to the console after admin edits — sanitize the deal so it can't
   // reference a variant/unit that was deleted or is no longer available.
-  useEffect(() => {
-    if (admin) return;
-    const proj = propSel ? getProjectById(propSel) : null;
-    if (!proj) return;
+  const proj = useChanged(admin) && !admin && propSel ? getProjectById(propSel) : null;
+  if (proj) {
     setDeal(d => {
       const v = proj.variants.find(x => x.id === d.variantId);
       if (!v) return { ...emptyDeal(), variantId: proj.variants[0]?.id || null };
@@ -82,14 +91,15 @@ export default function ProjectConsole() {
       if (Object.keys(addons).length !== Object.keys(d.addons || {}).length) nd = { ...nd, addons };
       return nd;
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [admin]);
+  }
 
   const locked = deal.stage !== 'browse'; // editing locked once in the cart
   const fastTarget = startedAt + (p?.fastCloseDays || 0) * 86400000;
-  const countdown = useCountdown(fastTarget);
+  const countdown = useCountdown(fastTarget, isOpen);
 
-  const calc = variant ? computeDeal(deal, variant, p) : null;
+  // The picked unit's own size and price, when it has them, price the deal.
+  const pv = variant && deal.unitId ? pricedVariant(variant, deal.unitId) : variant;
+  const calc = pv ? computeDeal(deal, pv, p) : null;
 
   // ✕, the backdrop and Esc all close through here. Closing never writes: an
   // unsaved new project just goes away, and unsaved catalog edits are dropped
@@ -112,6 +122,7 @@ export default function ProjectConsole() {
     dropAsk();
     askReturnRef.current = null;
     if (propDraft) setPropDraft(null);
+    if (consoleUnit) setConsoleUnit(null); // the next opening starts with no unit picked
     closeModal();
   };
   // Stay (and Esc) hand focus back to where it was, so typing carries on.
@@ -189,8 +200,9 @@ export default function ProjectConsole() {
   // Floor (bottom) price + total project value are commercially sensitive — only
   // Team Leads and Management see them; initial/meeting agents do not.
   const canSeeFloor = [ROLES.TL, ROLES.MGMT, ROLES.MASTER].includes(user?.role);
-  // Total project value at list rate = Σ blocks (rate × size × units).
-  const projectValue = variants.reduce((s, v) => s + (v.listRate || 0) * (v.size || 0) * (v.units.length || 0), 0);
+  // Total project value at list rate = Σ units (a unit's own price, else its
+  // block's rate × size).
+  const projectValue = variants.reduce((s, v) => s + v.units.reduce((t, u) => t + unitPrice(u, v), 0), 0);
 
   // Offers can only go to an existing customer — search this user's leads.
   const myLeads = getLeads(user);
@@ -353,6 +365,7 @@ export default function ProjectConsole() {
                       const lbl = u.status === 'sold' ? 'SOLD' : u.status === 'hold' ? 'HELD' : 'OPEN';
                       const blocked = u.status !== 'available';
                       const t = [u.status === 'sold' ? 'Sold' : u.status === 'hold' ? 'On hold' : 'Available'];
+                      if (u.size > 0) t.push(u.size + ' sqft');
                       if (u.clientName) t.push('Client: ' + u.clientName);
                       if (u.holdUntil) t.push('Booked by management until ' + new Date(u.holdUntil).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' }));
                       else if (u.heldByName) t.push('By: ' + u.heldByName);
@@ -374,16 +387,16 @@ export default function ProjectConsole() {
                   <div className={`pco-prices${canSeeFloor ? '' : ' solo'}`}>
                     <div className="pco-box">
                       <div className="pco-box-l">Top price · list</div>
-                      <div className="pco-box-v">{fmtBDT(variant.listRate)} <small>/ sqft</small></div>
-                      <div className="pco-box-s">Total {crShort(variant.listRate * variant.size)}</div>
+                      <div className="pco-box-v">{fmtBDT(pv.listRate)} <small>/ sqft</small></div>
+                      <div className="pco-box-s">Total {crShort(pv.listRate * pv.size)}</div>
                     </div>
                     {canSeeFloor && (
                       <div className="pco-box floor">
                         <div className="pco-box-l">Bottom price · floor</div>
-                        {variant.floorRate > 0 ? (
+                        {pv.floorRate > 0 ? (
                           <>
-                            <div className="pco-box-v">{fmtBDT(variant.floorRate)} <small>/ sqft</small></div>
-                            <div className="pco-box-s">Total {crShort(variant.floorRate * variant.size)}</div>
+                            <div className="pco-box-v">{fmtBDT(pv.floorRate)} <small>/ sqft</small></div>
+                            <div className="pco-box-s">Total {crShort(pv.floorRate * pv.size)}</div>
                           </>
                         ) : (
                           <div className="pco-box-v" style={{ opacity: .55 }}>Not set</div>
@@ -398,14 +411,14 @@ export default function ProjectConsole() {
                         <div className="pco-lbl">Your offer · rate</div>
                         <div className="pco-input">
                           <span className="pco-cur">৳</span>
-                          <input type="number" disabled={locked} value={deal.offerRate ?? ''} placeholder={variant.listRate} onChange={e => setRate('offerRate', e.target.value)} />
+                          <input type="number" disabled={locked} value={deal.offerRate ?? ''} placeholder={pv.listRate} onChange={e => setRate('offerRate', e.target.value)} />
                           <span className="pco-suf">/ sqft</span>
                         </div>
                       </div>
                       <div className="pco-cell pco-right">
                         <div className="pco-lbl">Total offer value</div>
                         <div className="pco-total">{fmtBDT(calc.offerValue)}</div>
-                        <div className="pco-total-s">{fmtBDT(calc.offerRate)} × {variant.size} sqft</div>
+                        <div className="pco-total-s">{fmtBDT(calc.offerRate)} × {pv.size} sqft</div>
                       </div>
                     </div>
 
@@ -544,10 +557,10 @@ export default function ProjectConsole() {
                       </div>
                       <div className="pcl-rows">
                         <div className="pcl-row"><span>Offer rate</span><b>{fmtBDT(calc.offerRate)}/sqft</b></div>
-                        <div className="pcl-row"><span>Offer value · {variant.size} sqft</span><b>{fmtBDT(calc.offerValue)}</b></div>
+                        <div className="pcl-row"><span>Offer value · {pv.size} sqft</span><b>{fmtBDT(calc.offerValue)}</b></div>
                         {calc.discountPct > 0 && <div className="pcl-row"><span>Fast-close −{calc.discountPct}%</span><b className="pcl-neg">−{fmtBDT(calc.offerValue - calc.discountedOffer)}</b></div>}
                         {(p.addons || []).filter(a => deal.addons[a.id]).map(a => <div key={a.id} className="pcl-row"><span>{a.name}</span><b>+{fmtBDT(a.amount)}</b></div>)}
-                        <div className="pcl-total"><span>Deal total</span><div className="pcl-total-r"><b>{fmtBDT(calc.dealTotal)}</b><small>{fmtBDT(Math.round(calc.dealTotal / variant.size))}/sqft blended</small></div></div>
+                        <div className="pcl-total"><span>Deal total</span><div className="pcl-total-r"><b>{fmtBDT(calc.dealTotal)}</b><small>{fmtBDT(Math.round(calc.dealTotal / pv.size))}/sqft blended</small></div></div>
                       </div>
                       <div className="pcc-f">
                         <span>Client (existing customer)</span>
@@ -575,7 +588,7 @@ export default function ProjectConsole() {
 
                   {deal.stage === 'offer' && (
                     <>
-                      <ProjectInvoice inline project={p} variant={variant} deal={deal} calc={calc} agent={user} />
+                      <ProjectInvoice inline project={p} variant={pv} deal={deal} calc={calc} agent={user} />
                       {calc.belowFloor && <div className="pc-warn sm"><Mi>warning</Mi>below floor — needs manager approval</div>}
                       <button className="btn btn-g btn-full" onClick={() => setInvoice(true)}><Mi>open_in_full</Mi>Open / print invoice</button>
                       <button className="btn btn-p btn-full" onClick={holdUnit}><Mi>lock</Mi>Hold unit (checkout)</button>
@@ -631,7 +644,7 @@ export default function ProjectConsole() {
       </div>
 
       {lightbox && <div className="pc-lightbox" onClick={() => setLightbox(null)}><img src={lightbox} alt="" /><button className="pc-lb-x" onClick={() => setLightbox(null)}><Mi>close</Mi></button></div>}
-      {invoice && variant && calc && <ProjectInvoice project={p} variant={variant} deal={deal} calc={calc} agent={user} onClose={() => setInvoice(false)} />}
+      {invoice && variant && calc && <ProjectInvoice project={p} variant={pv} deal={deal} calc={calc} agent={user} onClose={() => setInvoice(false)} />}
     </div>
   );
 }

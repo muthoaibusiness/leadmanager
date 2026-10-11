@@ -31,6 +31,12 @@ export function AppProvider({ children }) {
   const [propSel, setPropSel] = useState(null);   // property id for detail view
   const [propEdit, setPropEdit] = useState(null);  // property obj for edit, {} for new
   const [propDraft, setPropDraft] = useState(null); // unsaved new project (Add Property) — stored only once saved
+  // Projects → Available Units: which tab the Projects page shows, the project
+  // and floor plan picked there, and the plan open in the floor plan editor
+  // ({ projectId, planId } — planId null for a new plan).
+  const [projTab, setProjTab] = useState('list'); // 'list' | 'units'
+  const [planSel, setPlanSel] = useState({ projectId: null, planId: null });
+  const [planEdit, setPlanEdit] = useState(null);
   const [bookSel, setBookSel] = useState(null);    // booking id for detail modal
   const [createUserRoles, setCreateUserRoles] = useState([]);
   const [editUser, setEditUser] = useState(null);   // agent obj for edit-agent modal
@@ -54,6 +60,7 @@ export function AppProvider({ children }) {
   const [dateRange, setDateRange] = useState({ preset: 'allTime', range: null });
   const [impersonator, setImpersonator] = useState(null); // the real admin while viewing as another account
   const [consoleAdmin, setConsoleAdmin] = useState(false); // open the project console straight into Admin catalog
+  const [consoleUnit, setConsoleUnit] = useState(null); // { projectId, variantId, unitId } the console opens with already picked (Available Units → Continue)
   // WhatsApp chat config (wa_settings row) — loaded once on login. Null until then.
   const [waSettings, setWaSettings] = useState(null);
   const [waUnread, setWaUnread] = useState(0); // total unread across chat threads
@@ -122,6 +129,7 @@ export function AppProvider({ children }) {
 
   const nav = useCallback((v) => {
     setView(v);
+    setProjTab('list'); // the sidebar's Projects opens the project list
     setTab(0);
     setStatusFilter('ALL');
     setSearch('');
@@ -151,6 +159,9 @@ export function AppProvider({ children }) {
     propSel, setPropSel,
     propEdit, setPropEdit,
     propDraft, setPropDraft,
+    projTab, setProjTab,
+    planSel, setPlanSel,
+    planEdit, setPlanEdit,
     bookSel, setBookSel,
     createUserRoles, setCreateUserRoles,
     editUser, setEditUser,
@@ -165,6 +176,7 @@ export function AppProvider({ children }) {
     dateRange, setDateRange,
     impersonator, impersonate, stopImpersonate,
     consoleAdmin, setConsoleAdmin,
+    consoleUnit, setConsoleUnit,
     waSettings, setWaSettings, chatOk,
     waUnread, setWaUnread,
     searchRef,

@@ -1,0 +1,150 @@
+/* Floor plan editor (FloorPlanEditor.jsx): a near full-screen modal with the
+   drawing on the left and the selected box's unit (or the plan's details) on
+   the right. Phones: full screen, the panel under the drawing. */
+
+.fpe {
+  width: min(1440px, 98vw); max-width: min(1440px, 98vw); height: 94vh; max-height: 94vh;
+  padding: 0; overflow: hidden; display: flex; flex-direction: column;
+  background: var(--bg); border: 1px solid var(--bd2); border-radius: 18px; position: relative;
+}
+.fpe-gone { padding: 24px; gap: 14px; align-items: flex-start; }
+
+.fpe-top {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px 16px; flex-wrap: wrap;
+  padding: 12px 16px; border-bottom: 1px solid var(--bd); background: var(--surf);
+}
+.fpe-ttl { display: flex; align-items: baseline; gap: 10px; min-width: 0; flex: 1 1 200px; }
+.fpe-ttl .mi { align-self: center; color: var(--accent); }
+.fpe-ttl b { font-size: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fpe-proj { color: var(--t3); font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.fpe-acts { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+.fpe-acts .btn { white-space: nowrap; }
+.fpe-ic { padding: 9px 11px; }
+.fpe-err { margin: 0; padding-top: 8px; padding-bottom: 8px; max-width: 420px; }
+.fpe-banner { margin: 10px 16px 0; }
+
+.fpe-body { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) 350px; }
+.fpe-canvas { position: relative; display: flex; flex-direction: column; gap: 8px; padding: 12px; min-height: 0; min-width: 0; }
+.fpe-stage { flex: 1; min-height: 0; }
+
+.fpe-tools { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.fpe-tools button {
+  display: inline-flex; align-items: center; gap: 6px; height: 36px; padding: 0 12px; border-radius: 9px;
+  border: 1px solid var(--bd2); background: var(--surf); color: var(--t2); font-size: 12.5px; font-weight: 700; cursor: pointer;
+}
+.fpe-tools button .mi { font-size: 18px; }
+.fpe-tools button:hover { color: var(--t1); border-color: var(--accent); }
+.fpe-tools button.on { color: var(--on-accent); background: var(--accent); border-color: var(--accent); }
+.fpe-tip { font-size: 12.5px; color: var(--t3); margin-left: 6px; min-width: 0; }
+.fpe-tip b { color: var(--t1); }
+
+.fpe-drop {
+  flex: 1; min-height: 260px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px;
+  border: 2px dashed var(--bd2); border-radius: var(--r-lg, 14px); background: var(--surf); color: var(--t2);
+  text-align: center; padding: 24px; cursor: pointer; transition: border-color var(--tr);
+}
+.fpe-drop:hover, .fpe-drop:focus-within { border-color: var(--accent); }
+.fpe-drop > .mi { font-size: 46px; color: var(--accent); }
+.fpe-drop b { color: var(--t1); font-size: 16px; }
+.fpe-drop span { font-size: 13px; max-width: 420px; }
+.fpe-drop.busy { cursor: progress; opacity: .8; }
+
+.fpe-busy {
+  position: absolute; left: 50%; top: 64px; transform: translateX(-50%); z-index: 3;
+  display: flex; align-items: center; gap: 10px; padding: 9px 16px; border-radius: 999px;
+  background: var(--surf); border: 1px solid var(--bd2); box-shadow: var(--sh-md); font-size: 13px; font-weight: 600;
+}
+.fpe-busy.static { position: static; transform: none; margin: 12px auto 0; width: max-content; }
+.fpe-spin { width: 16px; height: 16px; border-radius: 50%; border: 2px solid var(--bd2); border-top-color: var(--accent); animation: fpe-spin .8s linear infinite; }
+@keyframes fpe-spin { to { transform: rotate(360deg); } }
+
+.fpe-side { min-height: 0; overflow-y: auto; border-left: 1px solid var(--bd); padding: 12px; display: flex; flex-direction: column; gap: 12px; background: var(--surf2); }
+.fpe-card { background: var(--surf); border: 1px solid var(--bd); border-radius: var(--r-lg, 14px); padding: 14px; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.fpe-card-hd { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.fpe-del:hover { color: var(--red); border-color: var(--red); }
+.fpe-count { font-size: 12px; color: var(--t3); font-weight: 700; }
+
+.fpe-f { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+.fpe-f > span { font-size: 11px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; color: var(--t3); }
+.fpe-f input, .fpe-newtype input {
+  height: 40px; padding: 0 12px; border: 1px solid var(--bd); border-radius: 10px; background: var(--surf2);
+  color: var(--t1); font-size: 14px; min-width: 0; width: 100%;
+}
+.fpe-f input:focus, .fpe-newtype input:focus { outline: none; border-color: var(--accent); }
+.fpe-f input:disabled, .fpe-f select:disabled { opacity: .6; cursor: not-allowed; }
+.fpe-f input[aria-invalid="true"] { border-color: var(--red); }
+.fpe-f .fsel { width: 100%; max-width: 100%; border-radius: 10px; }
+.fpe-fe { font-size: 12px; color: var(--red); margin-top: -4px; }
+.fpe-two { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.fpe-two .fpe-grow { grid-column: span 1; }
+.fpe-two:has(.fpe-ord) { grid-template-columns: minmax(0, 1fr) 90px; }
+.fpe-newtype { display: flex; gap: 6px; align-items: center; }
+.fpe-calc { font-size: 12.5px; color: var(--t3); margin-top: -2px; font-variant-numeric: tabular-nums; }
+.fpe-status { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 12px; color: var(--t3); }
+.fpe-status > span:first-child { font-weight: 800; letter-spacing: .1em; text-transform: uppercase; font-size: 11px; }
+.fpe-status em { font-style: normal; }
+
+.fpe-seg { display: grid; grid-template-columns: 1fr 1fr; border: 1px solid var(--bd2); border-radius: 10px; overflow: hidden; }
+.fpe-seg button { height: 36px; border: 0; background: transparent; color: var(--t2); font-size: 12.5px; font-weight: 700; cursor: pointer; }
+.fpe-seg button + button { border-left: 1px solid var(--bd2); }
+.fpe-seg button.on { background: var(--accent); color: var(--on-accent); }
+.fpe-seg button:disabled { opacity: .45; cursor: not-allowed; }
+
+.fpe-note { display: flex; gap: 8px; align-items: flex-start; font-size: 12.5px; color: var(--t2); background: var(--surf2); border-radius: 9px; padding: 8px 10px; }
+.fpe-note .mi { font-size: 17px; color: var(--gold); }
+.fpe-note.warn .mi { color: var(--red); }
+
+.fpe-imginfo { display: flex; align-items: center; gap: 10px; font-size: 13px; min-width: 0; }
+.fpe-imginfo > span { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.fpe-imginfo small { color: var(--t3); }
+.fpe-imginfo > .mi { color: var(--t3); }
+.fpe-stats { font-size: 12.5px; color: var(--t3); }
+.fpe-problems { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 6px; }
+.fpe-problems li { display: flex; gap: 7px; align-items: flex-start; font-size: 12.5px; color: var(--red); }
+.fpe-problems .mi { font-size: 16px; }
+.fpe-help { display: flex; flex-direction: column; gap: 4px; font-size: 12.5px; color: var(--t3); line-height: 1.5; }
+.fpe-help b { color: var(--t2); }
+
+.fpe-free { gap: 2px; }
+.fpe-none { font-size: 12.5px; color: var(--t3); }
+.fpe-freerow {
+  display: grid; grid-template-columns: 9px auto minmax(0, 1fr) auto; align-items: center; gap: 9px; width: 100%;
+  min-height: 38px; padding: 4px 8px; border: 0; border-radius: 8px; background: transparent; color: var(--t1); text-align: left; cursor: pointer; font-size: 13px;
+}
+.fpe-freerow span { color: var(--t3); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fpe-freerow:hover { background: var(--surf2); }
+.fpe-freerow.on { background: color-mix(in srgb, var(--accent) 16%, transparent); }
+.fpe-freerow .fpe-place { color: var(--accent); font-weight: 700; text-transform: uppercase; letter-spacing: .05em; font-size: 11px; }
+
+/* PDF page picker — over the editor. */
+.fpe-pdf { position: absolute; inset: 0; z-index: 5; background: rgba(0, 0, 0, .55); display: flex; align-items: center; justify-content: center; padding: 16px; }
+.fpe-pdf-in {
+  width: min(980px, 100%); max-height: 100%; display: flex; flex-direction: column; background: var(--surf);
+  border: 1px solid var(--bd2); border-radius: 16px; padding: 14px; box-shadow: var(--sh-lg); min-height: 0;
+}
+.fpe-pdf-hd { display: flex; align-items: center; gap: 12px; padding-bottom: 12px; flex-wrap: wrap; }
+.fpe-pdf-hd b { font-size: 16px; }
+.fpe-pdf-hd span { color: var(--t3); font-size: 13px; flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.fpe-pdf-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; overflow-y: auto; min-height: 0; padding: 2px; }
+.fpe-pg {
+  display: flex; flex-direction: column; gap: 6px; padding: 6px; border-radius: 10px; border: 1px solid var(--bd);
+  background: var(--surf2); color: var(--t2); cursor: pointer; font-size: 12px; font-weight: 600;
+}
+.fpe-pg:hover:not(:disabled), .fpe-pg:focus-visible { border-color: var(--accent); outline: none; }
+.fpe-pg img, .fpe-pg-ph { width: 100%; aspect-ratio: 1191 / 842; object-fit: contain; background: #fff; border-radius: 6px; }
+.fpe-pg-ph { display: grid; place-items: center; color: #888; }
+
+@media (max-width: 820px) {
+  .mov:has(> .fpe) { padding: 0; }
+  /* .mov .fpe, to outrank the phone bottom-sheet rule for every .mov .modal. */
+  .mov .fpe { width: 100%; max-width: 100%; height: 100%; max-height: 100%; border-radius: 0; border: 0; }
+  .fpe-body { display: block; overflow-y: auto; }
+  .fpe-canvas { height: 62dvh; }
+  .fpe-side { border-left: 0; border-top: 1px solid var(--bd); overflow: visible; }
+  .fpe-tip { flex: 1 1 100%; margin-left: 0; }
+}
+@media (max-width: 600px) {
+  .fpe-tx, .fpe-tool-tx { display: none; }
+  .fpe-proj { display: none; }
+  .fpe-two { grid-template-columns: 1fr 1fr; }
+}

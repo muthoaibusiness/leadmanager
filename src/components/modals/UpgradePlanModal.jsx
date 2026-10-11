@@ -1,7 +1,7 @@
-import { useState, useEffect } from 'react';
 import Mi from '../Mi.jsx';
 import { useApp } from '../../context/AppContext.jsx';
 import { quotaLockedUntil, LEAD_LIMIT } from '../../lib/leadQuota.js';
+import useNow from '../../hooks/useNow.js';
 
 function remaining(ms) {
   const m = Math.max(0, Math.ceil(ms / 60000));
@@ -11,13 +11,7 @@ function remaining(ms) {
 export default function UpgradePlanModal() {
   const { modal, closeModal, user } = useApp();
   const isOpen = modal === 'upgrade-plan';
-  const [now, setNow] = useState(Date.now());
-  useEffect(() => {
-    if (!isOpen) return;
-    setNow(Date.now());
-    const t = setInterval(() => setNow(Date.now()), 30000);
-    return () => clearInterval(t);
-  }, [isOpen]);
+  const now = useNow(30000, isOpen);
   const left = isOpen ? quotaLockedUntil(user) - now : 0;
 
   return (

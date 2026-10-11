@@ -1,0 +1,12 @@
+/* Projects hero: the Available Units tab button (App.jsx PageHero). Loaded
+   with the shell, since the button shows on the Projects list before the
+   Available Units page has ever been opened. */
+.hero-acts .hero-units[aria-pressed="true"] {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+/* Phones: "Units". */
+@media (max-width: 600px) {
+  .hero-units-tx { display: none; }
+}

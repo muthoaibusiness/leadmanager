@@ -10,12 +10,19 @@ export default function TargetModal() {
 
   const db = getDB();
   const u = tgtUser ? db.users.find(x => x.id === tgtUser) : null;
+<<<<<<< HEAD
   const tgt = tgtUser ? getTarget(tgtUser) : null;
   const kn = 'Site Visits Done';
+=======
+  const kn = u?.role === ROLES.IA ? 'Meetings Set' : 'Site Visits Done';
+>>>>>>> a901325c51a6f78e10a2f0dbd2c719c473137c44
 
   useEffect(() => {
+    // Read the target here, not from render: a refresh while the modal is open
+    // must not overwrite what is being typed.
     if (isOpen && valRef.current) {
-      valRef.current.value = tgt ? tgt.value : '';
+      const t = tgtUser ? getTarget(tgtUser) : null;
+      valRef.current.value = t ? t.value : '';
     }
   }, [isOpen, tgtUser]);
 

@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import Mi from '../Mi.jsx';
 import { useApp } from '../../context/AppContext.jsx';
+import useChanged from '../../hooks/useChanged.js';
 import { setFollowUpAt } from '../../lib/db.js';
 
 // Format a Date as the local value a datetime-local input expects (no timezone).
@@ -20,7 +21,7 @@ export default function FollowUpModal() {
   const [when, setWhen] = useState(defaultWhen);
   const whenRef = useRef(null);
 
-  useEffect(() => { if (isOpen) setWhen(defaultWhen()); }, [isOpen]);
+  if (useChanged(isOpen) && isOpen) setWhen(defaultWhen());
   // Mounted while closed, so autoFocus would grab focus on page load into a
   // hidden field. Focus the date field when the modal opens instead.
   useEffect(() => { if (isOpen) whenRef.current?.focus(); }, [isOpen]);

@@ -21,13 +21,13 @@ function createBeam(width, height) {
   };
 }
 
+const opacityMap = { subtle: 0.7, medium: 0.85, strong: 1 };
+
 export function BeamsBackground({ className, intensity = 'strong' }) {
   const canvasRef = useRef(null);
   const beamsRef = useRef([]);
   const animationFrameRef = useRef(0);
   const MINIMUM_BEAMS = 20;
-
-  const opacityMap = { subtle: 0.7, medium: 0.85, strong: 1 };
 
   useEffect(() => {
     const canvas = canvasRef.current;

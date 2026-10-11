@@ -5,6 +5,13 @@
 [build.environment]
   NODE_VERSION = "22"
 
+# The pdf.js worker (floor plan PDF upload) is an .mjs module worker, which
+# browsers only start when it is served as JavaScript.
+[[headers]]
+  for = "/assets/*.mjs"
+  [headers.values]
+    Content-Type = "text/javascript; charset=utf-8"
+
 [[redirects]]
   from = "/*"
   to = "/index.html"

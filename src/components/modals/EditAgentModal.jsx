@@ -1,6 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import Mi from '../Mi.jsx';
 import { useApp } from '../../context/AppContext.jsx';
+import useChanged from '../../hooks/useChanged.js';
 import { getProperties, updateAgent } from '../../lib/db.js';
 import { rlabel } from '../../lib/helpers.js';
 import { ROLES, NI_ONLY, FEATURE_KEYS, FEATURE_LABELS, defaultFeatures } from '../../lib/constants.js';
@@ -21,18 +22,18 @@ export default function EditAgentModal() {
   const [sel, setSel] = useState(() => new Set());
   const [feat, setFeat] = useState(() => new Set());
 
-  useEffect(() => {
-    if (isOpen && a) {
-      setName(a.name || '');
-      setPhone(a.phone || '');
-      setAll(a.projects === 'ALL');
-      setSel(new Set(Array.isArray(a.projects) ? a.projects : []));
-      const initialFeatures = Array.isArray(a.allowedFeatures)
-        ? a.allowedFeatures
-        : (a.role === ROLES.EXEC ? [] : defaultFeatures(a.role));
-      setFeat(new Set(initialFeatures));
-    }
-  }, [isOpen, a]);
+  // `a` is the user object held in context, so its identity is stable until
+  // the account is edited or swapped.
+  if (useChanged(isOpen ? a : null) && isOpen && a) {
+    setName(a.name || '');
+    setPhone(a.phone || '');
+    setAll(a.projects === 'ALL');
+    setSel(new Set(Array.isArray(a.projects) ? a.projects : []));
+    const initialFeatures = Array.isArray(a.allowedFeatures)
+      ? a.allowedFeatures
+      : (a.role === ROLES.EXEC ? [] : defaultFeatures(a.role));
+    setFeat(new Set(initialFeatures));
+  }
 
   if (!isOpen || !a) return <div className={`mov${isOpen ? ' on' : ''}`} onClick={closeModal} />;
 

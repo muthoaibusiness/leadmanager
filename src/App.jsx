@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, Suspense } from 'react';
 import { useApp } from './context/AppContext.jsx';
 import { getDB, getUnreadCount, getSession, setSession, loginRemote, hasSessionId, saveDBDeferred, checkFollowUpReminders, getProperties, expireHolds, migrateTenancy, mergeDB, purgeDemoSeed, dedupeLeads, reconcileDeletions, applyRealtimeEvent, clearLocalDB, cacheBelongsTo, fetchSessionUser } from './lib/db.js';
 import { seedDB, SEED_PROPERTIES, DEMO_PROPERTIES } from './lib/seed.js';
@@ -8,22 +8,21 @@ import { pushUnreadSummary, requestNotifyPermission } from './lib/pushNotify.js'
 import { rlabel, kbd } from './lib/helpers.js';
 import { ROLES, canSee, FEATURE_KEYS, effectiveRole, DRAWER_MQ } from './lib/constants.js';
 import useMediaQuery from './hooks/useMediaQuery.js';
+import lazyChunk from './lib/lazyChunk.js';
 
 import Mi from './components/Mi.jsx';
 import SidebarGlyph from './components/SidebarGlyph.jsx';
 import RefreshButton from './components/RefreshButton.jsx';
-import { SignIn1 } from './components/ui/modern-stunning-sign-in.jsx';
 import LoadingRadar from './components/LoadingRadar.jsx';
-import LandingPage from './components/LandingPage.jsx';
 import Sidebar from './components/Sidebar.jsx';
+import BottomNav from './components/BottomNav.jsx';
 import ThemeToggle from './components/ThemeToggle.jsx';
 import NotifBell from './components/NotifBell.jsx';
 import UserMenu from './components/UserMenu.jsx';
-import LeadPanel from './components/LeadPanel.jsx';
 import Toast from './components/Toast.jsx';
-import ProjectsToaster from './components/project/ProjectsToaster.jsx';
 import DateRangePicker from './components/DateRangePicker.jsx';
 
+<<<<<<< HEAD
 import AgentDash from './components/dashboards/AgentDash.jsx';
 import TeamLeadDash from './components/dashboards/TeamLeadDash.jsx';
 import ManagementDash from './components/dashboards/ManagementDash.jsx';
@@ -42,32 +41,104 @@ import ClientsView from './components/views/ClientsView.jsx';
 import ReportsView from './components/views/ReportsView.jsx';
 import AgentPerformanceView from './components/views/AgentPerformanceView.jsx';
 import ConversationsView from './components/views/ConversationsView.jsx';
+=======
 
-import AddLeadModal from './components/modals/AddLeadModal.jsx';
-import ForwardModal from './components/modals/ForwardModal.jsx';
-import RescheduleModal from './components/modals/RescheduleModal.jsx';
-import SchedModal from './components/modals/SchedModal.jsx';
-import DealModal from './components/modals/DealModal.jsx';
-import NoteModal from './components/modals/NoteModal.jsx';
-import CreateUserModal from './components/modals/CreateUserModal.jsx';
-import EditAgentModal from './components/modals/EditAgentModal.jsx';
-import ImportModal from './components/modals/ImportModal.jsx';
-import DuplicateModal from './components/modals/DuplicateModal.jsx';
-import TargetModal from './components/modals/TargetModal.jsx';
-import DeleteUserModal from './components/modals/DeleteUserModal.jsx';
-import CredsModal from './components/modals/CredsModal.jsx';
-import FollowUpModal from './components/modals/FollowUpModal.jsx';
-import LostModal from './components/modals/LostModal.jsx';
-import PropertyViewModal from './components/modals/PropertyViewModal.jsx';
-import ProjectConsole from './components/project/ProjectConsole.jsx';
-import { migrateProjects, newProjectDraft, projectInventory } from './lib/projects.js';
-import PropertyFormModal from './components/modals/PropertyFormModal.jsx';
-import UnitBookingModal from './components/modals/UnitBookingModal.jsx';
-import BookingModal from './components/modals/BookingModal.jsx';
-import TransferLeadModal from './components/modals/TransferLeadModal.jsx';
+>>>>>>> a901325c51a6f78e10a2f0dbd2c719c473137c44
+
+import { migrateProjects, newProjectDraft, projectInventory, planProjects } from './lib/projects.js';
+import './components/project/AvailableUnitsTab.css';
 import GlobalLoadingBar from './components/GlobalLoadingBar.jsx';
-import UpgradePlanModal from './components/modals/UpgradePlanModal.jsx';
-import ChatSettingsModal from './components/modals/ChatSettingsModal.jsx';
+
+// ── Code-split pages and overlays ───────────────────────────────────────────
+// The entry chunk is the shell. Pages load when first shown; modals, the lead
+// panel and the project console mount once the browser is idle after sign-in
+// (or the moment one is asked for), and that idle slot also prefetches every
+// page so later navigation never waits on the network.
+const PAGES = {
+  InitialAgentDash: () => import('./components/dashboards/InitialAgentDash.jsx'),
+  MeetingAgentDash: () => import('./components/dashboards/MeetingAgentDash.jsx'),
+  TeamLeadDash: () => import('./components/dashboards/TeamLeadDash.jsx'),
+  ManagementDash: () => import('./components/dashboards/ManagementDash.jsx'),
+  MasterDash: () => import('./components/dashboards/MasterDash.jsx'),
+  LeadsView: () => import('./components/views/LeadsView.jsx'),
+  CalendarView: () => import('./components/views/CalendarView.jsx'),
+  TeamView: () => import('./components/views/TeamView.jsx'),
+  UsersView: () => import('./components/views/UsersView.jsx'),
+  AccountsView: () => import('./components/views/AccountsView.jsx'),
+  RequestsView: () => import('./components/views/RequestsView.jsx'),
+  ProfileView: () => import('./components/views/ProfileView.jsx'),
+  PropertiesView: () => import('./components/views/PropertiesView.jsx'),
+  AvailableUnitsView: () => import('./components/project/AvailableUnitsView.jsx'),
+  BookingsView: () => import('./components/views/BookingsView.jsx'),
+  PipelineView: () => import('./components/views/PipelineView.jsx'),
+  ClientsView: () => import('./components/views/ClientsView.jsx'),
+  ReportsView: () => import('./components/views/ReportsView.jsx'),
+  AgentPerformanceView: () => import('./components/views/AgentPerformanceView.jsx'),
+  ConversationsView: () => import('./components/views/ConversationsView.jsx'),
+};
+const OVERLAYS = {
+  LeadPanel: () => import('./components/LeadPanel.jsx'),
+  AddLeadModal: () => import('./components/modals/AddLeadModal.jsx'),
+  UpgradePlanModal: () => import('./components/modals/UpgradePlanModal.jsx'),
+  ForwardModal: () => import('./components/modals/ForwardModal.jsx'),
+  RescheduleModal: () => import('./components/modals/RescheduleModal.jsx'),
+  SchedModal: () => import('./components/modals/SchedModal.jsx'),
+  DealModal: () => import('./components/modals/DealModal.jsx'),
+  NoteModal: () => import('./components/modals/NoteModal.jsx'),
+  CreateUserModal: () => import('./components/modals/CreateUserModal.jsx'),
+  EditAgentModal: () => import('./components/modals/EditAgentModal.jsx'),
+  ImportModal: () => import('./components/modals/ImportModal.jsx'),
+  DuplicateModal: () => import('./components/modals/DuplicateModal.jsx'),
+  TargetModal: () => import('./components/modals/TargetModal.jsx'),
+  DeleteUserModal: () => import('./components/modals/DeleteUserModal.jsx'),
+  CredsModal: () => import('./components/modals/CredsModal.jsx'),
+  FollowUpModal: () => import('./components/modals/FollowUpModal.jsx'),
+  LostModal: () => import('./components/modals/LostModal.jsx'),
+  PropertyViewModal: () => import('./components/modals/PropertyViewModal.jsx'),
+  ProjectConsole: () => import('./components/project/ProjectConsole.jsx'),
+  FloorPlanEditor: () => import('./components/project/FloorPlanEditor.jsx'),
+  PropertyFormModal: () => import('./components/modals/PropertyFormModal.jsx'),
+  UnitBookingModal: () => import('./components/modals/UnitBookingModal.jsx'),
+  BookingModal: () => import('./components/modals/BookingModal.jsx'),
+  TransferLeadModal: () => import('./components/modals/TransferLeadModal.jsx'),
+  ChatSettingsModal: () => import('./components/modals/ChatSettingsModal.jsx'),
+};
+
+const lazyAll = (loaders) => Object.fromEntries(Object.entries(loaders).map(([k, f]) => [k, lazyChunk(f)]));
+
+const { InitialAgentDash, MeetingAgentDash, TeamLeadDash, ManagementDash, MasterDash, LeadsView, CalendarView, TeamView, UsersView, AccountsView, RequestsView, ProfileView, PropertiesView, AvailableUnitsView, BookingsView, PipelineView, ClientsView, ReportsView, AgentPerformanceView, ConversationsView } = lazyAll(PAGES);
+const OVERLAY_COMPONENTS = Object.entries(lazyAll(OVERLAYS));
+const LandingPage = lazyChunk(() => import('./components/LandingPage.jsx'));
+const SignIn1 = lazyChunk(() => import('./components/ui/modern-stunning-sign-in.jsx').then(m => ({ default: m.SignIn1 })));
+// goey-toast brings framer-motion and sonner.
+const ProjectsToaster = lazyChunk(() => import('./components/project/ProjectsToaster.jsx'));
+
+// Modals, the lead panel and the project console. Each has its own Suspense so
+// one slow chunk never holds up another, and once mounted they stay mounted
+// (closed modals still render their backdrop for the open transition).
+function Overlays() {
+  const { user, modal, panLead } = useApp();
+  const [mounted, setMounted] = useState(false);
+  if (!mounted && (modal || panLead)) setMounted(true);
+  useEffect(() => {
+    if (mounted || !user) return;
+    let idleId = 0;
+    const t = setTimeout(() => {
+      const go = () => {
+        Object.values(PAGES).forEach(f => f().catch(() => { /* retried on first show */ }));
+        setMounted(true);
+      };
+      if (typeof requestIdleCallback === 'function') idleId = requestIdleCallback(go, { timeout: 4000 });
+      else go();
+    }, 1000);
+    return () => {
+      clearTimeout(t);
+      if (idleId && typeof cancelIdleCallback === 'function') cancelIdleCallback(idleId);
+    };
+  }, [mounted, user]);
+  if (!mounted) return null;
+  return OVERLAY_COMPONENTS.map(([name, C]) => <Suspense key={name} fallback={null}><C /></Suspense>);
+}
 
 // ── Loading screen ──────────────────────────────────────────────────────────
 function LoadingScreen({ visible }) {
@@ -126,12 +197,12 @@ function LoginPage({ onLogin, onBack }) {
         </div>
       </div>
       <div className="ln-right">
-        <SignIn1
+        <Suspense fallback={null}><SignIn1
           email={email} setEmail={setEmail}
           password={pw} setPassword={setPw}
           error={err} loading={loading}
           onSignIn={doLogin} onKeyDown={handleKey} onBack={onBack}
-        />
+        /></Suspense>
       </div>
     </div>
   );
@@ -145,25 +216,27 @@ function PageHeader({ shown, showBtnRef }) {
   return (
     <header className="pg-head">
       {/* Show-sidebar button, same glyph as the sidebar's hide button: always
-          there for the ≤1023px drawer, on desktop only while collapsed (CSS). */}
+          there for the 768–1023px drawer, on desktop only while collapsed, and
+          hidden on phones, where the bottom bar's More opens the drawer (CSS). */}
       <button ref={showBtnRef} className="ham" onClick={() => setSidebarShown(true)}
         aria-label="Show sidebar" aria-controls="app-sidebar" aria-expanded={shown}
         title={`Show sidebar (${kbd('\\')})`}>
         <SidebarGlyph />
       </button>
       <div style={{ flex: 1 }} />
-      {/* account → date filter → notifications */}
-      <UserMenu />
+      {/* theme → date filter → notifications → account. Phones (CSS) hide the
+          theme button and move the account to the left, after the show button. */}
+      <ThemeToggle />
       <DateRangePicker />
-      <span className="pg-div" />
       <NotifBell />
+      <UserMenu />
     </header>
   );
 }
 
 // ── In-body hero header (eyebrow + big title + subtitle + actions) ───────────
 function PageHero() {
-  const { user, view, agentFilter, teamFilter, setAgentFilter, setTeamFilter, setTab, setStatusFilter, setSearch, openModal, setCreateUserRoles, setPropSel, setPropDraft, setConsoleAdmin, leadCounts } = useApp();
+  const { user, view, agentFilter, teamFilter, setAgentFilter, setTeamFilter, setTab, setStatusFilter, setSearch, openModal, setCreateUserRoles, setPropSel, setPropDraft, setConsoleAdmin, leadCounts, projTab, setProjTab, planSel, setPlanEdit } = useApp();
 
   // The Customers count is NOT computed here. It has to agree with the table
   // underneath it, and the table's query is built from filters this component
@@ -212,6 +285,13 @@ function PageHero() {
     // count of exactly what is listed below.
     sub = view === 'leads' && leadCounts?.total != null ? `${leadCounts.total} filtered customers` : 'Filtered customers';
   }
+  // Projects → Available Units: the floor plan tab of the same page.
+  const unitsTab = view === 'properties' && projTab === 'units';
+  if (unitsTab) {
+    const plans = props.reduce((s, p) => s + (p.floorPlans || []).length, 0);
+    title = 'Available Units';
+    sub = `${propAvail} unit${propAvail === 1 ? '' : 's'} available · ${plans} floor plan${plans === 1 ? '' : 's'}`;
+  }
 
   // actions
   let actions = [];
@@ -228,14 +308,25 @@ function PageHero() {
   if (view === 'team' && user.role === ROLES.TL) actions.push(<button key="add-agent" className="btn btn-p" onClick={() => { setCreateUserRoles([ROLES.AGENT, ROLES.EXEC]); openModal('create-user'); }}><Mi>person_add</Mi>Add Agent</button>);
   // Add Property opens an unsaved draft; the project is created only when the
   // catalog's Save product succeeds (see ProjectCatalog / saveNewProject).
-  if (view === 'properties' && user.role === ROLES.MGMT) actions.push(<button key="add-prop" className="btn btn-p" onClick={() => { const d = newProjectDraft(user.companyId); setPropDraft(d); setConsoleAdmin(true); setPropSel(d.id); openModal('project-console'); }}><Mi>add</Mi>Add Property</button>);
+  // Available Units sits just before it; on that tab Management's Add Property
+  // gives way to Add floor plan, for the project picked there.
+  if (view === 'properties') {
+    actions.push(<button key="units" type="button" className="btn btn-g hero-units" aria-pressed={unitsTab} onClick={() => setProjTab(unitsTab ? 'list' : 'units')}><Mi>map</Mi><span className="hero-units-tx">Available </span>Units</button>);
+  }
+  if (view === 'properties' && user.role === ROLES.MGMT && unitsTab) {
+    const list = planProjects();
+    const target = list.find(p => p.id === planSel.projectId) || list[0];
+    actions.push(<button key="add-plan" type="button" className="btn btn-p" disabled={!target} onClick={() => { setPlanEdit({ projectId: target.id, planId: null }); openModal('floorplan-editor'); }}><Mi>add</Mi>Add floor plan</button>);
+  } else if (view === 'properties' && user.role === ROLES.MGMT) actions.push(<button key="add-prop" className="btn btn-p" onClick={() => { const d = newProjectDraft(user.companyId); setPropDraft(d); setConsoleAdmin(true); setPropSel(d.id); openModal('project-console'); }}><Mi>add</Mi>Add Property</button>);
 
   return (
     <div className={`hero${view === 'pipeline' ? ' hero-compact' : ''}`}>
       <div className="hero-main">
         {drilled
           ? <button className="hero-back" onClick={clearDrill}><Mi>arrow_back</Mi>All Prospects</button>
-          : <div className="hero-eyebrow">{eyebrow}</div>}
+          : unitsTab
+            ? <button className="hero-back" onClick={() => setProjTab('list')}><Mi>arrow_back</Mi>All Projects</button>
+            : <div className="hero-eyebrow">{eyebrow}</div>}
         <h1 className="hero-title">{title}</h1>
         {sub && <div className="hero-sub">{sub}</div>}
       </div>
@@ -246,7 +337,7 @@ function PageHero() {
 
 // ── Main page body ──────────────────────────────────────────────────────────
 function PageBody() {
-  const { user, view } = useApp();
+  const { user, view, projTab } = useApp();
   if (!user) return null;
 
   if (user.role === ROLES.MASTER && view !== 'profile') return <MasterDash />; // master sees the company-wise overview
@@ -263,7 +354,7 @@ function PageBody() {
   if (view === 'calendar') return <CalendarView />;
   if (view === 'pipeline') return <PipelineView />;
   if (view === 'clients') return <ClientsView />;
-  if (view === 'properties') return <PropertiesView />;
+  if (view === 'properties') return projTab === 'units' ? <AvailableUnitsView /> : <PropertiesView />;
   if (view === 'bookings') return <BookingsView />;
   if (view === 'reports') return <ReportsView />;
   if (view === 'agentperf') return <AgentPerformanceView />;
@@ -327,7 +418,9 @@ function AppShell() {
       if (drawer || a === showBtnRef.current) hideBtnRef.current?.focus({ preventScroll: true });
     } else if (document.getElementById('app-sidebar')?.contains(a)
       || (a === document.body && lastFocus.current && !lastFocus.current.isConnected)) {
-      showBtnRef.current?.focus({ preventScroll: true });
+      // Phones hide the show button; the bottom bar's More tab opens the drawer there.
+      const back = showBtnRef.current?.getClientRects().length ? showBtnRef.current : document.querySelector('.bnav-more');
+      back?.focus({ preventScroll: true });
     }
   }, [shown, drawer]);
 
@@ -336,12 +429,12 @@ function AppShell() {
       <Sidebar hideBtnRef={hideBtnRef} />
       <div className="page" inert={drawerOpen}>
         <PageHeader shown={shown} showBtnRef={showBtnRef} />
-        <main className="pg-body"><div className={`pg-inner${wide ? ' pg-wide' : ''}`}><PageHero /><PageBody /></div></main>
+        <main className="pg-body"><div className={`pg-inner${wide ? ' pg-wide' : ''}`}><PageHero /><Suspense fallback={null}><PageBody /></Suspense></div></main>
       </div>
-      <ThemeToggle inert={drawerOpen} />
+      <BottomNav inert={drawerOpen} />
       {/* goey-toast host for every tab but Projects, which renders its own:
           Accounts' toasts and the form discard questions show here. */}
-      {view !== 'properties' && <ProjectsToaster />}
+      {view !== 'properties' && <Suspense fallback={null}><ProjectsToaster /></Suspense>}
     </div>
   );
 }
@@ -501,14 +594,14 @@ export default function App() {
     else setTimeout(open, 0);
 
     return () => { cancelled = true; cancelAnimationFrame(refreshFrame); if (unsub) unsub(); };
-  }, [user?.id]);
+  }, [user?.id]); // eslint-disable-line react-hooks/exhaustive-deps -- per account: a fresh user object for the same id must not reconnect the socket
 
   // Auto-release expired unit holds every minute
   useEffect(() => {
-    if (!user) return;
+    if (!user?.id) return;
     const t = setInterval(() => { if (expireHolds()) refreshDB(); }, 60000);
     return () => clearInterval(t);
-  }, [user?.id]);
+  }, [user?.id, refreshDB]);
 
   // Keep the user on a view they're allowed to see (e.g. Executives with no
   // dashboard land on their first granted feature instead of a forbidden page).
@@ -521,12 +614,12 @@ export default function App() {
       const first = FEATURE_KEYS.find(k => canSee(user, k)) || 'profile';
       setView(first);
     }
-  }, [user?.id, view, user?.allowedFeatures, chatOk]);
+  }, [user, view, chatOk, setView]);
 
   // Chat config drives both sidebar visibility and the relay URL. Load it once
   // per signed-in account; a missing table just leaves chat switched off.
   useEffect(() => {
-    if (!user) { setWaSettings(null); return; }
+    if (!user?.id) { setWaSettings(null); return; }
     let alive = true;
     waLoadSettings()
       .then(s => { if (alive) setWaSettings(s); })
@@ -598,42 +691,18 @@ export default function App() {
       revealApp();
       if (u) summarizeUnread(u);
     })();
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps -- mount only: restores the session once
 
   return (
     <>
       {/* Speaks for every fetch in the app — see GlobalLoadingBar / netActivity. */}
       <GlobalLoadingBar />
       {loadVisible && <LoadingScreen visible={loading} />}
-      {!user && !loading && !showLogin && <LandingPage onEnter={() => setShowLogin(true)} />}
+      {!user && !loading && !showLogin && <Suspense fallback={null}><LandingPage onEnter={() => setShowLogin(true)} /></Suspense>}
       {!user && !loading && showLogin && <LoginPage onLogin={enterApp} onBack={() => setShowLogin(false)} />}
       {user && <AppShell />}
       {entering && <PostLoginLoader />}
-      <LeadPanel />
-      {/* Modals */}
-      <AddLeadModal />
-      <UpgradePlanModal />
-      <ForwardModal />
-      <RescheduleModal />
-      <SchedModal />
-      <DealModal />
-      <NoteModal />
-      <CreateUserModal />
-      <EditAgentModal />
-      <ImportModal />
-      <DuplicateModal />
-      <TargetModal />
-      <DeleteUserModal />
-      <CredsModal />
-      <FollowUpModal />
-      <LostModal />
-      <PropertyViewModal />
-      <ProjectConsole />
-      <PropertyFormModal />
-      <UnitBookingModal />
-      <BookingModal />
-      <TransferLeadModal />
-      <ChatSettingsModal />
+      <Overlays />
       <Toast />
     </>
   );

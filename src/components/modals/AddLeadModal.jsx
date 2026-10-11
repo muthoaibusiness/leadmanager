@@ -7,6 +7,7 @@ import { DEFAULT_COUNTRY, phoneCountry, resolvePhone } from '../../lib/phone.js'
 import ProjectInterestPicker from '../ProjectInterestPicker.jsx';
 import PhoneField from '../PhoneField.jsx';
 import useDiscardGuard from '../../hooks/useDiscardGuard.js';
+import useChanged from '../../hooks/useChanged.js';
 
 const leadCode = (l) => l.externalId || ('#' + String(l.id || '').slice(-6).toUpperCase());
 
@@ -16,6 +17,26 @@ const formKey = (f) => JSON.stringify([
   f.name, f.company, f.profession, f.city, f.email,
   f.phones.map(p => p.text.trim()).filter(Boolean), f.interest, f.source, f.pending || '',
 ].map(v => (typeof v === 'string' ? v.trim() : v)));
+
+// What the form opens with: blank for a new lead, the lead's values when
+// editing, or null when the lead being edited is not in the cache.
+const initialForm = (isEdit, panLead, defaultSource) => {
+  if (!(isEdit && panLead)) {
+    return { name: '', company: '', source: defaultSource, interest: '', profession: '', city: '', email: '', phones: [{ text: '', cc: DEFAULT_COUNTRY }] };
+  }
+  const l = getLead(panLead);
+  if (!l) return null;
+  return {
+    name: l.name || '',
+    company: l.company && l.company !== '—' ? l.company : '',
+    source: l.source || defaultSource,
+    interest: l.propertyInterest || '',
+    profession: l.profession || '',
+    city: l.city || '',
+    email: l.email || '',
+    phones: (l.phones?.length ? l.phones : [l.phone || '']).map(text => ({ text, cc: DEFAULT_COUNTRY })),
+  };
+};
 
 export default function AddLeadModal() {
   const { modal, closeModal, user, panLead, refreshDB, showToast, setPanLead } = useApp();
@@ -53,34 +74,28 @@ export default function AddLeadModal() {
   const modalRef = useRef(null);
   const baselineRef = useRef('');
 
+  // Opening resets the form in two halves: the controlled fields during render,
+  // the uncontrolled inputs (and the baseline read from them) after commit.
+  if (useChanged(isOpen && `${isEdit}:${panLead}:${defaultSource}`) && isOpen) {
+    setSaving(false); // never reopen stuck in a saving state
+    const f = initialForm(isEdit, panLead, defaultSource);
+    if (f) {
+      setSource(f.source);
+      setInterest(f.interest);
+      setPhones(f.phones);
+    }
+  }
   useEffect(() => {
     if (!isOpen) return;
-    setSaving(false); // never reopen stuck in a saving state
-    let f = { name: '', company: '', source: defaultSource, interest: '', profession: '', city: '', email: '', phones: [{ text: '', cc: DEFAULT_COUNTRY }] };
-    if (isEdit && panLead) {
-      const l = getLead(panLead);
-      if (!l) return;
-      f = {
-        name: l.name || '',
-        company: l.company && l.company !== '—' ? l.company : '',
-        source: l.source || defaultSource,
-        interest: l.propertyInterest || '',
-        profession: l.profession || '',
-        city: l.city || '',
-        email: l.email || '',
-        phones: (l.phones?.length ? l.phones : [l.phone || '']).map(text => ({ text, cc: DEFAULT_COUNTRY })),
-      };
-    }
+    const f = initialForm(isEdit, panLead, defaultSource);
+    if (!f) return;
     nameRef.current.value = f.name;
     companyRef.current.value = f.company;
-    setSource(f.source);
-    setInterest(f.interest);
     profRef.current.value = f.profession;
     cityRef.current.value = f.city;
     emailRef.current.value = f.email;
-    setPhones(f.phones);
     baselineRef.current = formKey(f);
-  }, [isOpen, isEdit, panLead]);
+  }, [isOpen, isEdit, panLead, defaultSource]);
 
   // Text typed into the project picker but not yet added as a tag counts too.
   const isDirty = () => formKey({

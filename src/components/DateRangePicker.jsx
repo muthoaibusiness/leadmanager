@@ -98,12 +98,14 @@ export default function DateRangePicker() {
   const ref = useRef();
 
   // sync left month when opening
-  useEffect(()=>{
-    if(!open) return;
-    const now=new Date();
-    setLeftMonth(now.getMonth()===0?11:now.getMonth()-1);
-    setLeftYear(now.getMonth()===0?now.getFullYear()-1:now.getFullYear());
-  },[open]);
+  function toggle() {
+    if(!open){
+      const now=new Date();
+      setLeftMonth(now.getMonth()===0?11:now.getMonth()-1);
+      setLeftYear(now.getMonth()===0?now.getFullYear()-1:now.getFullYear());
+    }
+    setOpen(!open);
+  }
 
   // close on outside click
   useEffect(()=>{
@@ -153,11 +155,13 @@ export default function DateRangePicker() {
 
   return (
     <div className="drp-wrap" ref={ref}>
-      <button className={`drp-trigger${open?' open':''}`} onClick={()=>setOpen(o=>!o)}>
-        <Mi aria-hidden="true">date_range</Mi>
-        <span className="drp-trigger-preset">{activeLabel}</span>
-        {rangeLabel && <span className="drp-trigger-range">{rangeLabel}</span>}
-        <Mi aria-hidden="true">arrow_drop_down</Mi>
+      {/* Header icon button: the calendar alone. The active filter is in the
+          tooltip / label, and a dot marks any filter other than All time. */}
+      <button type="button" className={`hd-ic drp-trigger${open?' open':''}`} onClick={toggle}
+        title={`Date filter: ${activeLabel}${rangeLabel ? ` (${rangeLabel})` : ''}`}
+        aria-label={`Date filter: ${activeLabel}${rangeLabel ? `, ${rangeLabel}` : ''}`} aria-expanded={open}>
+        <Mi aria-hidden="true">calendar_month</Mi>
+        {active !== 'allTime' && <span className="drp-dot" aria-hidden="true" />}
       </button>
 
       {open && (

@@ -1,6 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import Mi from '../Mi.jsx';
 import { useApp } from '../../context/AppContext.jsx';
+import useChanged from '../../hooks/useChanged.js';
 import { addPropertyFn, updatePropertyFn, unitsFromCodes } from '../../lib/db.js';
 import { PROPERTY_TYPES, PROPERTY_STATUS, PROJECT_TYPES } from '../../lib/constants.js';
 
@@ -19,8 +20,9 @@ export default function PropertyFormModal() {
   const [f, setF] = useState(BLANK);
   const [docs, setDocs] = useState([]);
 
-  useEffect(() => {
-    if (!isOpen) return;
+  // propEdit is the context's object, stable until replaced; 'new' stands in
+  // for "opened with nothing to edit" so that opening still resets the form.
+  if (useChanged(isOpen ? (propEdit || 'new') : null) && isOpen) {
     if (isEdit) {
       const p = propEdit;
       setF({
@@ -38,7 +40,7 @@ export default function PropertyFormModal() {
       setF(BLANK);
       setDocs([]);
     }
-  }, [isOpen, isEdit, propEdit]);
+  }
 
   if (!isOpen) return <div className="mov" onClick={closeModal} />;
 

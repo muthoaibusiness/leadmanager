@@ -5,6 +5,7 @@ import { useApp } from '../context/AppContext.jsx';
 import { getHoldRequests } from '../lib/db.js';
 import { kbd } from '../lib/helpers.js';
 import { canSee } from '../lib/constants.js';
+import { NAV_META } from '../lib/navMeta.js';
 
 // Grouped, role-scoped navigation (Muthoclo admin pattern).
 // Sections render a label + their visible items; a group renders a header that
@@ -43,6 +44,7 @@ export default function Sidebar({ hideBtnRef }) {
   const visible = (k) => (GROUPS[k] ? GROUPS[k].kids.some(c => canSee(user, c.key))
     : k === 'conversations' ? chatOk : canSee(user, k));
 
+<<<<<<< HEAD
   const META = {
     dashboard: { ico: 'home', lbl: 'Home' },
     conversations: { ico: 'forum', lbl: 'Conversations' },
@@ -60,6 +62,8 @@ export default function Sidebar({ hideBtnRef }) {
     profile: { ico: 'account_circle', lbl: 'Profile' },
   };
 
+=======
+>>>>>>> a901325c51a6f78e10a2f0dbd2c719c473137c44
   const pendingHolds = role === 'MANAGEMENT' ? getHoldRequests().filter(r => r.status === 'pending').length : 0;
 
   // A plain function, not a component declared in here: a component type made
@@ -95,7 +99,7 @@ export default function Sidebar({ hideBtnRef }) {
         </div>
       );
     }
-    const m = META[k];
+    const m = NAV_META[k];
     let badge = 0;
     if (k === 'requests' && pendingHolds > 0) badge = pendingHolds;
     if (k === 'conversations' && waUnread > 0) badge = waUnread;
