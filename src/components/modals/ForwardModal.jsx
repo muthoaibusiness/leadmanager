@@ -17,6 +17,9 @@ const SHARED_OPTS = [
 ];
 // Working-hour windows by meeting type (24h).
 const HOURS = { ONLINE: { min: 10, max: 22, label: '10 AM – 10 PM' }, OFFLINE: { min: 10, max: 18, label: '10 AM – 6 PM' } };
+// Same role→badge-tone mapping as the Accounts roster, so a role reads the
+// same color everywhere in the app.
+const ROLE_BADGE_CLS = { AGENT: 's-new', TEAM_LEAD: 's-negotiating', MANAGEMENT: 's-deal_closed_won', EXECUTIVE: 's-negotiating' };
 
 // Three flows share this modal:
 //   forward-tl     pick a Team Lead, then the offer (the lead changes hands)
@@ -52,13 +55,14 @@ export default function ForwardModal() {
   // agent's snapshot holds only its own user row since the load became
   // per-account, so its teammates are simply not in it.
   const [targets, setTargets] = useState([]);
+  const [pq, setPq] = useState('');
 
   const targetRole = isAG ? ROLES.AGENT : ROLES.TL;
   const toggleShared = (k) => setShared(s => s.includes(k) ? s.filter(x => x !== k) : [...s, k]);
 
   if (useChanged(isOpen && modal) && isOpen) {
     setSelected(null); setStep(isMA ? 2 : 1); setProjectId(''); setOurOffer(''); setClientOffer(''); setTotalSft(''); setOfferNotes('');
-    setMeetingType('ONLINE'); setMeetingAt(''); setMeetingLink(''); setShared([]); setTargets([]);
+    setMeetingType('ONLINE'); setMeetingAt(''); setMeetingLink(''); setShared([]); setTargets([]); setPq('');
   }
 
   const db = getDB();
@@ -150,21 +154,32 @@ export default function ForwardModal() {
         {step === 1 && (
           <>
             <div className="m-body">
-              <div className="fl">
-                <label>{isAG ? 'Select teammate' : 'Select ' + rlabel(targetRole)}</label>
-                <select className="finp" value={selected || ''} onChange={e => setSelected(e.target.value)}>
-                  <option value="">{targets.length ? '— Choose someone —' : 'No other teammates yet'}</option>
-                  {targets.map(u => (
-                    <option key={u.id} value={u.id}>{u.name} ({u.email})</option>
-                  ))}
-                </select>
+              <div className="fwd-search">
+                <Mi>search</Mi>
+                <input
+                  placeholder={isAG ? 'Search teammate…' : 'Search ' + rlabel(targetRole).toLowerCase() + '…'}
+                  value={pq} onChange={e => setPq(e.target.value)} autoFocus
+                />
               </div>
-              {selected && (() => { const u = targets.find(x => x.id === selected); return u ? (
-                <div className="ap-preview">
-                  <div className="ap-av" style={{ background: avc(u.name) }}>{ini(u.name)}</div>
-                  <div><div className="ap-n">{u.name}</div><div className="ap-r">{rlabel(u.role)} · {u.email}</div></div>
-                </div>
-              ) : null; })()}
+              <div className="fwd-list">
+                {targets
+                  .filter(u => { const q = pq.trim().toLowerCase(); return !q || u.name.toLowerCase().includes(q) || u.email.toLowerCase().includes(q); })
+                  .map(u => (
+                    <button type="button" key={u.id} className={`fwd-row${selected === u.id ? ' on' : ''}`} onClick={() => setSelected(u.id)}>
+                      <div className="fwd-av" style={{ background: avc(u.name) }}>{ini(u.name)}</div>
+                      <div className="fwd-mid">
+                        <div className="fwd-name">{u.name}</div>
+                        <div className="fwd-email">{u.email}</div>
+                      </div>
+                      <span className={`bdg ${ROLE_BADGE_CLS[u.role] || 's-new'}`}>{rlabel(u.role)}</span>
+                      <Mi className="fwd-ck">{selected === u.id ? 'check_circle' : 'radio_button_unchecked'}</Mi>
+                    </button>
+                  ))}
+                {!targets.length && <div className="fwd-empty"><Mi>group_off</Mi>No other teammates yet</div>}
+                {!!targets.length && !targets.some(u => !pq.trim() || u.name.toLowerCase().includes(pq.trim().toLowerCase()) || u.email.toLowerCase().includes(pq.trim().toLowerCase())) && (
+                  <div className="fwd-empty"><Mi>search_off</Mi>No match for "{pq}"</div>
+                )}
+              </div>
             </div>
             <div className="m-ft">
               <button className="btn btn-g" onClick={closeModal}>Cancel</button>
