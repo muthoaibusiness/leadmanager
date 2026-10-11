@@ -1231,7 +1231,7 @@ export function addPropertyFn(p) {
 // cloud row. Every other property write sends the whole cached row, and a stale
 // cached copy of the plans would overwrite one another manager just saved, so
 // those writes leave the column (and the local copy) alone. Inserts leave it
-// out too: the column defaults to [] (and may not exist before migration 0020).
+// out too: the column defaults to [] (and may not exist before migration 0021).
 function withoutPlans(upd) {
   if (!upd || !('floorPlans' in upd)) return upd;
   const rest = { ...upd };
@@ -1325,7 +1325,7 @@ export async function patchPropertyChecked(id, upd) {
   const res = await sbUpdate('properties', id, row, { strict: true });
   if (res.missing) {
     return { ok: false, error: res.missing === 'floor_plans'
-      ? 'the database has no floor_plans column yet (apply migration 0020)'
+      ? 'the database has no floor_plans column yet (apply migration 0021)'
       : `the database is missing the ${res.missing} column` };
   }
   if (!res.ok) return { ok: false, error: writeError(res) };

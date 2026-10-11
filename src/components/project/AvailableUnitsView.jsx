@@ -39,11 +39,11 @@ export default function AvailableUnitsView() {
   const [canSave, setCanSave] = useState(null); // floor_plans column present (null = still asking)
   const cardRef = useRef(null);
 
-  // Saving needs migration 0020's column; only Management is told about it.
+  // Saving needs migration 0021's column; only Management is told about it.
   useEffect(() => {
     if (!isAdmin) return;
     let live = true;
-    hasColumn('properties', 'floor_plans', 'Floor plans cannot be saved. Apply supabase/migrations/0020_floor_plans.sql.')
+    hasColumn('properties', 'floor_plans', 'Floor plans cannot be saved. Apply supabase/migrations/0021_floor_plans.sql.')
       .then(ok => { if (live) setCanSave(ok); });
     return () => { live = false; };
   }, [isAdmin]);
@@ -157,7 +157,7 @@ export default function AvailableUnitsView() {
       {isAdmin && canSave === false && (
         <div className="fp-banner" role="status">
           <Mi>database</Mi>
-          <div><b>Floor plans need database update 0020.</b> Apply <code>supabase/migrations/0020_floor_plans.sql</code> in Supabase; until then plans can be viewed but not saved.</div>
+          <div><b>Floor plans need database update 0021.</b> Apply <code>supabase/migrations/0021_floor_plans.sql</code> in Supabase; until then plans can be viewed but not saved.</div>
         </div>
       )}
 

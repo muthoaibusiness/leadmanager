@@ -96,7 +96,7 @@ function Editor({ projectId, planId }) {
 
   useEffect(() => {
     let live = true;
-    hasColumn('properties', 'floor_plans', 'Floor plans cannot be saved. Apply supabase/migrations/0020_floor_plans.sql.')
+    hasColumn('properties', 'floor_plans', 'Floor plans cannot be saved. Apply supabase/migrations/0021_floor_plans.sql.')
       .then(ok => { if (live) setCanSave(ok); });
     return () => { live = false; };
   }, []);
@@ -280,7 +280,7 @@ function Editor({ projectId, planId }) {
       toast.warning('Not saved yet', problems[0]);
       return;
     }
-    if (canSave === false) { toast.error('Cannot save', 'Floor plans need database update 0020 first.'); return; }
+    if (canSave === false) { toast.error('Cannot save', 'Floor plans need database update 0021 first.'); return; }
     setSaving(true);
     setErr('');
     const res = await saveFloorPlan({
@@ -394,14 +394,14 @@ function Editor({ projectId, planId }) {
             {err && <div className="pc-warn fpe-err"><Mi>error</Mi>{err}</div>}
             <button type="button" className="btn btn-g" onClick={guard.requestClose} disabled={saving}><Mi>close</Mi><span className="fpe-tx">Discard</span></button>
             <button type="button" className="btn btn-p" onClick={save} disabled={saving || !!busy || canSave === false}
-              title={canSave === false ? 'Needs database update 0020' : undefined}>
+              title={canSave === false ? 'Needs database update 0021' : undefined}>
               <Mi>save</Mi>{saving ? (draft.pending ? 'Uploading…' : 'Saving…') : <>Save<span className="fpe-tx"> plan</span></>}
             </button>
           </div>
         </header>
 
         {canSave === false && (
-          <div className="fp-banner fpe-banner" role="status"><Mi>database</Mi><div><b>Saving is off.</b> Floor plans need database update 0020 (<code>supabase/migrations/0020_floor_plans.sql</code>).</div></div>
+          <div className="fp-banner fpe-banner" role="status"><Mi>database</Mi><div><b>Saving is off.</b> Floor plans need database update 0021 (<code>supabase/migrations/0021_floor_plans.sql</code>).</div></div>
         )}
 
         <div className="fpe-body">

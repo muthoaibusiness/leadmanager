@@ -635,7 +635,7 @@ export function pToR(p) {
     variants: p.variants || [], addons: p.addons || [], media: p.media || {},
     fast_close_pct: p.fastClosePct || 0, fast_close_days: p.fastCloseDays || 0,
     listing: p.listing || '', approval: p.approval || '',
-    // Available Units floor plans (migration 0020). Only patchPropertyChecked
+    // Available Units floor plans (migration 0021). Only patchPropertyChecked
     // writes this column; the other property writes drop it (see propRow in db.js).
     floor_plans: p.floorPlans || [],
   };
@@ -676,7 +676,7 @@ export async function sbGetPropertyRow(id) {
   }
 }
 
-// Project files in Supabase Storage (bucket from migration 0020): public read,
+// Project files in Supabase Storage (bucket from migration 0021): public read,
 // anon insert only, so every upload takes a new path and nothing is replaced.
 export const PROJECT_BUCKET = 'project-media';
 export async function uploadProjectMedia(blob, path) {
@@ -690,7 +690,7 @@ export async function uploadProjectMedia(blob, path) {
     if (!r.ok) {
       let b = ''; try { b = await r.text(); } catch { /* unreadable body: report the status alone */ }
       console.error('[storage] project media upload failed', r.status, b);
-      if (r.status === 404 || /bucket not found/i.test(b)) return { ok: false, error: 'the project-media storage bucket is missing (apply migration 0020)' };
+      if (r.status === 404 || /bucket not found/i.test(b)) return { ok: false, error: 'the project-media storage bucket is missing (apply migration 0021)' };
       return { ok: false, error: `the upload was rejected (HTTP ${r.status})` };
     }
     return { ok: true, url: `${SB_URL}/storage/v1/object/public/${PROJECT_BUCKET}/${path}` };
