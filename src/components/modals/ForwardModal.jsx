@@ -67,9 +67,11 @@ export default function ForwardModal() {
   useEffect(() => {
     if (!(isTL || isAG) || !user?.teamId) return;
     let live = true;
-    // Agent hand-off: every other agent on the team — Executives work leads as
-    // agents too (see effectiveRole), so they are valid recipients.
-    const roleQ = isAG ? `role=in.(${ROLES.AGENT},${ROLES.EXEC})` : `role=eq.${targetRole}`;
+    // Agent hand-off: every other agent on the team, including the Team Lead —
+    // Executives work leads as agents too (see effectiveRole), so they are
+    // valid recipients. (This is a plain reassignment, not the SITE_VISIT_DONE
+    // → Team Lead closing hand-off below, which still requires an offer.)
+    const roleQ = isAG ? `role=in.(${ROLES.AGENT},${ROLES.EXEC},${ROLES.TL})` : `role=eq.${targetRole}`;
     sbGetUsersLite(`${roleQ}&team_id=eq.${user.teamId}&is_active=not.eq.false`)
       .then(rows => { if (live) setTargets((rows || []).map(rToU).filter(u => u.id !== user.id).sort((a, b) => (a.name || '').localeCompare(b.name || ''))); });
     return () => { live = false; };
@@ -141,7 +143,7 @@ export default function ForwardModal() {
     <div className={`mov${isOpen ? ' on' : ''}`} onClick={e => { if (e.target === e.currentTarget) closeModal(); }}>
       <div className="modal">
         <div className="m-hd">
-          <div className="m-ttl">{isMA ? 'Set Meeting' : 'Forward to ' + rlabel(targetRole)}</div>
+          <div className="m-ttl">{isMA ? 'Set Meeting' : isAG ? 'Forward to Teammate' : 'Forward to ' + rlabel(targetRole)}</div>
           <button className="m-x" onClick={closeModal}><Mi>close</Mi></button>
         </div>
 
@@ -150,9 +152,9 @@ export default function ForwardModal() {
           <>
             <div className="m-body">
               <div className="fl">
-                <label htmlFor={`${uid}target`}>Select {rlabel(targetRole)}</label>
+                <label htmlFor={`${uid}target`}>{isAG ? 'Select teammate' : 'Select ' + rlabel(targetRole)}</label>
                 <select id={`${uid}target`} className="finp" value={selected || ''} onChange={e => setSelected(e.target.value)}>
-                  <option value="">{targets.length ? '— Choose an agent —' : 'No other agents in your team'}</option>
+                  <option value="">{targets.length ? '— Choose someone —' : 'No other teammates yet'}</option>
                   {targets.map(u => (
                     <option key={u.id} value={u.id}>{u.name} ({u.email})</option>
                   ))}

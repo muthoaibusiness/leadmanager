@@ -193,8 +193,17 @@ export default function AccountsView() {
     const ag = members.filter(m => m.role === ROLES.AGENT);
     const ex = members.filter(m => m.role === ROLES.EXEC);
     const mates = [lead, ...members].filter(m => m && m.id !== u.id);
+    const active = u.isActive !== false;
     return (
       <div className="ut-detail">
+        <div className="ut-dcol">
+          <div className="ut-dl">Contact</div>
+          <div className="ut-dlist">
+            <div className="ut-mate"><Mi>mail</Mi>{u.email}</div>
+            <div className="ut-mate"><Mi>call</Mi>{u.phone || '—'}</div>
+            <div className="ut-mate"><Mi>{active ? 'check_circle' : 'cancel'}</Mi><span className={`cot-badge ${active ? 'ok' : 'off'}`}>{active ? 'Active' : 'Inactive'}</span></div>
+          </div>
+        </div>
         {u.role === ROLES.TL && team && (
           <div className="ut-dcol">
             <div className="ut-dl">Team stats</div>
@@ -352,9 +361,7 @@ export default function AccountsView() {
                 <th className="ut-c-exp" />
                 <th>Name</th>
                 <th>Team</th>
-                <th>Email</th>
-                <th>Phone</th>
-                <th>Status</th>
+                <th>Role</th>
                 <th className="ut-c-act">Edit</th>
               </tr>
             </thead>
@@ -362,7 +369,6 @@ export default function AccountsView() {
               {pageRows.map(u => {
                 const team = teamOf(u);
                 const on = selected.has(u.id), open = expanded.has(u.id), self = u.id === user.id;
-                const active = u.isActive !== false;
                 return [
                   <tr key={u.id} className={`ut-row${on ? ' sel' : ''}${open ? ' open' : ''}`}>
                     <td className="ut-c-chk">{!self && <button className={`ut-chk${on ? ' on' : ''}`} onClick={() => toggleOne(u.id)}><Mi>{on ? 'check_box' : 'check_box_outline_blank'}</Mi></button>}</td>
@@ -375,15 +381,13 @@ export default function AccountsView() {
                       </div>
                     </td>
                     <td className="ut-muted">{team ? team.name : '—'}</td>
-                    <td className="ut-muted">{u.email}</td>
-                    <td className="ut-muted ut-nowrap">{u.phone || '—'}</td>
-                    <td><span className={`cot-badge ${active ? 'ok' : 'off'}`}>{active ? 'Active' : 'Inactive'}</span></td>
+                    <td>{roleBadge(u.role)}</td>
                     <td className="ut-c-act"><div className="ut-acts"><EditBtn u={u} />{!self && <DelBtn id={u.id} />}</div></td>
                   </tr>,
-                  open && <tr key={u.id + ':d'} className="ut-dtr"><td colSpan={8}>{renderDetail(u)}</td></tr>,
+                  open && <tr key={u.id + ':d'} className="ut-dtr"><td colSpan={6}>{renderDetail(u)}</td></tr>,
                 ];
               })}
-              {!pageRows.length && <tr><td colSpan={8} className="cot-empty">{coUsers.length ? 'No accounts match.' : 'No accounts yet. Add a Team Lead to start.'}</td></tr>}
+              {!pageRows.length && <tr><td colSpan={6} className="cot-empty">{coUsers.length ? 'No accounts match.' : 'No accounts yet. Add a Team Lead to start.'}</td></tr>}
             </tbody>
           </table>
         </div>

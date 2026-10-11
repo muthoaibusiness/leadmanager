@@ -92,21 +92,21 @@ export default function ReportsView() {
       </div>
 
       <div className="rep-grid">
-        <div className="rep-card">
+        <div className="rep-card" style={{ '--rep-accent': CHART_COLORS[2] }}>
           <div className="rep-hd"><Mi>apartment</Mi>Sales by project</div>
-          <MoneyBars data={salesByProject} />
+          <div className="rep-body"><MoneyBars data={salesByProject} /></div>
         </div>
-        <div className="rep-card">
+        <div className="rep-card" style={{ '--rep-accent': CHART_COLORS[4] }}>
           <div className="rep-hd"><Mi>donut_small</Mi>Lead sources</div>
-          {leadSources.length ? <Donut data={leadSources} centerVal={leads.length} centerSub="leads" /> : <div className="rep-empty">No leads yet.</div>}
+          <div className="rep-body">{leadSources.length ? <Donut data={leadSources} centerVal={leads.length} centerSub="leads" /> : <div className="rep-empty">No leads yet.</div>}</div>
         </div>
-        <div className="rep-card">
+        <div className="rep-card" style={{ '--rep-accent': CHART_COLORS[6] }}>
           <div className="rep-hd"><Mi>workspace_premium</Mi>Agent performance <span className="rep-hd-sub">deals won</span></div>
-          {agentPerf.length ? <HBars data={agentPerf} /> : <div className="rep-empty">No closed deals yet.</div>}
+          <div className="rep-body">{agentPerf.length ? <HBars data={agentPerf} /> : <div className="rep-empty">No closed deals yet.</div>}</div>
         </div>
-        <div className="rep-card">
+        <div className="rep-card" style={{ '--rep-accent': CHART_COLORS[3] }}>
           <div className="rep-hd"><Mi>meeting_room</Mi>Unit status overview</div>
-          <HBars data={unitStatus} />
+          <div className="rep-body"><HBars data={unitStatus} /></div>
         </div>
       </div>
     </div>

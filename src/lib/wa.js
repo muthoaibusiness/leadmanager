@@ -321,6 +321,34 @@ export async function waRetry(settings, msg, conversation, user) {
   });
 }
 
+// Fetch the contact's WhatsApp profile photo through the relay (same reason
+// sending goes through it — the Wasender token never reaches the browser) and
+// cache the URL on the thread so this runs at most once per contact.
+export async function waFetchAvatar(settings, conversation) {
+  if (!settings?.relayUrl) return { ok: false };
+  const phone = waSendTarget(conversation);
+  if (!phone) return { ok: false }; // LID-only thread — no real number to look up yet
+
+  try {
+    const r = await fetch(settings.relayUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'get-avatar', phone }),
+    });
+    if (!r.ok) return { ok: false };
+    const data = await r.json();
+    if (!data?.ok || !data.avatarUrl) return { ok: false };
+    await fetch(`${SB_URL}/rest/v1/wa_conversations?id=eq.${encodeURIComponent(conversation.id)}`, {
+      method: 'PATCH',
+      headers: { ...SB_H, Prefer: 'return=minimal' },
+      body: JSON.stringify({ avatar_url: data.avatarUrl }),
+    });
+    return { ok: true, avatarUrl: data.avatarUrl };
+  } catch {
+    return { ok: false };
+  }
+}
+
 // ── realtime ────────────────────────────────────────────────────────────────
 // Same Phoenix protocol the notification socket uses, scoped to the two chat
 // tables. Reports connection state so the view can show a reconnect banner.
