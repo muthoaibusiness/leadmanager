@@ -22,6 +22,7 @@ export const NAV_SCOPES = {
   // wa_settings (or an explicit allowedFeatures grant). See waCanChat() in wa.js.
   conversations: [],
   calendar: ['AGENT', 'TEAM_LEAD', 'MANAGEMENT'],
+  meeting: ['AGENT', 'TEAM_LEAD'],
   pipeline: ALL_ROLES,
   properties: ALL_ROLES,
   // Management's Reports charts now live on their Home dashboard — the
@@ -72,9 +73,9 @@ export const isNiHandler = (user) => !!user && Array.isArray(user.allowedFeature
 
 // Features an admin can grant/revoke per user, in display order (nav features only;
 // 'companies' is master-only overview and 'profile' is always-on, so both excluded).
-export const FEATURE_KEYS = ['dashboard', 'leads', 'add_customer', 'conversations', 'calendar', 'pipeline', 'properties', 'reports', 'agentperf', 'requests', 'team', 'accounts'];
+export const FEATURE_KEYS = ['dashboard', 'leads', 'add_customer', 'conversations', 'calendar', 'meeting', 'pipeline', 'properties', 'reports', 'agentperf', 'requests', 'team', 'accounts'];
 export const FEATURE_LABELS = {
-  dashboard: 'Home', leads: 'Leads', add_customer: 'Add Customer', conversations: 'Conversations', calendar: 'Calendar', pipeline: 'Pipeline', properties: 'Projects',
+  dashboard: 'Home', leads: 'Leads', add_customer: 'Add Customer', conversations: 'Conversations', calendar: 'Calendar', meeting: 'Meeting', pipeline: 'Pipeline', properties: 'Projects',
   reports: 'Reports', agentperf: 'Performance', requests: 'Requests', team: 'Team',
   accounts: 'Users & Accounts',
 };

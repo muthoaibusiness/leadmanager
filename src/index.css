@@ -9634,9 +9634,7 @@ textarea.fi {
   position: relative;
   display: flex;
   flex-direction: column;
-  background:
-    radial-gradient(120% 100% at 100% 0%, color-mix(in srgb, var(--st-accent) 10%, transparent), transparent 60%),
-    var(--surf);
+  background: var(--surf);
   border: 1px solid var(--bd);
   border-radius: var(--r-lg);
   padding: 16px 18px;
@@ -9649,15 +9647,15 @@ textarea.fi {
   content: '';
   position: absolute;
   inset: 0 0 auto 0;
-  height: 3px;
+  height: 2px;
   background: var(--st-accent);
-  opacity: .9
+  opacity: .5
 }
 
 .st-card:hover {
-  border-color: color-mix(in srgb, var(--st-accent) 45%, var(--bd2));
+  border-color: color-mix(in srgb, var(--st-accent) 25%, var(--bd2));
   transform: translateY(-2px);
-  box-shadow: 0 10px 24px -14px color-mix(in srgb, var(--st-accent) 55%, transparent)
+  box-shadow: 0 8px 18px -14px color-mix(in srgb, var(--st-accent) 30%, transparent)
 }
 
 .st-card.has-graph {
@@ -9685,7 +9683,7 @@ textarea.fi {
   width: 24px;
   height: 24px;
   border-radius: var(--r-sm);
-  background: color-mix(in srgb, var(--st-accent) 16%, transparent);
+  background: color-mix(in srgb, var(--st-accent) 10%, transparent);
   color: var(--st-accent);
   flex: none
 }

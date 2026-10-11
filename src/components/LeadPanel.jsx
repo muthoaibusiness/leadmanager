@@ -6,7 +6,7 @@ import LogCall from './LogCall.jsx';
 import { getLead, getActs, ensureLead, ensureLeadActs, hasFullActs, changeStatus, doneVisit, deleteLead, logNoAnswer, noAnswerLock, attendMeeting, userNameById } from '../lib/db.js';
 import { fmtD, fmtDT, fmtBDT, rlabel, scoreLead, scoreLabel, leadDisplayStatus, fmtDateTimeAP } from '../lib/helpers.js';
 import ActivityTimeline from './ActivityTimeline.jsx';
-import { ROLES, SRC_LABELS, effectiveRole, isNiHandler, DRAWER_MQ } from '../lib/constants.js';
+import { ROLES, SRC_LABELS, effectiveRole, isNiHandler, DRAWER_MQ, canSee } from '../lib/constants.js';
 import useMediaQuery from '../hooks/useMediaQuery.js';
 import useChanged from '../hooks/useChanged.js';
 
@@ -195,7 +195,7 @@ function Actions({ l }) {
         <Mi>thumb_up</Mi>Interested
       </button>
     );
-    if (l.status === 'INTERESTED') btns.push(
+    if (l.status === 'INTERESTED' && canSee(user, 'meeting')) btns.push(
       <button key="set-meeting" className="btn btn-teal btn-full" onClick={() => openModal('set-meeting')}>
         <Mi>event</Mi>Set Meeting
       </button>

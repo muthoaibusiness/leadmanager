@@ -4,31 +4,11 @@ import { getDB, getBookings, bookingPaid } from '../../lib/db.js';
 import KpiSheet from '../KpiSheet.jsx';
 import DashGreeting from './DashGreeting.jsx';
 import CustomersTable from '../ui/customers-table.jsx';
-import Mi from '../Mi.jsx';
-import { fmtBDT, slabel, srclabel } from '../../lib/helpers.js';
+import { fmtBDT, slabel } from '../../lib/helpers.js';
 import { ROLES } from '../../lib/constants.js';
 import StatTrend from '../StatTrend.jsx';
-import { Donut } from '../charts/Charts.jsx';
-import TrendChart from '../charts/TrendChart.jsx';
-import { CHART_COLORS } from '../charts/chartColors.js';
 import useActWindow from '../../hooks/useActWindow.js';
 import useLeadBook from '../../hooks/useLeadBook.js';
-
-function MoneyBars({ data }) {
-  const max = Math.max(...data.map(d => d.value), 1);
-  if (!data.length) return <div className="rep-empty">No data yet.</div>;
-  return (
-    <div className="chart-hbars">
-      {data.map((d, i) => (
-        <div key={i} className="chb-row">
-          <div className="chb-lbl">{d.label}</div>
-          <div className="chb-track"><div className="chb-fill" style={{ width: Math.max(4, Math.round(d.value / max * 100)) + '%', background: d.color || 'var(--volt)' }} /></div>
-          <div className="chb-ct">{fmtBDT(d.value)}</div>
-        </div>
-      ))}
-    </div>
-  );
-}
 
 export default function ManagementDash() {
   useLeadBook(); // this view reduces over every lead; leads are not in the boot load
@@ -102,25 +82,6 @@ export default function ManagementDash() {
   const collSeries = days14.map(([d, nx]) => allPays.filter(p => new Date(p.date) >= d && new Date(p.date) < nx).reduce((s, p) => s + (p.amount || 0), 0));
   const sDelta = arr => { const a = arr.slice(7).reduce((x, y) => x + y, 0), b = arr.slice(0, 7).reduce((x, y) => x + y, 0); return b ? Math.round((a - b) / b * 100) : (a ? 100 : 0); };
 
-  // ── Reports charts (merged in from the old standalone Reports page) ──────
-  const byProj = {};
-  bookings.forEach(b => { byProj[b.propertyName || '—'] = (byProj[b.propertyName || '—'] || 0) + (b.total || 0); });
-  const salesByProject = Object.entries(byProj).map(([label, value], i) => ({ label, value, color: CHART_COLORS[i % CHART_COLORS.length] }))
-    .sort((a, b) => b.value - a.value).slice(0, 6);
-
-  const bySrc = {};
-  coLeads.forEach(l => { const k = srclabel(l.source); bySrc[k] = (bySrc[k] || 0) + 1; });
-  const leadSources = Object.entries(bySrc).map(([label, value], i) => ({ label, value, color: CHART_COLORS[i % CHART_COLORS.length] }));
-
-  // Two trend charts, split by scale (money vs. count) rather than sharing one
-  // axis — a lead-count line would flatten to near-zero next to revenue figures.
-  const dayLabels = trend.map(t => t.label);
-  const moneyTrend = [
-    { key: 'rev', label: 'Revenue', color: CHART_COLORS[0], points: revSeries },
-    { key: 'coll', label: 'Collected', color: CHART_COLORS[2], points: collSeries },
-  ];
-  const leadTrend = [{ key: 'leads', label: 'New Leads', color: CHART_COLORS[1], points: leadSeries }];
-
   // Lead/booking lists behind each admin KPI (for the click-through detail sheet).
   const closedList = [...won, ...lost];
   const collectedRows = bookings.filter(b => bookingPaid(b) > 0)
@@ -139,26 +100,6 @@ export default function ManagementDash() {
       {/* KPI row — revenue, customers, collections, win rate (with 14-day sparklines) */}
       <div className="grid-4" style={{ marginBottom: '22px' }}>
         {trendCards.map((c, i) => <StatTrend key={i} {...c} />)}
-      </div>
-
-      <div className="sec-hd"><div className="sec-t"><Mi>bar_chart</Mi>Performance Reports</div></div>
-      <div className="rep-grid" style={{ marginBottom: '20px' }}>
-        <div className="rep-card" style={{ '--rep-accent': CHART_COLORS[0] }}>
-          <div className="rep-hd"><Mi>trending_up</Mi>Revenue &amp; collections <span className="rep-hd-sub">14 days</span></div>
-          <div className="rep-body"><TrendChart series={moneyTrend} labels={dayLabels} labelEvery={2} /></div>
-        </div>
-        <div className="rep-card" style={{ '--rep-accent': CHART_COLORS[1] }}>
-          <div className="rep-hd"><Mi>person_add</Mi>New leads <span className="rep-hd-sub">14 days</span></div>
-          <div className="rep-body"><TrendChart series={leadTrend} labels={dayLabels} labelEvery={2} /></div>
-        </div>
-        <div className="rep-card" style={{ '--rep-accent': CHART_COLORS[2] }}>
-          <div className="rep-hd"><Mi>apartment</Mi>Sales by project</div>
-          <div className="rep-body"><MoneyBars data={salesByProject} /></div>
-        </div>
-        <div className="rep-card" style={{ '--rep-accent': CHART_COLORS[4] }}>
-          <div className="rep-hd"><Mi>donut_small</Mi>Lead sources</div>
-          <div className="rep-body">{leadSources.length ? <Donut data={leadSources} centerVal={coLeads.length} centerSub="leads" /> : <div className="rep-empty">No leads yet.</div>}</div>
-        </div>
       </div>
 
       <CustomersTable title="Latest Leads" subtitle="In your pipeline" rows={customerRows} />
