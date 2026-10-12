@@ -52,7 +52,17 @@ export const STATUS = {
 export function statusLook(statuses, unit) {
   const base = unit?.status || 'available';
   const c = unit?.tag ? (statuses || []).find(s => s.id === unit.tag) : null;
-  return c ? { status: base, label: c.name, color: c.color } : { status: base, label: STATUS[base]?.label || base, color: null };
+  return c ? { status: base, label: c.name, color: c.color, ink: inkOn(c.color) } : { status: base, label: STATUS[base]?.label || base, color: null, ink: null };
+}
+
+// Text colour that reads on a solid fill of `hex` ('#RRGGBB'): near-black on
+// light colours, white on dark ones (relative luminance, WCAG weights).
+export function inkOn(hex) {
+  const m = /^#?([0-9a-f]{6})$/i.exec(String(hex || '').trim());
+  if (!m) return '#fff';
+  const lin = (i) => { const v = parseInt(m[1].slice(i, i + 2), 16) / 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; };
+  const lum = 0.2126 * lin(0) + 0.7152 * lin(2) + 0.0722 * lin(4);
+  return lum > 0.4 ? '#14110d' : '#fff';
 }
 
 export const taka = (n) => '৳' + Math.round(n || 0).toLocaleString('en-IN');

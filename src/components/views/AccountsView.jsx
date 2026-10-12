@@ -1,4 +1,5 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
+import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import useNavState from '../../hooks/useNavState.js';
 import Mi from '../Mi.jsx';
 import Avatar from '../Avatar.jsx';
@@ -8,6 +9,7 @@ import { rlabel } from '../../lib/helpers.js';
 import { ROLES } from '../../lib/constants.js';
 import { useProjectToast } from '../project/projectToast.js';
 import { EditBtn, DelBtn } from '../UserRow.jsx';
+import { Menu, MenuItem, MenuLabel, MenuRadio, MenuRadioGroup, MenuSep } from '../ui/menu.jsx';
 import useLeadCounts from '../../hooks/useLeadCounts.js';
 import useOpenUserLeads from '../../hooks/useOpenUserLeads.js';
 import { eq } from '../../lib/leadQuery.js';
@@ -25,10 +27,14 @@ const ROLE_OPTS = [
 const ROLE_FILTER_OPTS = [...ROLE_OPTS, { v: ROLES.EXEC, l: 'Executive' }];
 const PAGE = 10;
 const blankRow = () => ({ name: '', email: '', phone: '', role: ROLES.AGENT, password: '', teamId: '' });
-const roleBadge = (role) => {
-  const cls = { AGENT: 's-new', TEAM_LEAD: 's-negotiating', MANAGEMENT: 's-deal_closed_won', EXECUTIVE: 's-negotiating' }[role] || 's-new';
-  return <span className={`bdg ${cls}`}>{rlabel(role)}</span>;
-};
+// Role pill, one colour per role; Management carries the bolt.
+const ROLE_TONE = { MANAGEMENT: 'mgmt', TEAM_LEAD: 'tl', AGENT: 'agent', EXECUTIVE: 'exec' };
+const RoleBadge = ({ role }) => (
+  <span className={`uct-role t-${ROLE_TONE[role] || 'agent'}`}>
+    {role === ROLES.MGMT ? <Mi aria-hidden="true">bolt</Mi> : <i aria-hidden="true" />}
+    {rlabel(role)}
+  </span>
+);
 // "1 account" / "3 accounts" — never "account(s)".
 const nAccounts = (n) => `${n} account${n === 1 ? '' : 's'}`;
 const nRows = (n) => `${n} row${n === 1 ? '' : 's'}`;
@@ -37,8 +43,45 @@ const nRows = (n) => `${n} row${n === 1 ? '' : 's'}`;
 const ROLE_ORDER = { TEAM_LEAD: 0, AGENT: 1, EXECUTIVE: 2, MANAGEMENT: 3 };
 const toggleIn = (set, id) => { const n = new Set(set); if (n.has(id)) n.delete(id); else n.add(id); return n; };
 
+// Roster orders. 'team' is the default: teams A–Z, each read top-down by
+// ROLE_ORDER. 'role' goes by seniority.
+const SORT_OPTS = [
+  { v: 'team', l: 'Team' },
+  { v: 'name', l: 'Name (A–Z)' },
+  { v: 'name-desc', l: 'Name (Z–A)' },
+  { v: 'role', l: 'Role' },
+];
+const SENIORITY = { MANAGEMENT: 0, TEAM_LEAD: 1, AGENT: 2, EXECUTIVE: 3 };
+const byName = (a, b) => (a.name || '').localeCompare(b.name || '');
+
+// Export: the filtered roster, every page. Passwords are never exported.
+const EXPORT_COLS = [['name', 'Name'], ['email', 'Email'], ['phone', 'Phone'], ['role', 'Role'], ['team', 'Team'], ['status', 'Status']];
+// Quoted CSV cell. A leading = + - @ would run as a formula in Excel, so it
+// gets a ' prefix (phone numbers like +880… included).
+const csvCell = (v) => {
+  const s = String(v ?? '');
+  return `"${(/^[=+\-@\t\r]/.test(s) ? "'" + s : s).replace(/"/g, '""')}"`;
+};
+const download = (text, type, name) => {
+  const url = URL.createObjectURL(new Blob([text], { type }));
+  Object.assign(document.createElement('a'), { href: url, download: name }).click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+};
+
+// Rows rise in, staggered, whenever the page, filters or order change.
+const LIST_V = { visible: { transition: { staggerChildren: 0.04, delayChildren: 0.1 } } };
+const ROW_V = {
+  hidden: { opacity: 0, y: 20, scale: 0.98, filter: 'blur(4px)' },
+  visible: {
+    opacity: 1, y: 0, scale: 1, filter: 'blur(0px)',
+    transition: { type: 'spring', stiffness: 400, damping: 25, mass: 0.7 },
+    transitionEnd: { filter: 'none' },   // a leftover blur(0px) would keep each row on its own layer
+  },
+  exit: { opacity: 0, y: -10, transition: { duration: 0.2 } },
+};
+
 export default function AccountsView() {
-  const { user, dbVersion, refreshDB, showToast, openModal, setCreateUserRoles } = useApp();
+  const { user, dbVersion, refreshDB, showToast, openModal, setCreateUserRoles, modal, panLead } = useApp();
   const db = getDB();
   const openLeads = useOpenUserLeads();
   // company sandbox: a Management admin only ever sees/manages their own company
@@ -59,10 +102,29 @@ export default function AccountsView() {
   const [q, setQ] = useNavState('accounts.q', '');
   const [roleFilter, setRoleFilter] = useNavState('accounts.role', 'ALL');
   const [teamFilter, setTeamFilter] = useNavState('accounts.team', 'ALL');
+  const [sort, setSort] = useNavState('accounts.sort', 'team');
   const [selected, setSelected] = useState(() => new Set());
-  const [expanded, setExpanded] = useState(() => new Set());
   const [page, setPage] = useNavState('accounts.page', 0);
+  // The View card: an id, so a deleted account simply closes it.
+  const [detailId, setDetailId] = useState(null);
+  const viewRef = useRef(null);   // the View button that opened the card; focus goes back to it
+  const reduceMotion = useReducedMotion();
   const toast = useProjectToast({ always: true });
+  const detail = detailId ? coUsers.find(u => u.id === detailId) : null;
+
+  const closeDetail = () => { setDetailId(null); viewRef.current?.focus(); };
+  // Esc closes the card, unless a modal opened from it (Edit, Delete) is on top:
+  // App's own Esc handler closes that one first.
+  useEffect(() => {
+    if (!detail) return undefined;
+    const onKey = (e) => {
+      if (e.key !== 'Escape' || modal || panLead) return;
+      setDetailId(null);
+      viewRef.current?.focus();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [detail, modal, panLead]);
 
   // ── KPI counts ──
   const counts = useMemo(() => {
@@ -71,7 +133,7 @@ export default function AccountsView() {
     return c;
   }, [dbVersion]); // eslint-disable-line react-hooks/exhaustive-deps -- coUsers is re-derived from db each render; dbVersion tracks it
 
-  // Won / Active per team, shown when a Team Lead row is expanded. Two count
+  // Won / Active per team, shown in a Team Lead's View card. Two count
   // queries per team rather than downloading the company's leads.
   const teamKey = teams.map(t => t.id).join();
   const teamQ = useMemo(() => {
@@ -153,11 +215,14 @@ export default function AccountsView() {
       })
       .filter(u => !term || (u.name || '').toLowerCase().includes(term) || (u.email || '').toLowerCase().includes(term) || (u.phone || '').includes(term))
       .sort((a, b) => {
+        if (sort === 'name') return byName(a, b);
+        if (sort === 'name-desc') return byName(b, a);
+        if (sort === 'role') return (SENIORITY[a.role] ?? 9) - (SENIORITY[b.role] ?? 9) || byName(a, b);
         const ta = teamOf(a)?.name, tb = teamOf(b)?.name;
         if (ta !== tb) return !ta ? 1 : !tb ? -1 : ta.localeCompare(tb);
-        return (ROLE_ORDER[a.role] ?? 9) - (ROLE_ORDER[b.role] ?? 9) || (a.name || '').localeCompare(b.name || '');
+        return (ROLE_ORDER[a.role] ?? 9) - (ROLE_ORDER[b.role] ?? 9) || byName(a, b);
       });
-  }, [dbVersion, q, roleFilter, teamFilter]); // eslint-disable-line react-hooks/exhaustive-deps -- coUsers is re-derived from db each render; dbVersion tracks it
+  }, [dbVersion, q, roleFilter, teamFilter, sort]); // eslint-disable-line react-hooks/exhaustive-deps -- coUsers is re-derived from db each render; dbVersion tracks it
 
   const pages = Math.max(1, Math.ceil(list.length / PAGE));
   const curPage = Math.min(page, pages - 1);
@@ -169,7 +234,19 @@ export default function AccountsView() {
   const allOn = selectable.length > 0 && selectable.every(u => selected.has(u.id));
   const toggleAll = () => setSelected(allOn ? new Set() : new Set(selectable.map(u => u.id)));
   const toggleOne = (id) => setSelected(s => toggleIn(s, id));
-  const toggleExp = (id) => setExpanded(s => toggleIn(s, id));
+  const nFilters = (roleFilter !== 'ALL') + (teamFilter !== 'ALL');
+
+  const exportAs = (kind) => {
+    const out = list.map(u => ({
+      name: u.name || '', email: u.email || '', phone: u.phone || '', role: rlabel(u.role),
+      team: teamOf(u)?.name || '', status: u.isActive === false ? 'Inactive' : 'Active',
+    }));
+    const name = `users-${new Date().toLocaleDateString('en-CA')}.${kind}`;   // en-CA: local YYYY-MM-DD
+    if (kind === 'json') { download(JSON.stringify(out, null, 2), 'application/json', name); return; }
+    const lines = [EXPORT_COLS.map(([, l]) => l), ...out.map(r => EXPORT_COLS.map(([k]) => r[k]))];
+    // BOM: Excel then reads the file as UTF-8 (Bangla names stay intact).
+    download('﻿' + lines.map(l => l.map(csvCell).join(',')).join('\r\n'), 'text/csv;charset=utf-8', name);
+  };
 
   const removeSelected = () => {
     const ids = [...selected].filter(id => id !== user.id && coUsers.some(u => u.id === id));
@@ -185,7 +262,7 @@ export default function AccountsView() {
   // After every hook, so the hook order never depends on the role.
   if (user.role !== ROLES.MGMT) return null;
 
-  // Expanded row: what the old team card showed, per role.
+  // The View card: contact details, then what the old team card showed, per role.
   const renderDetail = (u) => {
     const team = teamOf(u);
     const lead = team ? coUsers.find(m => m.id === team.leadId) : null;
@@ -194,38 +271,50 @@ export default function AccountsView() {
     const ex = members.filter(m => m.role === ROLES.EXEC);
     const mates = [lead, ...members].filter(m => m && m.id !== u.id);
     const active = u.isActive !== false;
+    const self = u.id === user.id;
     return (
-      <div className="ut-detail">
-        <div className="ut-dcol">
-          <div className="ut-dl">Contact</div>
-          <div className="ut-dlist">
-            <div className="ut-mate"><Mi>mail</Mi>{u.email}</div>
-            <div className="ut-mate"><Mi>call</Mi>{u.phone || '—'}</div>
-            <div className="ut-mate"><Mi>{active ? 'check_circle' : 'cancel'}</Mi><span className={`cot-badge ${active ? 'ok' : 'off'}`}>{active ? 'Active' : 'Inactive'}</span></div>
+      <>
+        <div className="uct-dhd">
+          <Avatar name={u.name} avatar={u.avatar} className="ui-av" />
+          <div className="uct-dhd-t">
+            <h3 id="uct-dname">{u.name}{self && <span className="uct-tag">you</span>}</h3>
+            <RoleBadge role={u.role} />
           </div>
         </div>
+        <div className="uct-dgrid">
+          <div className="uct-df"><div className="uct-dl"><Mi>mail</Mi>Email</div>{u.email ? <a className="uct-mail" href={`mailto:${u.email}`}>{u.email}</a> : '—'}</div>
+          <div className="uct-df"><div className="uct-dl"><Mi>call</Mi>Phone</div>{u.phone ? <a className="uct-tel" href={`tel:${u.phone}`}>{u.phone}</a> : '—'}</div>
+          <div className="uct-df"><div className="uct-dl"><Mi>groups</Mi>Team</div>{team ? team.name : '—'}</div>
+          <div className="uct-df"><div className="uct-dl"><Mi>{active ? 'check_circle' : 'cancel'}</Mi>Status</div><span><span className={`cot-badge ${active ? 'ok' : 'off'}`}>{active ? 'Active' : 'Inactive'}</span></span></div>
+        </div>
         {u.role === ROLES.TL && team && (
-          <div className="ut-dcol">
-            <div className="ut-dl">Team stats</div>
-            <div className="ut-dstats">
-              <div className="ut-dstat"><b>{ag.length}</b><span>Agents</span></div>
-              {ex.length > 0 && <div className="ut-dstat"><b>{ex.length}</b><span>Executive</span></div>}
-              <div className="ut-dstat"><b>{num('act:' + team.id)}</b><span>Active Prospects</span></div>
-              <div className="ut-dstat"><b className="ut-won">{num('won:' + team.id)}</b><span>Won</span></div>
+          <div>
+            <div className="uct-dl uct-dsec">Team stats</div>
+            <div className="uct-dstats">
+              <div className="uct-dstat"><b>{ag.length}</b><span>Agents</span></div>
+              {ex.length > 0 && <div className="uct-dstat"><b>{ex.length}</b><span>Executive</span></div>}
+              <div className="uct-dstat"><b>{num('act:' + team.id)}</b><span>Active Prospects</span></div>
+              <div className="uct-dstat"><b className="uct-won">{num('won:' + team.id)}</b><span>Won</span></div>
             </div>
           </div>
         )}
-        <div className="ut-dcol">
-          <div className="ut-dl">Team Mates</div>
+        <div>
+          <div className="uct-dl uct-dsec">Team Mates</div>
           {mates.length
-            ? <div className="ut-dlist">{mates.map(m => (
-                <button key={m.id} className="ut-mate" onClick={() => openLeads(m.id)} title={`Open ${m.name}'s prospects`}>
-                  <Mi>person</Mi>{m.name}<span className="ut-mate-r">{rlabel(m.role)}</span>
+            ? <div className="uct-mates">{mates.map(m => (
+                <button key={m.id} className="uct-mate" onClick={() => openLeads(m.id)} title={`Open ${m.name}'s prospects`}>
+                  <Mi>person</Mi>{m.name}<span className="uct-mate-r">{rlabel(m.role)}</span>
                 </button>
               ))}</div>
-            : <div className="ut-dmuted">{team ? 'No agents yet' : u.role === ROLES.EXEC ? 'Custom-access account · not in a team' : 'Not in a team'}</div>}
+            : <div className="uct-dmuted">{team ? 'No agents yet' : u.role === ROLES.EXEC ? 'Custom-access account · not in a team' : 'Not in a team'}</div>}
         </div>
-      </div>
+        <div className="uct-dft">
+          {u.email && <a className="btn btn-p uct-send" href={`mailto:${u.email}`}><Mi>send</Mi>Send Email</a>}
+          <button className="btn btn-g" onClick={() => openLeads(u.id)} title={`Open ${u.name}'s prospects`}><Mi>person_search</Mi>Prospects</button>
+          <EditBtn u={u} />
+          {!self && <DelBtn id={u.id} />}
+        </div>
+      </>
     );
   };
 
@@ -239,26 +328,46 @@ export default function AccountsView() {
         <div className="acc-kpi"><div className="acc-kpi-v">{counts[ROLES.MGMT] || 0}</div><div className="acc-kpi-l">Management</div></div>
       </div>
 
-      {/* Toolbar: search, filters, selection, add */}
-      <div className="ut-bar">
-        <div className="acc-search ut-search"><Mi>search</Mi><input value={q} onChange={e => { setQ(e.target.value); setPage(0); }} placeholder="Search name, email or phone" /></div>
-        <select className="fi acc-rolefilter" value={roleFilter} onChange={e => { setRoleFilter(e.target.value); setPage(0); }}>
-          <option value="ALL">All roles</option>
-          {ROLE_FILTER_OPTS.map(o => <option key={o.v} value={o.v}>{o.l}</option>)}
-        </select>
-        <select className="fi acc-rolefilter" value={teamFilter} onChange={e => { setTeamFilter(e.target.value); setPage(0); }}>
-          <option value="ALL">All teams</option>
-          {teams.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
-          <option value="NONE">No team</option>
-        </select>
+      {/* Toolbar: search, selection, Filter / Sort / Export menus, add */}
+      <div className="uct-bar">
+        <div className="acc-search uct-search"><Mi>search</Mi><input value={q} onChange={e => { setQ(e.target.value); setPage(0); }} placeholder="Search name, email or phone" aria-label="Search users" /></div>
         {selected.size > 0 && (
-          <div className="ut-sel">
-            <button className="ut-chk on" onClick={() => setSelected(new Set())} title="Clear selection"><Mi>check_box</Mi></button>
+          <div className="uct-sel">
+            <button className="uct-chk on" onClick={() => setSelected(new Set())} title="Clear selection" aria-label="Clear selection"><Mi>check_box</Mi></button>
             <span>{selected.size} Selected</span>
             <button className="btn btn-g btn-sm" onClick={removeSelected}><Mi>delete</Mi>Remove</button>
           </div>
         )}
-        <div className="ut-bar-r">
+        <div className="uct-bar-r">
+          <Menu label="Filter users" className="uct-menu" trigger={
+            <button className={`uct-btn${nFilters ? ' on' : ''}`}><Mi>filter_list</Mi>Filter{nFilters > 0 && <span className="uct-n">{nFilters}</span>}</button>
+          }>
+            <MenuLabel>Role</MenuLabel>
+            <MenuRadioGroup value={roleFilter} onChange={v => { setRoleFilter(v); setPage(0); }}>
+              <MenuRadio value="ALL">All roles</MenuRadio>
+              {ROLE_FILTER_OPTS.map(o => <MenuRadio key={o.v} value={o.v}>{o.l}</MenuRadio>)}
+            </MenuRadioGroup>
+            <MenuSep />
+            <MenuLabel>Team</MenuLabel>
+            <MenuRadioGroup value={teamFilter} onChange={v => { setTeamFilter(v); setPage(0); }}>
+              <MenuRadio value="ALL">All teams</MenuRadio>
+              {teams.map(t => <MenuRadio key={t.id} value={t.id}>{t.name}</MenuRadio>)}
+              <MenuRadio value="NONE">No team</MenuRadio>
+            </MenuRadioGroup>
+          </Menu>
+          <Menu label="Sort users" trigger={
+            <button className="uct-btn"><Mi>swap_vert</Mi>Sort{sort !== 'team' && <span className="uct-n">1</span>}<Mi className="uct-chev">expand_more</Mi></button>
+          }>
+            <MenuRadioGroup value={sort} onChange={v => { setSort(v); setPage(0); }}>
+              {SORT_OPTS.map(o => <MenuRadio key={o.v} value={o.v}>{o.l}</MenuRadio>)}
+            </MenuRadioGroup>
+          </Menu>
+          <Menu label="Export users" trigger={
+            <button className="uct-btn" disabled={!list.length}><Mi>download</Mi>Export<Mi className="uct-chev">expand_more</Mi></button>
+          }>
+            <MenuItem icon="table_view" onSelect={() => exportAs('csv')} hint={nAccounts(list.length)}>CSV</MenuItem>
+            <MenuItem icon="data_object" onSelect={() => exportAs('json')}>JSON</MenuItem>
+          </Menu>
           <button className={`btn btn-g${bulkOpen ? ' on' : ''}`} onClick={() => setBulkOpen(o => !o)}><Mi>group_add</Mi>Bulk add</button>
           <button className="btn btn-p" onClick={() => { setCreateUserRoles([ROLES.TL]); openModal('create-user'); }}><Mi>add</Mi>Add User</button>
         </div>
@@ -334,7 +443,7 @@ export default function AccountsView() {
                         <span className="acc-cred-n">{c.name}</span>
                         <span className="acc-cred-e">{c.email}</span>
                         <span className="acc-cred-p">pwd: <b>{c.pass}</b></span>
-                        {roleBadge(c.role)}
+                        <RoleBadge role={c.role} />
                       </div>
                     ))}
                   </div>
@@ -351,51 +460,86 @@ export default function AccountsView() {
         </div>
       )}
 
-      {/* Roster */}
-      <div className="ut-card">
-        <div className="ut-scroll">
-          <table className="ut">
-            <thead>
-              <tr>
-                <th className="ut-c-chk"><button className={`ut-chk${allOn ? ' on' : ''}`} onClick={toggleAll} title="Select all"><Mi>{allOn ? 'check_box' : 'check_box_outline_blank'}</Mi></button></th>
-                <th className="ut-c-exp" />
-                <th>Name</th>
-                <th>Team</th>
-                <th>Role</th>
-                <th className="ut-c-act">Edit</th>
-              </tr>
-            </thead>
-            <tbody>
-              {pageRows.map(u => {
-                const team = teamOf(u);
-                const on = selected.has(u.id), open = expanded.has(u.id), self = u.id === user.id;
-                return [
-                  <tr key={u.id} className={`ut-row${on ? ' sel' : ''}${open ? ' open' : ''}`}>
-                    <td className="ut-c-chk">{!self && <button className={`ut-chk${on ? ' on' : ''}`} onClick={() => toggleOne(u.id)}><Mi>{on ? 'check_box' : 'check_box_outline_blank'}</Mi></button>}</td>
-                    <td className="ut-c-exp"><button className="ut-exp" onClick={() => toggleExp(u.id)} aria-expanded={open} title={open ? 'Collapse' : 'Details'}><Mi>{open ? 'expand_less' : 'expand_more'}</Mi></button></td>
-                    <td>
-                      <div className="ut-who">
-                        <Avatar name={u.name} avatar={u.avatar} className="ui-av ui-sm" />
-                        <button className="ut-name" onClick={() => openLeads(u.id)} title={`Open ${u.name}'s prospects`}>{u.name}</button>
-                        {self && <span className="ut-you">you</span>}
+      {/* Roster: a grid table; View opens the person's card over it */}
+      <div className={`uct-card${detail ? ' has-detail' : ''}`}>
+        <div className="uct-scroll">
+          <div className="uct-table" role="table" aria-label="Users">
+            <div className="uct-row uct-head" role="row">
+              <div className="uct-c uct-c-chk" role="columnheader">
+                <button className={`uct-chk${allOn ? ' on' : ''}`} onClick={toggleAll} role="checkbox" aria-checked={allOn} aria-label="Select all" title="Select all">
+                  <Mi>{allOn ? 'check_box' : 'check_box_outline_blank'}</Mi>
+                </button>
+              </div>
+              <div className="uct-c" role="columnheader"><Mi aria-hidden="true">person</Mi>Name</div>
+              <div className="uct-c" role="columnheader"><Mi aria-hidden="true">badge</Mi>Role</div>
+              <div className="uct-c" role="columnheader"><Mi aria-hidden="true">groups</Mi>Team</div>
+              <div className="uct-c" role="columnheader"><Mi aria-hidden="true">mail</Mi>Email</div>
+              <div className="uct-c" role="columnheader"><Mi aria-hidden="true">call</Mi>Phone</div>
+              <div className="uct-c uct-c-act" role="columnheader">Action</div>
+            </div>
+            <AnimatePresence mode="wait" initial={!reduceMotion}>
+              <motion.div key={`${curPage}|${sort}|${roleFilter}|${teamFilter}`} className="uct-body" role="rowgroup"
+                variants={reduceMotion ? undefined : LIST_V} initial="hidden" animate="visible">
+                {pageRows.map(u => {
+                  const team = teamOf(u);
+                  const on = selected.has(u.id), self = u.id === user.id;
+                  return (
+                    <motion.div key={u.id} variants={reduceMotion ? undefined : ROW_V} className={`uct-row${on ? ' sel' : ''}`} role="row">
+                      <div className="uct-c uct-c-chk" role="cell">
+                        {!self && (
+                          <button className={`uct-chk${on ? ' on' : ''}`} onClick={() => toggleOne(u.id)} role="checkbox" aria-checked={on} aria-label={`Select ${u.name}`}>
+                            <Mi>{on ? 'check_box' : 'check_box_outline_blank'}</Mi>
+                          </button>
+                        )}
                       </div>
-                    </td>
-                    <td className="ut-muted">{team ? team.name : '—'}</td>
-                    <td>{roleBadge(u.role)}</td>
-                    <td className="ut-c-act"><div className="ut-acts"><EditBtn u={u} />{!self && <DelBtn id={u.id} />}</div></td>
-                  </tr>,
-                  open && <tr key={u.id + ':d'} className="ut-dtr"><td colSpan={6}>{renderDetail(u)}</td></tr>,
-                ];
-              })}
-              {!pageRows.length && <tr><td colSpan={6} className="cot-empty">{coUsers.length ? 'No accounts match.' : 'No accounts yet. Add a Team Lead to start.'}</td></tr>}
-            </tbody>
-          </table>
+                      <div className="uct-c" role="cell">
+                        <span className="uct-chip">
+                          <Avatar name={u.name} avatar={u.avatar} className="ui-av uct-av" />
+                          <button className="uct-name" onClick={() => openLeads(u.id)} title={`Open ${u.name}'s prospects`}>{u.name}</button>
+                        </span>
+                        {self && <span className="uct-tag">you</span>}
+                        {u.isActive === false && <span className="uct-tag off">inactive</span>}
+                      </div>
+                      <div className="uct-c" role="cell"><RoleBadge role={u.role} /></div>
+                      <div className="uct-c uct-muted" role="cell">{team ? team.name : '—'}</div>
+                      <div className="uct-c" role="cell">{u.email ? <a className="uct-mail" href={`mailto:${u.email}`} title={u.email}>{u.email}</a> : <span className="uct-muted">—</span>}</div>
+                      <div className="uct-c" role="cell">{u.phone ? <a className="uct-tel" href={`tel:${u.phone}`}>{u.phone}</a> : <span className="uct-muted">—</span>}</div>
+                      <div className="uct-c uct-c-act" role="cell">
+                        <EditBtn u={u} />
+                        {!self && <DelBtn id={u.id} />}
+                        <button className="btn btn-g btn-sm uct-act-view" onClick={(e) => { viewRef.current = e.currentTarget; setDetailId(u.id); }} aria-label={`View ${u.name}`} title="View">
+                          <Mi>visibility</Mi>
+                        </button>
+                      </div>
+                    </motion.div>
+                  );
+                })}
+                {!pageRows.length && <div className="uct-empty" role="row"><span role="cell">{coUsers.length ? 'No accounts match.' : 'No accounts yet. Add a Team Lead to start.'}</span></div>}
+              </motion.div>
+            </AnimatePresence>
+          </div>
         </div>
-        <div className="ut-foot">
-          <span className="ut-range">{list.length ? `${curPage * PAGE + 1} - ${Math.min(list.length, (curPage + 1) * PAGE)} of ${list.length}` : '0 of 0'}</span>
-          <button className="ut-pg" disabled={curPage === 0} onClick={() => setPage(curPage - 1)} title="Previous"><Mi>chevron_left</Mi></button>
-          <button className="ut-pg" disabled={curPage >= pages - 1} onClick={() => setPage(curPage + 1)} title="Next"><Mi>chevron_right</Mi></button>
+        <div className="uct-foot">
+          <span className="uct-range">{list.length ? `${curPage * PAGE + 1} - ${Math.min(list.length, (curPage + 1) * PAGE)} of ${list.length}` : '0 of 0'}</span>
+          <button className="uct-pg" disabled={curPage === 0} onClick={() => setPage(curPage - 1)} title="Previous" aria-label="Previous page"><Mi>chevron_left</Mi></button>
+          <button className="uct-pg" disabled={curPage >= pages - 1} onClick={() => setPage(curPage + 1)} title="Next" aria-label="Next page"><Mi>chevron_right</Mi></button>
         </div>
+
+        <AnimatePresence>
+          {detail && (
+            <motion.div key="ov" className="uct-ov" onClick={closeDetail}
+              initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.2 }}>
+              <motion.div className="uct-dcard" role="dialog" aria-modal="true" aria-labelledby="uct-dname" onClick={e => e.stopPropagation()}
+                initial={reduceMotion ? { opacity: 0 } : { scale: 0.8, opacity: 0, y: 20 }}
+                animate={{ scale: 1, opacity: 1, y: 0 }}
+                exit={reduceMotion ? { opacity: 0 } : { scale: 0.8, opacity: 0, y: 20 }}
+                transition={{ type: 'spring', stiffness: 300, damping: 30, mass: 0.8 }}>
+                <button className="uct-dx" onClick={closeDetail} aria-label="Close" autoFocus><Mi>close</Mi></button>
+                {renderDetail(detail)}
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
     </div>
   );

@@ -40,5 +40,21 @@ export function MenuItem({ icon, onSelect, disabled, danger, hint, children }) {
   );
 }
 
+// A pick-one list inside a Menu (a filter, a sort order). Radix radio items, so
+// the checked option is announced; menu.css swaps the ring icon on data-state.
+export function MenuRadioGroup({ value, onChange, children }) {
+  return <M.RadioGroup value={value} onValueChange={onChange}>{children}</M.RadioGroup>;
+}
+
+export function MenuRadio({ value, children }) {
+  return (
+    <M.RadioItem className="menu-item menu-radio" value={value}>
+      <Mi aria-hidden="true" className="menu-off">radio_button_unchecked</Mi>
+      <Mi aria-hidden="true" className="menu-on">radio_button_checked</Mi>
+      <span className="menu-tx">{children}</span>
+    </M.RadioItem>
+  );
+}
+
 export const MenuSep = () => <M.Separator className="menu-sep" />;
 export const MenuLabel = ({ children }) => <M.Label className="sel-header">{children}</M.Label>;

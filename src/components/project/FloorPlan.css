@@ -180,28 +180,44 @@
 .fpv-seats .fpv-ghd { padding: 4px 0 8px; }
 .fpv-seats .fpv-none { padding: 4px 0; }
 .fps-tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(68px, 1fr)); gap: 6px; }
+/* Grid view: seat-map tiles, like a train seat picker. Each unit is a fixed,
+   near-square seat (a touch taller than wide), rows spaced wider apart than
+   seats, at most 7 a row: 7 × 48px + 6 × 8px gaps = 384px, so 8 never fit. */
+.is-seats .fps-tiles { grid-template-columns: repeat(auto-fill, 48px); gap: 10px 8px; max-width: 384px; }
+.is-seats .fps-tile { height: 52px; padding: 3px 2px; border-radius: 9px; font-size: 10.5px; }
+.is-seats .fps-sz { font-size: 9px; }
 .fpv-side .fps-tiles { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 .fps-tile {
   display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px;
-  min-height: 44px; padding: 4px 3px; border-radius: 8px; border: 1.5px solid var(--green);
+  min-height: 44px; padding: 4px 3px; border-radius: 8px; border: 1.5px solid color-mix(in srgb, var(--t1) 72%, transparent);
   background: var(--surf); color: var(--t1); font-size: 11px; font-weight: 700; line-height: 1.2;
   overflow-wrap: anywhere; cursor: pointer; transition: transform .12s, box-shadow .12s;
 }
 .fps-sz { font-size: 9.5px; font-weight: 600; color: var(--t2); }
-.fps-tile.on .fps-sz, .fps-tile.st-sold .fps-sz, .fps-tile.st-unlinked .fps-sz { color: inherit; opacity: .85; }
+.fps-tile.on .fps-sz, .fps-tile.st-hold .fps-sz, .fps-tile.st-sold .fps-sz, .fps-tile.has-c .fps-sz, .fps-tile.st-unlinked .fps-sz { color: inherit; opacity: .85; }
 .fps-tile:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 3px 10px rgba(0, 0, 0, .12); }
+.fps-tile.st-available:hover { border-color: var(--accent); }
 .fps-tile:focus-visible { outline: 2px solid var(--fp-sel); outline-offset: 2px; }
-.fps-tile.st-hold { border-color: var(--gold); background: color-mix(in srgb, var(--gold) 26%, var(--surf)); }
-.fps-tile.st-sold { border-color: var(--red); background: color-mix(in srgb, var(--red) 22%, var(--surf)); color: var(--t2); }
+/* Seat-map style: a free unit is an outline; a taken one is a solid fill.
+   Fixed fills (not the theme's --gold / --red) so the text reads in both
+   themes: dark on gold 8.5:1, white on red 4.7:1 (the drawing's sold red). */
+.fpv-grid { --st-hold: #E3A322; --st-sold: #D23C3C; }
+.fps-tile.st-hold { border-color: var(--st-hold); background: var(--st-hold); color: #14110d; }
+.fps-tile.st-sold { border-color: var(--st-sold); background: var(--st-sold); color: #fff; }
 .fps-tile.st-unlinked { border: 1.5px dashed var(--bd2); color: var(--t3); cursor: default; }
-.fps-tile.has-c { border-color: var(--st-c); background: color-mix(in srgb, var(--st-c) 22%, var(--surf)); color: var(--t1); }
+.fps-tile.has-c { border-color: var(--st-c); background: var(--st-c); color: var(--st-ink, #fff); }
 .fps-tile.on { border-color: var(--fp-sel); background: var(--fp-sel); color: #fff; box-shadow: 0 0 0 3px color-mix(in srgb, var(--fp-sel) 25%, transparent); }
 
-.fps-sw { width: 14px; height: 14px; border-radius: 4px; border: 1.5px solid var(--green); background: var(--surf); flex: none; }
-.fps-sw.st-hold { border-color: var(--gold); background: color-mix(in srgb, var(--gold) 26%, var(--surf)); }
-.fps-sw.st-sold { border-color: var(--red); background: color-mix(in srgb, var(--red) 22%, var(--surf)); }
+/* legend dots: an open ring for free, solid for the rest (like the tiles) */
+.fps-sw { width: 11px; height: 11px; border-radius: 50%; border: 1.5px solid color-mix(in srgb, var(--t1) 72%, transparent); background: transparent; flex: none; }
+.fps-sw.st-hold { border-color: var(--st-hold); background: var(--st-hold); }
+.fps-sw.st-sold { border-color: var(--st-sold); background: var(--st-sold); }
 .fps-sw.is-sel { border-color: var(--fp-sel); background: var(--fp-sel); }
-.fps-sw.has-c { border-color: var(--st-c); background: color-mix(in srgb, var(--st-c) 30%, var(--surf)); }
+.fps-sw.has-c { border-color: var(--st-c); background: var(--st-c); }
+.fps-legend { gap: 6px 14px; font-size: 12px; }
+.fps-top { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+.fps-top span { font-size: 15px; font-weight: 700; color: var(--t1); }
+.fps-top em { font-style: normal; font-size: 12.5px; font-weight: 700; color: var(--orange); white-space: nowrap; }
 
 /* Floor dropdown (ui/select.jsx) in the toolbar row, a pill like the project picker (.fsel) */
 .fpv-floorsel { flex: 0 1 220px; }
@@ -230,6 +246,9 @@
   .fpv-floorsel { flex: 1 1 140px; }   /* fills the line beside Grid / Plan */
   .fpv-manage { margin-left: 0; }
   .fps-tiles { grid-template-columns: repeat(auto-fill, minmax(60px, 1fr)); }
+  .is-seats .fps-tiles { grid-template-columns: repeat(auto-fill, 44px); gap: 9px 7px; max-width: 350px; }   /* 6 a row on a phone, 7 at most */
+  .is-seats .fps-tile { height: 48px; font-size: 9.5px; }
+  .is-seats .fps-sz { font-size: 8.5px; }
   .fps-tile { min-height: 42px; padding: 4px 2px; font-size: 10.5px; }
   .fpv-seats { padding: 10px; }
   .fpv-cta {

@@ -7,6 +7,9 @@
   /* near-black panel */
   --surf2: #161618;
   /* raised panel */
+  /* opaque twins of --surf/--surf2: #app turns those translucent (see GLASS SHELL) */
+  --surf-solid: #0B0B0C;
+  --surf2-solid: #161618;
   --bd: rgba(255, 255, 255, .12);
   --bd2: rgba(255, 255, 255, .24);
   --t1: #FFFFFF;
@@ -77,6 +80,8 @@
   --bg: #FAFAFA;
   --surf: #FFFFFF;
   --surf2: #F0F1F3;
+  --surf-solid: #FFFFFF;
+  --surf2-solid: #F0F1F3;
   --bd: rgba(10, 10, 10, .14);
   --bd2: rgba(10, 10, 10, .24);
   --t1: #0A0A0A;
@@ -1524,7 +1529,6 @@ a {
    --inset at 0 and is unchanged. */
 @media not all and (max-width: 1023px) {
   :root { --inset: 8px }
-  #app { background: var(--surf) }
 }
 
 /* Aurora WebGL background behind all admin pages */
@@ -1544,6 +1548,64 @@ a {
   background:
     radial-gradient(110% 80% at 80% 10%, rgba(200, 255, 0, 0.06) 0%, transparent 55%),
     linear-gradient(180deg, rgba(10, 10, 10, 0.86) 0%, rgba(10, 10, 10, 0.8) 45%, rgba(10, 10, 10, 0.9) 100%);
+}
+
+/* ── GLASS SHELL ─────────────────────────────
+   Signed-in app only: the login and landing pages keep their own backdrops.
+   #app paints the smoke photo under a dimming wash, and inside it --surf and
+   --surf2 turn translucent, so the sidebar, page panel and every card read as
+   glass over the photo. Popovers and menus switch back to the opaque
+   --*-solid tokens, because what lies under them must not show through.
+   Modals and the lead panel render outside #app and stay opaque. */
+#app {
+  --surf: rgba(12, 12, 14, .74);
+  --surf2: rgba(255, 255, 255, .06);
+  --glass-panel: rgba(0, 0, 0, .3);
+  --glass-blur: blur(20px);
+  --card-blur: var(--glass-blur);
+  background-color: #000;
+  background-image: linear-gradient(rgba(0, 0, 0, .62), rgba(0, 0, 0, .62)), url('./assets/smoke-bg.jpg');
+  background-position: center;
+  background-size: cover;
+  background-repeat: no-repeat
+}
+
+/* Light theme shows the same photo inverted: a difference blend against the
+   near-white canvas turns white smoke on black into grey smoke on white. */
+:root[data-theme="light"] #app {
+  --surf: rgba(255, 255, 255, .72);
+  --surf2: rgba(10, 10, 10, .05);
+  --glass-panel: rgba(255, 255, 255, .34);
+  background-color: #FAFAFA;
+  background-image: linear-gradient(rgba(250, 250, 250, .66), rgba(250, 250, 250, .66)), url('./assets/smoke-bg.jpg');
+  background-blend-mode: normal, difference
+}
+
+/* Frosted glass: the shell chrome and the top-level cards blur the photo
+   behind them. Nested surfaces only tint, since a blur inside a blurred card
+   would only see that card. */
+#app :is(.sidebar, .bnav) {
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur)
+}
+/* The sidebar sits over the brightest smoke (the photo's left edge), so it
+   takes a heavier tint than --surf: the smoke stays a faint glow there. */
+#app .sidebar { background: rgba(10, 10, 12, .86) }
+:root[data-theme="light"] #app .sidebar { background: rgba(255, 255, 255, .86) }
+#app :is(.card, .mc, .sc-card, .kpi-tile, .tc, .agc, .tmcard, .lt, .fbar, .lead-filter, .analytics-card, .rep-card, .st-card, .alert-card, .prop-card, .prop-toolbar, .cl-card, .cal-card, .cal-panel, .uct-card, .acc-card, .ms-card, .wa-list, .wa-main) {
+  -webkit-backdrop-filter: var(--card-blur);
+  backdrop-filter: var(--card-blur)
+}
+
+/* Phones: a blur behind every card is redone on each scroll frame. Cards keep
+   the tint only; the sidebar and bottom bar keep their blur. */
+@media(max-width:767px) {
+  #app { --card-blur: none }
+}
+
+#app :is(.umenu, .notif-panel, .drp-panel, .acsw-menu, .kpi-sheet, .logcall-pop, .ub-cl-list, .pcc-drop, .pip-menu, .ct-tip, .modal, .sel-content, .ces-content, option) {
+  --surf: var(--surf-solid);
+  --surf2: var(--surf2-solid)
 }
 
 /* Drawer backdrop: ≤1023px only, so it can never be left over the docked
@@ -2444,10 +2506,10 @@ a {
     /* inset panel (see APP SHELL): --inset off every edge, the sidebar's
        included; overflow:hidden clips the header to the radius.
        No edge line: the panel is told apart from the sidebar by its fill
-       alone (--bg against the sidebar's), plus the soft drop shadow. */
+       alone (--glass-panel against the sidebar's), plus the soft drop shadow. */
     height: calc(100dvh - 2 * var(--inset));
     margin: var(--inset) var(--inset) var(--inset) calc(var(--sw) + var(--inset));
-    background: var(--bg);
+    background: var(--glass-panel);
     border-radius: var(--r-xl);
     box-shadow: var(--sh);
     transition: margin-left var(--sb-in) var(--sb-ease)
@@ -12862,62 +12924,172 @@ input[type="time"]::-webkit-calendar-picker-indicator { opacity: .9; cursor: poi
   .iad-q-call { width: 40px; height: 40px; flex-basis: 40px }
 }
 
-/* ── USERS (merged Users + Accounts) — team-list table ───────────── */
-.ut-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap }
-.ut-search { flex: 1 1 240px; max-width: 340px; background: var(--surf) }
-.ut-search input { width: 100% }
-.ut-sel { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; color: var(--t1) }
-.ut-bar-r { display: flex; gap: 8px; margin-left: auto }
-.ut-bar-r .btn.on { border-color: var(--accent); color: var(--accent) }
+/* ── USERS (merged Users + Accounts) — contacts-style roster ─────────────
+   A grid table (role=table) with role pills. Each row's View button
+   opens the person's card over the table. Filter / Sort / Export are ui/menu
+   dropdowns in the toolbar. */
+.uct-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap }
+.uct-search { flex: 1 1 240px; max-width: 340px; background: var(--surf) }
+.uct-search input { width: 100% }
+.uct-sel { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; color: var(--t1) }
+.uct-bar-r { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-left: auto }
+.uct-bar-r .btn.on { border-color: var(--accent); color: var(--accent) }
+.uct-btn {
+  display: inline-flex; align-items: center; gap: 7px; height: 36px; padding: 0 12px;
+  border: 1px solid var(--bd); border-radius: var(--r-sm); background: var(--surf); color: var(--t1);
+  font: 600 13px/1 var(--font-display); transition: background var(--tr), border-color var(--tr), box-shadow var(--tr)
+}
+.uct-btn:hover:not(:disabled), .uct-btn[data-state="open"] { background: var(--surf2); border-color: var(--bd2) }
+.uct-btn:disabled { opacity: .4; cursor: not-allowed }
+.uct-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px }
+.uct-btn.on { box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 35%, transparent) }
+.uct-btn .mi { font-size: 17px; color: var(--t2) }
+.uct-btn .uct-chev { font-size: 16px; margin-left: -3px; opacity: .6 }
+.uct-n { padding: 3px 6px; border-radius: 4px; background: var(--accent); color: var(--on-accent); font-size: 11px; font-weight: 700; line-height: 1 }
+/* Filter menu: scrolls within the room radix reports below/above the button.
+   .sel-content (select.css, loaded later) sets its own max-height from a
+   select-only variable, which is none here, hence the doubled class. */
+.sel-content.uct-menu {
+  max-height: min(calc(var(--radix-dropdown-menu-content-available-height, 70vh) - 8px), 420px);
+  overflow-y: auto; overscroll-behavior: contain
+}
 
-.ut-card { background: var(--surf); border: 1px solid var(--bd); border-radius: var(--r-lg); overflow: hidden }
-.ut-scroll { overflow-x: auto }
-.ut { width: 100%; border-collapse: collapse; min-width: 980px; font-size: 13px }
-.ut th { text-align: left; font-size: 13px; font-weight: 600; color: var(--t1); padding: 16px 12px; border-bottom: 1px solid var(--bd); white-space: nowrap }
-.ut td { padding: 12px; border-bottom: 1px solid var(--bd); color: var(--t1); vertical-align: middle }
-.ut-row { transition: background var(--tr) }
-.ut-row:hover, .ut-row.sel { background: var(--surf2) }
-.ut-row.open { background: var(--blue-l); box-shadow: inset 2px 0 0 var(--accent) }
-.ut-row.open td { border-bottom-color: transparent }
-.ut-c-chk { width: 44px; padding-left: 18px !important }
-.ut-c-exp { width: 34px; padding-left: 0 !important; padding-right: 0 !important }
-.ut-c-act { width: 104px; text-align: center !important }
-.ut-chk, .ut-exp { background: none; border: none; padding: 0; cursor: pointer; display: flex; align-items: center; color: var(--t3) }
-.ut-chk .mi { font-size: 21px }
-.ut-chk.on { color: var(--accent) }
-.ut-exp .mi { font-size: 22px }
-.ut-exp:hover, .ut-chk:hover { color: var(--t1) }
-.ut-who { display: flex; align-items: center; gap: 10px; min-width: 0 }
-.ut-name { background: none; border: none; padding: 0; font: inherit; font-weight: 600; color: var(--t1); cursor: pointer; text-align: left; white-space: nowrap }
-.ut-name:hover { color: var(--accent); text-decoration: underline }
-.ut-you { font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; color: var(--t3); background: var(--surf2); border-radius: 999px; padding: 2px 7px }
-.ut-muted { color: var(--t2) !important }
-.ut-nowrap { white-space: nowrap }
-.ut-acts { display: flex; gap: 6px; justify-content: center }
-.ut .ui-del { opacity: 1 }
+/* every row is one grid, so the header and the rows share the columns */
+/* Black glass: 74% black over the page's smoke photo, frosted by a heavy blur,
+   so the photo shows only as a faint glow (never as wisps or grey). The edge
+   is a glass rim (::before): light catching the top-left and bottom-right
+   corners, fading out along the sides. The light theme adds a white sheen
+   down from the top. */
+.uct-card {
+  --uct-line: color-mix(in srgb, var(--bd) 55%, transparent);
+  --uct-base: rgba(0, 0, 0, .74);
+  --uct-sheen: transparent;   /* no sheen in dark: it read as grey */
+  --uct-rim: linear-gradient(135deg, rgba(255, 255, 255, .3), rgba(255, 255, 255, .05) 30%, rgba(255, 255, 255, .04) 70%, rgba(255, 255, 255, .18));
+  --uct-drop: rgba(0, 0, 0, .4);
+  position: relative; overflow: hidden;
+  background: linear-gradient(180deg, var(--uct-sheen) 0%, transparent 40%), var(--uct-base);
+  border-radius: var(--r-lg);
+  box-shadow: 0 10px 30px var(--uct-drop)
+}
+.uct-card::before {   /* the rim: a 1px gradient ring, the middle masked out */
+  content: ''; position: absolute; inset: 0; z-index: 1; padding: 1px; border-radius: inherit;
+  background: var(--uct-rim); pointer-events: none;
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor; mask-composite: exclude
+}
+:root[data-theme="light"] .uct-card {
+  --uct-base: rgba(255, 255, 255, .74);
+  --uct-sheen: rgba(255, 255, 255, .7);
+  --uct-rim: linear-gradient(135deg, #fff, rgba(10, 10, 10, .08) 30%, rgba(10, 10, 10, .08) 70%, rgba(255, 255, 255, .9));
+  --uct-drop: rgba(17, 20, 24, .08)
+}
+#app .uct-card {   /* heavier than the GLASS SHELL card blur, which this outranks */
+  -webkit-backdrop-filter: blur(24px);
+  backdrop-filter: blur(24px)
+}
+.uct-card.has-detail { min-height: 560px }   /* room for the View card on a short list */
+.uct-scroll { overflow-x: auto }
+/* Each column stops near its content width (Name, Role, Team, Email, Phone);
+   the spare width goes to the 1fr spacer tracks between them, as equal gaps,
+   so Role sits close to Name on a wide screen. */
+.uct-table { min-width: 940px }
+.uct-row {
+  display: grid;
+  grid-template-columns:
+    44px minmax(180px, 250px) minmax(0, 1fr) 128px minmax(0, 1fr) minmax(140px, 220px)
+    minmax(0, 1fr) minmax(190px, 260px) minmax(0, 1fr) minmax(120px, 150px) minmax(0, 1fr) 136px;
+  border-bottom: 1px solid var(--uct-line); transition: background var(--tr)
+}
+.uct-row > :nth-child(3) { grid-column: 4 }
+.uct-row > :nth-child(4) { grid-column: 6 }
+.uct-row > :nth-child(5) { grid-column: 8 }
+.uct-row > :nth-child(6) { grid-column: 10 }
+.uct-row > :nth-child(7) { grid-column: 12 }
+.uct-head { min-height: 42px }
+.uct-head .uct-c { gap: 6px; font-size: 12px; font-weight: 600; color: var(--t3) }
+.uct-head .uct-c .mi { font-size: 15px; opacity: .6 }
+.uct-body .uct-row { min-height: 52px }
+.uct-body .uct-row:hover { background: color-mix(in srgb, var(--t1) 5%, transparent) }
+.uct-body .uct-row.sel { background: color-mix(in srgb, var(--t1) 8%, transparent) }
+.uct-body .uct-row:last-child { border-bottom: 0 }
+.uct-c { display: flex; align-items: center; gap: 8px; min-width: 0; padding: 0 12px; font-size: 13.5px; color: var(--t1) }
+.uct-c-chk { justify-content: center; padding: 0 }
+/* Action: Edit, Delete and View (the person's card), as round buttons */
+.uct-c-act { justify-content: center; gap: 6px; padding: 0 8px }
+/* fixed slots, so View lines up on your own row too (no Delete there) */
+.uct-body .uct-c-act { display: grid; grid-template-columns: repeat(3, 38px); place-items: center }
+.uct-act-view { grid-column: 3 }
+.uct-head .uct-c-act { font-size: 13px; color: var(--t1) }
+.uct-c-act .ui-del { opacity: 1 }
+.uct-muted { color: var(--t2) }
+.uct-empty { padding: 36px 16px; text-align: center; font-size: 13px; color: var(--t3) }
 
-.ut-dtr { background: var(--blue-l) }
-.ut-dtr > td { padding: 4px 18px 20px 90px; border-bottom: 1px solid var(--accent) }
-.ut-detail { display: flex; gap: 36px; flex-wrap: wrap }
-.ut-dcol { min-width: 180px }
-.ut-dl { font-size: 13px; font-weight: 600; color: var(--t1); margin-bottom: 10px }
-.ut-dlist { display: flex; flex-direction: column; gap: 7px }
-.ut-mate { display: flex; align-items: center; gap: 7px; font-size: 12.5px; color: var(--t2) }
-.ut-mate .mi { font-size: 16px; color: var(--t3) }
-.ut-mate { background: none; border: none; padding: 0; cursor: pointer; font: inherit; font-size: 12.5px; text-align: left }
-.ut-mate:hover { color: var(--accent) }
-.ut-mate-r { font-size: 11px; color: var(--t3); margin-left: 4px }
-.ut-dmuted { font-size: 12.5px; color: var(--t3); font-style: italic }
-.ut-dstats { display: flex; gap: 22px; flex-wrap: wrap }
-.ut-dstat { display: flex; flex-direction: column }
-.ut-dstat b { font-size: 18px; font-weight: 800; color: var(--t1); font-family: var(--font-display) }
-.ut-dstat span { font-size: 11px; color: var(--t3); text-transform: uppercase; letter-spacing: .6px }
-.ut-won { color: var(--green) !important }
+.uct-chk { display: flex; align-items: center; padding: 0; border: 0; background: none; color: var(--t3); cursor: pointer }
+.uct-chk .mi { font-size: 20px }
+.uct-chk.on { color: var(--accent) }
+.uct-chk:hover { color: var(--t1) }
 
-.ut-foot { display: flex; align-items: center; justify-content: flex-end; gap: 8px; padding: 12px 18px }
-.ut-range { font-size: 12.5px; color: var(--t2); margin-right: 6px }
-.ut-pg { width: 30px; height: 30px; border-radius: var(--r-sm); border: 1px solid var(--bd); background: var(--surf); color: var(--t1); display: flex; align-items: center; justify-content: center; cursor: pointer }
-.ut-pg:disabled { opacity: .4; cursor: default }
-.ut-pg .mi { font-size: 20px }
-@media(max-width:640px) { .ut-dtr > td { padding-left: 18px } .ut-bar-r { margin-left: 0 } }
+/* name: avatar + name in a pill */
+.uct-chip { display: inline-flex; align-items: center; gap: 8px; min-width: 0; padding: 3px 12px 3px 3px; border-radius: 999px; background: color-mix(in srgb, var(--t1) 6%, transparent) }
+.uct-av { width: 26px; height: 26px; font-size: 10.5px }
+.uct-name { min-width: 0; padding: 0; border: 0; background: none; font: inherit; font-weight: 600; color: var(--t1); cursor: pointer; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+.uct-name:hover { color: var(--accent) }
+.uct-tag { flex: none; padding: 2px 7px; border-radius: 999px; background: var(--surf2); color: var(--t3); font-size: 10.5px; font-weight: 700; letter-spacing: .5px; text-transform: uppercase }
+.uct-tag.off { background: var(--red-l); color: var(--red) }
+
+/* role pill: --tone per role, tinted background */
+.uct-role { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: var(--r-sm); background: color-mix(in srgb, var(--tone) 13%, transparent); color: var(--tone); font-size: 12px; font-weight: 600; white-space: nowrap }
+.uct-role i { width: 6px; height: 6px; border-radius: 50%; background: currentColor }
+.uct-role .mi { font-size: 14px; margin-left: -2px }
+.uct-role.t-mgmt { --tone: var(--green) }
+.uct-role.t-tl { --tone: var(--chart-1) }
+.uct-role.t-agent { --tone: var(--orange) }
+.uct-role.t-exec { --tone: var(--chart-7) }
+
+.uct-mail, .uct-tel { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+.uct-mail { color: var(--chart-1) }
+.uct-tel { color: var(--t2) }
+.uct-mail:hover, .uct-tel:hover { text-decoration: underline }
+
+/* View card: over the table, which it blurs */
+.uct-ov {
+  position: absolute; inset: 0; z-index: 5; display: flex; padding: 24px; overflow-y: auto;
+  background: color-mix(in srgb, var(--bg) 55%, transparent);
+  -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px)
+}
+.uct-dcard { position: relative; display: flex; flex-direction: column; gap: 18px; width: 100%; max-width: 460px; margin: auto; padding: 24px; border: 1px solid var(--bd2); border-radius: var(--r-xl); background: var(--surf); box-shadow: var(--sh-lg) }
+.uct-dcard > * { flex-shrink: 0 }   /* a tall card scrolls the overlay instead of squeezing its sections */
+.uct-dx { position: absolute; top: 12px; right: 12px; width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; border-radius: 50%; background: var(--surf2); color: var(--t2) }
+.uct-dx:hover { color: var(--t1) }
+.uct-dx .mi { font-size: 16px }
+.uct-dhd { display: flex; align-items: center; gap: 12px; padding-right: 30px }
+.uct-dhd-t { min-width: 0 }
+.uct-dhd h3 { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; font-size: 18px; font-weight: 700; color: var(--t1) }
+.uct-dgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px 18px }
+.uct-df { display: flex; flex-direction: column; gap: 4px; min-width: 0; font-size: 13.5px; color: var(--t1) }
+.uct-dl { display: flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 700; letter-spacing: .6px; text-transform: uppercase; color: var(--t3) }
+.uct-dl .mi { font-size: 14px }
+.uct-dsec { margin-bottom: 8px }
+.uct-dstats { display: flex; flex-wrap: wrap; gap: 22px }
+.uct-dstat { display: flex; flex-direction: column }
+.uct-dstat b { font-family: var(--font-display); font-size: 18px; font-weight: 800; color: var(--t1) }
+.uct-dstat span { font-size: 11px; letter-spacing: .6px; text-transform: uppercase; color: var(--t3) }
+.uct-won { color: var(--green) !important }
+.uct-mates { display: flex; flex-direction: column; gap: 7px; max-height: 150px; overflow-y: auto }
+.uct-mate { display: flex; align-items: center; gap: 7px; padding: 0; border: 0; background: none; font: inherit; font-size: 12.5px; color: var(--t2); cursor: pointer; text-align: left }
+.uct-mate .mi { font-size: 16px; color: var(--t3) }
+.uct-mate:hover { color: var(--accent) }
+.uct-mate-r { margin-left: 4px; font-size: 11px; color: var(--t3) }
+.uct-dmuted { font-size: 12.5px; font-style: italic; color: var(--t3) }
+.uct-dft { display: flex; gap: 8px; padding-top: 16px; border-top: 1px solid var(--bd) }
+.uct-dft .uct-send { flex: 1; justify-content: center }
+.uct-dft .ui-del { opacity: 1 }
+
+/* pager inside the card: "1 - 10 of 30" and ‹ › */
+.uct-foot { display: flex; align-items: center; justify-content: flex-end; gap: 8px; padding: 12px 18px; border-top: 1px solid var(--uct-line) }
+.uct-range { margin-right: 6px; font-size: 12.5px; color: var(--t2) }
+.uct-pg { width: 30px; height: 30px; display: flex; align-items: center; justify-content: center; border: 1px solid var(--bd); border-radius: var(--r-sm); background: var(--surf); color: var(--t1); cursor: pointer }
+.uct-pg:disabled { opacity: .4; cursor: default }
+.uct-pg .mi { font-size: 20px }
+@media(max-width:640px) { .uct-bar-r { margin-left: 0 } .uct-dgrid { grid-template-columns: 1fr } }
 .ag-overdue { background: var(--red-l) !important; color: var(--red) !important; border: 0; cursor: pointer; font: inherit; font-size: 11px; font-weight: 700 }
