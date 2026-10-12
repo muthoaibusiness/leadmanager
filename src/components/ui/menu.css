@@ -17,3 +17,6 @@
 @media (max-width: 1023px) {
   .menu-item { min-height: 44px; }
 }
+/* MenuRadio: an empty ring, or the filled one in the accent when checked. */
+.menu-radio .menu-on, .menu-radio[data-state="checked"] .menu-off { display: none; }
+.menu-radio[data-state="checked"] .menu-on { display: inline-block; color: var(--accent); }

@@ -180,6 +180,12 @@
 .fpv-seats .fpv-ghd { padding: 4px 0 8px; }
 .fpv-seats .fpv-none { padding: 4px 0; }
 .fps-tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(68px, 1fr)); gap: 6px; }
+/* Grid view: seat-map tiles, like a train seat picker. Each unit is a fixed,
+   near-square seat (a touch taller than wide), rows spaced wider apart than
+   seats, at most 7 a row: 7 × 48px + 6 × 8px gaps = 384px, so 8 never fit. */
+.is-seats .fps-tiles { grid-template-columns: repeat(auto-fill, 48px); gap: 10px 8px; max-width: 384px; }
+.is-seats .fps-tile { height: 52px; padding: 3px 2px; border-radius: 9px; font-size: 10.5px; }
+.is-seats .fps-sz { font-size: 9px; }
 .fpv-side .fps-tiles { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 .fps-tile {
   display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px;
@@ -240,6 +246,9 @@
   .fpv-floorsel { flex: 1 1 140px; }   /* fills the line beside Grid / Plan */
   .fpv-manage { margin-left: 0; }
   .fps-tiles { grid-template-columns: repeat(auto-fill, minmax(60px, 1fr)); }
+  .is-seats .fps-tiles { grid-template-columns: repeat(auto-fill, 44px); gap: 9px 7px; max-width: 350px; }   /* 6 a row on a phone, 7 at most */
+  .is-seats .fps-tile { height: 48px; font-size: 9.5px; }
+  .is-seats .fps-sz { font-size: 8.5px; }
   .fps-tile { min-height: 42px; padding: 4px 2px; font-size: 10.5px; }
   .fpv-seats { padding: 10px; }
   .fpv-cta {

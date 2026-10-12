@@ -30,6 +30,21 @@ const OTHER = 'other'; // the chip for units on no floor plan
 const ALL = 'all-floors'; // Grid: every floor at once, grouped by floor
 const sortPlans = (plans) => [...plans].sort((a, b) => (a.order ?? 0) - (b.order ?? 0) || byCode(a.name || '', b.name || ''));
 const unitRow = (loc) => ({ code: loc.unit.id, loc, status: loc.unit.status, type: loc.variant.name || '', size: unitSize(loc.unit, loc.variant), price: unitPrice(loc.unit, loc.variant) });
+// A unit tile's label: each word before the number cut to its initial, so
+// "Office-16" reads "O-16", "SHOP-401" "S-401" and "Food Court-3" "FC-3".
+// Words of up to 3 letters are kept ("SR-12", "A-101"); a code with no word
+// in front of a number stays whole. Only the tile shows it: titles, search
+// results, the unit card and everything outside the grid keep the full code.
+// SHORT_WORDS: types whose initial would read as a commoner one's (a
+// Showroom is "SH", so it never looks like a Shop's "S").
+const SHORT_WORDS = { showroom: 'SH' };
+const shortCode = (code) => {
+  const m = /^([A-Za-z][A-Za-z ]*?)([\s\-_./]*\d.*)$/.exec(code || '');
+  if (!m) return code;
+  const head = m[1].trim();
+  return (SHORT_WORDS[head.toLowerCase().replace(/\s+/g, '')]
+    ?? head.split(/\s+/).map(w => (w.length <= 3 ? w : w[0].toUpperCase())).join('')) + m[2];
+};
 
 export default function AvailableUnitsView() {
   const { user, dbVersion, refreshDB, planSel, setPlanSel, setPlanEdit, openModal, setPropSel, setConsoleAdmin, setConsoleUnit } = useApp();
@@ -133,8 +148,14 @@ export default function AvailableUnitsView() {
   const counts = { available: 0, hold: 0, sold: 0 };
   customs.forEach(c => { counts['c:' + c.id] = 0; });
   items.forEach(r => { const k = kindOf(r); if (counts[k] != null) counts[k]++; });
+  // Tile labels: shortCode, except where two units in view would share one
+  // ("Office-16" and "Outlet-16"); those keep their full codes.
+  const codesByShort = new Map();
+  items.forEach(r => { const s = shortCode(r.code); codesByShort.set(s, (codesByShort.get(s) || new Set()).add(r.code)); });
+  const tileLabel = (r) => { const s = shortCode(r.code); return codesByShort.get(s).size > 1 ? r.code : s; };
   const term = q.trim().toUpperCase();
-  const shown = (r) => (stat === 'all' || kindOf(r) === stat) && (!term || r.code.toUpperCase().includes(term));
+  const shown = (r) => (stat === 'all' || kindOf(r) === stat)
+    && (!term || r.code.toUpperCase().includes(term) || tileLabel(r).toUpperCase().includes(term));
 
   // List order: by floor (All floors) or by type, then code; units that point nowhere last.
   const groups = [];
@@ -228,7 +249,7 @@ export default function AvailableUnitsView() {
                 <button key={r.code + (r.box?.id || '')} type="button" className={`fps-tile st-${r.status}${look(r).color ? ' has-c' : ''}${on ? ' on' : ''}`} style={tint(r)} aria-pressed={on}
                   disabled={!r.loc} title={tileTitle(r)} aria-label={tileTitle(r)} onClick={() => select(on ? null : r.code)}
                   onMouseEnter={() => r.box && setHover(r.box.id)} onMouseLeave={() => setHover(null)}>
-                  <span className="fps-code">{r.code}</span>
+                  <span className="fps-code">{tileLabel(r)}</span>
                   {r.size > 0 && <span className="fps-sz">{r.size.toLocaleString('en-IN')} sft</span>}
                 </button>
               );
