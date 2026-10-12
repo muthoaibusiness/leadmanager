@@ -1592,7 +1592,7 @@ a {
    takes a heavier tint than --surf: the smoke stays a faint glow there. */
 #app .sidebar { background: rgba(10, 10, 12, .86) }
 :root[data-theme="light"] #app .sidebar { background: rgba(255, 255, 255, .86) }
-#app :is(.card, .mc, .sc-card, .kpi-tile, .tc, .agc, .tmcard, .lt, .fbar, .lead-filter, .analytics-card, .rep-card, .st-card, .alert-card, .prop-card, .prop-toolbar, .cl-card, .cal-card, .cal-panel, .uct-card, .acc-card, .ms-card, .wa-list, .wa-main) {
+#app :is(.card, .mc, .sc-card, .kpi-tile, .tc, .agc, .tmcard, .lt, .fbar, .lead-filter, .analytics-card, .rep-card, .alert-card, .prop-card, .prop-toolbar, .cl-card, .cal-card, .cal-panel, .uct-card, .acc-card, .ms-card, .wa-list, .wa-main) {
   -webkit-backdrop-filter: var(--card-blur);
   backdrop-filter: var(--card-blur)
 }
@@ -9690,41 +9690,47 @@ textarea.fi {
   flex-shrink: 0
 }
 
-/* Muthoclo KPI trend card */
+/* the headline row of four KpiRow cards */
+.kpi-cards { margin-bottom: 22px }
+
+/* KPI card (StatTrend), matched to the reference mock: black cards with
+   a lit top edge, a regular-weight title, a thin line icon top right, the
+   value with a note under it, and a small orange visual on the right. The
+   card keeps these colours in both themes; only the orange lights up. */
 .st-card {
-  --st-accent: var(--volt);
+  --st-accent: #FB8849;
+  --st-ink: #FFFFFF;
+  --st-title: #D6D7DA;
+  --st-mute: #A9A9AB;
+  --st-icon: #75767A;
+  --st-track: #25262A;
   position: relative;
   display: flex;
   flex-direction: column;
+  gap: 14px;
   background:
-    radial-gradient(120% 100% at 100% 0%, color-mix(in srgb, var(--st-accent) 10%, transparent), transparent 60%),
-    var(--surf);
-  border: 1px solid var(--bd);
-  border-radius: var(--r-lg);
-  padding: 16px 18px;
-  min-height: 116px;
+    radial-gradient(60% 50% at 0% 0%, rgba(255, 255, 255, .04), transparent 100%),
+    #000;
+  border: 1px solid #27282C;
+  border-top-color: #35363B;
+  border-radius: 16px;
+  padding: 20px 22px 22px;
+  min-height: 150px;
   overflow: hidden;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .05), 0 12px 28px -18px rgba(0, 0, 0, .8);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;   /* opaque, so no glass blur here (crisp edges) */
   transition: border-color var(--tr), transform var(--tr), box-shadow var(--tr)
 }
 
-.st-card::before {
-  content: '';
-  position: absolute;
-  inset: 0 0 auto 0;
-  height: 3px;
-  background: var(--st-accent);
-  opacity: .9
-}
-
-.st-card:hover {
-  border-color: color-mix(in srgb, var(--st-accent) 45%, var(--bd2));
+.st-card.mc-click:hover {   /* only a clickable card lifts */
+  border-color: #2B2C2E;
+  border-top-color: #3A3B3F;
   transform: translateY(-2px);
-  box-shadow: 0 10px 24px -14px color-mix(in srgb, var(--st-accent) 55%, transparent)
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .05), 0 14px 30px -16px rgba(0, 0, 0, .9), 0 0 24px -12px color-mix(in srgb, var(--st-accent) 45%, transparent)
 }
 
-.st-card.has-graph {
-  padding-bottom: 0
-}
+.st-card .mc-go { color: var(--st-icon) }
 
 .st-top {
   display: flex;
@@ -9733,78 +9739,152 @@ textarea.fi {
   gap: 8px
 }
 
-.st-lwrap {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0
-}
-
-.st-ico {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 24px;
-  height: 24px;
-  border-radius: var(--r-sm);
-  background: color-mix(in srgb, var(--st-accent) 16%, transparent);
-  color: var(--st-accent);
-  flex: none
-}
-
-.st-ico .mi {
-  font-size: 15px
-}
-
 .st-l {
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: .06em;
-  text-transform: uppercase;
-  color: var(--t3);
+  font-size: 15.5px;
+  font-weight: 400;
+  letter-spacing: 0;
+  color: var(--st-title);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis
 }
 
-.st-d {
-  display: inline-flex;
-  align-items: center;
-  gap: 2px;
-  font-size: 13px;
-  font-weight: 800;
-  font-variant-numeric: tabular-nums
+.st-ico {
+  color: var(--st-icon);
+  flex: none
 }
 
-.st-d .mi {
-  font-size: 15px
+.st-body {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 14px;
+  margin-top: auto
 }
 
-.st-d.up {
-  color: var(--green)
-}
-
-.st-d.down {
-  color: var(--red)
+.st-main {
+  flex: 1 1 auto;
+  min-width: 0
 }
 
 .st-v {
   font-family: var(--font-display);
-  font-size: 30px;
-  font-weight: 800;
-  color: var(--t1);
+  font-size: clamp(20px, 1.5vw, 28px);   /* one line, even "BDT 4.20Cr" beside a visual */
+  font-weight: 400;
+  color: var(--st-ink);
   line-height: 1;
-  margin-top: 9px;
+  letter-spacing: .2px;
+  white-space: nowrap;
   font-variant-numeric: tabular-nums
 }
 
-.st-spark {
-  margin-top: auto;
-  width: calc(100% + 36px);
-  margin-left: -18px;
-  margin-right: -18px;
-  height: 46px;
-  display: block
+.st-note {
+  margin-top: 11px;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--st-mute);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis
+}
+
+.st-note.up {
+  color: var(--st-accent)
+}
+
+/* the visuals: one height, flush with the value's baseline; they give way
+   to a long value before the value wraps */
+.st-vis {
+  flex: 0 1 auto;
+  min-width: 64px;
+  height: 52px
+}
+
+.st-area {
+  width: 48%;
+  max-width: 140px;
+  height: 58px;
+  display: block;
+  overflow: visible
+}
+
+.st-bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 5px;
+  width: 44%;
+  max-width: 120px;
+  height: 40px;
+  padding-bottom: 2px;
+  border-bottom: 1px solid #2A2B2F
+}
+
+.st-bars i {
+  flex: 1 1 0;
+  border-radius: 3px;
+  background: linear-gradient(180deg, #A9A9AB, #4A4B4F)
+}
+
+.st-bars i.on {
+  background: linear-gradient(180deg, #FFB07A, var(--st-accent));
+  box-shadow: 0 0 10px color-mix(in srgb, var(--st-accent) 45%, transparent)
+}
+
+.st-dots {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  width: 44%;
+  max-width: 130px
+}
+
+.st-dots b {
+  display: flex;
+  flex: 1 1 0;
+  flex-direction: column;
+  justify-content: flex-end;
+  gap: 3px;
+  height: 100%
+}
+
+.st-dots i {
+  flex: 1 1 0;
+  max-height: 5px;
+  border-radius: 1.5px;
+  background: #35363B
+}
+
+.st-dots i.on {
+  background: var(--st-accent);
+  box-shadow: 0 0 4px color-mix(in srgb, var(--st-accent) 55%, transparent)
+}
+
+.st-pill {
+  position: relative;
+  width: 44%;
+  max-width: 120px;
+  height: 40px;
+  align-self: center;
+  border-radius: 999px;
+  overflow: hidden;
+  background: repeating-linear-gradient(90deg, #3C3D42 0 3px, #27282C 3px 6px);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .06), inset 0 0 0 1px #2B2C2E
+}
+
+.st-pill i {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #F56B2A, #FF9A5E);
+  box-shadow: 0 0 16px color-mix(in srgb, var(--st-accent) 55%, transparent)
+}
+
+@media(max-width:767px) {
+  .st-card { padding: 14px 14px 16px }
+  .st-v { font-size: 22px }
+  .st-note { white-space: normal; overflow: visible; line-height: 1.3 }
+  .st-vis { min-width: 56px; height: 44px }
+  .st-pill { height: 32px }
 }
 
 /* Needs-attention alert strip */
