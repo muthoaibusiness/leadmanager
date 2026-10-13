@@ -20,6 +20,7 @@ export const VIEW_TITLES = {
   team: 'My Team',
   accounts: 'Users',
   requests: 'Hold Requests',
+  inventory: 'Inventory',
   profile: 'My Profile',
   companies: 'Companies',
 };

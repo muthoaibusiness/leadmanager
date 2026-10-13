@@ -5,7 +5,7 @@ import { seedDB, SEED_PROPERTIES, DEMO_PROPERTIES } from './lib/seed.js';
 import { sbLoad, sbSubscribeAll } from './lib/supabase.js';
 import { waLoadSettings } from './lib/wa.js';
 import { pushUnreadSummary, requestNotifyPermission } from './lib/pushNotify.js';
-import { rlabel, kbd } from './lib/helpers.js';
+import { kbd } from './lib/helpers.js';
 import { ROLES, canSee, effectiveRole, DRAWER_MQ } from './lib/constants.js';
 import { VIEW_TITLES, homeView } from './lib/navHistory.js';
 import useMediaQuery from './hooks/useMediaQuery.js';
@@ -55,6 +55,7 @@ const PAGES = {
   ClientsView: () => import('./components/views/ClientsView.jsx'),
   ReportsView: () => import('./components/views/ReportsView.jsx'),
   AgentPerformanceView: () => import('./components/views/AgentPerformanceView.jsx'),
+  InventoryView: () => import('./components/views/InventoryView.jsx'),
   ConversationsView: () => import('./components/views/ConversationsView.jsx'),
 };
 const OVERLAYS = {
@@ -83,11 +84,12 @@ const OVERLAYS = {
   BookingModal: () => import('./components/modals/BookingModal.jsx'),
   TransferLeadModal: () => import('./components/modals/TransferLeadModal.jsx'),
   ChatSettingsModal: () => import('./components/modals/ChatSettingsModal.jsx'),
+  LeadChatModal: () => import('./components/chat/LeadChatModal.jsx'),
 };
 
 const lazyAll = (loaders) => Object.fromEntries(Object.entries(loaders).map(([k, f]) => [k, lazyChunk(f)]));
 
-const { AgentDash, TeamLeadDash, ManagementDash, MasterDash, LeadsView, CalendarView, TeamView, AccountsView, RequestsView, ProfileView, PropertiesView, AvailableUnitsView, BookingsView, PipelineView, ClientsView, ReportsView, AgentPerformanceView, ConversationsView } = lazyAll(PAGES);
+const { AgentDash, TeamLeadDash, ManagementDash, MasterDash, LeadsView, CalendarView, TeamView, AccountsView, RequestsView, ProfileView, PropertiesView, AvailableUnitsView, BookingsView, PipelineView, ClientsView, ReportsView, AgentPerformanceView, InventoryView, ConversationsView } = lazyAll(PAGES);
 const OVERLAY_COMPONENTS = Object.entries(lazyAll(OVERLAYS));
 const LandingPage = lazyChunk(() => import('./components/LandingPage.jsx'));
 const SignIn1 = lazyChunk(() => import('./components/ui/modern-stunning-sign-in.jsx').then(m => ({ default: m.SignIn1 })));
@@ -98,9 +100,9 @@ const ProjectsToaster = lazyChunk(() => import('./components/project/ProjectsToa
 // one slow chunk never holds up another, and once mounted they stay mounted
 // (closed modals still render their backdrop for the open transition).
 function Overlays() {
-  const { user, modal, panLead } = useApp();
+  const { user, modal, panLead, chatTarget } = useApp();
   const [mounted, setMounted] = useState(false);
-  if (!mounted && (modal || panLead)) setMounted(true);
+  if (!mounted && (modal || panLead || chatTarget)) setMounted(true);
   useEffect(() => {
     if (mounted || !user) return;
     let idleId = 0;
@@ -218,7 +220,7 @@ function PageHeader({ shown, showBtnRef }) {
   );
 }
 
-// ── In-body hero header (eyebrow + big title + subtitle + actions) ───────────
+// ── In-body hero header (title + subtitle + actions) ────────────────────────
 function PageHero() {
   const { user, view, agentFilter, teamFilter, openModal, setCreateUserRoles, leadCounts, projTab, setProjTab, planSel } = useApp();
   const pnav = useProjectNav();
@@ -239,7 +241,8 @@ function PageHero() {
   const tlUser = teamFilter ? db.users.find(u => u.role === 'TEAM_LEAD' && u.teamId === teamFilter) : null;
   const drilled = !!(agentFilter || teamFilter);
 
-  // eyebrow / title / subtitle per view
+  // title / subtitle per view. No eyebrow label above the title: the
+  // breadcrumb in the header bar already says where the page sits.
   const props = getProperties();
   // units still for sale, counted from the catalog's blocks like the Projects KPIs
   const propAvail = props.reduce((s, p) => s + projectInventory(p).available, 0);
@@ -247,24 +250,25 @@ function PageHero() {
 
   // Titles come from VIEW_TITLES, which also labels the Back link to each page.
   const META = {
-    dashboard: { eyebrow: rlabel(user.role), sub: '' },
-    leads: { eyebrow: 'Pipeline', sub: leadCounts?.total == null ? 'Counting…' : `${leadCounts.total} prospects ·${leadCounts.active ?? 0} active` },
-    calendar: { eyebrow: 'Schedule', sub: 'Your scheduled meetings' },
-    pipeline: { eyebrow: 'Sales', sub: 'Drag deals across stages' },
-    clients: { eyebrow: 'Relationships', sub: '360° customer view' },
-    properties: { eyebrow: 'Catalog', sub: `${props.length} project${props.length === 1 ? '' : 's'} · ${propAvail} unit${propAvail === 1 ? '' : 's'} available` },
-    reports: { eyebrow: 'Insights', sub: 'Live sales analytics' },
-    agentperf: { eyebrow: 'Insights', sub: 'Per-role scorecards & funnels' },
-    bookings: { eyebrow: 'Sales', sub: 'Payments, instalments & dues' },
-    team: { eyebrow: 'Team', sub: `${teamAgents} agents` },
-    accounts: { eyebrow: 'Administration', sub: 'Team list · create & manage accounts' },
-    requests: { eyebrow: 'Administration', sub: 'Approve agent unit holds' },
-    profile: { eyebrow: 'Account', sub: 'Manage your details & avatar' },
-    companies: { eyebrow: 'Master Admin', sub: 'Company-wise overview' },
+    dashboard: { sub: '' },
+    leads: { sub: leadCounts?.total == null ? 'Counting…' : `${leadCounts.total} prospects ·${leadCounts.active ?? 0} active` },
+    calendar: { sub: 'Your scheduled meetings' },
+    pipeline: { sub: 'Drag deals across stages' },
+    clients: { sub: '360° customer view' },
+    properties: { sub: `${props.length} project${props.length === 1 ? '' : 's'} · ${propAvail} unit${propAvail === 1 ? '' : 's'} available` },
+    reports: { sub: 'Live sales analytics' },
+    agentperf: { sub: 'Per-role scorecards & funnels' },
+    bookings: { sub: 'Payments, instalments & dues' },
+    team: { sub: `${teamAgents} agents` },
+    accounts: { sub: 'Team list · create & manage accounts' },
+    requests: { sub: 'Approve agent unit holds' },
+    inventory: { sub: '' },
+    profile: { sub: 'Manage your details & avatar' },
+    companies: { sub: 'Company-wise overview' },
   };
   for (const k in META) META[k].title = VIEW_TITLES[k];
-  let { eyebrow, title, sub } = META[view] || { eyebrow: '', title: view, sub: '' };
-  if (user.role === ROLES.MASTER) ({ eyebrow, title, sub } = META.companies); // master only ever sees the company overview
+  let { title, sub } = META[view] || { title: view, sub: '' };
+  if (user.role === ROLES.MASTER) ({ title, sub } = META.companies); // master only ever sees the company overview
   if (drilled) {
     title = agentFilter && agentName ? agentName : (tlUser?.name || 'Team') + "'s Team";
     // A drill-down is the case where the count matters most, and it is now the
@@ -318,7 +322,6 @@ function PageHero() {
   return (
     <div className={`hero${view === 'pipeline' ? ' hero-compact' : ''}`}>
       <div className="hero-main">
-        <div className="hero-eyebrow">{eyebrow}</div>
         <h1 className="hero-title">{title}</h1>
         {sub && <div className="hero-sub">{sub}</div>}
       </div>
@@ -352,6 +355,7 @@ function PageBody() {
   if (view === 'agentperf') return <AgentPerformanceView />;
   if (view === 'team') return <TeamView />;
   if (view === 'accounts') return <AccountsView />;
+  if (view === 'inventory') return <InventoryView />;
   if (view === 'requests') return <RequestsView />;
   if (view === 'profile') return <ProfileView />;
   return null;

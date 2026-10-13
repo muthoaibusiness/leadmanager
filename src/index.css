@@ -1592,7 +1592,7 @@ a {
    takes a heavier tint than --surf: the smoke stays a faint glow there. */
 #app .sidebar { background: rgba(10, 10, 12, .86) }
 :root[data-theme="light"] #app .sidebar { background: rgba(255, 255, 255, .86) }
-#app :is(.card, .mc, .sc-card, .kpi-tile, .tc, .agc, .tmcard, .lt, .fbar, .lead-filter, .analytics-card, .rep-card, .st-card, .alert-card, .prop-card, .prop-toolbar, .cl-card, .cal-card, .cal-panel, .uct-card, .acc-card, .ms-card, .wa-list, .wa-main) {
+#app :is(.card, .mc, .sc-card, .kpi-tile, .tc, .agc, .tmcard, .lt, .fbar, .lead-filter, .analytics-card, .rep-card, .alert-card, .prop-card, .prop-toolbar, .cl-card, .cal-card, .cal-panel, .uct-card, .acc-card, .ms-card, .wa-list, .wa-main) {
   -webkit-backdrop-filter: var(--card-blur);
   backdrop-filter: var(--card-blur)
 }
@@ -2840,26 +2840,19 @@ a {
 }
 
 /* In-body hero header (eyebrow + big title + subtitle) */
+/* Page header: title + subtitle, tight under the breadcrumb (which already
+   names the page and leads back), so the page content starts high. */
 .hero {
   display: flex;
   align-items: flex-end;
   justify-content: space-between;
   gap: 12px 20px;
-  margin-bottom: clamp(14px, .6vw + 10px, 22px);
+  margin-bottom: 12px;
   flex-wrap: wrap
 }
 
 .hero-main {
   min-width: 0
-}
-
-.hero-eyebrow {
-  font-size: 12px;
-  font-weight: 800;
-  letter-spacing: .2em;
-  text-transform: uppercase;
-  color: var(--volt);
-  margin-bottom: 8px
 }
 
 .hero-back {
@@ -2888,7 +2881,7 @@ a {
 
 .hero-title {
   font-family: var(--font-display);
-  font-size: clamp(22px, 1vw + 16px, 32px);
+  font-size: clamp(20px, .6vw + 15px, 26px);
   font-weight: 500;
   text-transform: uppercase;
   letter-spacing: .01em;
@@ -2897,15 +2890,12 @@ a {
 }
 
 .hero-sub {
-  font-size: 14.5px;
+  font-size: 13px;
   color: var(--t2);
-  margin-top: 8px
+  margin-top: 4px
 }
 
 /* Compact hero (Pipeline) — reclaim vertical space for the board */
-.hero-compact { margin-bottom: 12px }
-.hero-compact .hero-eyebrow { margin-bottom: 2px }
-.hero-compact .hero-title { font-size: clamp(20px, .6vw + 15px, 26px) }
 .hero-compact .hero-sub { display: none }
 
 .hero-acts {
@@ -9690,39 +9680,47 @@ textarea.fi {
   flex-shrink: 0
 }
 
-/* Muthoclo KPI trend card */
+/* the headline row of four KpiRow cards */
+.kpi-cards { margin-bottom: 22px }
+
+/* KPI card (StatTrend), matched to the reference mock: black cards with
+   a lit top edge, a regular-weight title, a thin line icon top right, the
+   value with a note under it, and a small orange visual on the right. The
+   card keeps these colours in both themes; only the orange lights up. */
 .st-card {
-  --st-accent: var(--volt);
+  --st-accent: #FB8849;
+  --st-ink: #FFFFFF;
+  --st-title: #D6D7DA;
+  --st-mute: #A9A9AB;
+  --st-icon: #75767A;
+  --st-track: #25262A;
   position: relative;
   display: flex;
   flex-direction: column;
-  background: var(--surf);
-  border: 1px solid var(--bd);
-  border-radius: var(--r-lg);
-  padding: 16px 18px;
-  min-height: 116px;
+  gap: 14px;
+  background:
+    radial-gradient(60% 50% at 0% 0%, rgba(255, 255, 255, .04), transparent 100%),
+    #000;
+  border: 1px solid #27282C;
+  border-top-color: #35363B;
+  border-radius: 16px;
+  padding: 20px 22px 22px;
+  min-height: 150px;
   overflow: hidden;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .05), 0 12px 28px -18px rgba(0, 0, 0, .8);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;   /* opaque, so no glass blur here (crisp edges) */
   transition: border-color var(--tr), transform var(--tr), box-shadow var(--tr)
 }
 
-.st-card::before {
-  content: '';
-  position: absolute;
-  inset: 0 0 auto 0;
-  height: 2px;
-  background: var(--st-accent);
-  opacity: .5
-}
-
-.st-card:hover {
-  border-color: color-mix(in srgb, var(--st-accent) 25%, var(--bd2));
+.st-card.mc-click:hover {   /* only a clickable card lifts */
+  border-color: #2B2C2E;
+  border-top-color: #3A3B3F;
   transform: translateY(-2px);
-  box-shadow: 0 8px 18px -14px color-mix(in srgb, var(--st-accent) 30%, transparent)
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .05), 0 14px 30px -16px rgba(0, 0, 0, .9), 0 0 24px -12px color-mix(in srgb, var(--st-accent) 45%, transparent)
 }
 
-.st-card.has-graph {
-  padding-bottom: 0
-}
+.st-card .mc-go { color: var(--st-icon) }
 
 .st-top {
   display: flex;
@@ -9731,78 +9729,152 @@ textarea.fi {
   gap: 8px
 }
 
-.st-lwrap {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0
-}
-
-.st-ico {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 24px;
-  height: 24px;
-  border-radius: var(--r-sm);
-  background: color-mix(in srgb, var(--st-accent) 10%, transparent);
-  color: var(--st-accent);
-  flex: none
-}
-
-.st-ico .mi {
-  font-size: 15px
-}
-
 .st-l {
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: .06em;
-  text-transform: uppercase;
-  color: var(--t3);
+  font-size: 15.5px;
+  font-weight: 400;
+  letter-spacing: 0;
+  color: var(--st-title);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis
 }
 
-.st-d {
-  display: inline-flex;
-  align-items: center;
-  gap: 2px;
-  font-size: 13px;
-  font-weight: 800;
-  font-variant-numeric: tabular-nums
+.st-ico {
+  color: var(--st-icon);
+  flex: none
 }
 
-.st-d .mi {
-  font-size: 15px
+.st-body {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 14px;
+  margin-top: auto
 }
 
-.st-d.up {
-  color: var(--green)
-}
-
-.st-d.down {
-  color: var(--red)
+.st-main {
+  flex: 1 1 auto;
+  min-width: 0
 }
 
 .st-v {
   font-family: var(--font-display);
-  font-size: 30px;
-  font-weight: 800;
-  color: var(--t1);
+  font-size: clamp(20px, 1.5vw, 28px);   /* one line, even "BDT 4.20Cr" beside a visual */
+  font-weight: 400;
+  color: var(--st-ink);
   line-height: 1;
-  margin-top: 9px;
+  letter-spacing: .2px;
+  white-space: nowrap;
   font-variant-numeric: tabular-nums
 }
 
-.st-spark {
-  margin-top: auto;
-  width: calc(100% + 36px);
-  margin-left: -18px;
-  margin-right: -18px;
-  height: 46px;
-  display: block
+.st-note {
+  margin-top: 11px;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--st-mute);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis
+}
+
+.st-note.up {
+  color: var(--st-accent)
+}
+
+/* the visuals: one height, flush with the value's baseline; they give way
+   to a long value before the value wraps */
+.st-vis {
+  flex: 0 1 auto;
+  min-width: 64px;
+  height: 52px
+}
+
+.st-area {
+  width: 48%;
+  max-width: 140px;
+  height: 58px;
+  display: block;
+  overflow: visible
+}
+
+.st-bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 5px;
+  width: 44%;
+  max-width: 120px;
+  height: 40px;
+  padding-bottom: 2px;
+  border-bottom: 1px solid #2A2B2F
+}
+
+.st-bars i {
+  flex: 1 1 0;
+  border-radius: 3px;
+  background: linear-gradient(180deg, #A9A9AB, #4A4B4F)
+}
+
+.st-bars i.on {
+  background: linear-gradient(180deg, #FFB07A, var(--st-accent));
+  box-shadow: 0 0 10px color-mix(in srgb, var(--st-accent) 45%, transparent)
+}
+
+.st-dots {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  width: 44%;
+  max-width: 130px
+}
+
+.st-dots b {
+  display: flex;
+  flex: 1 1 0;
+  flex-direction: column;
+  justify-content: flex-end;
+  gap: 3px;
+  height: 100%
+}
+
+.st-dots i {
+  flex: 1 1 0;
+  max-height: 5px;
+  border-radius: 1.5px;
+  background: #35363B
+}
+
+.st-dots i.on {
+  background: var(--st-accent);
+  box-shadow: 0 0 4px color-mix(in srgb, var(--st-accent) 55%, transparent)
+}
+
+.st-pill {
+  position: relative;
+  width: 44%;
+  max-width: 120px;
+  height: 40px;
+  align-self: center;
+  border-radius: 999px;
+  overflow: hidden;
+  background: repeating-linear-gradient(90deg, #3C3D42 0 3px, #27282C 3px 6px);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .06), inset 0 0 0 1px #2B2C2E
+}
+
+.st-pill i {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #F56B2A, #FF9A5E);
+  box-shadow: 0 0 16px color-mix(in srgb, var(--st-accent) 55%, transparent)
+}
+
+@media(max-width:767px) {
+  .st-card { padding: 14px 14px 16px }
+  .st-v { font-size: 22px }
+  .st-note { white-space: normal; overflow: visible; line-height: 1.3 }
+  .st-vis { min-width: 56px; height: 44px }
+  .st-pill { height: 32px }
 }
 
 /* Needs-attention alert strip */
@@ -12014,6 +12086,13 @@ textarea.fi {
 .mip-fld input{ background:0; border:0; outline:0; color:var(--mip-t1); font:inherit; font-size:13px; width:150px; }
 .mip-fld input::placeholder{ color:var(--mip-t2); }
 .mip-fld svg{ width:15px; height:15px; stroke:var(--mip-t2); fill:none; }
+/* Phones: the search shrinks to sit beside the role tabs instead of dropping
+   to a second line (the spacer gives way so the field takes the room). */
+@media(max-width:767px){
+  .mip-bar .mip-sp{ display:none; }
+  .mip-bar .mip-fld{ flex:1 1 120px; min-width:0; }
+  .mip-bar .mip-fld input{ width:100%; min-width:0; }
+}
 
 /* layout */
 .mip-grid{ display:grid; grid-template-columns:1.05fr .95fr; gap:22px; }
@@ -13090,6 +13169,57 @@ input[type="time"]::-webkit-calendar-picker-indicator { opacity: .9; cursor: poi
 .uct-range { margin-right: 6px; font-size: 12.5px; color: var(--t2) }
 .uct-pg { width: 30px; height: 30px; display: flex; align-items: center; justify-content: center; border: 1px solid var(--bd); border-radius: var(--r-sm); background: var(--surf); color: var(--t1); cursor: pointer }
 .uct-pg:disabled { opacity: .4; cursor: default }
-.uct-pg .mi { font-size: 20px }
 @media(max-width:640px) { .uct-bar-r { margin-left: 0 } .uct-dgrid { grid-template-columns: 1fr } }
 .ag-overdue { background: var(--red-l) !important; color: var(--red) !important; border: 0; cursor: pointer; font: inherit; font-size: 11px; font-weight: 700 }
+
+/* ── WhatsApp Lead Action Buttons ── */
+.lt-wa-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  background: var(--green-l, rgba(37, 211, 102, 0.12));
+  color: var(--green, #25D366);
+  border: 1px solid rgba(37, 211, 102, 0.25);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  margin-left: 6px;
+  flex-shrink: 0;
+}
+.lt-wa-btn:hover {
+  background: #25D366;
+  color: #fff;
+  border-color: #25D366;
+  transform: scale(1.08);
+}
+.lt-wa-btn .mi {
+  font-size: 16px;
+}
+
+.iad-q-wa {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--r-sm);
+  background: var(--green-l, rgba(37, 211, 102, 0.12));
+  color: var(--green, #25D366);
+  border: 1px solid rgba(37, 211, 102, 0.25);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  margin-left: 6px;
+  flex-shrink: 0;
+}
+.iad-q-wa:hover {
+  background: #25D366;
+  color: #fff;
+  border-color: #25D366;
+  transform: scale(1.06);
+}
+.iad-q-wa .mi {
+  font-size: 18px;
+}
+

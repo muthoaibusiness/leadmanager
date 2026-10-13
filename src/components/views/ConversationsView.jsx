@@ -10,7 +10,7 @@ import { pushNotify } from '../../lib/pushNotify.js';
 import useChanged from '../../hooks/useChanged.js';
 import {
   waLoadConversations, waLoadMessages, waMarkRead, waSendMessage, waRetry,
-  waFetchAvatar, waSubscribe, matchLead, mergeStatus, isChatAdmin,
+  waFetchAvatar, waSubscribe, matchLead, mergeStatus, isChatAdmin, isLeadAssignedOrForwardedTo,
 } from '../../lib/wa.js';
 
 // How many missing avatars to backfill right after the list loads — enough to
@@ -35,8 +35,17 @@ export default function ConversationsView() {
   const visibleRef = useRef(true);
   useEffect(() => { activeIdRef.current = activeId; }, [activeId]);
 
-  const active = useMemo(() => convs.find(c => c.id === activeId) || null, [convs, activeId]);
   const leads = getDB().leads || [];
+  // For non-admin agents: only show conversations for leads forwarded or assigned to this agent
+  const visibleConvs = useMemo(() => {
+    if (isChatAdmin(user)) return convs;
+    return convs.filter(c => {
+      const l = c.leadId ? getLead(c.leadId) || matchLead(c, leads) : matchLead(c, leads);
+      return isLeadAssignedOrForwardedTo(l, user);
+    });
+  }, [convs, user, leads]);
+
+  const active = useMemo(() => visibleConvs.find(c => c.id === activeId) || null, [visibleConvs, activeId]);
   // dbVersion is a dependency so a lead created elsewhere re-resolves the link.
   const lead = useMemo(
     () => (active ? (active.leadId ? getLead(active.leadId) || matchLead(active, leads) : matchLead(active, leads)) : null),
@@ -71,8 +80,8 @@ export default function ConversationsView() {
 
   // Publish the unread total so the sidebar badge stays in step.
   useEffect(() => {
-    setWaUnread(convs.reduce((s, c) => s + (c.unreadCount || 0), 0));
-  }, [convs, setWaUnread]);
+    setWaUnread(visibleConvs.reduce((s, c) => s + (c.unreadCount || 0), 0));
+  }, [visibleConvs, setWaUnread]);
 
   useEffect(() => {
     const h = () => { visibleRef.current = document.visibilityState === 'visible'; };
@@ -220,7 +229,7 @@ export default function ConversationsView() {
       <div className="wa-bar">
         <div className="wa-bar-l">
           <h2 className="wa-bar-t">Conversations</h2>
-          <span className="wa-bar-sub">WhatsApp · {convs.length} thread{convs.length === 1 ? '' : 's'}</span>
+          <span className="wa-bar-sub">WhatsApp · {visibleConvs.length} thread{visibleConvs.length === 1 ? '' : 's'}</span>
         </div>
         <div className="wa-bar-r">
           {connState !== 'online' && (
@@ -257,7 +266,7 @@ export default function ConversationsView() {
           while no thread is open. */}
       <div className={`wa-grid${showPane && active ? '' : ' wa-grid-2'}${active ? '' : ' wa-grid-list'}`}>
         <ChatList
-          conversations={convs}
+          conversations={visibleConvs}
           activeId={activeId}
           onSelect={openConv}
           connState={connState}

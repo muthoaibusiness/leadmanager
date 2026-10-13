@@ -45,7 +45,7 @@ function FollowUpCell({ leadId, fromServer, pending }) {
 //                      and produce a wrong page, so both are skipped and the
 //                      pager reports up to the caller.
 export default function LeadTable({ leads, total = null, page: pageProp, onPage, loading = false, lastFu = {}, fuPending = false }) {
-  const { setPanLead, user, refreshDB, showToast, sortBy } = useApp();
+  const { setPanLead, setChatTarget, user, refreshDB, showToast, sortBy } = useApp();
   const server = total != null;
   const [ownPage, setOwnPage] = useState(0);
   const page = server ? (pageProp || 0) : ownPage;
@@ -173,10 +173,23 @@ export default function LeadTable({ leads, total = null, page: pageProp, onPage,
               <span className="lt-id" title={leadCode(l)}>{leadCode(l)}</span>
             </div>
             <div className="lt-cell lt-cell-main">
-              <div style={{ minWidth: 0 }}>
+              <div style={{ minWidth: 0, flex: 1 }}>
                 <div className="lt-n">{l.name}</div>
                 <div className="lt-sub">{l.phone}</div>
               </div>
+              {l.phone && (
+                <button
+                  type="button"
+                  className="lt-wa-btn"
+                  title={`Chat on WhatsApp with ${l.name || 'customer'}`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setChatTarget(l);
+                  }}
+                >
+                  <Mi>chat</Mi>
+                </button>
+              )}
             </div>
             <div className="lt-cell lt-cell-src">
               <span className="lt-src">{SRC_LABELS[l.source] || l.source || '—'}</span>

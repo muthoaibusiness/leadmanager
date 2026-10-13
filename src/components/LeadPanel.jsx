@@ -14,7 +14,7 @@ const leadCode = (l) => l.externalId || ('#' + String(l.id || '').slice(-6).toUp
 const SHARED_LABEL = { price: 'Price idea', brochure: 'Brochure', video: 'Video', image: 'Image' };
 
 function LeadInfo({ l }) {
-  const { user } = useApp();
+  const { user, setChatTarget } = useApp();
   const phones = (l.phones?.length ? l.phones : [l.phone]).filter(Boolean);
   const emails = (l.emails?.length ? l.emails : l.email ? [l.email] : []).filter(Boolean);
 
@@ -78,7 +78,17 @@ function LeadInfo({ l }) {
             <div key={'p' + i} className="ld-crow">
               <Mi>call</Mi>
               <a href={`tel:${p}`}>{p}{i === 0 && phones.length > 1 ? ' · primary' : ''}</a>
-              <a className="ld-wa" href={`https://wa.me/${p.replace(/[^0-9]/g, '')}`} target="_blank" rel="noreferrer" title="WhatsApp"><Mi>chat</Mi></a>
+              <button
+                type="button"
+                className="ld-wa"
+                title="Chat on WhatsApp"
+                onClick={(e) => {
+                  e.preventDefault();
+                  setChatTarget({ ...l, phone: p });
+                }}
+              >
+                <Mi>chat</Mi>
+              </button>
             </div>
           ))}
           {emails.map((e, i) => (
