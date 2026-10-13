@@ -83,6 +83,7 @@ const OVERLAYS = {
   BookingModal: () => import('./components/modals/BookingModal.jsx'),
   TransferLeadModal: () => import('./components/modals/TransferLeadModal.jsx'),
   ChatSettingsModal: () => import('./components/modals/ChatSettingsModal.jsx'),
+  LeadChatModal: () => import('./components/chat/LeadChatModal.jsx'),
 };
 
 const lazyAll = (loaders) => Object.fromEntries(Object.entries(loaders).map(([k, f]) => [k, lazyChunk(f)]));
@@ -98,9 +99,9 @@ const ProjectsToaster = lazyChunk(() => import('./components/project/ProjectsToa
 // one slow chunk never holds up another, and once mounted they stay mounted
 // (closed modals still render their backdrop for the open transition).
 function Overlays() {
-  const { user, modal, panLead } = useApp();
+  const { user, modal, panLead, chatTarget } = useApp();
   const [mounted, setMounted] = useState(false);
-  if (!mounted && (modal || panLead)) setMounted(true);
+  if (!mounted && (modal || panLead || chatTarget)) setMounted(true);
   useEffect(() => {
     if (mounted || !user) return;
     let idleId = 0;
