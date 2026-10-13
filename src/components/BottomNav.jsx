@@ -13,7 +13,7 @@ import { NAV_META } from '../lib/navMeta.js';
 
 // Candidate tabs in priority order; the first three the user may see are shown.
 const PRIORITY = ['dashboard', 'companies', 'leads', 'properties', 'reports', 'conversations',
-  'calendar', 'pipeline', 'agentperf', 'team', 'requests', 'accounts'];
+  'calendar', 'pipeline', 'agentperf', 'team', 'requests', 'inventory', 'accounts'];
 
 // `inert`: set while the drawer is open, so Tab stays in the drawer.
 export default function BottomNav({ inert }) {

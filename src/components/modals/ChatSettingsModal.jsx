@@ -157,6 +157,7 @@ export default function ChatSettingsModal() {
               <span className={`wa-cred-state${tokenSet ? ' on' : ''}`}>
                 <Mi>{tokenSet ? 'lock' : 'lock_open'}</Mi>{tokenSet ? 'Token stored' : 'Not set'}
               </span>
+            </div>
             <div className="wa-acct-pick" style={{ display: 'flex', gap: '6px', margin: '10px 0' }}>
               {WA_ACCOUNTS.map(a => (
                 <button key={a} type="button" className={`ftab${account === a ? ' on' : ''}`} onClick={() => setAccount(a)}>
