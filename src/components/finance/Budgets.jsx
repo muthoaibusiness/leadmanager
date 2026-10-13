@@ -2,7 +2,7 @@ import { useState } from 'react';
 import Mi from '../Mi.jsx';
 import { fmtBDT, fmtAgo } from '../../lib/helpers.js';
 import { useProjectToast } from '../project/projectToast.js';
-import { BUDGET_STATUS, EXPENSE_KIND, byId, latestRequest, approvalsOf, expensesOf, linesOf, statementTotal } from '../../lib/finance.js';
+import { BUDGET_STATUS, EXPENSE_KIND, byId, latestRequest, approvalsOf, expensesOf, linesOf, statementTotalText } from '../../lib/finance.js';
 import { BudgetForm, SubmitForm, DecideForm, ExpenseForm, StatementForm } from './forms.jsx';
 import { Discussion, History, FileLink } from './Discussion.jsx';
 
@@ -144,7 +144,7 @@ function BudgetDetail({ api, user, budget, onBack, onOpenStatement }) {
               <tr key={i.id} className="click" onClick={() => onOpenStatement(i.id)}>
                 <td className="w"><span className="fin-ttl">{i.number}</span></td><td>{i.title}</td><td className="m w">{i.issuedOn || '—'}</td>
                 <td><span className={`fin-pill ${i.status === 'FINAL' ? 't-good' : 't-muted'}`}>{i.status === 'FINAL' ? 'Final' : 'Draft'}</span></td>
-                <td className="r">{fmtBDT(statementTotal(lines))}</td>
+                <td className="r">{statementTotalText(i, lines)}</td>
               </tr>); })}</tbody>
           </table></div>
         ))}

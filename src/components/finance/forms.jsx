@@ -3,6 +3,7 @@ import Mi from '../Mi.jsx';
 import { getDB, getProperties } from '../../lib/db.js';
 import { fmtBDT } from '../../lib/helpers.js';
 import { CATEGORIES, PAY_METHODS, EXPENSE_KIND, readAsBase64, statementTotal } from '../../lib/finance.js';
+import { TEMPLATE_LIST, CURRENCIES, templateOf, fmtMoney, periodEnd } from '../../../Invoice-templates/index.js';
 
 // The finance forms, each a modal on the app's .mov/.modal shell. Every save
 // goes to the Edge Function through `onSave`, which resolves on success and
@@ -179,16 +180,32 @@ export function ExpenseForm({ budget, initial, onSave, onClose, upload }) {
 }
 
 // ── statement (invoice) editor ──
+// The template (Invoice-templates/) decides the layout; picking one fills the
+// vendor, bill-to, currency and starter lines, which stay editable.
 export function StatementForm({ budget, expenses, initial, initialLines, onSave, onClose, takenExpenseIds }) {
-  const [f, setF] = useState(() => ({ title: 'Expense statement', issuedOn: today(), fromName: '', billTo: '', notes: '', accent: '#1F6FEB', showQty: true, footer: '', ...(initial || {}) }));
+  const [f, setF] = useState(() => ({ title: 'Expense statement', issuedOn: today(), fromName: '', billTo: '', notes: '', accent: '#1F6FEB', showQty: true, footer: '', template: 'default', currency: 'BDT', vendorRef: '', paidOn: '', periodFrom: '', periodTo: '', ...(initial || {}) }));
   const [lines, setLines] = useState(() => (initialLines && initialLines.length ? initialLines.map(l => ({ expenseId: l.expenseId || null, description: l.description, qty: l.qty, unitPrice: l.unitPrice })) : []));
   const { busy, err, run } = useSubmit();
+  const tpl = templateOf(f.template);
+  const isReceipt = tpl.layout === 'receipt';
   const set = (k) => (e) => setF(x => ({ ...x, [k]: e.target.type === 'checkbox' ? e.target.checked : e.target.value }));
+  const pickTemplate = (id) => {
+    const t = templateOf(id), d = t.defaults || {};
+    setF(x => ({
+      ...x, template: t.id, currency: t.currency, accent: t.accent || '#1F6FEB',
+      title: d.title || (t.id === 'default' ? 'Expense statement' : x.title),
+      fromName: t.vendor?.name || (t.id === 'default' ? '' : x.fromName),
+      billTo: d.billTo ?? x.billTo,
+      ...(d.months && !x.periodTo ? { periodFrom: x.periodFrom || x.issuedOn, periodTo: periodEnd(x.periodFrom || x.issuedOn, d.months) } : {}),
+    }));
+    if (d.lines && !lines.length) setLines(d.lines.map(l => ({ expenseId: null, ...l })));
+  };
   const picked = new Set(lines.map(l => l.expenseId).filter(Boolean));
   const toggle = (e) => setLines(ls => picked.has(e.id) ? ls.filter(l => l.expenseId !== e.id) : [...ls, { expenseId: e.id, description: `${e.description || e.category || 'Expense'} · ${e.spentOn}`, qty: 1, unitPrice: Number(e.amount) }]);
   const setLine = (i, k, v) => setLines(ls => ls.map((l, j) => (j === i ? { ...l, [k]: v } : l)));
   const submit = () => run(async () => {
-    await onSave({ title: f.title, issuedOn: f.issuedOn, fromName: f.fromName, billTo: f.billTo, notes: f.notes, layout: { accent: f.accent, showQty: f.showQty, footer: f.footer }, lines });
+    await onSave({ title: f.title, issuedOn: f.issuedOn, fromName: f.fromName, billTo: f.billTo, notes: f.notes, lines,
+      layout: { template: f.template, currency: f.currency, accent: f.accent, showQty: f.showQty, footer: f.footer, vendorRef: f.vendorRef, paidOn: f.paidOn, periodFrom: f.periodFrom, periodTo: f.periodTo } });
     onClose();
   });
   return (
@@ -198,11 +215,33 @@ export function StatementForm({ budget, expenses, initial, initialLines, onSave,
     </>}>
       <Err msg={err} />
       <div className="fin-form">
+        <div className="fg full"><label>Template</label>
+          <select className="fsel" value={f.template} onChange={e => pickTemplate(e.target.value)}>{TEMPLATE_LIST.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}</select>
+          {isReceipt && <div className="fin-help">Laid out like a {tpl.name} receipt, headed STATEMENT, with a footer saying WEPRO prepared it from the {tpl.name} receipt. Attach the original receipt to the expense.</div>}
+        </div>
         <div className="fg"><label>Title</label><input className="fi" value={f.title} onChange={set('title')} /></div>
-        <div className="fg"><label>Date</label><input className="fi" type="date" value={f.issuedOn} onChange={set('issuedOn')} /></div>
-        <div className="fg"><label>From</label><textarea className="fi" rows={2} value={f.fromName} onChange={set('fromName')} placeholder="Team or department" /></div>
-        <div className="fg"><label>To</label><textarea className="fi" rows={2} value={f.billTo} onChange={set('billTo')} placeholder="Who receives this statement" /></div>
+        <div className="fg"><label>{isReceipt ? 'Receipt date' : 'Date'}</label><input className="fi" type="date" value={f.issuedOn} onChange={set('issuedOn')} /></div>
+        {isReceipt && <>
+          <div className="fg"><label>{tpl.refLabel || 'Vendor reference'}</label><input className="fi" value={f.vendorRef} onChange={set('vendorRef')} placeholder="As printed on the vendor receipt" /></div>
+          <div className="fg"><label>Payment date</label><input className="fi" type="date" value={f.paidOn} onChange={set('paidOn')} /></div>
+        </>}
+        <div className="fg full"><label>Duration</label>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+            <input className="fi" type="date" value={f.periodFrom} onChange={set('periodFrom')} aria-label="Period from" style={{ flex: '1 1 140px' }} />
+            <span className="fin-sub" style={{ display: 'inline' }}>to</span>
+            <input className="fi" type="date" value={f.periodTo} min={f.periodFrom || undefined} onChange={set('periodTo')} aria-label="Period to" style={{ flex: '1 1 140px' }} />
+          </div>
+          <div className="fin-kinds" style={{ marginTop: 8 }}>{[[1, '1 month'], [3, '3 months'], [6, '6 months'], [12, '1 year']].map(([m, l]) => (
+            <button key={m} type="button" className={f.periodTo && f.periodTo === periodEnd(f.periodFrom, m) ? 'on' : ''}
+              onClick={() => setF(x => { const from = x.periodFrom || x.issuedOn; return { ...x, periodFrom: from, periodTo: periodEnd(from, m) }; })}>{l}</button>))}
+          </div>
+          <div className="fin-help">The period this charge covers. {isReceipt ? 'It prints under each line, the way the vendor shows it.' : 'It prints in the statement header.'}</div>
+        </div>
+        <div className="fg"><label>{isReceipt ? 'Vendor' : 'From'}</label><textarea className="fi" rows={2} value={f.fromName} onChange={set('fromName')} placeholder={isReceipt ? 'Vendor name' : 'Team or department'} readOnly={isReceipt && !!tpl.vendor} /></div>
+        <div className="fg"><label>{isReceipt ? 'Bill to' : 'To'}</label><textarea className="fi" rows={isReceipt ? 4 : 2} value={f.billTo} onChange={set('billTo')} placeholder="Who receives this statement" /></div>
+        <div className="fg"><label>Currency</label><select className="fsel" value={f.currency} onChange={set('currency')}>{CURRENCIES.map(c => <option key={c}>{c}</option>)}</select></div>
         <div className="fg full"><label>Expenses on this statement</label>
+          {f.currency !== 'BDT' && expenses.length > 0 && <div className="fin-help">Expenses are recorded in BDT. Check each line’s price is in {f.currency}.</div>}
           {expenses.length === 0 ? <div className="fin-help">No expenses recorded on this budget yet. You can still add free lines below.</div> : (
             <div className="fin-pick">{expenses.map(e => { const off = takenExpenseIds.has(e.id) && !picked.has(e.id); return (
               <label key={e.id} className={off ? 'off' : ''} title={off ? 'Already on a final statement' : ''}>
@@ -214,22 +253,22 @@ export function StatementForm({ budget, expenses, initial, initialLines, onSave,
         </div>
         <div className="fg full"><label>Lines</label>
           <div className="fin-lines">
-            <div className="fin-line-hd"><span>Description</span><span>Qty</span><span>Unit price</span><span /></div>
+            <div className="fin-line-hd"><span>Description</span><span>Qty</span><span>{isReceipt ? 'Rate' : 'Unit price'}</span><span /></div>
             {lines.map((l, i) => (
               <div key={i} className="fin-line">
-                <input className="fi" value={l.description} onChange={e => setLine(i, 'description', e.target.value)} />
+                <textarea className="fi" rows={1} value={l.description} onChange={e => setLine(i, 'description', e.target.value)} placeholder="A second line shows underneath instead of the duration" style={{ resize: 'vertical', minHeight: 40 }} />
                 <input className="fi" type="number" min="0" step="1" value={l.qty} onChange={e => setLine(i, 'qty', Number(e.target.value))} />
-                <input className="fi" type="number" min="0" step="1" value={l.unitPrice} onChange={e => setLine(i, 'unitPrice', Number(e.target.value))} />
+                <input className="fi" type="number" min="0" step="0.01" value={l.unitPrice} onChange={e => setLine(i, 'unitPrice', Number(e.target.value))} />
                 <button type="button" className="x" onClick={() => setLines(ls => ls.filter((_, j) => j !== i))} aria-label="Remove line"><Mi>close</Mi></button>
               </div>
             ))}
             <div><button type="button" className="btn btn-g btn-sm" onClick={() => setLines(ls => [...ls, { expenseId: null, description: '', qty: 1, unitPrice: 0 }])}><Mi>add</Mi>Add a line</button></div>
-            <div className="fin-sumline"><span>Total</span><span>{fmtBDT(statementTotal(lines))}</span></div>
+            <div className="fin-sumline"><span>Total</span><span>{fmtMoney(statementTotal(lines), f.currency)}</span></div>
           </div>
         </div>
         <div className="fg"><label>Accent colour</label><input className="fi" type="color" value={f.accent} onChange={set('accent')} style={{ height: 40, padding: 4 }} /></div>
-        <div className="fg"><label>Columns</label><label style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 10, fontWeight: 500 }}><input type="checkbox" checked={f.showQty} onChange={set('showQty')} />Show quantity and unit price</label></div>
-        <div className="fg full"><label>Notes</label><textarea className="fi" rows={2} value={f.notes} onChange={set('notes')} /></div>
+        {!isReceipt && <div className="fg"><label>Columns</label><label style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 10, fontWeight: 500 }}><input type="checkbox" checked={f.showQty} onChange={set('showQty')} />Show quantity and unit price</label></div>}
+        <div className="fg full"><label>{isReceipt ? 'Memo' : 'Notes'}</label><textarea className="fi" rows={2} value={f.notes} onChange={set('notes')} /></div>
         <div className="fg full"><label>Footer</label><input className="fi" value={f.footer} onChange={set('footer')} placeholder="e.g. Internal use only" /></div>
       </div>
     </Modal>

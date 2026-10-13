@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { SB_URL, SB_KEY } from './supabase.js';
+import { fmtMoney } from '../../Invoice-templates/index.js';
 
 // Admin → Inventory: budgets, expenses and expense statements. Internal money,
 // not property inventory and not customer billing.
@@ -99,6 +100,8 @@ export const approvalsOf = (fin, budgetId) => (fin?.approvals || []).filter(a =>
 export const expensesOf = (fin, budgetId) => (fin?.expenses || []).filter(e => e.budgetId === budgetId);
 export const linesOf = (fin, invoiceId) => (fin?.lines || []).filter(l => l.invoiceId === invoiceId).sort((a, b) => a.position - b.position);
 export const statementTotal = (lines) => lines.reduce((s, l) => s + Number(l.qty || 0) * Number(l.unitPrice || 0), 0);
+// A statement's total in its own currency (a vendor template may bill in USD).
+export const statementTotalText = (inv, lines) => fmtMoney(statementTotal(lines), inv?.layout?.currency || 'BDT');
 export const commentsOf = (fin, type, id) => (fin?.comments || []).filter(c => c.entityType === type && c.entityId === id);
 export const eventsOf = (fin, type, id) => (fin?.events || []).filter(e => e.entityType === type && e.entityId === id);
 

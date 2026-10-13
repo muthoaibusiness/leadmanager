@@ -1,14 +1,16 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import Mi from '../Mi.jsx';
-import { fmtBDT, fmtAgo } from '../../lib/helpers.js';
+import { fmtAgo } from '../../lib/helpers.js';
 import { useProjectToast } from '../project/projectToast.js';
-import { byId, linesOf, statementTotal, expensesOf, shareLinks } from '../../lib/finance.js';
+import { byId, linesOf, statementTotalText, expensesOf, shareLinks } from '../../lib/finance.js';
+import { renderStatement, templateOf } from '../../../Invoice-templates/index.js';
 import { StatementForm, Modal } from './forms.jsx';
 import { Discussion, History } from './Discussion.jsx';
 
 // Expense statements (internal invoices): the list, and one statement as a
-// document with print / finalize / share. The sheet reuses the offer document
-// classes (.inv-*) so the existing print stylesheet produces the PDF.
+// document with print / finalize / share. The sheet is drawn by the template
+// renderer (Invoice-templates/) inside an iframe — the same HTML the public
+// share page serves — and printing prints that frame.
 export default function Statements({ api, user, invoiceId, setInvoiceId, onOpenBudget }) {
   const { fin } = api;
   const inv = invoiceId ? byId(fin.invoices, invoiceId) : null;
@@ -43,7 +45,7 @@ function StatementList({ api, onOpen, onOpenBudget }) {
                 <td className="m"><button type="button" className="fin-back" onClick={e => { e.stopPropagation(); b && onOpenBudget(b.id); }}>{b?.title || '—'}</button></td>
                 <td className="m w">{i.issuedOn || '—'}</td>
                 <td><span className={`fin-pill ${i.status === 'FINAL' ? 't-good' : 't-muted'}`}>{i.status === 'FINAL' ? 'Final' : 'Draft'}</span></td>
-                <td className="r">{fmtBDT(statementTotal(linesOf(fin, i.id)))}</td>
+                <td className="r">{statementTotalText(i, linesOf(fin, i.id))}</td>
                 <td className="m">{i.createdByName || '—'}<span className="fin-sub">{fmtAgo(i.createdAt)}</span></td>
               </tr>); })}</tbody>
           </table></div>
@@ -57,10 +59,12 @@ function StatementDoc({ api, user, inv, onClose }) {
   const { fin, act } = api;
   const lines = linesOf(fin, inv.id);
   const budget = byId(fin.budgets, inv.budgetId);
-  const total = statementTotal(lines);
   const layout = inv.layout || {};
-  const accent = /^#[0-9a-f]{3,8}$/i.test(layout.accent || '') ? layout.accent : '#1F6FEB';
+  const tpl = templateOf(layout.template);
+  const accent = /^#[0-9a-f]{3,8}$/i.test(layout.accent || '') ? layout.accent : (tpl.accent || '#1F6FEB');
   const showQty = layout.showQty !== false;
+  const frame = useRef(null);
+  const [frameH, setFrameH] = useState(900);
   const [panel, setPanel] = useState(null); // 'edit' | 'share' | 'discussion' | 'history'
   const [shareUrl, setShareUrl] = useState('');
   const toast = useProjectToast({ always: true });
@@ -79,32 +83,13 @@ function StatementDoc({ api, user, inv, onClose }) {
   const copy = () => { navigator.clipboard?.writeText(shareUrl); toast.success('Link copied'); };
   const links = shareLinks(shareUrl, `${inv.number} · ${inv.title}`);
 
-  const sheet = (
-    <div className="inv-sheet" style={{ position: 'relative' }}>
-      {inv.status !== 'FINAL' && <div className="fin-doc-draft">DRAFT</div>}
-      <div className="inv-top"><h1 className="inv-title">{inv.title}</h1><div className="inv-logo" style={{ color: accent }}>WEPRO</div></div>
-      <div className="inv-keys">
-        <div><span>Number</span><b>{inv.number}</b></div>
-        <div><span>Date</span><b>{inv.issuedOn || '—'}</b></div>
-        <div><span>Budget</span><b>{budget?.title || '—'}</b></div>
-      </div>
-      <div className="inv-cols">
-        <div className="inv-col"><div className="inv-strong">From</div>{(inv.fromName || '—').split('\n').map((l, i) => <div key={i}>{l}</div>)}</div>
-        <div className="inv-col"><div className="inv-strong">To</div>{(inv.billTo || '—').split('\n').map((l, i) => <div key={i}>{l}</div>)}</div>
-      </div>
-      <div className="inv-big">{fmtBDT(total)}</div>
-      <div className="inv-lede">Internal expense statement, not a tax invoice. Figures are recorded against the budget above.</div>
-      <table className="inv-tbl">
-        <thead><tr><th>Description</th>{showQty && <><th className="inv-c">Qty</th><th className="inv-r">Unit price</th></>}<th className="inv-r">Amount</th></tr></thead>
-        <tbody>{lines.map(l => (
-          <tr key={l.id}><td><div className="inv-d1">{l.description || '—'}</div></td>{showQty && <><td className="inv-c">{l.qty}</td><td className="inv-r">{fmtBDT(l.unitPrice)}</td></>}<td className="inv-r">{fmtBDT(Number(l.qty) * Number(l.unitPrice))}</td></tr>
-        ))}</tbody>
-      </table>
-      <div className="inv-sums"><div className="inv-sum inv-sum-tot"><span>Total</span><span style={{ color: accent }}>{fmtBDT(total)}</span></div></div>
-      {inv.notes && <div className="inv-lede" style={{ marginTop: 18, whiteSpace: 'pre-line' }}>{inv.notes}</div>}
-      <div className="inv-foot">{layout.footer ? `${layout.footer} · ` : ''}Prepared by {inv.createdByName || '—'} · WEPRO CRM</div>
-    </div>
-  );
+  const html = renderStatement({
+    number: inv.number, title: inv.title, status: inv.status, issuedOn: inv.issuedOn, fromName: inv.fromName, billTo: inv.billTo,
+    notes: inv.notes, createdByName: inv.createdByName, budgetTitle: budget?.title || '', layout, lines,
+  }, { embed: true });
+  const fit = () => { const d = frame.current?.contentDocument; if (d) setFrameH(d.documentElement.scrollHeight); };
+  const print = () => frame.current?.contentWindow?.print();
+  const sheet = <iframe ref={frame} title={`${inv.number} preview`} srcDoc={html} onLoad={fit} style={{ width: '100%', height: frameH, border: 0, display: 'block', background: '#fff' }} />;
 
   return (
     <>
@@ -113,7 +98,7 @@ function StatementDoc({ api, user, inv, onClose }) {
           <div className="inv-bar fin-docbar">
             <span className="inv-bar-t"><Mi>receipt_long</Mi>{inv.number}<span className={`fin-pill ${inv.status === 'FINAL' ? 't-good' : 't-muted'}`}>{inv.status === 'FINAL' ? 'Final' : 'Draft'}</span></span>
             <div className="inv-bar-a">
-              <button type="button" className="btn btn-g btn-sm" onClick={() => window.print()} title="Print or save as PDF"><Mi>print</Mi>Print / PDF</button>
+              <button type="button" className="btn btn-g btn-sm" onClick={print} title="Print or save as PDF"><Mi>print</Mi>Print / PDF</button>
               {inv.status === 'DRAFT' && <button type="button" className="btn btn-g btn-sm" onClick={() => setPanel('edit')}><Mi>edit</Mi>Edit</button>}
               {inv.status === 'DRAFT' && <button type="button" className="btn btn-p btn-sm" onClick={finalize}><Mi>check_circle</Mi>Finalize</button>}
               <button type="button" className="btn btn-g btn-sm" onClick={() => (shareUrl ? setPanel('share') : share(false))}><Mi>link</Mi>Share</button>
@@ -130,7 +115,7 @@ function StatementDoc({ api, user, inv, onClose }) {
           </div>
         </div>
       </div>
-      {panel === 'edit' && <StatementForm budget={budget} expenses={expensesOf(fin, inv.budgetId)} takenExpenseIds={finalIds} initial={{ ...inv, accent, showQty, footer: layout.footer || '' }} initialLines={lines} onClose={() => setPanel(null)}
+      {panel === 'edit' && <StatementForm budget={budget} expenses={expensesOf(fin, inv.budgetId)} takenExpenseIds={finalIds} initial={{ ...inv, accent, showQty, footer: layout.footer || '', template: tpl.id, currency: layout.currency || tpl.currency, vendorRef: layout.vendorRef || '', paidOn: layout.paidOn || '', periodFrom: layout.periodFrom || '', periodTo: layout.periodTo || '' }} initialLines={lines} onClose={() => setPanel(null)}
         onSave={(i) => act('invoice.save', { invoice: { ...i, id: inv.id, budgetId: inv.budgetId } }).then(() => toast.success('Draft saved'))} />}
       {panel === 'share' && (
         <Modal title={`Share ${inv.number}`} onClose={() => setPanel(null)}>

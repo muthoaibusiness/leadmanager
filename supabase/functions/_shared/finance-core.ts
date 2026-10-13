@@ -11,6 +11,8 @@
 // computed HERE, from the separate record types, and handed to the browser
 // ready-made, so there is one definition of each number.
 
+import { renderStatement, TEMPLATES, CURRENCIES } from "../../../Invoice-templates/index.js";
+
 export type Env = { url: string; serviceKey: string; allowedOrigin?: string };
 
 type Row = Record<string, any>;
@@ -116,6 +118,8 @@ export function figuresFor(budget: Row, requests: Row[], approvals: Row[], expen
   return { requested, approved, committed, spent, remaining, overrun: committed + spent > approved, version: reqs.length ? num(reqs[0].version) : 0 };
 }
 
+const publicBase = (ctx: Ctx) => ctx.env.url ? `${ctx.env.url.replace(/\/+$/, "")}/functions/v1/finance` : `${ctx.reqUrl.origin}${ctx.reqUrl.pathname}`;
+
 // ── helpers ──────────────────────────────────────────────────────────────────
 const co = (ctx: Ctx) => `company_id=eq.${enc(ctx.actor.companyId)}`;
 
@@ -167,8 +171,9 @@ async function load(ctx: Ctx) {
   ]);
   const figures: Record<string, Figures> = {};
   for (const b of budgets) figures[b.id] = figuresFor(b, requests, approvals, expenses);
-  // The share links are built from this function's own address.
-  const shareBase = `${ctx.reqUrl.origin}${ctx.reqUrl.pathname}`;
+  // The share links point at this function's public address. req.url inside the
+  // Edge runtime is the internal one (http, no /functions/v1), so build from env.
+  const shareBase = publicBase(ctx);
   return { actor: { id: ctx.actor.id, approver: ctx.actor.approver }, budgets, requests, approvals, expenses, invoices, lines, comments, events, figures, shareBase };
 }
 
@@ -324,6 +329,20 @@ function linesFrom(raw: unknown): Row[] {
     return { expense_id: l.expenseId ? str(l.expenseId, 80) : null, position: i, description: str(l.description, 500), qty, unit_price };
   });
 }
+// The statement's look: which template (Invoice-templates/), its currency, the
+// service period, and the vendor fields a receipt template shows.
+function layoutFrom(raw: unknown): Row {
+  const l = (typeof raw === "object" && raw ? raw : {}) as Row;
+  const template = Object.hasOwn(TEMPLATES, str(l.template, 40)) ? str(l.template, 40) : "default";
+  const currency = CURRENCIES.includes(str(l.currency, 8)) ? str(l.currency, 8) : (TEMPLATES as Row)[template].currency;
+  const date = (v: unknown) => { const d = str(v, 10); return isDate(d) ? d : ""; };
+  const periodFrom = date(l.periodFrom), periodTo = date(l.periodTo);
+  if (periodFrom && periodTo && periodTo < periodFrom) throw new Fail(400, "The period ends before it starts");
+  return {
+    template, currency, accent: str(l.accent, 20), showQty: l.showQty !== false, footer: str(l.footer, 300),
+    vendorRef: str(l.vendorRef, 80), paidOn: date(l.paidOn), periodFrom, periodTo,
+  };
+}
 async function invoiceSave(ctx: Ctx, body: Row) {
   const inv = body.invoice || {};
   const b = await one(ctx, "finance_budgets", inv.budgetId);
@@ -343,7 +362,7 @@ async function invoiceSave(ctx: Ctx, body: Row) {
   const fields = {
     title: str(inv.title, 160) || "Expense statement", issued_on: isDate(str(inv.issuedOn, 10)) ? str(inv.issuedOn, 10) : nowIso().slice(0, 10),
     from_name: str(inv.fromName, 200), bill_to: str(inv.billTo, 400), notes: str(inv.notes, 2000),
-    layout: typeof inv.layout === "object" && inv.layout ? { accent: str(inv.layout.accent, 20), showQty: inv.layout.showQty !== false, footer: str(inv.layout.footer, 300) } : {},
+    layout: layoutFrom(inv.layout),
   };
   let row: Row;
   if (inv.id) {
@@ -384,7 +403,7 @@ async function invoiceShare(ctx: Ctx, body: Row) {
   const rotate = !cur.share_token || body.rotate === true;
   const row = rotate ? (await ctx.db.patch("finance_invoices", `id=eq.${enc(cur.id)}&${co(ctx)}`, { share_token: token(), updated_at: nowIso() }))[0] : cur;
   if (rotate) await logEvent(ctx, "invoice", cur.id, "shared", { rotated: !!cur.share_token });
-  return { invoice: row, url: `${ctx.reqUrl.origin}${ctx.reqUrl.pathname}?share=${row.share_token}` };
+  return { invoice: row, url: `${publicBase(ctx)}?share=${row.share_token}` };
 }
 
 async function invoiceDelete(ctx: Ctx, body: Row) {
@@ -442,41 +461,7 @@ const ACTIONS: Record<string, (ctx: Ctx, body: Row) => Promise<Row>> = {
 };
 
 // ── the public statement page (GET ?share=<token>) ───────────────────────────
-const esc = (s: unknown) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" } as Row)[c]);
-const money = (n: number) => "BDT " + n.toLocaleString("en-IN", { maximumFractionDigits: 2 });
-
-export function statementHtml(inv: Row, lines: Row[], budget: Row | null): string {
-  const total = lines.reduce((s, l) => s + num(l.qty) * num(l.unit_price), 0);
-  const accent = /^#[0-9a-f]{3,8}$/i.test(inv.layout?.accent || "") ? inv.layout.accent : "#1F6FEB";
-  const showQty = inv.layout?.showQty !== false;
-  const rows = lines.map((l) => `<tr><td>${esc(l.description) || "—"}</td>${showQty ? `<td class="c">${num(l.qty)}</td><td class="r">${money(num(l.unit_price))}</td>` : ""}<td class="r">${money(num(l.qty) * num(l.unit_price))}</td></tr>`).join("");
-  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex">
-<title>${esc(inv.number)} · ${esc(inv.title)}</title>
-<style>
-  :root{color-scheme:light}body{margin:0;background:#eef0f3;font:14px/1.5 -apple-system,Segoe UI,Inter,sans-serif;color:#1a1d23}
-  .wrap{max-width:720px;margin:24px auto;padding:0 16px}.bar{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;gap:8px;flex-wrap:wrap}
-  .btn{border:1px solid #cfd3d9;background:#fff;border-radius:8px;padding:8px 14px;font:inherit;font-weight:600;cursor:pointer}.btn.p{background:${accent};border-color:${accent};color:#fff}
-  .sheet{background:#fff;border-radius:12px;padding:40px 44px;box-shadow:0 10px 30px rgba(0,0,0,.08);position:relative;overflow:hidden}
-  .top{display:flex;justify-content:space-between;align-items:flex-start;gap:16px}h1{margin:0;font-size:26px;letter-spacing:-.3px}.logo{font-weight:900;font-size:20px;color:${accent}}
-  .keys{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:24px 0;padding:14px 0;border-top:1px solid #e6e8eb;border-bottom:1px solid #e6e8eb}.keys span{display:block;font-size:11px;color:#6b7280;text-transform:uppercase;letter-spacing:.08em}.keys b{font-size:14px}
-  .cols{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:22px;font-size:13.5px;white-space:pre-line}.cols b{display:block;margin-bottom:4px}
-  table{width:100%;border-collapse:collapse}th{text-align:left;font-size:12px;font-weight:500;color:#6b7280;padding:0 0 10px;border-bottom:1px solid #e6e8eb}td{padding:12px 0;border-bottom:1px solid #eef0f2;vertical-align:top}.c{text-align:center}.r{text-align:right;white-space:nowrap}
-  .tot{display:flex;justify-content:flex-end;gap:40px;padding:16px 0;font-weight:800;font-size:17px}.tot b{color:${accent}}.notes{font-size:12.5px;color:#4b5563;white-space:pre-line}.foot{margin-top:28px;font-size:12px;color:#6b7280}
-  .draft{position:absolute;right:-40px;top:28px;transform:rotate(35deg);background:#f59e0b;color:#111;font-weight:800;letter-spacing:.2em;padding:6px 60px;font-size:12px}
-  @media print{body{background:#fff}.wrap{margin:0;padding:0;max-width:none}.bar{display:none}.sheet{box-shadow:none;border-radius:0;padding:0}}
-</style></head><body><div class="wrap">
-<div class="bar"><span>${esc(inv.number)} · ${inv.status === "FINAL" ? "Final" : "Draft"} statement</span><span><button class="btn p" onclick="window.print()">Print / Save as PDF</button></span></div>
-<div class="sheet">${inv.status === "FINAL" ? "" : '<div class="draft">DRAFT</div>'}
-<div class="top"><div><h1>${esc(inv.title)}</h1><div style="color:#6b7280">Internal expense statement</div></div><div class="logo">WEPRO</div></div>
-<div class="keys"><div><span>Number</span><b>${esc(inv.number)}</b></div><div><span>Date</span><b>${esc(inv.issued_on || "")}</b></div><div><span>Budget</span><b>${esc(budget?.title || "")}</b></div></div>
-<div class="cols"><div><b>From</b>${esc(inv.from_name) || "—"}</div><div><b>To</b>${esc(inv.bill_to) || "—"}</div></div>
-<table><thead><tr><th>Description</th>${showQty ? '<th class="c">Qty</th><th class="r">Unit price</th>' : ""}<th class="r">Amount</th></tr></thead><tbody>${rows}</tbody></table>
-<div class="tot"><span>Total</span><b>${money(total)}</b></div>
-${inv.notes ? `<div class="notes">${esc(inv.notes)}</div>` : ""}
-<div class="foot">${esc(inv.layout?.footer || "")}${inv.layout?.footer ? " · " : ""}Prepared by ${esc(inv.created_by_name)} · This is an internal expense statement, not a tax invoice.</div>
-</div></div>${inv.status === "FINAL" && /[?&]print=1/.test("") ? "" : ""}</body></html>`;
-}
-
+// Drawn by Invoice-templates/index.js, the same renderer as the in-app preview.
 async function sharePage(env: Env, tok: string): Promise<Response> {
   const db = new Db(env);
   const html = (body: string, status = 200) => new Response(body, { status, headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store", "X-Robots-Tag": "noindex" } });
@@ -487,7 +472,11 @@ async function sharePage(env: Env, tok: string): Promise<Response> {
     db.select(`finance_invoice_lines?invoice_id=eq.${enc(inv.id)}&select=*&order=position.asc`),
     db.select(`finance_budgets?id=eq.${enc(inv.budget_id)}&select=id,title`),
   ]);
-  return html(statementHtml(inv, lines, budgets[0] || null));
+  return html(renderStatement({
+    number: inv.number, title: inv.title, status: inv.status, issuedOn: inv.issued_on, fromName: inv.from_name, billTo: inv.bill_to,
+    notes: inv.notes, createdByName: inv.created_by_name, budgetTitle: budgets[0]?.title || "", layout: inv.layout || {},
+    lines: lines.map((l) => ({ description: l.description, qty: l.qty, unitPrice: l.unit_price })),
+  }, { toolbar: true }));
 }
 
 // ── entry point ──────────────────────────────────────────────────────────────

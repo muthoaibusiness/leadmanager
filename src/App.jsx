@@ -262,7 +262,7 @@ function PageHero() {
     team: { sub: `${teamAgents} agents` },
     accounts: { sub: 'Team list · create & manage accounts' },
     requests: { sub: 'Approve agent unit holds' },
-    inventory: { sub: 'Budgets, expenses & expense statements' },
+    inventory: { sub: '' },
     profile: { sub: 'Manage your details & avatar' },
     companies: { sub: 'Company-wise overview' },
   };
