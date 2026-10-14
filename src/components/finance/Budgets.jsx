@@ -2,11 +2,11 @@ import { useState } from 'react';
 import Mi from '../Mi.jsx';
 import { fmtBDT, fmtAgo } from '../../lib/helpers.js';
 import { useProjectToast } from '../project/projectToast.js';
-import { BUDGET_STATUS, EXPENSE_KIND, byId, latestRequest, approvalsOf, expensesOf, linesOf, statementTotalText } from '../../lib/finance.js';
-import { BudgetForm, SubmitForm, DecideForm, ExpenseForm, StatementForm } from './forms.jsx';
+import { EXPENSE_KIND, byId, expensesOf, linesOf, statementTotalText, projectNames } from '../../lib/finance.js';
+import { BudgetForm, ExpenseForm, StatementForm, SelectAll, SelectRow, BulkBar } from './forms.jsx';
+import useSelection from './useSelection.js';
 import { Discussion, History, FileLink } from './Discussion.jsx';
 
-const Pill = ({ status }) => <span className={`fin-pill t-${BUDGET_STATUS[status]?.tone || 'muted'}`}>{BUDGET_STATUS[status]?.label || status}</span>;
 const KindPill = ({ kind }) => <span className={`fin-pill ${kind === 'COMMITTED' ? 't-warn' : 't-info'}`}>{EXPENSE_KIND[kind] || kind}</span>;
 
 export default function Budgets({ api, user, budgetId, setBudgetId, onOpenStatement }) {
@@ -21,42 +21,50 @@ export default function Budgets({ api, user, budgetId, setBudgetId, onOpenStatem
 function BudgetList({ api, onOpen }) {
   const { fin, act } = api;
   const [q, setQ] = useState('');
-  const [status, setStatus] = useState('ALL');
   const [form, setForm] = useState(false);
   const toast = useProjectToast({ always: true });
   const term = q.trim().toLowerCase();
-  const rows = fin.budgets.filter(b => (status === 'ALL' || b.status === status) && (!term || [b.title, b.purpose, b.propertyName, b.teamName, b.createdByName].some(s => (s || '').toLowerCase().includes(term))));
-  const counts = fin.budgets.reduce((m, b) => { m[b.status] = (m[b.status] || 0) + 1; return m; }, {});
+  const rows = fin.budgets.filter(b => !term || [b.title, b.purpose, projectNames(b), b.teamName, b.createdByName].some(s => (s || '').toLowerCase().includes(term)));
+  const sel = useSelection(rows);
+  const [busy, setBusy] = useState(false);
+  const removeSelected = () => {
+    const ids = sel.selected;
+    const ex = fin.expenses.filter(e => ids.includes(e.budgetId)).length;
+    const st = fin.invoices.filter(i => ids.includes(i.budgetId)).length;
+    const parts = [ex && `${ex} expense${ex === 1 ? '' : 's'}`, st && `${st} statement${st === 1 ? '' : 's'}`].filter(Boolean);
+    toast.confirm({
+      title: `Delete ${ids.length} budget${ids.length === 1 ? '' : 's'}?`,
+      description: `${parts.length ? `Their ${parts.join(' and ')} are deleted too. ` : ''}This can't be undone.`,
+      confirmLabel: 'Delete',
+      onConfirm: () => { setBusy(true); return act('budget.deleteMany', { budgetIds: ids }).then(r => { sel.clear(); toast.success(`${r.deleted} budget${r.deleted === 1 ? '' : 's'} deleted`); }).catch(e => toast.error('Not deleted', e.message)).finally(() => setBusy(false)); },
+    });
+  };
   return (
     <>
       <div className="fin-tools">
         <div className="acc-search fin-search"><Mi>search</Mi><input value={q} onChange={e => setQ(e.target.value)} placeholder="Search budgets" aria-label="Search budgets" /></div>
-        <div className="fin-chips">
-          <button type="button" className={`fin-chip${status === 'ALL' ? ' on' : ''}`} onClick={() => setStatus('ALL')}>All {fin.budgets.length}</button>
-          {Object.entries(BUDGET_STATUS).map(([k, v]) => <button key={k} type="button" className={`fin-chip${status === k ? ' on' : ''}`} onClick={() => setStatus(k)}>{v.label} {counts[k] || 0}</button>)}
-        </div>
         <span className="sp" />
         <button type="button" className="btn btn-p" onClick={() => setForm(true)}><Mi>add</Mi>New budget</button>
       </div>
+      <BulkBar sel={sel} noun="budget" onDelete={removeSelected} busy={busy} />
       <div className="fin-card">
         {rows.length === 0 ? <div className="fin-empty">{fin.budgets.length ? 'No budgets match.' : 'No budgets yet. Create the first one.'}</div> : (
           <div className="fin-scroll"><table className="fin-tbl">
-            <thead><tr><th>Budget</th><th>Project</th><th>Team</th><th>Status</th><th className="r">Requested</th><th className="r">Approved</th><th className="r">Committed</th><th className="r">Spent</th><th className="r">Remaining</th></tr></thead>
+            <thead><tr><SelectAll sel={sel} label="Select all budgets" /><th>Budget</th><th>Projects</th><th>Team</th><th className="r">Amount</th><th className="r">Committed</th><th className="r">Spent</th><th className="r">Remaining</th></tr></thead>
             <tbody>{rows.map(b => { const f = fin.figures[b.id] || {}; return (
-              <tr key={b.id} className="click" onClick={() => onOpen(b.id)}>
+              <tr key={b.id} className={`click${sel.has(b.id) ? ' on' : ''}`} onClick={() => onOpen(b.id)}>
+                <SelectRow sel={sel} id={b.id} label={`Select ${b.title}`} />
                 <td><span className="fin-ttl">{b.title}</span><span className="fin-sub">{b.createdByName || '—'} · {fmtAgo(b.updatedAt)}</span></td>
-                <td className="m">{b.propertyName || '—'}</td><td className="m">{b.teamName || '—'}</td>
-                <td><Pill status={b.status} /></td>
-                <td className="r">{fmtBDT(f.requested || 0)}</td>
-                <td className="r">{b.status === 'APPROVED' ? fmtBDT(f.approved) : <span className="m">—</span>}</td>
+                <td className="m">{projectNames(b) || '—'}</td><td className="m">{b.teamName || '—'}</td>
+                <td className="r">{fmtBDT(f.amount || 0)}</td>
                 <td className="r">{f.committed ? fmtBDT(f.committed) : <span className="m">—</span>}</td>
                 <td className="r">{f.spent ? fmtBDT(f.spent) : <span className="m">—</span>}</td>
-                <td className={`r${f.overrun ? ' over' : ''}`}>{b.status === 'APPROVED' ? <>{f.overrun && <Mi style={{ fontSize: 15, verticalAlign: -3 }}>warning</Mi>} {fmtBDT(f.remaining)}</> : <span className="m">—</span>}</td>
+                <td className={`r${f.overrun ? ' over' : ''}`}>{f.overrun && <Mi style={{ fontSize: 15, verticalAlign: -3 }}>warning</Mi>} {fmtBDT(f.remaining || 0)}</td>
               </tr>); })}</tbody>
           </table></div>
         )}
       </div>
-      {form && <BudgetForm onClose={() => setForm(false)} onSave={async (b) => { const r = await act('budget.save', { budget: b }); toast.success('Draft created', `${r.budget.title} is ready to submit.`); onOpen(r.budget.id); }} />}
+      {form && <BudgetForm onClose={() => setForm(false)} onSave={async (b) => { const r = await act('budget.save', { budget: b }); toast.success('Budget created', r.budget.title); onOpen(r.budget.id); }} />}
     </>
   );
 }
@@ -64,20 +72,18 @@ function BudgetList({ api, onOpen }) {
 function BudgetDetail({ api, user, budget, onBack, onOpenStatement }) {
   const { fin, act, call } = api;
   const f = fin.figures[budget.id] || {};
-  const req = latestRequest(fin, budget.id);
-  const decisions = approvalsOf(fin, budget.id);
   const expenses = expensesOf(fin, budget.id);
   const statements = fin.invoices.filter(i => i.budgetId === budget.id);
-  const approver = !!fin.actor?.approver;
-  const mine = budget.createdBy === user.id;
-  const editable = ['DRAFT', 'REVISION'].includes(budget.status) && (mine || approver);
-  const canDecide = approver && budget.status === 'SUBMITTED' && !mine && req?.submittedBy !== user.id;
   const [sub, setSub] = useState('expenses');
   const [modal, setModal] = useState(null); // { kind, data }
   const toast = useProjectToast({ always: true });
   const finalIds = new Set(fin.lines.filter(l => l.isFinal && l.expenseId).map(l => l.expenseId));
   const remove = (kind, id) => toast.confirm({
-    title: kind === 'budget' ? 'Delete this draft?' : 'Delete this expense?', description: kind === 'budget' ? 'The draft and its discussion are removed.' : 'The amount comes off the budget.', confirmLabel: 'Delete',
+    title: kind === 'budget' ? 'Delete this budget?' : 'Delete this expense?',
+    description: kind === 'budget'
+      ? `${expenses.length || statements.length ? `Its ${[expenses.length && `${expenses.length} expense${expenses.length === 1 ? '' : 's'}`, statements.length && `${statements.length} statement${statements.length === 1 ? '' : 's'}`].filter(Boolean).join(' and ')} are deleted too. ` : ''}This can't be undone.`
+      : 'The amount comes off the budget.',
+    confirmLabel: 'Delete',
     onConfirm: () => (kind === 'budget' ? act('budget.delete', { budgetId: id }).then(onBack) : act('expense.delete', { expenseId: id })).catch(e => toast.error('Not deleted', e.message)),
   });
   const TABS = [['expenses', 'Expenses', expenses.length], ['statements', 'Statements', statements.length], ['discussion', 'Discussion', fin.comments.filter(c => c.entityType === 'budget' && c.entityId === budget.id).length], ['history', 'History', null]];
@@ -86,9 +92,9 @@ function BudgetDetail({ api, user, budget, onBack, onOpenStatement }) {
       <button type="button" className="fin-back" onClick={onBack}><Mi>arrow_back</Mi>All budgets</button>
       <div className="fin-dhd">
         <div>
-          <h2>{budget.title}<Pill status={budget.status} /></h2>
+          <h2>{budget.title}</h2>
           <div className="fin-dmeta">
-            {budget.propertyName && <span><Mi>apartment</Mi>{budget.propertyName}</span>}
+            {projectNames(budget) && <span><Mi>apartment</Mi>{projectNames(budget)}</span>}
             {budget.teamName && <span><Mi>groups</Mi>{budget.teamName}</span>}
             <span><Mi>person</Mi>{budget.createdByName || '—'}</span>
             <span><Mi>schedule</Mi>{fmtAgo(budget.updatedAt)}</span>
@@ -96,31 +102,25 @@ function BudgetDetail({ api, user, budget, onBack, onOpenStatement }) {
           </div>
         </div>
         <div className="fin-dacts">
-          {editable && <button type="button" className="btn btn-g btn-sm" onClick={() => setModal({ kind: 'edit' })}><Mi>edit</Mi>Edit</button>}
-          {editable && <button type="button" className="btn btn-p btn-sm" onClick={() => setModal({ kind: 'submit' })}><Mi>send</Mi>Submit for approval</button>}
-          {budget.status === 'DRAFT' && (mine || approver) && <button type="button" className="btn btn-g btn-sm ui-del" onClick={() => remove('budget', budget.id)} title="Delete draft"><Mi>delete</Mi></button>}
-          {canDecide && <button type="button" className="btn btn-p btn-sm" onClick={() => setModal({ kind: 'decide' })}><Mi>task_alt</Mi>Decide</button>}
-          {budget.status === 'APPROVED' && <button type="button" className="btn btn-p btn-sm" onClick={() => setModal({ kind: 'expense' })}><Mi>add</Mi>Record expense</button>}
-          {budget.status === 'APPROVED' && <button type="button" className="btn btn-g btn-sm" onClick={() => setModal({ kind: 'statement' })}><Mi>receipt_long</Mi>New statement</button>}
+          <button type="button" className="btn btn-g btn-sm" onClick={() => setModal({ kind: 'edit' })}><Mi>edit</Mi>Edit</button>
+          <button type="button" className="btn btn-g btn-sm ui-del" onClick={() => remove('budget', budget.id)} title="Delete budget"><Mi>delete</Mi></button>
+          <button type="button" className="btn btn-p btn-sm" onClick={() => setModal({ kind: 'expense' })}><Mi>add</Mi>Record expense</button>
+          <button type="button" className="btn btn-g btn-sm" onClick={() => setModal({ kind: 'statement' })}><Mi>receipt_long</Mi>New statement</button>
         </div>
       </div>
 
       <div className="fin-kpis">
-        <div className="fin-kpi"><div className="l">Requested</div><div className="v">{fmtBDT(f.requested || 0)}</div><div className="s">{req ? `v${req.version} · ${req.submittedByName || ''} · ${fmtAgo(req.submittedAt)}` : 'not submitted yet'}</div></div>
-        <div className="fin-kpi t-good"><div className="l">Approved</div><div className="v">{budget.status === 'APPROVED' ? fmtBDT(f.approved) : '—'}</div><div className="s">{decisions[0] ? `${decisions[0].decidedByName || ''} · ${fmtAgo(decisions[0].decidedAt)}` : 'no decision yet'}</div></div>
+        <div className="fin-kpi t-good"><div className="l">Budget</div><div className="v">{fmtBDT(f.amount || 0)}</div><div className="s">{budget.createdByName || '—'} · {fmtAgo(budget.createdAt)}</div></div>
         <div className="fin-kpi t-warn"><div className="l">Committed</div><div className="v">{fmtBDT(f.committed || 0)}</div><div className="s">ordered, not yet paid</div></div>
         <div className="fin-kpi"><div className="l">Spent · actual</div><div className="v">{fmtBDT(f.spent || 0)}</div><div className="s">paid out</div></div>
-        <div className={`fin-kpi${f.overrun ? ' t-bad' : ''}`}><div className="v" style={{ marginTop: 0 }}>{budget.status === 'APPROVED' ? fmtBDT(f.remaining) : '—'}</div><div className="l" style={{ marginTop: 6 }}>Remaining</div><div className="s">approved − committed − spent</div></div>
+        <div className={`fin-kpi${f.overrun ? ' t-bad' : ''}`}><div className="v" style={{ marginTop: 0 }}>{fmtBDT(f.remaining || 0)}</div><div className="l" style={{ marginTop: 6 }}>Remaining</div><div className="s">budget − committed − spent</div></div>
       </div>
-      {f.overrun && <div className="fin-warn"><Mi>warning</Mi>Over budget by {fmtBDT(-f.remaining)}: committed and spent exceed the approved amount.</div>}
-      {budget.status === 'SUBMITTED' && !canDecide && <div className="fin-info"><Mi>schedule</Mi>Waiting for an approver{mine || req?.submittedBy === user.id ? ' — you can’t decide your own request' : ''}.</div>}
-      {budget.status === 'REVISION' && decisions[0]?.note && <div className="fin-info"><Mi>undo</Mi>Revision requested: “{decisions[0].note}”</div>}
-      {budget.status === 'REJECTED' && <div className="fin-warn"><Mi>cancel</Mi>Rejected{decisions[0]?.note ? `: “${decisions[0].note}”` : ''}.</div>}
+      {f.overrun && <div className="fin-warn"><Mi>warning</Mi>Over budget by {fmtBDT(-f.remaining)}: committed and spent exceed the budget.</div>}
       {budget.notes && <div className="fin-note">{budget.notes}</div>}
 
       <div className="fin-card">
         <div className="fin-subtabs">{TABS.map(([k, l, n]) => <button key={k} type="button" className={sub === k ? 'on' : ''} onClick={() => setSub(k)}>{l}{n != null && <span className="n">{n}</span>}</button>)}</div>
-        {sub === 'expenses' && (expenses.length === 0 ? <div className="fin-empty">{budget.status === 'APPROVED' ? 'No expenses recorded yet.' : 'Expenses can be recorded once the budget is approved.'}</div> : (
+        {sub === 'expenses' && (expenses.length === 0 ? <div className="fin-empty">No expenses recorded yet.</div> : (
           <div className="fin-scroll"><table className="fin-tbl">
             <thead><tr><th>Date</th><th>Description</th><th>Category</th><th>Kind</th><th>By</th><th>Paid via</th><th>Receipts</th><th className="r">Amount</th><th /></tr></thead>
             <tbody>{expenses.map(e => { const locked = finalIds.has(e.id); return (
@@ -153,8 +153,6 @@ function BudgetDetail({ api, user, budget, onBack, onOpenStatement }) {
       </div>
 
       {modal?.kind === 'edit' && <BudgetForm initial={budget} onClose={() => setModal(null)} onSave={(b) => act('budget.save', { budget: { ...b, id: budget.id } }).then(() => toast.success('Budget saved'))} />}
-      {modal?.kind === 'submit' && <SubmitForm budget={budget} onClose={() => setModal(null)} onSubmit={(note) => act('budget.submit', { budgetId: budget.id, note }).then(() => toast.success('Submitted', 'Approvers have been notified.'))} />}
-      {modal?.kind === 'decide' && <DecideForm budget={budget} figures={f} request={req} onClose={() => setModal(null)} onDecide={(d) => act('budget.decide', { budgetId: budget.id, ...d }).then(() => toast.success('Decision recorded'))} />}
       {modal?.kind === 'expense' && <ExpenseForm budget={budget} initial={modal.data} upload={(p) => call('file.upload', p)} onClose={() => setModal(null)}
         onSave={(e) => act('expense.save', { expense: { ...e, id: modal.data?.id, budgetId: budget.id } }).then(r => (r.figures.overrun ? toast.warning('Recorded · over budget', `Remaining is now ${fmtBDT(r.figures.remaining)}.`) : toast.success('Expense recorded')))} />}
       {modal?.kind === 'statement' && <StatementForm budget={budget} expenses={expenses} takenExpenseIds={finalIds} onClose={() => setModal(null)}

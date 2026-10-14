@@ -5,28 +5,24 @@ import { LoadingBlock } from '../Spinner.jsx';
 import { useFinance } from '../../lib/finance.js';
 import Overview from '../finance/Overview.jsx';
 import Budgets from '../finance/Budgets.jsx';
-import RequestQueue from '../finance/RequestQueue.jsx';
 import Statements from '../finance/Statements.jsx';
 import '../finance/finance.css';
 
 // Admin → Inventory: internal budget & expense management. Management only
-// (NAV_SCOPES.inventory); the Requests tab is for users with the
-// 'finance_approve' grant. All data comes from the finance Edge Function —
-// see src/lib/finance.js.
+// (NAV_SCOPES.inventory). Budgets have no approval step. All data comes from
+// the finance Edge Function — see src/lib/finance.js.
 export default function InventoryView() {
   const { user, dateRange } = useApp();
   const api = useFinance(user);
   const { fin, error, loading } = api;
-  const [tab, setTab] = useNavState('inventory.tab', 'overview');
+  const [savedTab, setTab] = useNavState('inventory.tab', 'overview');
+  const tab = ['overview', 'budgets', 'statements'].includes(savedTab) ? savedTab : 'overview'; // a saved 'requests' tab no longer exists
   const [budgetId, setBudgetId] = useNavState('inventory.budget', null);
   const [invoiceId, setInvoiceId] = useNavState('inventory.statement', null);
-  const approver = !!fin?.actor?.approver;
-  const pending = fin ? fin.budgets.filter(b => b.status === 'SUBMITTED').length : 0;
 
   const TABS = [
     ['overview', 'Overview', 'bar_chart'],
     ['budgets', 'Budgets', 'account_balance_wallet'],
-    ...(approver ? [['requests', 'Requests', 'inbox', pending]] : []),
     ['statements', 'Statements', 'receipt_long'],
   ];
   const openBudget = (id) => { setBudgetId(id); setTab('budgets'); };
@@ -56,9 +52,8 @@ export default function InventoryView() {
         {error && <span className="fin-bar-err"><Mi>warning</Mi>{error}</span>}
         <button type="button" className="fin-refresh" onClick={api.reload} disabled={loading} title="Refresh" aria-label="Refresh"><Mi className={loading ? 'spin' : ''}>sync</Mi></button>
       </div>
-      {tab === 'overview' && <Overview fin={fin} range={dateRange?.range || null} onOpenBudget={openBudget} />}
+      {tab === 'overview' && <Overview fin={fin} range={dateRange?.range || null} />}
       {tab === 'budgets' && <Budgets api={api} user={user} budgetId={budgetId} setBudgetId={setBudgetId} onOpenStatement={openStatement} />}
-      {tab === 'requests' && approver && <RequestQueue api={api} user={user} onOpenBudget={openBudget} />}
       {tab === 'statements' && <Statements api={api} user={user} invoiceId={invoiceId} setInvoiceId={setInvoiceId} onOpenBudget={openBudget} />}
     </div>
   );

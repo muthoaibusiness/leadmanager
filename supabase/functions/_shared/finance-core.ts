@@ -5,22 +5,23 @@
 //
 // Trust model: the caller names a userId; the users table says whether that
 // account may use Inventory (role MANAGEMENT, or an allowed_features grant of
-// 'inventory') and whether it may decide requests ('finance_approve'). Every
-// row is read and written with the service role and scoped to the actor's
-// company. Figures (requested / approved / committed / spent / remaining) are
-// computed HERE, from the separate record types, and handed to the browser
-// ready-made, so there is one definition of each number.
+// 'inventory'). Every row is read and written with the service role and scoped
+// to the actor's company. Figures (amount / committed / spent / remaining) are
+// computed HERE and handed to the browser ready-made, so there is one
+// definition of each number.
+//
+// Budgets have no approval step (migration 0024): a budget's amount is its
+// envelope from the moment it is saved. The old request/approval tables are
+// kept as history and no longer written.
 
 import { renderStatement, TEMPLATES, CURRENCIES } from "../../../Invoice-templates/index.js";
 
 export type Env = { url: string; serviceKey: string; allowedOrigin?: string };
 
 type Row = Record<string, any>;
-type Actor = { id: string; name: string; role: string; companyId: string; approver: boolean };
+type Actor = { id: string; name: string; role: string; companyId: string };
 type Ctx = { env: Env; actor: Actor; db: Db; reqUrl: URL };
 
-const BUDGET_STATUS = ["DRAFT", "SUBMITTED", "APPROVED", "REJECTED", "REVISION"] as const;
-const DECISIONS: Record<string, string> = { APPROVED: "APPROVED", REJECTED: "REJECTED", REVISION: "REVISION" };
 const EXPENSE_KINDS = ["COMMITTED", "PAID"];
 const ENTITY_TYPES = ["budget", "expense", "invoice"];
 const UPLOAD_MIMES = ["image/png", "image/jpeg", "image/webp", "application/pdf"];
@@ -83,7 +84,9 @@ class Db {
 }
 async function conflictMessage(r: Response) {
   const t = await r.text();
-  return /one_final_per_expense/.test(t) ? "One of these expenses is already on a final statement" : "That change conflicts with an existing record";
+  if (/one_final_per_expense/.test(t)) return "One of these expenses is already on a final statement";
+  if (/company_number_key/.test(t)) return "Another statement took that number just now. Save again";
+  return "That change conflicts with an existing record";
 }
 
 // ── the actor ────────────────────────────────────────────────────────────────
@@ -97,25 +100,20 @@ async function loadActor(db: Db, userId: unknown): Promise<Actor> {
   const canSee = af ? af.includes("inventory") : u.role === "MANAGEMENT";
   if (!canSee) throw new Fail(403, "Inventory is not enabled for this account");
   if (!u.company_id) throw new Fail(403, "This account belongs to no company");
-  return { id: u.id, name: u.name || "", role: u.role, companyId: u.company_id, approver: !!af && af.includes("finance_approve") };
+  return { id: u.id, name: u.name || "", role: u.role, companyId: u.company_id };
 }
 
 // ── figures: the one definition of each number ───────────────────────────────
-export type Figures = { requested: number; approved: number; committed: number; spent: number; remaining: number; overrun: boolean; version: number };
-export function figuresFor(budget: Row, requests: Row[], approvals: Row[], expenses: Row[]): Figures {
-  const reqs = requests.filter((r) => r.budget_id === budget.id).sort((a, b) => num(b.version) - num(a.version));
-  const requested = reqs.length ? num(reqs[0].requested_amount) : num(budget.draft_amount);
-  // Approved comes ONLY from an approval record, and only while the budget is approved.
-  const apps = approvals.filter((a) => a.budget_id === budget.id && a.decision === "APPROVED")
-    .sort((a, b) => String(b.decided_at).localeCompare(String(a.decided_at)));
-  const approved = budget.status === "APPROVED" && apps.length ? num(apps[0].approved_amount) : 0;
+export type Figures = { amount: number; committed: number; spent: number; remaining: number; overrun: boolean };
+export function figuresFor(budget: Row, expenses: Row[]): Figures {
+  const amount = num(budget.draft_amount);
   let committed = 0, spent = 0;
   for (const e of expenses) {
     if (e.budget_id !== budget.id) continue;
     if (e.kind === "COMMITTED") committed += num(e.amount); else spent += num(e.amount);
   }
-  const remaining = approved - committed - spent;
-  return { requested, approved, committed, spent, remaining, overrun: committed + spent > approved, version: reqs.length ? num(reqs[0].version) : 0 };
+  const remaining = amount - committed - spent;
+  return { amount, committed, spent, remaining, overrun: committed + spent > amount };
 }
 
 const publicBase = (ctx: Ctx) => ctx.env.url ? `${ctx.env.url.replace(/\/+$/, "")}/functions/v1/finance` : `${ctx.reqUrl.origin}${ctx.reqUrl.pathname}`;
@@ -145,11 +143,6 @@ async function notify(ctx: Ctx, userIds: string[], type: string, message: string
   })));
 }
 
-async function approverIds(ctx: Ctx): Promise<string[]> {
-  const rows = await ctx.db.select(`users?${co(ctx)}&allowed_features=cs.${enc('["finance_approve"]')}&select=id,is_active`);
-  return rows.filter((u) => u.is_active !== false).map((u) => u.id);
-}
-
 const diff = (before: Row, after: Row, keys: string[]) => {
   const d: Row = {};
   for (const k of keys) if (JSON.stringify(before[k] ?? null) !== JSON.stringify(after[k] ?? null)) d[k] = { from: before[k] ?? null, to: after[k] ?? null };
@@ -159,10 +152,8 @@ const diff = (before: Row, after: Row, keys: string[]) => {
 // ── actions ──────────────────────────────────────────────────────────────────
 async function load(ctx: Ctx) {
   const c = co(ctx);
-  const [budgets, requests, approvals, expenses, invoices, lines, comments, events] = await Promise.all([
+  const [budgets, expenses, invoices, lines, comments, events] = await Promise.all([
     ctx.db.select(`finance_budgets?${c}&select=*&order=created_at.desc`),
-    ctx.db.select(`finance_budget_requests?${c}&select=*&order=submitted_at.desc`),
-    ctx.db.select(`finance_budget_approvals?${c}&select=*&order=decided_at.desc`),
     ctx.db.select(`finance_expenses?${c}&select=*&order=spent_on.desc`),
     ctx.db.select(`finance_invoices?${c}&select=*&order=created_at.desc`),
     ctx.db.select(`finance_invoice_lines?${c}&select=*&order=position.asc`),
@@ -170,96 +161,77 @@ async function load(ctx: Ctx) {
     ctx.db.select(`finance_events?${c}&select=*&order=at.desc&limit=1000`),
   ]);
   const figures: Record<string, Figures> = {};
-  for (const b of budgets) figures[b.id] = figuresFor(b, requests, approvals, expenses);
+  for (const b of budgets) figures[b.id] = figuresFor(b, expenses);
   // The share links point at this function's public address. req.url inside the
   // Edge runtime is the internal one (http, no /functions/v1), so build from env.
   const shareBase = publicBase(ctx);
-  return { actor: { id: ctx.actor.id, approver: ctx.actor.approver }, budgets, requests, approvals, expenses, invoices, lines, comments, events, figures, shareBase };
+  return { actor: { id: ctx.actor.id }, budgets, expenses, invoices, lines, comments, events, figures, shareBase };
 }
 
-const BUDGET_FIELDS = ["title", "purpose", "notes", "property_id", "property_name", "team_id", "team_name", "draft_amount"];
+const BUDGET_FIELDS = ["title", "purpose", "notes", "projects", "team_id", "team_name", "draft_amount"];
 function budgetPatchFrom(b: Row): Row {
   const title = str(b.title, 160).trim();
   if (!title) throw new Fail(400, "A budget needs a title");
   const draft_amount = num(b.draftAmount);
   if (draft_amount < 0) throw new Fail(400, "The amount can't be negative");
+  // Several projects per budget; property_id / property_name keep the first for older readers.
+  const seen = new Set<string>();
+  const projects = (Array.isArray(b.projects) ? b.projects : []).slice(0, 50)
+    .map((p: Row) => ({ id: str(p?.id, 80), name: str(p?.name, 160) }))
+    .filter((p: Row) => p.id && !seen.has(p.id) && seen.add(p.id));
   return {
-    title, purpose: str(b.purpose), notes: str(b.notes, 4000), draft_amount,
-    property_id: b.propertyId ? str(b.propertyId, 80) : null, property_name: str(b.propertyName, 160),
+    title, purpose: str(b.purpose), notes: str(b.notes, 4000), draft_amount, projects,
+    property_id: projects[0]?.id ?? null, property_name: projects[0]?.name ?? "",
     team_id: b.teamId ? str(b.teamId, 80) : null, team_name: str(b.teamName, 160),
   };
 }
-function canEditBudget(ctx: Ctx, b: Row) {
-  if (!["DRAFT", "REVISION"].includes(b.status)) throw new Fail(409, `A ${label(b.status)} budget can't be edited`);
-  if (b.created_by !== ctx.actor.id && !ctx.actor.approver) throw new Fail(403, "Only its creator or an approver can edit this budget");
-}
-const label = (s: string) => ({ DRAFT: "draft", SUBMITTED: "submitted", APPROVED: "approved", REJECTED: "rejected", REVISION: "revision-requested" } as Row)[s] || s.toLowerCase();
-
 async function budgetSave(ctx: Ctx, body: Row) {
   const b = body.budget || {};
   const patch = budgetPatchFrom(b);
   if (b.id) {
     const cur = await one(ctx, "finance_budgets", b.id);
-    canEditBudget(ctx, cur);
     const [row] = await ctx.db.patch("finance_budgets", `id=eq.${enc(cur.id)}&${co(ctx)}`, { ...patch, updated_at: nowIso() });
     await logEvent(ctx, "budget", cur.id, "updated", diff(cur, patch, BUDGET_FIELDS));
     return { budget: row };
   }
   const [row] = await ctx.db.insert("finance_budgets", [{
-    id: "fb_" + rid(), company_id: ctx.actor.companyId, ...patch, status: "DRAFT",
+    id: "fb_" + rid(), company_id: ctx.actor.companyId, ...patch, status: "APPROVED",
     created_by: ctx.actor.id, created_by_name: ctx.actor.name, created_at: nowIso(), updated_at: nowIso(),
   }]);
   await logEvent(ctx, "budget", row.id, "created", { title: row.title, draft_amount: row.draft_amount });
   return { budget: row };
 }
 
-async function budgetSubmit(ctx: Ctx, body: Row) {
-  const b = await one(ctx, "finance_budgets", body.budgetId);
-  canEditBudget(ctx, b);
-  if (num(b.draft_amount) <= 0) throw new Fail(400, "Set an amount before submitting");
-  const prev = await ctx.db.select(`finance_budget_requests?budget_id=eq.${enc(b.id)}&${co(ctx)}&select=version`);
-  const version = prev.reduce((m, r) => Math.max(m, num(r.version)), 0) + 1;
-  const [req] = await ctx.db.insert("finance_budget_requests", [{
-    id: "fr_" + rid(), company_id: ctx.actor.companyId, budget_id: b.id, version, requested_amount: num(b.draft_amount),
-    note: str(body.note), submitted_by: ctx.actor.id, submitted_by_name: ctx.actor.name, submitted_at: nowIso(),
-  }]);
-  const [row] = await ctx.db.patch("finance_budgets", `id=eq.${enc(b.id)}&${co(ctx)}`, { status: "SUBMITTED", updated_at: nowIso() });
-  await logEvent(ctx, "budget", b.id, "submitted", { version, requested_amount: req.requested_amount, note: req.note });
-  await notify(ctx, await approverIds(ctx), "BUDGET_REQUEST", `${ctx.actor.name || "Someone"} submitted "${b.title}" (v${version}) for approval`);
-  return { budget: row, request: req };
+// Ids from a bulk request: strings only, de-duplicated, capped.
+function idList(raw: unknown): string[] {
+  const ids = [...new Set((Array.isArray(raw) ? raw : []).filter((x) => typeof x === "string" && x).map((x) => str(x, 80)))];
+  if (!ids.length) throw new Fail(400, "Nothing selected");
+  if (ids.length > 200) throw new Fail(400, "Select at most 200 at a time");
+  return ids;
+}
+const inList = (ids: string[]) => `in.(${ids.map(enc).join(",")})`;
+
+// Comments point at their record by (entity_type, entity_id) with no foreign
+// key, so they are removed alongside it.
+async function dropComments(ctx: Ctx, type: string, ids: string[]) {
+  if (ids.length) await ctx.db.del("finance_comments", `entity_type=eq.${type}&entity_id=${inList(ids)}&${co(ctx)}`);
 }
 
-async function budgetDecide(ctx: Ctx, body: Row) {
-  if (!ctx.actor.approver) throw new Fail(403, "Only an approver can decide a budget request");
-  const b = await one(ctx, "finance_budgets", body.budgetId);
-  if (b.status !== "SUBMITTED") throw new Fail(409, "Only a submitted budget can be decided");
-  const decision = DECISIONS[String(body.decision)];
-  if (!decision) throw new Fail(400, "Decision must be APPROVED, REJECTED or REVISION");
-  const reqs = await ctx.db.select(`finance_budget_requests?budget_id=eq.${enc(b.id)}&${co(ctx)}&select=*&order=version.desc&limit=1`);
-  const req = reqs[0];
-  if (!req) throw new Fail(409, "This budget has no submitted request");
-  if (b.created_by === ctx.actor.id || req.submitted_by === ctx.actor.id) throw new Fail(403, "You can't decide your own request");
-  const approved_amount = decision === "APPROVED" ? num(body.approvedAmount ?? req.requested_amount) : null;
-  if (decision === "APPROVED" && (approved_amount as number) <= 0) throw new Fail(400, "The approved amount must be above zero");
-  const [app] = await ctx.db.insert("finance_budget_approvals", [{
-    id: "fa_" + rid(), company_id: ctx.actor.companyId, budget_id: b.id, request_id: req.id, decision, approved_amount,
-    note: str(body.note), decided_by: ctx.actor.id, decided_by_name: ctx.actor.name, decided_at: nowIso(),
-  }]);
-  const [row] = await ctx.db.patch("finance_budgets", `id=eq.${enc(b.id)}&${co(ctx)}`, { status: decision, updated_at: nowIso() });
-  await logEvent(ctx, "budget", b.id, "decided", { decision, version: req.version, requested_amount: req.requested_amount, approved_amount, note: app.note });
-  const what = decision === "APPROVED" ? "approved" : decision === "REJECTED" ? "rejected" : "sent back for revision";
-  await notify(ctx, [b.created_by, req.submitted_by], "BUDGET_DECISION", `"${b.title}" was ${what} by ${ctx.actor.name || "an approver"}`);
-  return { budget: row, approval: app };
+// Deleting a budget takes its expenses and statements with it (the foreign
+// keys cascade), so the whole envelope goes in one step.
+async function budgetsDelete(ctx: Ctx, ids: string[]) {
+  const budgets = await ctx.db.select(`finance_budgets?id=${inList(ids)}&${co(ctx)}&select=id,title`);
+  if (!budgets.length) throw new Fail(404, "Not found");
+  const bids = budgets.map((b) => b.id);
+  const f = `budget_id=${inList(bids)}&${co(ctx)}&select=id`;
+  const [ex, inv] = await Promise.all([ctx.db.select(`finance_expenses?${f}`), ctx.db.select(`finance_invoices?${f}`)]);
+  await Promise.all([dropComments(ctx, "budget", bids), dropComments(ctx, "expense", ex.map((r) => r.id)), dropComments(ctx, "invoice", inv.map((r) => r.id))]);
+  await ctx.db.del("finance_budgets", `id=${inList(bids)}&${co(ctx)}`);
+  for (const b of budgets) await logEvent(ctx, "budget", b.id, "deleted", { title: b.title, expenses: ex.length, statements: inv.length });
+  return { ok: true, deleted: bids.length };
 }
-
-async function budgetDelete(ctx: Ctx, body: Row) {
-  const b = await one(ctx, "finance_budgets", body.budgetId);
-  if (b.status !== "DRAFT") throw new Fail(409, "Only a draft can be deleted");
-  if (b.created_by !== ctx.actor.id && !ctx.actor.approver) throw new Fail(403, "Only its creator or an approver can delete this draft");
-  await ctx.db.del("finance_budgets", `id=eq.${enc(b.id)}&${co(ctx)}`);
-  await logEvent(ctx, "budget", b.id, "deleted", { title: b.title });
-  return { ok: true };
-}
+const budgetDelete = (ctx: Ctx, body: Row) => budgetsDelete(ctx, idList([body.budgetId]));
+const budgetDeleteMany = (ctx: Ctx, body: Row) => budgetsDelete(ctx, idList(body.budgetIds));
 
 const EXPENSE_FIELDS = ["amount", "spent_on", "category", "description", "payment_method", "kind", "spent_by", "lead_id", "property_id", "attachments"];
 function expensePatchFrom(e: Row): Row {
@@ -282,18 +254,16 @@ async function onFinalStatement(ctx: Ctx, expenseId: string) {
   return rows.length > 0;
 }
 async function budgetFigures(ctx: Ctx, budgetId: string) {
-  const [b] = await ctx.db.select(`finance_budgets?id=eq.${enc(budgetId)}&${co(ctx)}&select=*`);
-  const f = `budget_id=eq.${enc(budgetId)}&${co(ctx)}&select=*`;
-  const [requests, approvals, expenses] = await Promise.all([
-    ctx.db.select(`finance_budget_requests?${f}`), ctx.db.select(`finance_budget_approvals?${f}`), ctx.db.select(`finance_expenses?${f}`),
+  const [[b], expenses] = await Promise.all([
+    ctx.db.select(`finance_budgets?id=eq.${enc(budgetId)}&${co(ctx)}&select=*`),
+    ctx.db.select(`finance_expenses?budget_id=eq.${enc(budgetId)}&${co(ctx)}&select=*`),
   ]);
-  return figuresFor(b, requests, approvals, expenses);
+  return figuresFor(b, expenses);
 }
 
 async function expenseSave(ctx: Ctx, body: Row) {
   const e = body.expense || {};
   const b = await one(ctx, "finance_budgets", e.budgetId);
-  if (b.status !== "APPROVED") throw new Fail(409, "Expenses can only be recorded against an approved budget");
   const patch = expensePatchFrom(e);
   let row: Row;
   if (e.id) {
@@ -326,7 +296,15 @@ function linesFrom(raw: unknown): Row[] {
   return raw.slice(0, 200).map((l: Row, i: number) => {
     const qty = num(l.qty ?? 1), unit_price = num(l.unitPrice);
     if (qty < 0 || unit_price < 0) throw new Fail(400, `Line ${i + 1}: quantity and price can't be negative`);
-    return { expense_id: l.expenseId ? str(l.expenseId, 80) : null, position: i, description: str(l.description, 500), qty, unit_price };
+    // Template-specific columns (a Meta line's impressions and CPM).
+    const x = (typeof l.extra === "object" && l.extra) ? l.extra : {};
+    const extra: Row = {};
+    if (x.impressions != null && x.impressions !== "") extra.impressions = Math.max(0, Math.round(num(x.impressions)));
+    if (x.cpm != null && x.cpm !== "") extra.cpm = Math.max(0, num(x.cpm));
+    if (x.campaign) extra.campaign = str(x.campaign, 200);
+    if (x.cid) extra.cid = str(x.cid, 24); // the editor's campaign card
+    if (x.est === true) extra.est = true; // impressions estimated from the CPM, not read off the vendor receipt
+    return { expense_id: l.expenseId ? str(l.expenseId, 80) : null, position: i, description: str(l.description, 500), qty, unit_price, extra };
   });
 }
 // The statement's look: which template (Invoice-templates/), its currency, the
@@ -341,6 +319,11 @@ function layoutFrom(raw: unknown): Row {
   return {
     template, currency, accent: str(l.accent, 20), showQty: l.showQty !== false, footer: str(l.footer, 300),
     vendorRef: str(l.vendorRef, 80), paidOn: date(l.paidOn), periodFrom, periodTo,
+    // Payment block of an ad-spend template (Meta).
+    paidTime: /^\d{2}:\d{2}$/.test(str(l.paidTime, 5)) ? str(l.paidTime, 5) : "",
+    accountId: str(l.accountId, 60), paymentMethod: str(l.paymentMethod, 80), paymentRef: str(l.paymentRef, 60), productType: str(l.productType, 60),
+    cpm: Math.max(0, num(l.cpm)), billingAmount: Math.max(0, num(l.billingAmount)),
+    periodToTime: /^\d{2}:\d{2}$/.test(str(l.periodToTime, 5)) ? str(l.periodToTime, 5) : "",
   };
 }
 async function invoiceSave(ctx: Ctx, body: Row) {
@@ -373,8 +356,10 @@ async function invoiceSave(ctx: Ctx, body: Row) {
     await logEvent(ctx, "invoice", cur.id, "updated", { lines: lines.length, ...diff(cur, fields, ["title", "issued_on", "from_name", "bill_to", "notes"]) });
   } else {
     const year = nowIso().slice(0, 4);
-    const mine = await ctx.db.select(`finance_invoices?${co(ctx)}&select=id`);
-    const number = `EXP-${year}-${String(mine.length + 1).padStart(4, "0")}`;
+    // Next number after the highest this year (a count would repeat once a draft is deleted).
+    const taken = await ctx.db.select(`finance_invoices?${co(ctx)}&number=like.${enc(`EXP-${year}-*`)}&select=number`);
+    const next = taken.reduce((m, r) => Math.max(m, parseInt(String(r.number).slice(9), 10) || 0), 0) + 1;
+    const number = `EXP-${year}-${String(next).padStart(4, "0")}`;
     [row] = await ctx.db.insert("finance_invoices", [{
       id: "fi_" + rid(), company_id: ctx.actor.companyId, budget_id: b.id, number, status: "DRAFT", ...fields, share_token: null,
       created_by: ctx.actor.id, created_by_name: ctx.actor.name, created_at: nowIso(), updated_at: nowIso(), finalized_at: null,
@@ -406,13 +391,19 @@ async function invoiceShare(ctx: Ctx, body: Row) {
   return { invoice: row, url: `${publicBase(ctx)}?share=${row.share_token}` };
 }
 
-async function invoiceDelete(ctx: Ctx, body: Row) {
-  const cur = await one(ctx, "finance_invoices", body.invoiceId);
-  if (cur.status !== "DRAFT") throw new Fail(409, "A final statement can't be deleted");
-  await ctx.db.del("finance_invoices", `id=eq.${enc(cur.id)}&${co(ctx)}`);
-  await logEvent(ctx, "invoice", cur.id, "deleted", { number: cur.number });
-  return { ok: true };
+// Final statements can be deleted too; their expenses become free to put on
+// another statement (the lines go with the statement).
+async function invoicesDelete(ctx: Ctx, ids: string[]) {
+  const rows = await ctx.db.select(`finance_invoices?id=${inList(ids)}&${co(ctx)}&select=id,number,status`);
+  if (!rows.length) throw new Fail(404, "Not found");
+  const iids = rows.map((r) => r.id);
+  await dropComments(ctx, "invoice", iids);
+  await ctx.db.del("finance_invoices", `id=${inList(iids)}&${co(ctx)}`);
+  for (const r of rows) await logEvent(ctx, "invoice", r.id, "deleted", { number: r.number, status: r.status });
+  return { ok: true, deleted: iids.length };
 }
+const invoiceDelete = (ctx: Ctx, body: Row) => invoicesDelete(ctx, idList([body.invoiceId]));
+const invoiceDeleteMany = (ctx: Ctx, body: Row) => invoicesDelete(ctx, idList(body.invoiceIds));
 
 async function commentAdd(ctx: Ctx, body: Row) {
   const entityType = String(body.entityType || "");
@@ -453,9 +444,9 @@ async function fileUrl(ctx: Ctx, body: Row) {
 
 const ACTIONS: Record<string, (ctx: Ctx, body: Row) => Promise<Row>> = {
   "load": load,
-  "budget.save": budgetSave, "budget.submit": budgetSubmit, "budget.decide": budgetDecide, "budget.delete": budgetDelete,
+  "budget.save": budgetSave, "budget.delete": budgetDelete, "budget.deleteMany": budgetDeleteMany,
   "expense.save": expenseSave, "expense.delete": expenseDelete,
-  "invoice.save": invoiceSave, "invoice.finalize": invoiceFinalize, "invoice.share": invoiceShare, "invoice.delete": invoiceDelete,
+  "invoice.save": invoiceSave, "invoice.finalize": invoiceFinalize, "invoice.share": invoiceShare, "invoice.delete": invoiceDelete, "invoice.deleteMany": invoiceDeleteMany,
   "comment.add": commentAdd,
   "file.upload": fileUpload, "file.url": fileUrl,
 };
@@ -475,7 +466,7 @@ async function sharePage(env: Env, tok: string): Promise<Response> {
   return html(renderStatement({
     number: inv.number, title: inv.title, status: inv.status, issuedOn: inv.issued_on, fromName: inv.from_name, billTo: inv.bill_to,
     notes: inv.notes, createdByName: inv.created_by_name, budgetTitle: budgets[0]?.title || "", layout: inv.layout || {},
-    lines: lines.map((l) => ({ description: l.description, qty: l.qty, unitPrice: l.unit_price })),
+    lines: lines.map((l) => ({ description: l.description, qty: l.qty, unitPrice: l.unit_price, extra: l.extra || {} })),
   }, { toolbar: true }));
 }
 

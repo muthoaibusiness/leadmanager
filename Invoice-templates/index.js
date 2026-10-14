@@ -17,7 +17,14 @@
 // WEPRO prepared it from the vendor's receipt.
 
 import supabaseLogo from './logos/supabase.js';
+import metaLogo from './logos/meta.js';
 
+// Our billing block, as vendors print it under "Bill to".
+const OUR_ORG = "weprolead's Org\nLk sunrise.\ndhaka, BD\nBangladesh\nmuthoai.business@gmail.com";
+
+// columns: 'qty' (Quantity · Rate · Amount, the default) or 'impressions'
+// (Impressions · CPM · Amount: an ad line whose impressions the editor works
+// out from amount ÷ CPM × 1000).
 export const TEMPLATES = {
   default: {
     id: 'default',
@@ -40,9 +47,35 @@ export const TEMPLATES = {
     refLabel: 'Invoice number',
     defaults: {
       title: 'Supabase subscription',
-      billTo: "weprolead's Org\nLk sunrise.\ndhaka, BD\nBangladesh\nmuthoai.business@gmail.com",
+      billTo: OUR_ORG,
       lines: [{ description: 'Pro Plan', qty: 1, unitPrice: 0 }],
       months: 12, // billing period: the editor fills From–To from the receipt date
+    },
+  },
+  meta: {
+    id: 'meta',
+    name: 'Meta',
+    layout: 'adSpend', // campaigns → ad sets, the way Meta's billing page lists them
+    columns: 'impressions',
+    currency: 'USD',
+    accent: '#0866FF',
+    logo: metaLogo,
+    wordmark: '', // the logo already carries the word "Meta"
+    logoHeight: 30,
+    vendor: { // as printed on our Meta receipts (Invoice-templates/Meta.pdf)
+      name: 'Meta Platforms Ireland Limited',
+      address: ['Merrion Road', 'Dublin 4', 'D04 X2K5', 'Ireland'],
+    },
+    refLabel: 'Transaction ID',
+    paymentMethods: ['Credit card', 'Prepaid balance', 'Agency'],
+    defaults: {
+      title: 'Meta ads',
+      billTo: '', // client name: typed per statement
+      lines: [{ description: '', qty: 1, unitPrice: 0, extra: { campaign: '', impressions: '' } }],
+      months: 1,
+      paymentMethod: 'Prepaid balance',
+      productType: 'Meta ads',
+      cpm: 0.73, // our average on Meta.pdf (135.37 ÷ 185,125 × 1,000); editable per statement
     },
   },
 };
@@ -52,6 +85,10 @@ export const templateOf = (id) => TEMPLATES[id] || TEMPLATES.default;
 
 const SYMBOLS = { BDT: 'BDT ', USD: '$', EUR: '€', GBP: '£', AED: 'AED ' };
 export const CURRENCIES = Object.keys(SYMBOLS);
+export const fmtCount = (n) => (Number(n) ? Math.round(Number(n)).toLocaleString('en-US') : '—');
+// Impressions bought: amount ÷ CPM (cost per 1,000 impressions) × 1,000.
+export const impressionsFor = (amount, cpm) => (Number(cpm) > 0 ? Math.round(Number(amount) / Number(cpm) * 1000) : 0);
+
 export function fmtMoney(n, currency = 'BDT') {
   const v = Number(n) || 0;
   const sym = SYMBOLS[currency] ?? `${currency} `;
@@ -138,13 +175,23 @@ function receipt(doc, t) {
   const total = doc.lines.reduce((s, l) => s + lineTotal(l), 0);
   const v = t.vendor || {};
   const period = periodText(doc.layout);
-  const rows = doc.lines.map((l) => `<tr><td>${descCell(l.description, period)}</td><td class="q">${esc(l.qty)}</td><td class="r">${fmtMoney(l.unitPrice, cur)}</td><td class="r">${fmtMoney(lineTotal(l), cur)}</td></tr>`).join('');
+  const imp = t.columns === 'impressions';
+  const head = imp
+    ? '<th>Description</th><th class="q">Impressions</th><th class="r">CPM</th><th class="r">Amount</th>'
+    : '<th>Description</th><th class="q">Quantity</th><th class="r">Rate</th><th class="r">Amount</th>';
+  const rows = doc.lines.map((l) => {
+    const mid = imp
+      ? `<td class="q">${fmtCount(l.extra?.impressions)}</td><td class="r">${l.extra?.cpm ? fmtMoney(l.extra.cpm, cur) : '—'}</td>`
+      : `<td class="q">${esc(l.qty)}</td><td class="r">${fmtMoney(l.unitPrice, cur)}</td>`;
+    return `<tr><td>${descCell(l.description, period)}</td>${mid}<td class="r">${fmtMoney(lineTotal(l), cur)}</td></tr>`;
+  }).join('');
+  const totalImp = imp ? doc.lines.reduce((s, l) => s + (Number(l.extra?.impressions) || 0), 0) : 0;
   const ref = doc.layout?.vendorRef;
   const paid = doc.layout?.paidOn;
   const css = `
     .hd{display:flex;justify-content:space-between;align-items:center;gap:16px;margin-bottom:28px}
     .vname{font-size:26px;font-weight:700;letter-spacing:-.4px;display:flex;align-items:center;gap:10px}.vname i{width:12px;height:28px;border-radius:3px;background:${accent};display:inline-block}
-    .vname.logo{font-size:34px;font-weight:600;letter-spacing:-.8px;gap:12px}.vname svg{width:auto;height:44px;display:block}
+    .vname.logo{font-size:34px;font-weight:600;letter-spacing:-.8px;gap:12px}.vname svg{width:auto;height:${t.logoHeight || 44}px;display:block}
     .kind{font-size:28px;font-weight:300;letter-spacing:.02em}
     .vaddr{font-size:13.5px;line-height:1.5;margin-bottom:26px}
     .mid{display:grid;grid-template-columns:1fr 1fr;gap:24px;margin-bottom:30px;font-size:13.5px}.mid b.l{display:block;font-weight:600}
@@ -155,7 +202,7 @@ function receipt(doc, t) {
     .memo{margin-top:34px;font-size:13px;white-space:pre-line}
     .foot{margin-top:40px;padding-top:12px;border-top:1px solid #e6e8eb;font-size:11.5px;color:#6b7280}`;
   const body = `
-<div class="hd">${t.logo ? `<div class="vname logo">${t.logo}${esc(t.wordmark || t.name)}</div>` : `<div class="vname"><i></i>${esc(t.name)}</div>`}<div class="kind">STATEMENT</div></div>
+<div class="hd">${t.logo ? `<div class="vname logo">${t.logo}${esc(t.wordmark ?? t.name)}</div>` : `<div class="vname"><i></i>${esc(t.name)}</div>`}<div class="kind">STATEMENT</div></div>
 <div class="vaddr">${esc(v.name || doc.fromName || '')}${(v.address || []).map((a) => '<br>' + esc(a)).join('')}</div>
 <div class="mid">
   <div><b class="l">Bill to:</b>${nl(doc.billTo) || '—'}</div>
@@ -167,18 +214,80 @@ function receipt(doc, t) {
     <span class="em">Amount paid</span><span class="em">${fmtMoney(total, cur)}</span>
   </div>
 </div>
-<table><thead><tr><th>Description</th><th class="q">Quantity</th><th class="r">Rate</th><th class="r">Amount</th></tr></thead><tbody>${rows}</tbody></table>
-<div class="sums"><span>Subtotal</span><span class="r">${fmtMoney(total, cur)}</span><span class="em">Amount paid</span><span class="r em">${fmtMoney(total, cur)}</span></div>
+<table><thead><tr>${head}</tr></thead><tbody>${rows}</tbody></table>
+<div class="sums">${imp ? `<span>Impressions</span><span class="r">${fmtCount(totalImp)}</span>` : ''}<span>Subtotal</span><span class="r">${fmtMoney(total, cur)}</span><span class="em">Amount paid</span><span class="r em">${fmtMoney(total, cur)}</span></div>
 ${doc.notes ? `<div class="memo">Memo:\n${esc(doc.notes)}</div>` : ''}
 <div class="foot">Prepared by WEPRO from ${esc(t.name)} receipt${ref ? ' ' + esc(ref) : ''}${doc.budgetTitle ? ' · Budget: ' + esc(doc.budgetTitle) : ''}${doc.layout?.footer ? ' · ' + esc(doc.layout.footer) : ''}</div>`;
   return { css, body };
 }
 
-const RENDERERS = { standard, receipt };
+// Ad spend, laid out like Meta's receipt (Invoice-templates/Meta.pdf): payment
+// details beside a large "Paid" figure, then each campaign with its period and
+// total over its ad sets (impressions, amount). Lines are ad sets; a line's
+// extra.campaign groups it. Headed as our statement, footer names WEPRO.
+function adSpend(doc, t) {
+  const L = doc.layout || {};
+  // Meta prints day first: 23 Sep 2026.
+  const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const prettyDate = (d) => { const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(d || ''); return m ? `${+m[3]} ${MON[m[2] - 1]} ${m[1]}` : esc(d || '—'); };
+  const cur = L.currency || t.currency;
+  const total = doc.lines.reduce((s, l) => s + lineTotal(l), 0);
+  const v = t.vendor || {};
+  const from = L.periodFrom ? prettyDate(L.periodFrom) : '';
+  const range = L.periodFrom || L.periodTo ? `From ${from || '…'}, 00:00 to ${L.periodTo ? prettyDate(L.periodTo) : '…'}, ${esc(L.periodToTime || '23:59')}` : '';
+  const groups = [];
+  for (const l of doc.lines) {
+    const name = String(l.extra?.campaign || '').trim() || 'Campaign';
+    let g = groups.find((x) => x.name === name);
+    if (!g) groups.push(g = { name, lines: [] });
+    g.lines.push(l);
+  }
+  const paidOn = L.paidOn || doc.issuedOn;
+  // Impressions worked out from the CPM (not typed from Meta) carry a * and a note.
+  const estLine = doc.lines.find((l) => l.extra?.est && Number(l.extra?.impressions));
+  const estCpm = estLine ? Number(estLine.extra.cpm || L.cpm) || 0 : 0;
+  const client = String(doc.billTo || '').split('\n')[0];
+  const css = `
+    .sheet{font-family:Helvetica,Arial,sans-serif;color:#1c1e21}
+    .h{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;padding-bottom:10px;border-bottom:1px solid #ccd0d5}
+    .h .t{font-size:19px;font-weight:400}.h .a{font-size:12px;margin-top:2px}.h svg{height:${t.logoHeight || 30}px;width:auto;display:block;margin-top:4px}
+    .pay{display:flex;justify-content:space-between;gap:24px;padding:44px 0 50px;border-bottom:1px solid #ccd0d5;font-size:12.5px}
+    .pay .k{margin-bottom:16px}.pay .k b{display:block;font-weight:700}.pay .k span{display:block}
+    .paid{text-align:right;align-self:center}.paid .l{font-size:19px}.paid .v{font-size:40px;font-weight:300;margin:6px 0 10px}.paid .s{font-size:12px}
+    h3{font-size:15px;font-weight:700;margin:44px 0 12px}
+    .camps{border-bottom:1px solid #ccd0d5}.camp{border-top:1px solid #ccd0d5}
+    .ch{display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px dashed #ccd0d5;font-size:12.5px}
+    .ch b{display:block;margin-bottom:6px}.ch .tot{font-weight:700}
+    .as{display:grid;grid-template-columns:1fr 1fr auto;padding:12px 0 12px 64px;font-size:12.5px}.as .i{padding-left:20px}
+    .ft{display:flex;justify-content:space-between;align-items:flex-end;gap:24px;margin-top:120px;padding-bottom:6px;border-bottom:1px solid #ccd0d5;font-size:12px;color:#8d949e;line-height:1.45}
+    .ft .r{text-align:right}.note{margin-top:24px;font-size:12px;color:#8d949e}`;
+  const body = `
+<div class="h"><div><div class="t">Ad spend statement for ${esc(client || '—')}</div>${L.accountId ? `<div class="a">Account ID: ${esc(L.accountId)}</div>` : ''}</div>${t.logo || ''}</div>
+<div class="pay">
+  <div>
+    <div class="k">Invoice/payment date<b>${paidOn ? prettyDate(paidOn) : '—'}${L.paidTime ? ', ' + esc(L.paidTime) : ''}</b></div>
+    ${L.paymentMethod ? `<div class="k">Payment method<b>${esc(L.paymentMethod)}</b>${L.paymentRef ? `<span>Reference number: ${esc(L.paymentRef)}</span>` : ''}</div>` : ''}
+    ${L.vendorRef ? `<div class="k">Transaction ID<b>${esc(L.vendorRef)}</b></div>` : ''}
+    ${L.productType ? `<div class="k">Product type<b>${esc(L.productType)}</b></div>` : ''}
+  </div>
+  <div class="paid"><div class="l">Paid</div><div class="v">${fmtMoney(total, cur)}</div>${from ? `<div class="s">Ads spend since ${from}.</div>` : ''}</div>
+</div>
+<h3>Campaigns</h3>
+<div class="camps">${groups.map((g) => `<div class="camp"><div class="ch"><div><b>${esc(g.name)}</b>${range}</div><span class="tot">${fmtMoney(g.lines.reduce((s, l) => s + lineTotal(l), 0), cur)}</span></div>
+${g.lines.map((l) => `<div class="as"><span>${esc(String(l.description || '—').split('\n')[0])}</span><span class="i">${Number(l.extra?.impressions) ? fmtCount(l.extra.impressions) + ' Impressions' + (l.extra.est ? '*' : '') : ''}</span><span>${fmtMoney(lineTotal(l), cur)}</span></div>`).join('')}</div>`).join('')}</div>
+${doc.notes ? `<div class="note" style="color:#1c1e21;white-space:pre-line">${esc(doc.notes)}</div>` : ''}
+<div class="ft"><div>${esc(v.name || '')}${(v.address || []).map((a) => '<br>' + esc(a)).join('')}</div><div class="r">${esc(doc.billTo ? String(doc.billTo).split('\n').slice(1).join(', ') || 'Bangladesh' : 'Bangladesh')}<br>Statement no. ${esc(doc.number)}${doc.budgetTitle ? '<br>Budget: ' + esc(doc.budgetTitle) : ''}</div></div>
+${estCpm ? `<div class="note">* Estimated impressions: amount ÷ CPM ${fmtMoney(estCpm, cur)} × 1,000.</div>` : ''}
+<div class="note">Prepared by WEPRO from ${esc(t.name)} receipt${L.vendorRef ? ' ' + esc(L.vendorRef) : ''}.${L.footer ? ' ' + esc(L.footer) : ''}</div>`;
+  return { css, body };
+}
+
+const RENDERERS = { standard, receipt, adSpend };
 
 // doc: { number, title, status, issuedOn, fromName, billTo, notes, createdByName,
-//        budgetTitle, layout: { template, currency, accent, showQty, footer, vendorRef, paidOn, periodFrom, periodTo },
-//        lines: [{ description, qty, unitPrice }] }
+//        budgetTitle, layout: { template, currency, accent, showQty, footer, vendorRef, paidOn, periodFrom, periodTo,
+//                               paidTime, accountId, paymentMethod, paymentRef, productType },
+//        lines: [{ description, qty, unitPrice, extra: { campaign, impressions, cpm } }] }
 // opts.toolbar adds the Print button (the public page); opts.embed drops the page
 // chrome for the in-app preview.
 export function renderStatement(doc, opts = {}) {

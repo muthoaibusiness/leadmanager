@@ -12,15 +12,18 @@ Vendor layouts for expense statements (Admin → Inventory → New statement →
 2. Add an entry to `TEMPLATES` in `index.js`:
 
    ```js
-   meta: {
-     id: 'meta', name: 'Meta', layout: 'receipt', currency: 'USD', accent: '#0866FF',
-     vendor: { name: 'Meta Platforms, Inc.', address: ['1 Meta Way', 'Menlo Park, CA 94025', 'United States'] },
-     refLabel: 'Transaction ID',
-     defaults: { title: 'Meta ads', billTo: '…', lines: [{ description: 'Ads', qty: 1, unitPrice: 0 }] },
+   google: {
+     id: 'google', name: 'Google', layout: 'receipt', currency: 'USD', accent: '#1A73E8',
+     logo: googleLogo, wordmark: '', logoHeight: 30,   // import googleLogo from './logos/google.js'
+     vendor: { name: 'Google Asia Pacific Pte. Ltd.', address: ['…'] },
+     refLabel: 'Invoice number',
+     defaults: { title: 'Google Ads', billTo: OUR_ORG, lines: [{ description: 'Ads', qty: 1, unitPrice: 0 }], months: 1 },
    },
    ```
 
-   `layout: 'receipt'` reuses the vendor-receipt layout. If a vendor needs a different look,
+   `meta` in `index.js` is a full example. `columns: 'impressions'` swaps Quantity · Rate for
+   Impressions · CPM (impressions fill in from amount ÷ CPM × 1000); `defaults.months` sets the
+   default duration. `layout: 'receipt'` reuses the vendor-receipt layout. If a vendor needs a different look,
    add a renderer function to `RENDERERS` and point `layout` at it.
 3. Redeploy the function so share links use the new template:
    `npx supabase functions deploy finance --no-verify-jwt --use-api`

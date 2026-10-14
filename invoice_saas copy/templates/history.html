@@ -1,0 +1,111 @@
+{% extends "base.html" %}
+{% block title %}Invoice History — Muthoinc{% endblock %}
+
+{% block content %}
+<div>
+  <h1 class="text-2xl font-bold text-slate-800 mb-1">Invoice History</h1>
+  <p class="text-slate-500 text-sm mb-8">All generated invoices — download or delete.</p>
+
+  {% if invoices %}
+  <div class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+    <table class="w-full text-sm">
+      <thead>
+        <tr class="border-b border-slate-100">
+          <th class="text-left px-6 py-4 text-xs font-semibold text-slate-500 uppercase tracking-wide">Invoice No.</th>
+          <th class="text-left px-6 py-4 text-xs font-semibold text-slate-500 uppercase tracking-wide">Client</th>
+          <th class="text-left px-6 py-4 text-xs font-semibold text-slate-500 uppercase tracking-wide">Date</th>
+          <th class="text-right px-6 py-4 text-xs font-semibold text-slate-500 uppercase tracking-wide">Amount</th>
+          <th class="text-right px-6 py-4 text-xs font-semibold text-slate-500 uppercase tracking-wide">Actions</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-slate-50">
+        {% for inv in invoices %}
+        <tr class="hover:bg-slate-50 transition">
+          <td class="px-6 py-4">
+            <span class="font-mono text-xs bg-slate-100 text-slate-600 px-2 py-1 rounded">{{ inv.invoice_number }}</span>
+          </td>
+          <td class="px-6 py-4 font-medium text-slate-800">{{ inv.client_name }}</td>
+          <td class="px-6 py-4 text-slate-500">{{ inv.date_created }}</td>
+          <td class="px-6 py-4 text-right font-semibold text-slate-800">${{ "%.2f"|format(inv.amount) }}</td>
+          <td class="px-6 py-4 text-right">
+            <div class="flex items-center justify-end gap-2">
+              <button onclick="saveWithPicker('{{ inv.filename }}')"
+                      class="inline-flex items-center gap-1.5 bg-brand-600 hover:bg-brand-700 text-white text-xs font-semibold px-3 py-1.5 rounded-lg transition">
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
+                </svg>
+                Download
+              </button>
+              <form method="POST" action="/history/delete/{{ inv.id }}"
+                    onsubmit="return confirm('Delete this invoice?')">
+                <button type="submit"
+                        class="inline-flex items-center gap-1.5 bg-slate-100 hover:bg-red-50 text-slate-500 hover:text-red-500 text-xs font-semibold px-3 py-1.5 rounded-lg transition">
+                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                          d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                  </svg>
+                  Delete
+                </button>
+              </form>
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Summary card -->
+  <div class="mt-6 grid grid-cols-3 gap-4">
+    <div class="bg-white rounded-xl border border-slate-200 px-5 py-4">
+      <p class="text-xs text-slate-500 font-semibold uppercase tracking-wide mb-1">Total Invoices</p>
+      <p class="text-2xl font-bold text-slate-800">{{ invoices|length }}</p>
+    </div>
+    <div class="bg-white rounded-xl border border-slate-200 px-5 py-4">
+      <p class="text-xs text-slate-500 font-semibold uppercase tracking-wide mb-1">Total Billed</p>
+      <p class="text-2xl font-bold text-slate-800">${{ "%.2f"|format(invoices|sum(attribute='amount')) }}</p>
+    </div>
+    <div class="bg-white rounded-xl border border-slate-200 px-5 py-4">
+      <p class="text-xs text-slate-500 font-semibold uppercase tracking-wide mb-1">Latest Invoice</p>
+      <p class="text-sm font-semibold text-slate-700 mt-1">{{ invoices[0].date_created if invoices else '—' }}</p>
+    </div>
+  </div>
+
+  {% else %}
+  <div class="bg-white rounded-2xl border border-slate-200 py-20 text-center">
+    <svg class="w-12 h-12 text-slate-200 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
+            d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414A1 1 0 0119 9.414V19a2 2 0 01-2 2z"/>
+    </svg>
+    <p class="text-slate-400 font-medium">No invoices yet</p>
+    <a href="/" class="mt-4 inline-block text-brand-600 text-sm font-semibold hover:underline">Create your first invoice →</a>
+  </div>
+  {% endif %}
+</div>
+
+<script>
+async function saveWithPicker(filename) {
+  const res  = await fetch(`/download/${filename}`);
+  const blob = await res.blob();
+  if (window.showSaveFilePicker) {
+    try {
+      const handle = await window.showSaveFilePicker({
+        suggestedName: filename,
+        types: [{ description: "PDF File", accept: { "application/pdf": [".pdf"] } }],
+      });
+      const writable = await handle.createWritable();
+      await writable.write(blob);
+      await writable.close();
+      return;
+    } catch (e) {
+      if (e.name === "AbortError") return;
+    }
+  }
+  const url = URL.createObjectURL(blob);
+  const a   = document.createElement("a");
+  a.href = url; a.download = filename; a.click();
+  URL.revokeObjectURL(url);
+}
+</script>
+{% endblock %}
