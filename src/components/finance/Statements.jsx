@@ -4,7 +4,8 @@ import { fmtAgo } from '../../lib/helpers.js';
 import { useProjectToast } from '../project/projectToast.js';
 import { byId, linesOf, statementTotalText, expensesOf, shareLinks } from '../../lib/finance.js';
 import { renderStatement, templateOf } from '../../../Invoice-templates/index.js';
-import { StatementForm, Modal } from './forms.jsx';
+import { StatementForm, Modal, SelectAll, SelectRow, BulkBar } from './forms.jsx';
+import useSelection from './useSelection.js';
 import { Discussion, History } from './Discussion.jsx';
 
 // Expense statements (internal invoices): the list, and one statement as a
@@ -24,23 +25,38 @@ export default function Statements({ api, user, invoiceId, setInvoiceId, onOpenB
 }
 
 function StatementList({ api, onOpen, onOpenBudget }) {
-  const { fin } = api;
+  const { fin, act } = api;
   const [q, setQ] = useState('');
   const term = q.trim().toLowerCase();
   const rows = fin.invoices.filter(i => !term || [i.number, i.title, byId(fin.budgets, i.budgetId)?.title].some(s => (s || '').toLowerCase().includes(term)));
+  const sel = useSelection(rows);
+  const [busy, setBusy] = useState(false);
+  const toast = useProjectToast({ always: true });
+  const removeSelected = () => {
+    const ids = sel.selected;
+    const finals = fin.invoices.filter(i => ids.includes(i.id) && i.status === 'FINAL').length;
+    toast.confirm({
+      title: `Delete ${ids.length} statement${ids.length === 1 ? '' : 's'}?`,
+      description: `${finals ? `${finals} ${finals === 1 ? 'is' : 'are'} final: ${finals === 1 ? 'its' : 'their'} share links stop working and ${finals === 1 ? 'its' : 'their'} expenses can go on a new statement. ` : ''}This can't be undone.`,
+      confirmLabel: 'Delete',
+      onConfirm: () => { setBusy(true); return act('invoice.deleteMany', { invoiceIds: ids }).then(r => { sel.clear(); toast.success(`${r.deleted} statement${r.deleted === 1 ? '' : 's'} deleted`); }).catch(e => toast.error('Not deleted', e.message)).finally(() => setBusy(false)); },
+    });
+  };
   return (
     <>
       <div className="fin-tools">
         <div className="acc-search fin-search"><Mi>search</Mi><input value={q} onChange={e => setQ(e.target.value)} placeholder="Search statements" aria-label="Search statements" /></div>
         <span className="sp" />
-        <span className="fin-help">New statements are created from an approved budget.</span>
+        <span className="fin-help">New statements are created from a budget.</span>
       </div>
+      <BulkBar sel={sel} noun="statement" onDelete={removeSelected} busy={busy} />
       <div className="fin-card">
-        {rows.length === 0 ? <div className="fin-empty">{fin.invoices.length ? 'No statements match.' : 'No statements yet. Open an approved budget and choose “New statement”.'}</div> : (
+        {rows.length === 0 ? <div className="fin-empty">{fin.invoices.length ? 'No statements match.' : 'No statements yet. Open a budget and choose “New statement”.'}</div> : (
           <div className="fin-scroll"><table className="fin-tbl">
-            <thead><tr><th>Number</th><th>Title</th><th>Budget</th><th>Date</th><th>Status</th><th className="r">Total</th><th>By</th></tr></thead>
+            <thead><tr><SelectAll sel={sel} label="Select all statements" /><th>Number</th><th>Title</th><th>Budget</th><th>Date</th><th>Status</th><th className="r">Total</th><th>By</th></tr></thead>
             <tbody>{rows.map(i => { const b = byId(fin.budgets, i.budgetId); return (
-              <tr key={i.id} className="click" onClick={() => onOpen(i.id)}>
+              <tr key={i.id} className={`click${sel.has(i.id) ? ' on' : ''}`} onClick={() => onOpen(i.id)}>
+                <SelectRow sel={sel} id={i.id} label={`Select ${i.number}`} />
                 <td className="w"><span className="fin-ttl">{i.number}</span></td><td>{i.title}</td>
                 <td className="m"><button type="button" className="fin-back" onClick={e => { e.stopPropagation(); b && onOpenBudget(b.id); }}>{b?.title || '—'}</button></td>
                 <td className="m w">{i.issuedOn || '—'}</td>
@@ -71,11 +87,12 @@ function StatementDoc({ api, user, inv, onClose }) {
   const finalIds = new Set(fin.lines.filter(l => l.isFinal && l.expenseId && l.invoiceId !== inv.id).map(l => l.expenseId));
 
   const finalize = () => toast.confirm({
-    title: `Finalize ${inv.number}?`, description: 'A final statement can’t be edited or deleted, and its expenses can’t change. A share link is issued.', confirmLabel: 'Finalize',
+    title: `Finalize ${inv.number}?`, description: 'A final statement can’t be edited, and its expenses can’t change. A share link is issued.', confirmLabel: 'Finalize',
     onConfirm: () => act('invoice.finalize', { invoiceId: inv.id }).then(() => toast.success('Statement finalized')).catch(e => toast.error('Not finalized', e.message)),
   });
-  const del = () => toast.confirm({ title: `Delete draft ${inv.number}?`, description: 'The draft is removed.', confirmLabel: 'Delete',
-    onConfirm: () => act('invoice.delete', { invoiceId: inv.id }).then(() => { toast.success('Draft deleted'); onClose(); }).catch(e => toast.error('Not deleted', e.message)) });
+  const del = () => toast.confirm({ title: `Delete ${inv.number}?`,
+    description: inv.status === 'FINAL' ? 'This statement is final: its share link stops working and its expenses can go on a new statement. This can’t be undone.' : 'The draft is removed.', confirmLabel: 'Delete',
+    onConfirm: () => act('invoice.delete', { invoiceId: inv.id }).then(() => { toast.success('Statement deleted'); onClose(); }).catch(e => toast.error('Not deleted', e.message)) });
   const share = async (rotate = false) => {
     try { const r = await act('invoice.share', { invoiceId: inv.id, rotate }); setShareUrl(r.url); setPanel('share'); if (rotate) toast.success('New link issued', 'The old link no longer works.'); }
     catch (e) { toast.error('Could not share', e.message); }
@@ -104,7 +121,7 @@ function StatementDoc({ api, user, inv, onClose }) {
               <button type="button" className="btn btn-g btn-sm" onClick={() => (shareUrl ? setPanel('share') : share(false))}><Mi>link</Mi>Share</button>
               <button type="button" className="btn btn-g btn-sm" onClick={() => setPanel(panel === 'discussion' ? null : 'discussion')} title="Discussion"><Mi>forum</Mi></button>
               <button type="button" className="btn btn-g btn-sm" onClick={() => setPanel(panel === 'history' ? null : 'history')} title="History"><Mi>history</Mi></button>
-              {inv.status === 'DRAFT' && <button type="button" className="btn btn-g btn-sm ui-del" onClick={del} title="Delete draft"><Mi>delete</Mi></button>}
+              <button type="button" className="btn btn-g btn-sm ui-del" onClick={del} title="Delete statement"><Mi>delete</Mi></button>
               <button type="button" className="m-x" onClick={onClose} aria-label="Close"><Mi>close</Mi></button>
             </div>
           </div>
@@ -115,7 +132,7 @@ function StatementDoc({ api, user, inv, onClose }) {
           </div>
         </div>
       </div>
-      {panel === 'edit' && <StatementForm budget={budget} expenses={expensesOf(fin, inv.budgetId)} takenExpenseIds={finalIds} initial={{ ...inv, accent, showQty, footer: layout.footer || '', template: tpl.id, currency: layout.currency || tpl.currency, vendorRef: layout.vendorRef || '', paidOn: layout.paidOn || '', periodFrom: layout.periodFrom || '', periodTo: layout.periodTo || '' }} initialLines={lines} onClose={() => setPanel(null)}
+      {panel === 'edit' && <StatementForm budget={budget} expenses={expensesOf(fin, inv.budgetId)} takenExpenseIds={finalIds} initial={{ ...inv, ...layout, accent, showQty, footer: layout.footer || '', template: tpl.id, currency: layout.currency || tpl.currency }} initialLines={lines} onClose={() => setPanel(null)}
         onSave={(i) => act('invoice.save', { invoice: { ...i, id: inv.id, budgetId: inv.budgetId } }).then(() => toast.success('Draft saved'))} />}
       {panel === 'share' && (
         <Modal title={`Share ${inv.number}`} onClose={() => setPanel(null)}>

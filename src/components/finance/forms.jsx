@@ -3,7 +3,7 @@ import Mi from '../Mi.jsx';
 import { getDB, getProperties } from '../../lib/db.js';
 import { fmtBDT } from '../../lib/helpers.js';
 import { CATEGORIES, PAY_METHODS, EXPENSE_KIND, readAsBase64, statementTotal } from '../../lib/finance.js';
-import { TEMPLATE_LIST, CURRENCIES, templateOf, fmtMoney, periodEnd } from '../../../Invoice-templates/index.js';
+import { TEMPLATE_LIST, CURRENCIES, templateOf, fmtMoney, periodEnd, impressionsFor } from '../../../Invoice-templates/index.js';
 
 // The finance forms, each a modal on the app's .mov/.modal shell. Every save
 // goes to the Edge Function through `onSave`, which resolves on success and
@@ -17,6 +17,27 @@ export function Modal({ title, wide, onClose, children, footer }) {
         <div className="m-body">{children}</div>
         {footer && <div className="m-ft">{footer}</div>}
       </div>
+    </div>
+  );
+}
+
+// A list's select-all checkbox and a row checkbox (clicks don't open the row).
+export function SelectAll({ sel, label }) {
+  return <th className="fin-chk"><input type="checkbox" aria-label={label} checked={sel.allOn} ref={el => { if (el) el.indeterminate = sel.someOn; }} onChange={sel.toggleAll} /></th>;
+}
+export function SelectRow({ sel, id, label }) {
+  return <td className="fin-chk" onClick={e => e.stopPropagation()}><input type="checkbox" aria-label={label} checked={sel.has(id)} onChange={() => sel.toggle(id)} /></td>;
+}
+// Shown above a list while rows are selected.
+export function BulkBar({ sel, noun, onDelete, busy }) {
+  if (!sel.selected.length) return null;
+  const n = sel.selected.length;
+  return (
+    <div className="fin-bulk" role="region" aria-label="Selection">
+      <span><b>{n}</b> {noun}{n === 1 ? '' : 's'} selected</span>
+      <span className="sp" />
+      <button type="button" className="btn btn-g btn-sm fin-ibtn" onClick={sel.clear} title="Clear selection" aria-label="Clear selection"><Mi>delete_sweep</Mi></button>
+      <button type="button" className="btn btn-g btn-sm ui-del fin-ibtn" onClick={onDelete} disabled={busy} title={`Delete ${n} ${noun}${n === 1 ? '' : 's'}`} aria-label={`Delete ${n} ${noun}${n === 1 ? '' : 's'}`}><Mi>delete</Mi></button>
     </div>
   );
 }
@@ -36,75 +57,38 @@ const today = () => new Date().toISOString().slice(0, 10);
 export function BudgetForm({ initial, onSave, onClose }) {
   const projects = getProperties();
   const teams = getDB().teams || [];
-  const [f, setF] = useState(() => ({ title: '', purpose: '', notes: '', propertyId: '', teamId: '', draftAmount: '', ...(initial || {}) }));
+  const [f, setF] = useState(() => ({ title: '', purpose: '', notes: '', teamId: '', draftAmount: '', ...(initial || {}) }));
+  // Budgets saved before 0024 carry only property_id; read that as a one-project list.
+  const [picked, setPicked] = useState(() => new Set(initial?.projects?.length ? initial.projects.map(p => p.id) : initial?.propertyId ? [initial.propertyId] : []));
   const { busy, err, run } = useSubmit();
   const set = (k) => (e) => setF(x => ({ ...x, [k]: e.target.value }));
+  const toggleProject = (id) => setPicked(s => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
   const submit = () => run(async () => {
-    const p = projects.find(x => x.id === f.propertyId), t = teams.find(x => x.id === f.teamId);
-    await onSave({ ...f, draftAmount: Number(f.draftAmount || 0), propertyName: p?.name || '', teamName: t?.name || '' });
+    const t = teams.find(x => x.id === f.teamId);
+    const chosen = projects.filter(p => picked.has(p.id)).map(p => ({ id: p.id, name: p.name }));
+    await onSave({ ...f, draftAmount: Number(f.draftAmount || 0), projects: chosen, teamName: t?.name || '' });
     onClose();
   });
   return (
     <Modal title={initial?.id ? 'Edit budget' : 'New budget'} onClose={onClose} footer={<>
       <button type="button" className="btn btn-g" onClick={onClose}>Cancel</button>
-      <button type="button" className="btn btn-p" onClick={submit} disabled={busy}><Mi>check</Mi>{initial?.id ? 'Save' : 'Create draft'}</button>
+      <button type="button" className="btn btn-p" onClick={submit} disabled={busy}><Mi>check</Mi>{initial?.id ? 'Save' : 'Create budget'}</button>
     </>}>
       <Err msg={err} />
       <div className="fin-form">
         <div className="fg full"><label>Title</label><input className="fi" value={f.title} onChange={set('title')} placeholder="e.g. Q4 marketing" autoFocus /></div>
-        <div className="fg"><label>Amount (BDT)</label><input className="fi" type="number" min="0" step="1" value={f.draftAmount} onChange={set('draftAmount')} placeholder="0" /><div className="fin-help">The amount you will request. It becomes the request on submit; only an approval sets the approved amount.</div></div>
+        <div className="fg"><label>Amount (BDT)</label><input className="fi" type="number" min="0" step="1" value={f.draftAmount} onChange={set('draftAmount')} placeholder="0" /><div className="fin-help">What this budget can spend. Expenses count against it straight away.</div></div>
         <div className="fg"><label>Purpose</label><input className="fi" value={f.purpose} onChange={set('purpose')} placeholder="What it pays for" /></div>
-        <div className="fg"><label>Project</label><select className="fsel" value={f.propertyId} onChange={set('propertyId')}><option value="">No project</option>{projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select></div>
+        <div className="fg full"><label>Projects {picked.size > 0 && <span className="fin-sub" style={{ display: 'inline' }}>· {picked.size} selected</span>}</label>
+          {projects.length === 0 ? <div className="fin-help">No projects yet.</div> : (
+            <div className="fin-pick">{projects.map(p => (
+              <label key={p.id}><input type="checkbox" checked={picked.has(p.id)} onChange={() => toggleProject(p.id)} /><span>{p.name}</span></label>
+            ))}</div>
+          )}
+        </div>
         <div className="fg"><label>Responsible team</label><select className="fsel" value={f.teamId} onChange={set('teamId')}><option value="">No team</option>{teams.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}</select></div>
         <div className="fg full"><label>Notes</label><textarea className="fi" rows={3} value={f.notes} onChange={set('notes')} /></div>
       </div>
-    </Modal>
-  );
-}
-
-// ── submit for approval ──
-export function SubmitForm({ budget, onSubmit, onClose }) {
-  const [note, setNote] = useState('');
-  const { busy, err, run } = useSubmit();
-  return (
-    <Modal title="Submit for approval" onClose={onClose} footer={<>
-      <button type="button" className="btn btn-g" onClick={onClose}>Cancel</button>
-      <button type="button" className="btn btn-p" onClick={() => run(async () => { await onSubmit(note); onClose(); })} disabled={busy}><Mi>send</Mi>Submit request</button>
-    </>}>
-      <Err msg={err} />
-      <div className="fin-mini"><div><span>Budget</span><b>{budget.title}</b></div><div><span>Requesting</span><b>{fmtBDT(budget.draftAmount)}</b></div><div><span>Project</span><b>{budget.propertyName || '—'}</b></div></div>
-      <div className="fg"><label>Note to the approver (optional)</label><textarea className="fi" rows={3} value={note} onChange={e => setNote(e.target.value)} /></div>
-      <div className="fin-help">Once submitted the budget is locked until a decision is made. Approvers are notified.</div>
-    </Modal>
-  );
-}
-
-// ── decide ──
-export function DecideForm({ budget, figures, request, onDecide, onClose, preset }) {
-  const [decision, setDecision] = useState(preset || 'APPROVED');
-  const [amount, setAmount] = useState(String(figures?.requested ?? budget.draftAmount ?? ''));
-  const [note, setNote] = useState('');
-  const { busy, err, run } = useSubmit();
-  const opts = [['APPROVED', 'Approve', 'good', 'check_circle'], ['REVISION', 'Request revision', 'warn', 'undo'], ['REJECTED', 'Reject', 'bad', 'cancel']];
-  return (
-    <Modal title={`Decide · ${budget.title}`} onClose={onClose} footer={<>
-      <button type="button" className="btn btn-g" onClick={onClose}>Cancel</button>
-      <button type="button" className="btn btn-p" onClick={() => run(async () => { await onDecide({ decision, approvedAmount: Number(amount || 0), note }); onClose(); })} disabled={busy}><Mi>check</Mi>Confirm</button>
-    </>}>
-      <Err msg={err} />
-      <div className="fin-mini">
-        <div><span>Requested (v{request?.version ?? figures?.version ?? 1})</span><b>{fmtBDT(figures?.requested ?? 0)}</b></div>
-        <div><span>Submitted by</span><b>{request?.submittedByName || budget.createdByName || '—'}</b></div>
-        <div><span>Project</span><b>{budget.propertyName || '—'}</b></div>
-      </div>
-      {request?.note && <div className="fin-note" style={{ marginBottom: 12 }}>“{request.note}”</div>}
-      <div className="fin-decide" style={{ marginBottom: 12 }}>
-        {opts.map(([k, l, tone, ic]) => <button key={k} type="button" className={`${decision === k ? 'on ' + tone : ''}`} onClick={() => setDecision(k)}><Mi>{ic}</Mi> {l}</button>)}
-      </div>
-      {decision === 'APPROVED' && (
-        <div className="fg"><label>Approved amount (BDT)</label><input className="fi" type="number" min="1" step="1" value={amount} onChange={e => setAmount(e.target.value)} /><div className="fin-help">May differ from the requested amount. This figure, not the request, becomes the budget.</div></div>
-      )}
-      <div className="fg"><label>Note {decision === 'REVISION' ? '(what to change)' : '(optional)'}</label><textarea className="fi" rows={3} value={note} onChange={e => setNote(e.target.value)} /></div>
     </Modal>
   );
 }
@@ -179,15 +163,65 @@ export function ExpenseForm({ budget, initial, onSave, onClose, upload }) {
   );
 }
 
+// ── ad spend lines (Meta): campaign cards, each with its ad sets ──
+// Lines stay flat (one per ad set); extra.cid ties an ad set to its campaign
+// card and extra.campaign carries the name the statement groups by.
+const newCid = () => 'c' + Math.random().toString(36).slice(2, 9);
+function AdCampaigns({ lines, setLines, cpm, currency, billing, estimate, setAdAmount, setAdImpressions }) {
+  const groups = [];
+  lines.forEach((l, i) => {
+    const cid = l.extra?.cid || '';
+    let g = groups.find(x => x.cid === cid);
+    if (!g) groups.push(g = { cid, name: l.extra?.campaign || '', rows: [] });
+    g.rows.push(i);
+  });
+  const blank = (cid, campaign) => estimate({ expenseId: null, description: '', qty: 1, unitPrice: 0, extra: { cid, campaign, impressions: '' } }, cpm);
+  const rename = (cid, campaign) => setLines(ls => ls.map(l => (l.extra?.cid === cid ? { ...l, extra: { ...l.extra, campaign } } : l)));
+  const addSet = (cid, campaign) => setLines(ls => { const at = ls.map(l => l.extra?.cid).lastIndexOf(cid); const out = [...ls]; out.splice(at + 1, 0, blank(cid, campaign)); return out; });
+  const total = statementTotal(lines);
+  const unallocated = Math.round((Number(billing || 0) - total) * 100) / 100;
+  return (
+    <div className="fin-camps">
+      <div className="fin-camps-hd">
+        <div><b>Campaign breakdown</b><span>Add each campaign and its ad sets from the Meta receipt.</span></div>
+        <button type="button" className="btn btn-g btn-sm" onClick={() => setLines(ls => [...ls, blank(newCid(), '')])}><Mi>add</Mi>Add Campaign</button>
+      </div>
+      {groups.length === 0 && <div className="fin-help">No campaigns yet.</div>}
+      {groups.map(g => (
+        <div key={g.cid} className="fin-camp">
+          <div className="fin-camp-hd">
+            <input className="fi" value={g.name} placeholder="Campaign name" aria-label="Campaign name" onChange={e => rename(g.cid, e.target.value)} />
+            <button type="button" className="x" onClick={() => setLines(ls => ls.filter(l => (l.extra?.cid || '') !== g.cid))} aria-label="Remove campaign"><Mi>close</Mi></button>
+          </div>
+          <div className="fin-line-hd ad"><span>Ad set</span><span>Impressions</span><span>Amount ({currency})</span><span /></div>
+          {g.rows.map(i => { const l = lines[i]; return (
+            <div key={i} className="fin-line ad">
+              <input className="fi" value={l.description} aria-label="Ad set" placeholder="Ad set name" onChange={e => setLines(ls => ls.map((x, j) => (j === i ? { ...x, description: e.target.value } : x)))} />
+              <input className="fi" type="number" min="0" step="1" value={l.extra?.impressions ?? ''} aria-label="Impressions" title={l.extra?.est ? 'Estimated from the CPM. Type the exact number from Meta to replace it.' : 'Exact, from Meta'} style={l.extra?.est ? { fontStyle: 'italic' } : undefined} onChange={e => setAdImpressions(i, e.target.value)} />
+              <input className="fi" type="number" min="0" step="0.01" value={l.unitPrice} aria-label="Amount" onChange={e => setAdAmount(i, Number(e.target.value))} />
+              <button type="button" className="x" onClick={() => setLines(ls => ls.filter((_, j) => j !== i))} aria-label="Remove ad set"><Mi>close</Mi></button>
+            </div>); })}
+          <button type="button" className="fin-addset" onClick={() => addSet(g.cid, g.name)}><Mi>add</Mi>Add Ad Set</button>
+        </div>
+      ))}
+      <div className="fin-help">Impressions fill in from Amount ÷ CPM × 1,000 (italic here, marked * as estimated on the statement). Type the exact number from Meta to replace one; clear it to go back to the estimate.</div>
+      <div className="fin-sumline"><span>Total</span><span>{fmtMoney(total, currency)}</span></div>
+      {Number(billing) > 0 && <div className={`fin-sumline${unallocated ? ' fin-unalloc' : ''}`}><span>Unallocated amount</span><span>{fmtMoney(unallocated, currency)}</span></div>}
+    </div>
+  );
+}
+
 // ── statement (invoice) editor ──
 // The template (Invoice-templates/) decides the layout; picking one fills the
 // vendor, bill-to, currency and starter lines, which stay editable.
 export function StatementForm({ budget, expenses, initial, initialLines, onSave, onClose, takenExpenseIds }) {
-  const [f, setF] = useState(() => ({ title: 'Expense statement', issuedOn: today(), fromName: '', billTo: '', notes: '', accent: '#1F6FEB', showQty: true, footer: '', template: 'default', currency: 'BDT', vendorRef: '', paidOn: '', periodFrom: '', periodTo: '', ...(initial || {}) }));
-  const [lines, setLines] = useState(() => (initialLines && initialLines.length ? initialLines.map(l => ({ expenseId: l.expenseId || null, description: l.description, qty: l.qty, unitPrice: l.unitPrice })) : []));
+  const [f, setF] = useState(() => ({ title: 'Expense statement', issuedOn: today(), fromName: '', billTo: '', notes: '', accent: '#1F6FEB', showQty: true, footer: '', template: 'default', currency: 'BDT', vendorRef: '', paidOn: '', periodFrom: '', periodTo: '', paidTime: '', accountId: '', paymentMethod: '', paymentRef: '', productType: '', cpm: '', billingAmount: '', periodToTime: '', ...(initial || {}) }));
+  // Ad sets saved before campaign cards existed get a card key from their campaign name.
+  const [lines, setLines] = useState(() => (initialLines && initialLines.length ? initialLines.map(l => ({ expenseId: l.expenseId || null, description: l.description, qty: l.qty, unitPrice: l.unitPrice, extra: { ...(l.extra || {}), ...(l.extra?.campaign != null && !l.extra?.cid ? { cid: 'n:' + l.extra.campaign } : {}) } })) : []));
   const { busy, err, run } = useSubmit();
   const tpl = templateOf(f.template);
-  const isReceipt = tpl.layout === 'receipt';
+  const isReceipt = tpl.layout !== 'standard'; // a vendor layout (receipt, adSpend)
+  const isAd = tpl.columns === 'impressions';
   const set = (k) => (e) => setF(x => ({ ...x, [k]: e.target.type === 'checkbox' ? e.target.checked : e.target.value }));
   const pickTemplate = (id) => {
     const t = templateOf(id), d = t.defaults || {};
@@ -196,16 +230,35 @@ export function StatementForm({ budget, expenses, initial, initialLines, onSave,
       title: d.title || (t.id === 'default' ? 'Expense statement' : x.title),
       fromName: t.vendor?.name || (t.id === 'default' ? '' : x.fromName),
       billTo: d.billTo ?? x.billTo,
+      paymentMethod: d.paymentMethod ?? x.paymentMethod, productType: d.productType ?? x.productType,
+      cpm: x.cpm || d.cpm || '',
       ...(d.months && !x.periodTo ? { periodFrom: x.periodFrom || x.issuedOn, periodTo: periodEnd(x.periodFrom || x.issuedOn, d.months) } : {}),
     }));
-    if (d.lines && !lines.length) setLines(d.lines.map(l => ({ expenseId: null, ...l })));
+    if (d.lines && !lines.length) setLines(d.lines.map(l => ({ expenseId: null, ...l, ...(t.columns === 'impressions' ? { extra: { ...l.extra, cid: newCid() } } : {}) })));
+    // An ad template shows one amount per line, so fold qty × price into it.
+    else if (t.columns === 'impressions') setLines(ls => ls.map(l => ({ ...l, unitPrice: Number(l.qty || 0) * Number(l.unitPrice || 0), qty: 1, extra: l.extra || {} })));
   };
   const picked = new Set(lines.map(l => l.expenseId).filter(Boolean));
-  const toggle = (e) => setLines(ls => picked.has(e.id) ? ls.filter(l => l.expenseId !== e.id) : [...ls, { expenseId: e.id, description: `${e.description || e.category || 'Expense'} · ${e.spentOn}`, qty: 1, unitPrice: Number(e.amount) }]);
+  const toggle = (e) => setLines(ls => {
+    if (picked.has(e.id)) return ls.filter(l => l.expenseId !== e.id);
+    const line = { expenseId: e.id, description: `${e.description || e.category || 'Expense'} · ${e.spentOn}`, qty: 1, unitPrice: Number(e.amount) };
+    return [...ls, isAd ? estimate({ ...line, extra: { cid: newCid(), campaign: '' } }, f.cpm) : line];
+  });
   const setLine = (i, k, v) => setLines(ls => ls.map((l, j) => (j === i ? { ...l, [k]: v } : l)));
+  // An ad line is one unit at its amount. Impressions fill in from the statement
+  // CPM (marked est) until someone types the exact figure from the vendor.
+  const estimate = (l, cpm) => (l.extra?.est === false || !(Number(cpm) > 0) ? l
+    : { ...l, extra: { ...l.extra, cpm: Number(cpm), impressions: impressionsFor(l.unitPrice, cpm), est: true } });
+  const setAdAmount = (i, unitPrice) => setLines(ls => ls.map((l, j) => (j === i ? estimate({ ...l, qty: 1, unitPrice }, f.cpm) : l)));
+  const setAdImpressions = (i, v) => setLines(ls => ls.map((l, j) => (j === i
+    ? (v === '' ? estimate({ ...l, extra: { ...l.extra, est: undefined } }, f.cpm) : { ...l, extra: { ...l.extra, impressions: v, est: false } })
+    : l)));
+  const setCpm = (cpm) => { setF(x => ({ ...x, cpm })); setLines(ls => ls.map(l => estimate(l, cpm))); };
   const submit = () => run(async () => {
     await onSave({ title: f.title, issuedOn: f.issuedOn, fromName: f.fromName, billTo: f.billTo, notes: f.notes, lines,
-      layout: { template: f.template, currency: f.currency, accent: f.accent, showQty: f.showQty, footer: f.footer, vendorRef: f.vendorRef, paidOn: f.paidOn, periodFrom: f.periodFrom, periodTo: f.periodTo } });
+      layout: { template: f.template, currency: f.currency, accent: f.accent, showQty: f.showQty, footer: f.footer, vendorRef: f.vendorRef, paidOn: f.paidOn, periodFrom: f.periodFrom, periodTo: f.periodTo,
+        paidTime: f.paidTime, accountId: f.accountId, paymentMethod: f.paymentMethod, paymentRef: f.paymentRef, productType: f.productType, cpm: f.cpm,
+        billingAmount: f.billingAmount, periodToTime: f.periodToTime } });
     onClose();
   });
   return (
@@ -225,20 +278,34 @@ export function StatementForm({ budget, expenses, initial, initialLines, onSave,
           <div className="fg"><label>{tpl.refLabel || 'Vendor reference'}</label><input className="fi" value={f.vendorRef} onChange={set('vendorRef')} placeholder="As printed on the vendor receipt" /></div>
           <div className="fg"><label>Payment date</label><input className="fi" type="date" value={f.paidOn} onChange={set('paidOn')} /></div>
         </>}
+        {isAd && <>
+          <div className="fg"><label>Payment time</label><input className="fi" type="time" value={f.paidTime} onChange={set('paidTime')} /></div>
+          <div className="fg"><label>Client name</label><input className="fi" value={f.billTo} onChange={set('billTo')} placeholder="e.g. P2P & WECON" /></div>
+          <div className="fg"><label>Account ID</label><input className="fi" value={f.accountId} onChange={set('accountId')} placeholder="Ad account ID" /></div>
+          <div className="fg"><label>Billing amount ({f.currency})</label><input className="fi" type="number" min="0" step="0.01" value={f.billingAmount} onChange={set('billingAmount')} placeholder="As on the receipt" /><div className="fin-help">The campaigns below should add up to this.</div></div>
+          <div className="fg"><label>Payment method</label>
+            <select className="fsel" value={f.paymentMethod} onChange={set('paymentMethod')}>
+              {[...new Set([...(tpl.paymentMethods || []), f.paymentMethod].filter(Boolean))].map(m => <option key={m}>{m}</option>)}
+            </select></div>
+          <div className="fg"><label>Reference number</label><input className="fi" value={f.paymentRef} onChange={set('paymentRef')} placeholder="From the receipt (optional)" /></div>
+          <div className="fg"><label>Product type</label><input className="fi" value={f.productType} onChange={set('productType')} /></div>
+          <div className="fg"><label>CPM ({f.currency} per 1,000 impressions)</label><input className="fi" type="number" min="0" step="0.01" value={f.cpm} onChange={e => setCpm(e.target.value)} /><div className="fin-help">Impressions fill in from each ad set's amount at this CPM.</div></div>
+        </>}
         <div className="fg full"><label>Duration</label>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
             <input className="fi" type="date" value={f.periodFrom} onChange={set('periodFrom')} aria-label="Period from" style={{ flex: '1 1 140px' }} />
             <span className="fin-sub" style={{ display: 'inline' }}>to</span>
             <input className="fi" type="date" value={f.periodTo} min={f.periodFrom || undefined} onChange={set('periodTo')} aria-label="Period to" style={{ flex: '1 1 140px' }} />
+            {isAd && <input className="fi" type="time" value={f.periodToTime} onChange={set('periodToTime')} aria-label="Period ends at" title="Campaign end time (23:59 when empty)" style={{ flex: '0 1 120px' }} />}
           </div>
           <div className="fin-kinds" style={{ marginTop: 8 }}>{[[1, '1 month'], [3, '3 months'], [6, '6 months'], [12, '1 year']].map(([m, l]) => (
             <button key={m} type="button" className={f.periodTo && f.periodTo === periodEnd(f.periodFrom, m) ? 'on' : ''}
               onClick={() => setF(x => { const from = x.periodFrom || x.issuedOn; return { ...x, periodFrom: from, periodTo: periodEnd(from, m) }; })}>{l}</button>))}
           </div>
-          <div className="fin-help">The period this charge covers. {isReceipt ? 'It prints under each line, the way the vendor shows it.' : 'It prints in the statement header.'}</div>
+          <div className="fin-help">The period this charge covers. {isAd ? 'It prints under each campaign, the way the vendor shows it.' : isReceipt ? 'It prints under each line, the way the vendor shows it.' : 'It prints in the statement header.'}</div>
         </div>
         <div className="fg"><label>{isReceipt ? 'Vendor' : 'From'}</label><textarea className="fi" rows={2} value={f.fromName} onChange={set('fromName')} placeholder={isReceipt ? 'Vendor name' : 'Team or department'} readOnly={isReceipt && !!tpl.vendor} /></div>
-        <div className="fg"><label>{isReceipt ? 'Bill to' : 'To'}</label><textarea className="fi" rows={isReceipt ? 4 : 2} value={f.billTo} onChange={set('billTo')} placeholder="Who receives this statement" /></div>
+        {!isAd && <div className="fg"><label>{isReceipt ? 'Bill to' : 'To'}</label><textarea className="fi" rows={isReceipt ? 4 : 2} value={f.billTo} onChange={set('billTo')} placeholder="Who receives this statement" /></div>}
         <div className="fg"><label>Currency</label><select className="fsel" value={f.currency} onChange={set('currency')}>{CURRENCIES.map(c => <option key={c}>{c}</option>)}</select></div>
         <div className="fg full"><label>Expenses on this statement</label>
           {f.currency !== 'BDT' && expenses.length > 0 && <div className="fin-help">Expenses are recorded in BDT. Check each line’s price is in {f.currency}.</div>}
@@ -251,6 +318,9 @@ export function StatementForm({ budget, expenses, initial, initialLines, onSave,
               </label>); })}</div>
           )}
         </div>
+        {isAd ? (
+          <div className="fg full"><AdCampaigns lines={lines} setLines={setLines} cpm={f.cpm} currency={f.currency} billing={f.billingAmount} estimate={estimate} setAdAmount={setAdAmount} setAdImpressions={setAdImpressions} /></div>
+        ) : (
         <div className="fg full"><label>Lines</label>
           <div className="fin-lines">
             <div className="fin-line-hd"><span>Description</span><span>Qty</span><span>{isReceipt ? 'Rate' : 'Unit price'}</span><span /></div>
@@ -266,6 +336,7 @@ export function StatementForm({ budget, expenses, initial, initialLines, onSave,
             <div className="fin-sumline"><span>Total</span><span>{fmtMoney(statementTotal(lines), f.currency)}</span></div>
           </div>
         </div>
+        )}
         <div className="fg"><label>Accent colour</label><input className="fi" type="color" value={f.accent} onChange={set('accent')} style={{ height: 40, padding: 4 }} /></div>
         {!isReceipt && <div className="fg"><label>Columns</label><label style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 10, fontWeight: 500 }}><input type="checkbox" checked={f.showQty} onChange={set('showQty')} />Show quantity and unit price</label></div>}
         <div className="fg full"><label>{isReceipt ? 'Memo' : 'Notes'}</label><textarea className="fi" rows={2} value={f.notes} onChange={set('notes')} /></div>

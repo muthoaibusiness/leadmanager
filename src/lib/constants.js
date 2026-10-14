@@ -74,13 +74,10 @@ export const isNiHandler = (user) => !!user && Array.isArray(user.allowedFeature
 
 // Features an admin can grant/revoke per user, in display order (nav features only;
 // 'companies' is master-only overview and 'profile' is always-on, so both excluded).
-// 'finance_approve' is not a page: it lets an Inventory user decide budget
-// requests (approve / reject / ask for revision). Checked again server-side by
-// the finance Edge Function, which reads the same allowed_features column.
-export const FEATURE_KEYS = ['dashboard', 'leads', 'add_customer', 'conversations', 'calendar', 'meeting', 'pipeline', 'properties', 'reports', 'agentperf', 'requests', 'inventory', 'finance_approve', 'team', 'accounts'];
+export const FEATURE_KEYS = ['dashboard', 'leads', 'add_customer', 'conversations', 'calendar', 'meeting', 'pipeline', 'properties', 'reports', 'agentperf', 'requests', 'inventory', 'team', 'accounts'];
 export const FEATURE_LABELS = {
   dashboard: 'Home', leads: 'Leads', add_customer: 'Add Customer', conversations: 'Conversations', calendar: 'Calendar', meeting: 'Meeting', pipeline: 'Pipeline', properties: 'Projects',
-  reports: 'Reports', agentperf: 'Performance', requests: 'Requests', inventory: 'Inventory', finance_approve: 'Approve budgets', team: 'Team',
+  reports: 'Reports', agentperf: 'Performance', requests: 'Requests', inventory: 'Inventory', team: 'Team',
   accounts: 'Users & Accounts',
 };
 // Default features for a standard role (from NAV_SCOPES). Executive resolves to none.

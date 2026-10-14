@@ -13,18 +13,11 @@ import { fmtMoney } from '../../Invoice-templates/index.js';
 
 export const FIN_URL = `${SB_URL}/functions/v1/finance`;
 
-export const BUDGET_STATUS = {
-  DRAFT: { label: 'Draft', tone: 'muted' },
-  SUBMITTED: { label: 'Submitted', tone: 'warn' },
-  APPROVED: { label: 'Approved', tone: 'good' },
-  REJECTED: { label: 'Rejected', tone: 'bad' },
-  REVISION: { label: 'Revision requested', tone: 'warn' },
-};
 export const EXPENSE_KIND = { COMMITTED: 'Committed', PAID: 'Paid' };
 export const CATEGORIES = ['Marketing', 'Events', 'Travel', 'Office', 'Salaries & fees', 'Software', 'Utilities', 'Other'];
 export const PAY_METHODS = ['Cash', 'Bank transfer', 'Card', 'bKash / Nagad', 'Cheque'];
 export const ACTION_LABELS = {
-  created: 'Created', updated: 'Edited', submitted: 'Submitted for approval', decided: 'Decision', deleted: 'Deleted',
+  created: 'Created', updated: 'Edited', submitted: 'Submitted for approval', decided: 'Decision', deleted: 'Deleted', // submitted / decided: history from the old approval flow
   overrun: 'Budget overrun', finalized: 'Finalized', shared: 'Share link issued',
 };
 
@@ -95,8 +88,8 @@ export function useFinance(user) {
 
 // ── derived, display only (every money figure comes from the function) ──
 export const byId = (rows, id) => (rows || []).find(r => r.id === id) || null;
-export const latestRequest = (fin, budgetId) => (fin?.requests || []).filter(r => r.budgetId === budgetId).sort((a, b) => b.version - a.version)[0] || null;
-export const approvalsOf = (fin, budgetId) => (fin?.approvals || []).filter(a => a.budgetId === budgetId).sort((a, b) => String(b.decidedAt).localeCompare(String(a.decidedAt)));
+// A budget's projects as one label. Budgets saved before 0024 have only propertyName.
+export const projectNames = (b) => (b?.projects?.length ? b.projects.map(p => p.name).filter(Boolean).join(', ') : b?.propertyName || '');
 export const expensesOf = (fin, budgetId) => (fin?.expenses || []).filter(e => e.budgetId === budgetId);
 export const linesOf = (fin, invoiceId) => (fin?.lines || []).filter(l => l.invoiceId === invoiceId).sort((a, b) => a.position - b.position);
 export const statementTotal = (lines) => lines.reduce((s, l) => s + Number(l.qty || 0) * Number(l.unitPrice || 0), 0);
@@ -105,16 +98,17 @@ export const statementTotalText = (inv, lines) => fmtMoney(statementTotal(lines)
 export const commentsOf = (fin, type, id) => (fin?.comments || []).filter(c => c.entityType === type && c.entityId === id);
 export const eventsOf = (fin, type, id) => (fin?.events || []).filter(e => e.entityType === type && e.entityId === id);
 
-// Overview totals. Approved / committed / spent / remaining are summed over the
-// company's approved budgets (envelopes are not date-bound); the breakdowns
-// count expenses whose date falls in the picked range.
+// Overview totals. Budget / committed / spent / remaining are summed over every
+// budget (envelopes are not date-bound); the breakdowns count expenses whose
+// date falls in the picked range.
 export function overviewOf(fin, range) {
-  const out = { requested: 0, approved: 0, committed: 0, spent: 0, remaining: 0, pending: [], overruns: 0, byProject: [], byCategory: [], byMember: [] };
+  const out = { amount: 0, committed: 0, spent: 0, remaining: 0, budgets: 0, overruns: 0, byProject: [], byCategory: [], byMember: [] };
   if (!fin) return out;
   for (const b of fin.budgets) {
     const f = fin.figures[b.id] || {};
-    if (b.status === 'SUBMITTED') { out.pending.push(b); out.requested += f.requested || 0; }
-    if (b.status === 'APPROVED') { out.approved += f.approved || 0; out.committed += f.committed || 0; out.spent += f.spent || 0; out.remaining += f.remaining || 0; if (f.overrun) out.overruns++; }
+    if (b.status === 'REJECTED') continue; // rejected under the old approval flow: never an envelope
+    out.budgets++; out.amount += f.amount || 0; out.committed += f.committed || 0; out.spent += f.spent || 0; out.remaining += f.remaining || 0;
+    if (f.overrun) out.overruns++;
   }
   const inRange = (e) => { if (!range) return true; const d = new Date(e.spentOn + 'T00:00:00'); return d >= range.start && d <= range.end; };
   const group = (key, name) => {
@@ -129,7 +123,8 @@ export function overviewOf(fin, range) {
     return [...m.values()].sort((a, b) => (b.spent + b.committed) - (a.spent + a.committed));
   };
   const budgetOf = (e) => byId(fin.budgets, e.budgetId);
-  out.byProject = group(e => e.propertyId || budgetOf(e)?.propertyId, e => e.propertyName || budgetOf(e)?.propertyName || 'No project');
+  // An expense without its own project counts under its budget's projects (joined, when several).
+  out.byProject = group(e => e.propertyId || (budgetOf(e)?.projects || []).map(p => p.id).join('+') || budgetOf(e)?.propertyId, e => e.propertyName || projectNames(budgetOf(e)) || 'No project');
   out.byCategory = group(e => e.category, e => e.category || 'Uncategorised');
   out.byMember = group(e => e.spentBy, e => e.spentByName || 'Unassigned');
   return out;

@@ -60,6 +60,13 @@
 .fin-chip.on { border-color: var(--accent); color: var(--accent); }
 .fin-scroll { overflow-x: auto; }
 .fin-tbl { width: 100%; border-collapse: collapse; font-size: 13px; }
+.fin-tbl .fin-chk { width: 36px; padding-right: 0; }
+.fin-tbl .fin-chk input { width: 16px; height: 16px; cursor: pointer; accent-color: var(--volt, currentColor); }
+.fin-tbl tr.on td { background: color-mix(in srgb, var(--volt, #3b82f6) 8%, transparent); }
+.fin-bulk { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; padding: 8px 12px; border: 1px solid var(--bd); border-radius: var(--r-md, 10px); background: var(--surf); font-size: 13px; }
+.fin-bulk .sp { flex: 1; }
+.fin-bulk .fin-ibtn { width: 32px; height: 32px; padding: 0; justify-content: center; }
+.fin-bulk .fin-ibtn .mi { margin: 0; font-size: 18px; }
 .fin-tbl th { text-align: left; padding: 11px 14px; font-size: 11.5px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--t3); border-bottom: 1px solid var(--bd); white-space: nowrap; }
 .fin-tbl td { padding: 11px 14px; border-bottom: 1px solid var(--bd); color: var(--t1); vertical-align: middle; }
 .fin-tbl tr:last-child td { border-bottom: 0; }
@@ -153,6 +160,19 @@
 .fin-line .fi { width: 100%; }
 .fin-line .x { width: 36px; height: 36px; display: inline-flex; align-items: center; justify-content: center; border: 1px solid var(--bd); border-radius: var(--r-sm); background: var(--surf); color: var(--t3); cursor: pointer; }
 .fin-line-hd { display: grid; grid-template-columns: minmax(0, 1fr) 70px 130px 36px; gap: 6px; font-size: 11px; color: var(--t3); text-transform: uppercase; letter-spacing: .06em; }
+/* An ad line (Meta): description · amount · CPM · impressions */
+.fin-line.ad, .fin-line-hd.ad { grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr) minmax(0, 1fr) 36px; }
+/* Campaign cards (Meta statement editor) */
+.fin-camps { display: grid; gap: 12px; }
+.fin-camps-hd { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+.fin-camps-hd b { display: block; font-size: 13.5px; }
+.fin-camps-hd span { display: block; font-size: 12px; color: var(--t3); }
+.fin-camp { display: grid; gap: 6px; padding: 12px; border: 1px solid var(--bd); border-radius: var(--r-md, 10px); background: var(--surf2, var(--surf)); }
+.fin-camp-hd { display: grid; grid-template-columns: minmax(0, 1fr) 36px; gap: 6px; margin-bottom: 4px; }
+.fin-camp-hd .x { width: 36px; height: 36px; display: inline-flex; align-items: center; justify-content: center; border: 1px solid var(--bd); border-radius: var(--r-sm); background: var(--surf); color: var(--t3); cursor: pointer; }
+.fin-addset { justify-self: start; display: inline-flex; align-items: center; gap: 4px; border: 0; background: none; padding: 4px 0; font: inherit; font-size: 12.5px; font-weight: 600; color: var(--volt, var(--t1)); cursor: pointer; }
+.fin-addset .mi { font-size: 16px; }
+.fin-unalloc span:last-child { color: var(--red); }
 .fin-pick { max-height: 180px; overflow-y: auto; border: 1px solid var(--bd); border-radius: var(--r); }
 .fin-pick label { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-bottom: 1px solid var(--bd); font-size: 12.5px; color: var(--t1); cursor: pointer; margin: 0; font-weight: 500; }
 .fin-pick label:last-child { border-bottom: 0; }
@@ -183,5 +203,8 @@
   .fin-tabs button .mi { display: none; }
   .fin-refresh { display: none; }   /* every action reloads; the button only took a line of its own here */
   .fin-line, .fin-line-hd { grid-template-columns: minmax(0, 1fr) 56px 100px 36px; }
+  .fin-line.ad, .fin-line-hd.ad { grid-template-columns: 1fr 1fr 36px; }
+  .fin-line.ad > .fi:first-child { grid-column: 1 / -1; }
+  .fin-line-hd.ad span:first-child { display: none; }
   .fin-mini { grid-template-columns: 1fr; }
 }
