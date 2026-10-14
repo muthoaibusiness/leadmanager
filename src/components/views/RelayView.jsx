@@ -13,7 +13,10 @@ import { waLoadSettings, waSaveSettings, isChatAdmin } from '../../lib/wa.js';
 // their own — Wasender fans each delivery out to a bot function AND
 // wa-webhook in parallel, same as n8n's trigger fanned out to "Parse Event"
 // and "Forward to CRM Chat".
-const FN_BASE = 'https://sbqmougcvnplgjgihpwe.supabase.co/functions/v1';
+// Derived from the same VITE_SUPABASE_URL every other client call uses —
+// a literal copy of that URL here trips Netlify's secrets scanner (it flags
+// any build output that echoes a configured env var's value verbatim).
+const FN_BASE = `${(import.meta.env.VITE_SUPABASE_URL || '').replace(/\/$/, '')}/functions/v1`;
 const EDGE_SEND_URL = `${FN_BASE}/wa-send`;
 const EDGE_WEBHOOK_URL = `${FN_BASE}/wa-webhook`;
 const EDGE_BOT_EYAD_URL = `${FN_BASE}/wa-bot-eyad`;
