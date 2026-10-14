@@ -74,11 +74,21 @@ export const isNiHandler = (user) => !!user && Array.isArray(user.allowedFeature
 
 // Features an admin can grant/revoke per user, in display order (nav features only;
 // 'companies' is master-only overview and 'profile' is always-on, so both excluded).
-export const FEATURE_KEYS = ['dashboard', 'leads', 'add_customer', 'conversations', 'calendar', 'meeting', 'pipeline', 'properties', 'reports', 'agentperf', 'requests', 'inventory', 'team', 'accounts'];
+// 'finance_approve' is not a page. The key is kept as it was saved on accounts;
+// since budget approval was turned off it is shown as "Manage all budgets":
+// an Inventory user holding it can edit, archive and restore budgets other
+// people created (without it, only their own) and add corrections to finance
+// history. Checked again server-side by the finance Edge Function, which reads
+// the same allowed_features column.
+export const FEATURE_KEYS = ['dashboard', 'leads', 'add_customer', 'conversations', 'calendar', 'meeting', 'pipeline', 'properties', 'reports', 'agentperf', 'requests', 'inventory', 'finance_approve', 'team', 'accounts'];
 export const FEATURE_LABELS = {
   dashboard: 'Home', leads: 'Leads', add_customer: 'Add Customer', conversations: 'Conversations', calendar: 'Calendar', meeting: 'Meeting', pipeline: 'Pipeline', properties: 'Projects',
-  reports: 'Reports', agentperf: 'Performance', requests: 'Requests', inventory: 'Inventory', team: 'Team',
+  reports: 'Reports', agentperf: 'Performance', requests: 'Requests', inventory: 'Inventory', finance_approve: 'Manage all budgets', team: 'Team',
   accounts: 'Users & Accounts',
+};
+// What a grant does when its label alone doesn't say it.
+export const FEATURE_HINTS = {
+  finance_approve: 'Manage all budgets: can edit, archive and restore budgets other people created, and add corrections to finance history. Without it, Inventory users change only their own budgets.',
 };
 // Default features for a standard role (from NAV_SCOPES). Executive resolves to none.
 export const defaultFeatures = (role) => FEATURE_KEYS.filter(k => (NAV_SCOPES[k] || []).includes(role));

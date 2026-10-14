@@ -12,7 +12,8 @@
 // the request body and checked against the users table — the same trust
 // boundary the rest of the app runs on. All of the logic is in
 // ../_shared/finance-core.ts, which has no Deno dependency, so it is also
-// exercised under Node by the test harness.
+// exercised under Node by the test harness. The statement page it serves is
+// drawn by ../_shared/finance-doc.js, which the app imports too.
 
 import { handleFinance } from "../_shared/finance-core.ts";
 

@@ -1,0 +1,23 @@
+/* Loader (ui/loader.jsx): the original's Tailwind utilities as CSS.
+   --ldr-ink is the ring and text colour as an "r, g, b" list (white in the
+   default dark theme, black in light), used as rgb(var(--ldr-ink)). */
+.ldr {
+  --ldr-ink: 255, 255, 255;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 32px; padding: 32px;
+}
+:root[data-theme="light"] .ldr { --ldr-ink: 0, 0, 0; }
+
+.ldr-rings { position: relative; width: var(--ldr-ring); height: var(--ldr-ring); }
+.ldr-ring { position: absolute; inset: 0; border-radius: 50%; }
+
+.ldr-text { text-align: center; max-width: var(--ldr-max); }
+.ldr-text p { margin: 0; -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
+.ldr-text p + p { margin-top: var(--ldr-gap); }
+.ldr-title { font-size: var(--ldr-title); font-weight: 500; line-height: 1.15; letter-spacing: -0.02em; color: rgba(var(--ldr-ink), .9); }
+.ldr-sub { font-size: var(--ldr-sub); font-weight: 400; line-height: 1.45; letter-spacing: -0.01em; color: rgba(var(--ldr-ink), .6); }
+
+/* size: ring diameter, title / subtitle size, the gap between them, text width */
+.ldr-sm { --ldr-ring: 80px;  --ldr-title: 14px; --ldr-sub: 12px; --ldr-gap: 8px;  --ldr-max: 192px; }
+.ldr-md { --ldr-ring: 128px; --ldr-title: 16px; --ldr-sub: 14px; --ldr-gap: 12px; --ldr-max: 224px; }
+.ldr-lg { --ldr-ring: 160px; --ldr-title: 18px; --ldr-sub: 16px; --ldr-gap: 16px; --ldr-max: 256px; }

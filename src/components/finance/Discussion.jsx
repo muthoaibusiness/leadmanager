@@ -65,16 +65,31 @@ export function Discussion({ api, user, type, id }) {
   );
 }
 
-// Audit trail: every change and decision, newest first.
-const TONE = { decided: (d) => (d.decision === 'APPROVED' ? 'good' : d.decision === 'REJECTED' ? 'bad' : 'warn'), overrun: () => 'bad', deleted: () => 'bad', finalized: () => 'good' };
-const ICON = { created: 'add', updated: 'edit', submitted: 'send', decided: 'task_alt', deleted: 'delete', overrun: 'warning', finalized: 'check_circle', shared: 'link' };
+// Audit trail: every change and decision, newest first. It is append-only
+// (the database refuses edits and deletes): a wrong entry gets a correction
+// entry below it, added by someone with Manage all budgets. Submissions and
+// decisions from before budget approval was turned off still show here.
+const TONE = { decided: (d) => (d.decision === 'APPROVED' ? 'good' : d.decision === 'REJECTED' ? 'bad' : 'warn'), overrun: () => 'bad', deleted: () => 'bad', finalized: () => 'good', corrected: () => 'warn' };
+const ICON = { created: 'add', updated: 'edit', submitted: 'send', decided: 'task_alt', deleted: 'delete', overrun: 'warning', finalized: 'check_circle', shared: 'link', archived: 'inventory_2', restored: 'unarchive', corrected: 'edit_note' };
 const money = (k) => /amount|remaining|price/.test(k);
 const fmtVal = (k, v) => (v == null || v === '' ? '—' : money(k) ? fmtBDT(Number(v)) : typeof v === 'object' ? JSON.stringify(v) : String(v));
 const nice = (k) => k.replace(/([A-Z])/g, ' $1').replace(/^./, c => c.toUpperCase());
 
 export function History({ api, type, id }) {
-  const events = eventsOf(api.fin, type, id);
+  const { fin, act } = api;
+  const events = eventsOf(fin, type, id);
+  const canCorrect = !!fin.actor?.manageAll;
+  const [fixing, setFixing] = useState(null); // the event a correction is being written for
+  const [note, setNote] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
   if (!events.length) return <div className="fin-empty">No history yet.</div>;
+  const corrected = new Set(events.filter(e => e.action === 'corrected').map(e => e.data?.corrects));
+  const save = async () => {
+    setErr(''); setBusy(true);
+    try { await act('history.correct', { eventId: fixing, note }); setFixing(null); setNote(''); }
+    catch (e) { setErr(e.message); } finally { setBusy(false); }
+  };
   return (
     <div className="fin-card-bd"><div className="fin-timeline">{events.map(e => {
       const d = e.data || {};
@@ -83,14 +98,25 @@ export function History({ api, type, id }) {
       if (e.action === 'decided') line = `${d.decision === 'APPROVED' ? 'Approved' : d.decision === 'REJECTED' ? 'Rejected' : 'Revision requested'}${d.approvedAmount != null ? ` · ${fmtBDT(Number(d.approvedAmount))}` : ''} (v${d.version})`;
       if (e.action === 'submitted') line = `Submitted v${d.version} · requested ${fmtBDT(Number(d.requestedAmount))}`;
       if (e.action === 'overrun') line = `Budget overrun · remaining ${fmtBDT(Number(d.remaining))}`;
+      if (e.action === 'corrected') line = `Correction to “${ACTION_LABELS[d.correctsAction] || d.correctsAction}” of ${fmtAgo(d.correctsAt)}`;
       const diffs = Object.entries(d).filter(([, v]) => v && typeof v === 'object' && 'from' in v && 'to' in v);
       return (
         <div key={e.id} className="fin-ev">
           <div className={`dot ${tone}`}><Mi>{ICON[e.action] || 'history'}</Mi></div>
           <div>
-            <div className="t"><b>{line}</b>{d.note ? ` — “${d.note}”` : ''}</div>
-            <div className="w">{e.userName || 'System'} · {fmtAgo(e.at)}</div>
+            <div className="t"><b>{line}</b>{d.note ? ` — “${d.note}”` : ''}{corrected.has(e.id) && <span className="fin-pill t-warn" style={{ marginLeft: 8 }}>Corrected</span>}</div>
+            <div className="w">{e.userName || 'System'} · {fmtAgo(e.at)}{canCorrect && e.action !== 'corrected' && fixing !== e.id && <> · <button type="button" className="fin-linkbtn" onClick={() => { setFixing(e.id); setNote(''); setErr(''); }}>Add correction</button></>}</div>
             {diffs.length > 0 && <div className="d">{diffs.map(([k, v]) => <span key={k}>{nice(k)}: {fmtVal(k, v.from)} → {fmtVal(k, v.to)}</span>)}</div>}
+            {fixing === e.id && (
+              <div className="fin-fix">
+                <textarea className="fi" rows={2} value={note} onChange={x => setNote(x.target.value)} placeholder="What was wrong in this entry, and what is right" aria-label="Correction" autoFocus />
+                <div className="fin-fix-row">
+                  <button type="button" className="btn btn-g btn-sm" onClick={() => setFixing(null)}>Cancel</button>
+                  <button type="button" className="btn btn-p btn-sm" onClick={save} disabled={busy || !note.trim()}><Mi>check</Mi>Add correction</button>
+                </div>
+                {err && <div className="fin-help" style={{ color: 'var(--red)' }}>{err}</div>}
+              </div>
+            )}
           </div>
         </div>
       );

@@ -20,18 +20,19 @@ function Bars({ rows, empty }) {
 );
 }
 
-// Financial dashboard. Budget, committed and spent are separate figures and are
-// labelled as such; nothing here is added across them.
+// Financial dashboard. Amount, committed, spent and remaining are the
+// per-budget figures from the finance function, summed over the budgets in use,
+// so they agree with the budget list and each budget's page.
 export default function Overview({ fin, range }) {
   const o = overviewOf(fin, range);
   const period = range ? 'in the selected period' : 'all time';
   return (
     <>
       <div className="fin-kpis">
-        <div className="fin-kpi t-good"><div className="l">Budget</div><div className="v">{fmtBDT(o.amount)}</div><div className="s">across {o.budgets} budget{o.budgets === 1 ? '' : 's'}</div></div>
+        <div className="fin-kpi t-good"><div className="l">Budgeted</div><div className="v">{fmtBDT(o.amount)}</div><div className="s">{o.budgets} budget{o.budgets === 1 ? '' : 's'} in use</div></div>
         <div className="fin-kpi t-warn"><div className="l">Committed</div><div className="v">{fmtBDT(o.committed)}</div><div className="s">ordered, not yet paid</div></div>
         <div className="fin-kpi"><div className="l">Spent · actual</div><div className="v">{fmtBDT(o.spent)}</div><div className="s">paid out</div></div>
-        <div className={`fin-kpi${o.remaining < 0 ? ' t-bad' : ''}`}><div className="l">Remaining</div><div className="v">{fmtBDT(o.remaining)}</div><div className="s">{o.overruns ? `${o.overruns} budget${o.overruns === 1 ? '' : 's'} over` : 'budget − committed − spent'}</div></div>
+        <div className={`fin-kpi${o.remaining < 0 ? ' t-bad' : ''}`}><div className="l">Remaining</div><div className="v">{fmtBDT(o.remaining)}</div><div className="s">{o.overruns ? `${o.overruns} budget${o.overruns === 1 ? '' : 's'} over` : 'amount − committed − spent'}</div></div>
       </div>
 
       <div className="fin-grid3">

@@ -4,7 +4,7 @@ import { useApp } from '../../context/AppContext.jsx';
 import useChanged from '../../hooks/useChanged.js';
 import { getProperties, updateAgent } from '../../lib/db.js';
 import { rlabel } from '../../lib/helpers.js';
-import { ROLES, NI_ONLY, FEATURE_KEYS, FEATURE_LABELS, defaultFeatures } from '../../lib/constants.js';
+import { ROLES, NI_ONLY, FEATURE_KEYS, FEATURE_LABELS, FEATURE_HINTS, defaultFeatures } from '../../lib/constants.js';
 
 // Team Lead edits an agent's projects. Admins (Management/Master) additionally get a
 // per-user Feature Access checklist that overrides the role's default feature set.
@@ -96,12 +96,13 @@ export default function EditAgentModal() {
               </div>
               <div className="feat-grid">
                 {FEATURE_KEYS.map(k => (
-                  <button key={k} className={`feat-chip${feat.has(k) ? ' on' : ''}`} onClick={() => toggleFeat(k)}>
+                  <button key={k} className={`feat-chip${feat.has(k) ? ' on' : ''}`} onClick={() => toggleFeat(k)} title={FEATURE_HINTS[k]}>
                     <Mi>{feat.has(k) ? 'check_box' : 'check_box_outline_blank'}</Mi>{FEATURE_LABELS[k] || k}
                   </button>
                 ))}
               </div>
               <div className="ea-count">{a.role === ROLES.EXEC ? 'Executive — no defaults; grant features explicitly.' : 'Pre-filled with role defaults. Check to grant, uncheck to restrict.'}</div>
+              <div className="ea-count">{FEATURE_HINTS.finance_approve}</div>
             </div>
           )}
         </div>

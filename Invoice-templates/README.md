@@ -1,15 +1,23 @@
 # Statement templates
 
-Vendor layouts for expense statements (Admin → Inventory → New statement → Template).
+Vendor layouts for expense statements (Admin → Inventory → New statement → Category).
+Choosing **Meta** or **Supabase** as the statement's category lays it out like that vendor's
+receipt; any other category uses WEPRO's own statement. The editor shows the chosen layout in
+its live preview.
 
-- `index.js` is the registry and the renderer. The in-app preview, the printed PDF and the
-  public share page (the `finance` Edge Function) all draw from it, so they always match.
-- `*.pdf` are sample receipts from each vendor, kept for reference while building the template.
+- The registry and the renderer live in `supabase/functions/_shared/finance-doc.js`
+  (`TEMPLATES`, `templateForCategory`, `renderStatement`). The in-app preview, the printed PDF
+  and the public share page (the `finance` Edge Function) all draw from it, so they always
+  match. It sits under `supabase/functions` so the function deploy bundles it.
+- Logos are SVG string modules in `supabase/functions/_shared/logos/`; their SVG sources are
+  kept here in `logos/`.
+- `*.pdf` are sample receipts from each vendor, kept for reference while building a template.
 
-## Adding a vendor (Meta, Google, …)
+## Adding a vendor (Google, …)
 
-1. Put a sample receipt here, e.g. `Meta.pdf`.
-2. Add an entry to `TEMPLATES` in `index.js`:
+1. Put a sample receipt here, e.g. `Google.pdf`, and its logo SVG in `logos/`.
+2. Add the logo as `supabase/functions/_shared/logos/google.js` (`export default "<svg …>"`).
+3. Add an entry to `TEMPLATES` in `finance-doc.js`:
 
    ```js
    google: {
@@ -21,13 +29,15 @@ Vendor layouts for expense statements (Admin → Inventory → New statement →
    },
    ```
 
-   `meta` in `index.js` is a full example. `columns: 'impressions'` swaps Quantity · Rate for
+   `meta` is a full example. `columns: 'impressions'` swaps Quantity · Rate for
    Impressions · CPM (impressions fill in from amount ÷ CPM × 1000); `defaults.months` sets the
-   default duration. `layout: 'receipt'` reuses the vendor-receipt layout. If a vendor needs a different look,
-   add a renderer function to `RENDERERS` and point `layout` at it.
-3. Redeploy the function so share links use the new template:
+   default duration. `layout: 'receipt'` reuses the vendor-receipt layout. If a vendor needs a
+   different look, add a renderer to `VENDOR_RENDERERS` and point `layout` at it.
+4. To pick it from the category dropdown, add the category to `CATEGORIES` and map it in
+   `CATEGORY_TEMPLATES`.
+5. Redeploy the function so share links use the new template:
    `npx supabase functions deploy finance --no-verify-jwt --use-api`
 
 A statement made from a template is our internal record of the charge, not the vendor's
 document: it is headed STATEMENT and its footer says WEPRO prepared it from the vendor's
-receipt. Keep it that way for new vendors. Logos go in `logos/` as an SVG string module.
+receipt. Keep it that way for new vendors.
