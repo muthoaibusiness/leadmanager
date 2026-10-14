@@ -9,6 +9,7 @@
 // Deploy:  npx supabase functions deploy wa-bot-dubai --no-verify-jwt
 // Secrets: npx supabase secrets set META_CAPI_ACCESS_TOKEN=...
 //          npx supabase secrets set WA_DRIP_WEBHOOK_URL_DUBAI=...   (optional, see "Start Drip" below)
+//          npx supabase secrets set OPENROUTER_API_KEY=...          (FAQ agent — see runFaqAgent / _shared/ai.ts)
 //          (WASENDER_API_TOKEN / WASENDER_WEBHOOK_SECRET are already set for wa-send/wa-webhook and are reused here)
 //
 // Scope notes (see the port's summary for the full list of judgment calls):
@@ -37,8 +38,9 @@
 
 import {
   CORS, json, SUPABASE_URL, SERVICE_KEY, WASENDER_BASE,
-  claimEvent, getCredentials,
+  claimEvent, getCredentials, getActiveProjects, getRecentHistory, sendWaMessageMirrored,
 } from "../_shared/wa.ts";
+import { askAgent, resolveMedia } from "../_shared/ai.ts";
 
 // ── local REST helpers ───────────────────────────────────────────────────
 // _shared/wa.ts's sbRpc/sbPatch deliberately return only ok/not-ok (wa-send
@@ -183,6 +185,7 @@ interface ParsedEvent {
   kind: Kind;
   event: string;
   phone: string;
+  remote: string;
   isLid: boolean;
   waTo: string;
   fromMe: boolean;
@@ -242,6 +245,7 @@ function parseWasenderEvent(payload: any): ParsedEvent {
     kind,
     event,
     phone,
+    remote,
     isLid,
     waTo,
     fromMe,
@@ -389,6 +393,39 @@ async function handleInbound(evt: ParsedEvent): Promise<void> {
   // (A2) Ad Lead?
   if ((evt.ctwaClid || "") !== "") {
     await sendMetaCapiEvent({ leadId: String(lead.id ?? ""), ctwaClid: evt.ctwaClid || "" });
+  }
+
+  // ── FAQ agent — not part of the n8n port, an addition on top of it.
+  // Never runs once a human has taken over (/t), and only on real text (an
+  // ad click with no message body, or a photo with no caption, has nothing
+  // for the model to answer).
+  if (evt.text && !takeover && evt.remote) {
+    await runFaqAgent("dubai", evt.waTo, evt.remote, evt.text);
+  }
+}
+
+// ── FAQ agent (OpenRouter) — answers general questions about WECON projects
+// and, on request, follows up with a photo / floor plan / brochure. See
+// _shared/ai.ts for the prompt and _shared/wa.ts for send+mirror.
+async function runFaqAgent(account: string, to: string, remote: string, text: string): Promise<void> {
+  try {
+    const convId = `${account}:${remote}`;
+    const phone = to.replace(/@.*$/, "");
+    const [projects, history] = await Promise.all([getActiveProjects(), getRecentHistory(convId)]);
+    const result = await askAgent(history, text, projects);
+    if (result.reply) {
+      await sendWaMessageMirrored(account, to, convId, phone, { type: "text", text: result.reply });
+    }
+    if (result.send) {
+      const media = resolveMedia(result.send, projects);
+      if (media) {
+        await sendWaMessageMirrored(account, to, convId, phone, {
+          type: media.type, mediaUrl: media.url, fileName: media.fileName,
+        });
+      }
+    }
+  } catch (e) {
+    console.error("runFaqAgent error", e);
   }
 }
 

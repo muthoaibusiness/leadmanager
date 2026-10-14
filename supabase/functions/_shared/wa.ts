@@ -100,6 +100,93 @@ export async function getCredentials(account = "eyad"): Promise<{ token: string;
   };
 }
 
+// ── AI agent support (wa-bot-eyad / wa-bot-dubai FAQ replies) ───────────────
+// wa_projects is the knowledge base: brochure/floor-plan/photo links per
+// project, small enough (a dozen rows) to hand the model whole rather than
+// building a vector index for it.
+export async function getActiveProjects(): Promise<any[]> {
+  return sbSelect(
+    "wa_projects?is_active=eq.true&select=name,keywords,region,nature,sft,address,brochure_url,photos,floor_plans,video_url,google_map_url",
+  );
+}
+
+// Last few turns of this thread, oldest first, as plain {role, text} so the
+// model sees the conversation the way it actually happened.
+export async function getRecentHistory(
+  convId: string,
+  limit = 10,
+): Promise<{ role: "user" | "assistant"; text: string }[]> {
+  const rows = await sbSelect(
+    `wa_messages?conversation_id=eq.${encodeURIComponent(convId)}&select=direction,body,caption,type&order=wa_timestamp.desc&limit=${limit}`,
+  );
+  return (rows || [])
+    .reverse()
+    .map((r: any) => ({
+      role: r.direction === "IN" ? "user" : "assistant",
+      text: r.type === "text" ? r.body : (r.caption || `[${r.type}]`),
+    }))
+    .filter((m: { text: string }) => m.text);
+}
+
+// Send through Wasender AND mirror into wa_conversations/wa_messages, so an
+// AI-authored reply shows up in the Conversations UI exactly like a human
+// agent's — without this, the agent watching the thread would see the
+// customer's question but never the bot's answer.
+export async function sendWaMessageMirrored(
+  account: string,
+  to: string,
+  convId: string,
+  phone: string,
+  msg: { type: "text" | "image" | "document"; text?: string; mediaUrl?: string; fileName?: string },
+): Promise<boolean> {
+  const { token } = await getCredentials(account);
+  if (!token) {
+    console.error("sendWaMessageMirrored: no Wasender token configured for", account);
+    return false;
+  }
+  const payload =
+    msg.type === "image" ? { to, text: msg.text || "", imageUrl: msg.mediaUrl } :
+    msg.type === "document" ? { to, text: msg.text || "", documentUrl: msg.mediaUrl, fileName: msg.fileName || "document" } :
+    { to, text: msg.text || "" };
+
+  let ok = false;
+  try {
+    const res = await fetch(`${WASENDER_BASE}/send-message`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    ok = res.ok;
+    if (!ok) console.error("sendWaMessageMirrored: send-message failed", res.status, await res.text());
+  } catch (e) {
+    console.error("sendWaMessageMirrored: send-message error", e);
+  }
+  if (!ok) return false;
+
+  const now = new Date().toISOString();
+  await sbUpsert("wa_conversations", [{
+    id: convId, phone, account,
+    last_message_at: now,
+    last_message_preview: msg.type === "text" ? (msg.text || "") : (msg.fileName || msg.type),
+    last_message_dir: "OUT",
+  }]);
+  await sbUpsert("wa_messages", [{
+    id: crypto.randomUUID(),
+    conversation_id: convId,
+    phone,
+    account,
+    direction: "OUT",
+    type: msg.type,
+    body: msg.type === "text" ? (msg.text || "") : "",
+    caption: msg.type === "text" ? "" : (msg.text || ""),
+    media_url: msg.mediaUrl || "",
+    media_name: msg.fileName || "",
+    status: "SENT",
+    wa_timestamp: now,
+  }]);
+  return true;
+}
+
 // The CRM has no Supabase Auth session, so an admin action is authorised by
 // checking the acting user's role in the users table. Same trust boundary the
 // rest of the app already runs on — it stops a non-admin agent from rotating

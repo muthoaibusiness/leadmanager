@@ -9,6 +9,7 @@
 // Deploy:  npx supabase functions deploy wa-bot-eyad --no-verify-jwt
 // Secrets: npx supabase secrets set META_CAPI_ACCESS_TOKEN=...
 //          npx supabase secrets set WA_DRIP_WEBHOOK_URL_EYAD=...   (optional, see triggerDrip below)
+//          npx supabase secrets set OPENROUTER_API_KEY=...         (FAQ agent — see runFaqAgent / _shared/ai.ts)
 //          (WASENDER_API_TOKEN / WASENDER_WEBHOOK_SECRET are already shared
 //          with wa-send/wa-webhook via wa_secrets / env, see _shared/wa.ts)
 //
@@ -21,8 +22,9 @@
 
 import {
   CORS, json, SUPABASE_URL, SERVICE_KEY, WASENDER_BASE,
-  claimEvent, getCredentials,
+  claimEvent, getCredentials, getActiveProjects, getRecentHistory, sendWaMessageMirrored,
 } from "../_shared/wa.ts";
+import { askAgent, resolveMedia } from "../_shared/ai.ts";
 
 // ── fixed literals from the source workflow ──────────────────────────────
 // Hard-coded in the live n8n workflow for this one bot instance (Eyad /
@@ -184,6 +186,7 @@ interface ParsedEvent {
   kind: "ignore" | "command" | "inbound";
   event: string;
   phone: string;
+  remote: string;
   fromMe: boolean;
   name: string;
   text: string;
@@ -236,6 +239,7 @@ function parseEvent(payload: any): ParsedEvent {
     kind,
     event,
     phone,
+    remote,
     fromMe,
     name: String(msg?.pushName || "").trim(),
     text,
@@ -246,6 +250,30 @@ function parseEvent(payload: any): ParsedEvent {
     command: kind === "command" ? text.toLowerCase().split(/\s+/)[0] : "",
     deliveryId,
   };
+}
+
+// ── FAQ agent (OpenRouter) — answers general questions about WECON projects
+// and, on request, follows up with a photo / floor plan / brochure. See
+// _shared/ai.ts for the prompt and _shared/wa.ts for send+mirror.
+async function runFaqAgent(account: string, phone: string, remote: string, text: string): Promise<void> {
+  try {
+    const convId = `${account}:${remote}`;
+    const [projects, history] = await Promise.all([getActiveProjects(), getRecentHistory(convId)]);
+    const result = await askAgent(history, text, projects);
+    if (result.reply) {
+      await sendWaMessageMirrored(account, phone, convId, phone, { type: "text", text: result.reply });
+    }
+    if (result.send) {
+      const media = resolveMedia(result.send, projects);
+      if (media) {
+        await sendWaMessageMirrored(account, phone, convId, phone, {
+          type: media.type, mediaUrl: media.url, fileName: media.fileName,
+        });
+      }
+    }
+  } catch (e) {
+    console.error("runFaqAgent error", e);
+  }
 }
 
 // ── inbound branch (customer message) ────────────────────────────────────
@@ -281,6 +309,14 @@ async function handleInbound(p: ParsedEvent): Promise<void> {
   const shouldDrip = upsert.should_drip === true && upsert.takeover !== true;
   if (!shouldDrip && upsert.is_new === true) {
     await sendWaText(p.phone, welcomeText(p.name));
+  }
+
+  // ── FAQ agent — not part of the n8n port, an addition on top of it.
+  // Never runs once a human has taken over (/t), and only on real text (an
+  // ad click with no message body, or a photo with no caption, has nothing
+  // for the model to answer).
+  if (p.text && upsert.takeover !== true && p.remote) {
+    await runFaqAgent("eyad", p.phone, p.remote, p.text);
   }
 
   // ── Get Prelead Status → Get Projects → Compute Forward ────────────────

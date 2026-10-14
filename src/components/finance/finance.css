@@ -228,10 +228,19 @@
 .fin-split-form .fin-line .x { width: 34px; height: 34px; }
 .fin-split-form .fin-tpl-note { padding: 7px 10px; font-size: 11.5px; }
 .fin-inline-check { display: inline-flex; align-items: center; gap: 8px; font-size: 12.5px; font-weight: 500; color: var(--t2); cursor: pointer; margin: 6px 0 0; }
-/* DocPreview fit="contain": the scaled page, centred in its box */
-.fin-docfit { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; overflow: hidden; }
-.fin-docfit-page { position: relative; flex: none; overflow: hidden; border-radius: 4px; background: #fff; box-shadow: 0 6px 20px rgba(0, 0, 0, .14); }
-.fin-docfit-page .fin-docframe { position: absolute; top: 0; left: 0; transform-origin: 0 0; }
+/* DocPreview fit="contain": one whole A4 page, scaled, centred in its box,
+   with the pager under it when there are more pages */
+.fin-docfit { width: 100%; height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; overflow: hidden; }
+.fin-docfit-page { position: relative; flex: none; overflow: hidden; border-radius: 2px; background: #fff; box-shadow: 0 6px 20px rgba(0, 0, 0, .14); }
+.fin-docfit-page .fin-docframe, .fin-docpages-in .fin-docframe { position: absolute; top: 0; left: 0; transform-origin: 0 0; }
+.fin-pager { flex: none; height: 40px; display: flex; align-items: center; justify-content: center; gap: 10px; font-size: 12px; font-weight: 600; color: var(--t2); font-variant-numeric: tabular-nums; }
+.fin-pager-b { width: 30px; height: 30px; display: inline-flex; align-items: center; justify-content: center; border: 1px solid var(--bd); border-radius: 8px; background: var(--surf); color: var(--t1); cursor: pointer; padding: 0; }
+.fin-pager-b:disabled { opacity: .4; cursor: default; }
+.fin-pager-b .mi { font-size: 18px; }
+/* DocPreview fit="height" (statement view): every page, one under the other,
+   on the same grey as the gaps between them */
+.fin-docpages { padding: 16px; background: #e9ebee; }
+.fin-docpages-in { position: relative; margin: 0 auto; overflow: hidden; }
 .fin-panes { display: none; gap: 6px; margin-bottom: 10px; }
 .fin-panes button { flex: 1; display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 9px 10px; border: 1px solid var(--bd); border-radius: var(--r); background: var(--surf); color: var(--t2); font: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer; }
 .fin-panes button.on { border-color: var(--accent); color: var(--accent); }
