@@ -104,15 +104,38 @@
 .fpv-manage { margin-left: auto; }
 .fpv-empty .btn { margin-top: 14px; }
 
-/* --fp-sel: the selected tile (Grid view and Plan view's side panel) and its legend swatch */
-.fpv-grid { --fp-sel: #1F6FEB; display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 16px; align-items: start; }
-/* Plan view: a wider side panel (4 unit tiles a row), so a smaller drawing */
-.fpv-grid:not(.is-seats) { grid-template-columns: minmax(0, 1fr) 360px; }
-.fpv-planwrap { min-width: 0; display: flex; flex-direction: column; gap: 10px; }
+/* Grid · Plan · unit card side by side. The grid column is exactly as wide
+   as 6 seats a row (328px + its 12px padding and border + 6px for its own
+   scrollbar); the drawing takes the rest. A project with no plans has no
+   middle column.
+   --fp-sel: the selected tile and its legend swatch */
+.fpv-grid {
+  --fp-sel: #1F6FEB; --seats-w: 360px;
+  display: grid; grid-template-columns: var(--seats-w) minmax(0, 1fr) 300px; grid-template-areas: "seats plan side";
+  gap: 16px; align-items: start;
+}
+.fpv-grid.no-plan { grid-template-columns: minmax(0, 1fr) 320px; grid-template-areas: "seats side"; }
+.fpv-grid > .fpv-seats { grid-area: seats; }
+.fpv-planwrap { grid-area: plan; min-width: 0; display: flex; flex-direction: column; gap: 10px; }
+.fpv-plan-name { color: var(--t1); font-weight: 700; }
+/* Desktop, fitted to the screen (AvailableUnitsView sets --fpv-h): the grid
+   scrolls in its own column; the drawing fills its column and stays put. */
+.fpv-grid.is-fit { height: var(--fpv-h); grid-template-rows: minmax(0, 1fr); align-items: stretch; }
+.fpv-grid.is-fit > .fpv-seats { min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
+.fpv-grid.is-fit .fpv-planwrap { min-height: 0; }
+.fpv-grid.is-fit .fpv-stage { flex: 1 1 0; min-height: 0; max-height: none; aspect-ratio: auto; }
+.fpv-grid.is-fit .fpv-plan-none { flex: 1 1 0; }
+.fpv-grid.is-fit .fpv-side { min-height: 0; overflow-y: auto; }
+/* Other units (or a picked unit on no plan): no drawing to show */
+.fpv-plan-none {
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; min-height: 240px; padding: 20px;
+  border: 1px dashed var(--bd2); border-radius: var(--r-lg, 14px); color: var(--t3); font-size: 13.5px; text-align: center;
+}
+.fpv-plan-none .mi { font-size: 28px; }
 /* As tall as the drawing's own shape at this width (--fp-ar comes from the
    canvas), up to most of the screen. */
 .fpv-stage { aspect-ratio: var(--fp-ar, 4 / 3); max-height: min(64vh, 660px); }
-.fpv-filters { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; }
+.fpv-filters { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; margin-bottom: 12px; }
 .fpv-chips { display: flex; flex-wrap: wrap; gap: 6px; }
 .fpv-chip {
   display: inline-flex; align-items: center; gap: 7px; height: 34px; padding: 0 12px; border-radius: 999px;
@@ -132,7 +155,7 @@
 .fp-legend { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 12.5px; color: var(--t2); }
 .fp-legend span { display: inline-flex; align-items: center; gap: 7px; }
 
-.fpv-side { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.fpv-side { grid-area: side; display: flex; flex-direction: column; gap: 14px; min-width: 0; }
 .fpv-card {
   background: var(--surf); border: 1px solid var(--bd); border-radius: var(--r-lg, 14px); padding: 16px; min-width: 0;
 }
@@ -153,26 +176,13 @@
 .fpv-hint { display: flex; gap: 10px; align-items: center; color: var(--t3); font-size: 13.5px; }
 .fpv-hint .mi { font-size: 22px; }
 
-/* Plan view: the unit tiles beside the drawing scroll on their own */
-.fpv-side .fpv-seats { max-height: min(60vh, 560px); overflow-y: auto; }
 .fpv-none { padding: 14px 16px; color: var(--t3); font-size: 13px; }
 .fpv-ghd {
   display: flex; justify-content: space-between; padding: 10px 16px 4px;
   font-size: 11px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; color: var(--t3);
 }
 
-/* ── Grid view: a seat-map of unit tiles ───────────────────────────────── */
-.fpv-mode { display: inline-flex; padding: 3px; gap: 2px; border: 1px solid var(--bd2); border-radius: 999px; background: var(--surf2); }
-.fpv-mode button {
-  display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 12px; border: 0; border-radius: 999px;
-  background: transparent; color: var(--t2); font-size: 12.5px; font-weight: 700; cursor: pointer;
-}
-.fpv-mode button .mi { font-size: 17px; }
-.fpv-mode button:hover { color: var(--t1); }
-.fpv-mode button.on { background: var(--accent); color: var(--on-accent); }
-.fpv-mode button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
-
-
+/* ── Grid: a seat-map of unit tiles ────────────────────────────────────── */
 .fpv-seats {
   display: flex; flex-direction: column; gap: 10px; min-width: 0;
   background: var(--surf); border: 1px solid var(--bd); border-radius: var(--r-lg, 14px); padding: 12px;
@@ -180,13 +190,12 @@
 .fpv-seats .fpv-ghd { padding: 4px 0 8px; }
 .fpv-seats .fpv-none { padding: 4px 0; }
 .fps-tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(68px, 1fr)); gap: 6px; }
-/* Grid view: seat-map tiles, like a train seat picker. Each unit is a fixed,
+/* Seat-map tiles, like a train seat picker. Each unit is a fixed,
    near-square seat (a touch taller than wide), rows spaced wider apart than
    seats, at most 7 a row: 7 × 48px + 6 × 8px gaps = 384px, so 8 never fit. */
 .is-seats .fps-tiles { grid-template-columns: repeat(auto-fill, 48px); gap: 10px 8px; max-width: 384px; }
 .is-seats .fps-tile { height: 52px; padding: 3px 2px; border-radius: 9px; font-size: 10.5px; }
 .is-seats .fps-sz { font-size: 9px; }
-.fpv-side .fps-tiles { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 .fps-tile {
   display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px;
   min-height: 44px; padding: 4px 3px; border-radius: 8px; border: 1.5px solid color-mix(in srgb, var(--t1) 72%, transparent);
@@ -233,17 +242,22 @@
    empties (AvailableUnitsView). Wider screens use the button in the unit card. */
 .fpv-cta { display: none; }
 
-@media (max-width: 1100px) {
-  .fpv-grid { grid-template-columns: minmax(0, 1fr) 280px; }
-  .fpv-grid:not(.is-seats) { grid-template-columns: minmax(0, 1fr) 320px; }
+/* Laptops: 5 seats a row (272px + 26px + 6px), so the drawing keeps its room */
+@media (max-width: 1599px) {
+  .fpv-grid { --seats-w: 304px; grid-template-columns: var(--seats-w) minmax(0, 1fr) 280px; }
+}
+/* Too narrow for three: the drawing across the top, grid and card below */
+@media (max-width: 1279px) {
+  .fpv-grid { grid-template-columns: minmax(0, 1fr) 280px; grid-template-areas: "plan plan" "seats side"; }
+  .fpv-grid.no-plan { grid-template-columns: minmax(0, 1fr) 280px; }
 }
 @media (max-width: 860px) {
-  .fpv-grid, .fpv-grid:not(.is-seats) { grid-template-columns: minmax(0, 1fr); }
+  .fpv-grid { grid-template-columns: minmax(0, 1fr); grid-template-areas: "plan" "seats" "side"; }
+  .fpv-grid.no-plan { grid-template-columns: minmax(0, 1fr); grid-template-areas: "seats" "side"; }
   .fpv-stage { max-height: 56vh; }
-  .fpv-side .fpv-seats { max-height: none; }
   .fpv-search { margin-left: 0; flex: 1 1 100%; }
   .fpv-proj { max-width: 100%; flex: 1 1 100%; }
-  .fpv-floorsel { flex: 1 1 140px; }   /* fills the line beside Grid / Plan */
+  .fpv-floorsel { flex: 1 1 140px; }   /* fills the line beside Manage */
   .fpv-manage { margin-left: 0; }
   .fps-tiles { grid-template-columns: repeat(auto-fill, minmax(60px, 1fr)); }
   .is-seats .fps-tiles { grid-template-columns: repeat(auto-fill, 44px); gap: 9px 7px; max-width: 350px; }   /* 6 a row on a phone, 7 at most */
