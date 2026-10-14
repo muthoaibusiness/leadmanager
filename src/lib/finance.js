@@ -30,7 +30,7 @@ export {
   statementDoc, renderStatement, money as docMoney, fmtMoney,
   CATEGORIES, OTHERS, categoryOf, categoryValue,
   PAYMENT_LABEL, paymentStatus, staleLines,
-  TEMPLATES, TEMPLATE_LIST, templateOf, templateForCategory, CURRENCIES, periodEnd, impressionsFor, adSetExtra,
+  TEMPLATES, TEMPLATE_LIST, templateOf, templateForCategory, CURRENCIES, periodEnd, impressionsFor, adSetExtra, paginateDoc,
 } from '../../supabase/functions/_shared/finance-doc.js';
 
 // snake_case rows → camelCase, recursively. Map keys that are ids (figures) are
