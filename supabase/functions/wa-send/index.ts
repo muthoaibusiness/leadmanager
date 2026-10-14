@@ -14,6 +14,7 @@ import {
 
 interface SendBody {
   action: "send" | "set-credentials";
+  account?: string;
   to?: string;
   conversationId?: string;
   clientRef?: string;
@@ -57,12 +58,14 @@ Deno.serve(async (req) => {
     return json({ error: "Invalid JSON" }, 400);
   }
 
+  const account = body.account === "dubai" ? "dubai" : "eyad";
+
   // ── rotate/store credentials (admin only) ────────────────────────────────
   if (body.action === "set-credentials") {
     if (!(await isAdminUser(body.userId ?? null))) return json({ error: "Not authorised" }, 403);
     if (!body.apiToken) return json({ error: "apiToken is required" }, 400);
     const ok = await sbUpsert("wa_secrets", [{
-      id: "default",
+      id: account,
       api_token: body.apiToken,
       webhook_secret: body.webhookSecret || null,
       updated_at: new Date().toISOString(),
@@ -76,7 +79,7 @@ Deno.serve(async (req) => {
     return json({ error: "to, clientRef and conversationId are required" }, 400);
   }
 
-  const { token } = await getCredentials();
+  const { token } = await getCredentials(account);
   if (!token) {
     await sbPatch("wa_messages", `id=eq.${encodeURIComponent(body.clientRef)}`, {
       status: "FAILED", error: "No Wasender token configured on the server.",
