@@ -333,7 +333,7 @@ async function startDrip(phone: string, name: string, project: string): Promise<
 
 // ── Branch A: inbound customer message ───────────────────────────────────
 async function handleInbound(evt: ParsedEvent): Promise<void> {
-  const settings = await getBotSettings("dubai");
+  const settings = await getBotSettings("dubai", evt.phone);
 
   // Upsert Prelead
   const prelead = await sbRpcJson("wa_upsert_prelead", {
@@ -473,7 +473,7 @@ async function handleNote(evt: ParsedEvent): Promise<void> {
 
 // ── Branch B: agent-typed command ────────────────────────────────────────
 async function handleCommand(evt: ParsedEvent): Promise<void> {
-  const settings = await getBotSettings("dubai");
+  const settings = await getBotSettings("dubai", evt.phone);
 
   if (evt.command === "/t") {
     if (!settings.takeoverEnabled) return;

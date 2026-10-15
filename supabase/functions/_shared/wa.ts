@@ -202,11 +202,19 @@ export interface BotSettings {
   customerNotifyEnabled: boolean; metaCapiEnabled: boolean;
 }
 
+// Last 10 digits of a phone: 8801XXXXXXXXX, 01XXXXXXXXX and +880 1XXX… all agree.
+const phoneKey = (v: unknown) => String(v ?? "").replace(/\D/g, "").slice(-10);
+
 // Each bot reads its own wa_bot_settings row (migration 0034). A missing row or
 // table falls back to the old global wa_settings values, so the functions work
 // before the migration is run. Every toggle defaults to ON except Eyad's
 // auto-forward, which has always been opt-in.
-export async function getBotSettings(bot: BotName): Promise<BotSettings> {
+//
+// `phone` is the chat's customer number. When it is one of the bot's
+// test_numbers (migration 0035), every toggle reads ON regardless of the
+// checklist, so a feature can be tried on the team's own phone while it is Off
+// for customers.
+export async function getBotSettings(bot: BotName, phone?: string): Promise<BotSettings> {
   const [botRows, globalRows] = await Promise.all([
     sbSelect(`wa_bot_settings?bot=eq.${bot}&select=*`),
     sbSelect("wa_settings?id=eq.default&select=auto_forward_enabled,auto_forward_after_messages,faq_agent_enabled,welcome_enabled,welcome_message"),
@@ -218,6 +226,16 @@ export async function getBotSettings(bot: BotName): Promise<BotSettings> {
     auto_forward_enabled: bot === "dubai" ? true : g.auto_forward_enabled === true,
   };
   const on = (v: unknown) => v !== false; // defaults on if the row/column is missing
+  const key = phoneKey(phone);
+  if (key.length === 10 && Array.isArray(row?.test_numbers) && row.test_numbers.some((n: unknown) => phoneKey(n) === key)) {
+    return {
+      autoForwardEnabled: true,
+      autoForwardAfterMessages: Number.isFinite(src.auto_forward_after_messages) ? src.auto_forward_after_messages : 3,
+      faqAgentEnabled: true, aiMediaEnabled: true, welcomeEnabled: true, welcomeMessage: src.welcome_message || "",
+      manualForwardEnabled: true, docsCommandEnabled: true, takeoverEnabled: true, notesEnabled: true,
+      customerNotifyEnabled: true, metaCapiEnabled: true,
+    };
+  }
   return {
     autoForwardEnabled: src.auto_forward_enabled === true,
     autoForwardAfterMessages: Number.isFinite(src.auto_forward_after_messages) ? src.auto_forward_after_messages : 3,

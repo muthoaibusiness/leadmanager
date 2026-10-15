@@ -107,7 +107,16 @@ const BOT_DEFAULTS = {
   welcome_enabled: true, welcome_message: '', faq_agent_enabled: true, ai_media_enabled: true,
   auto_forward_enabled: false, auto_forward_after_messages: 3, manual_forward_enabled: true,
   docs_command_enabled: true, takeover_enabled: true, notes_enabled: true,
-  customer_notify_enabled: true, meta_capi_enabled: true,
+  customer_notify_enabled: true, meta_capi_enabled: true, test_numbers: [],
+};
+
+// Testing numbers (migration 0035) are stored as digits with the country code.
+// A Bangladeshi number typed as 01XXXXXXXXX, +880 1XXX… or with a stray 0
+// after 880 all become 8801XXXXXXXXX; anything else keeps its digits.
+const normTestNumber = (v) => {
+  const d = String(v || '').replace(/\D/g, '');
+  const bd = d.match(/^(?:880|0)*(1\d{9})$/);
+  return bd ? '880' + bd[1] : d;
 };
 
 function BotPanel({ bot, name, blurb, showToast }) {
@@ -116,6 +125,7 @@ function BotPanel({ bot, name, blurb, showToast }) {
   const [text, setText] = useState('');
   const [n, setN] = useState(3);
   const [dirty, setDirty] = useState({ text: false, n: false });
+  const [newTest, setNewTest] = useState('');
 
   useEffect(() => {
     let live = true;
@@ -134,7 +144,7 @@ function BotPanel({ bot, name, blurb, showToast }) {
   const save = async (patch) => {
     const res = await sbUpsert('wa_bot_settings', [{ bot, display_name: name, ...patch }]);
     if (res?.ok === false) {
-      showToast('Could not save. Run migration 0034 first.', 'err');
+      showToast('Could not save. Run migrations 0034 and 0035 first.', 'err');
       return false;
     }
     return true;
@@ -160,6 +170,21 @@ function BotPanel({ bot, name, blurb, showToast }) {
     setBusy('auto_forward_after_messages');
     if (await save({ auto_forward_after_messages: value })) setDirty(d => ({ ...d, n: false }));
     setBusy(null);
+  };
+
+  const setTestNumbers = async (next) => {
+    const prev = row.test_numbers || [];
+    setRow(r => ({ ...r, test_numbers: next }));
+    setBusy('test_numbers');
+    if (!(await save({ test_numbers: next }))) setRow(r => ({ ...r, test_numbers: prev }));
+    setBusy(null);
+  };
+  const addTest = async () => {
+    const num = normTestNumber(newTest);
+    if (num.length < 10) { showToast('Enter a full phone number.', 'err'); return; }
+    if ((row.test_numbers || []).includes(num)) { setNewTest(''); return; }
+    await setTestNumbers([...(row.test_numbers || []), num]);
+    setNewTest('');
   };
 
   const list = CHECKLIST[bot];
@@ -240,6 +265,31 @@ function BotPanel({ bot, name, blurb, showToast }) {
           )}
         </div>
       ))}
+
+      {row && (
+        <div className="relay-row">
+          <div style={{ fontWeight: 600 }}>Testing numbers</div>
+          <div className="ea-count" style={{ margin: '2px 0 8px' }}>
+            Chats with these numbers get every feature above, even the ones turned Off, so you can test a feature before switching it on for customers.
+          </div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '8px' }}>
+            {(row.test_numbers || []).length === 0 && <span className="ea-count" style={{ margin: 0 }}>None yet.</span>}
+            {(row.test_numbers || []).map(num => (
+              <span key={num} className="cot-badge ok" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                +{num}
+                <button type="button" aria-label={`Remove ${num}`} title="Remove" disabled={busy === 'test_numbers'}
+                  style={{ border: 0, background: 'none', color: 'inherit', cursor: 'pointer', padding: 0, display: 'inline-flex' }}
+                  onClick={() => setTestNumbers((row.test_numbers || []).filter(x => x !== num))}><Mi style={{ fontSize: '15px' }}>close</Mi></button>
+              </span>
+            ))}
+          </div>
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <input className="fi" inputMode="tel" placeholder="8801XXXXXXXXX" value={newTest}
+              onChange={e => setNewTest(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') addTest(); }} style={{ flex: 1 }} />
+            <button type="button" className="btn btn-g" disabled={!newTest.trim() || busy === 'test_numbers'} onClick={addTest}><Mi>add</Mi>Add</button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

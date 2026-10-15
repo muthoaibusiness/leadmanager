@@ -287,7 +287,7 @@ async function handleInbound(p: ParsedEvent): Promise<void> {
   }
 
   const preleadId = upsert.id;
-  const settings = await getBotSettings("eyad");
+  const settings = await getBotSettings("eyad", p.phone);
 
   // ── Save Prelead WA: tag which bot handled this contact (swallows failure) ─
   if (preleadId) {
@@ -574,7 +574,7 @@ Deno.serve(async (req) => {
     if (p.kind === "inbound") {
       await handleInbound(p);
     } else if (p.kind === "command") {
-      const cmdSettings = await getBotSettings("eyad");
+      const cmdSettings = await getBotSettings("eyad", p.phone);
       if (p.command === "/t") {
         if (cmdSettings.takeoverEnabled) await handleTakeover(p);
       } else if (p.command === "/n") {
