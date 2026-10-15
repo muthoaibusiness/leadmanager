@@ -46,6 +46,7 @@ const PAGES = {
   CalendarView: () => import('./components/views/CalendarView.jsx'),
   TeamView: () => import('./components/views/TeamView.jsx'),
   AccountsView: () => import('./components/views/AccountsView.jsx'),
+  RelayView: () => import('./components/views/RelayView.jsx'),
   RequestsView: () => import('./components/views/RequestsView.jsx'),
   ProfileView: () => import('./components/views/ProfileView.jsx'),
   PropertiesView: () => import('./components/views/PropertiesView.jsx'),
@@ -89,7 +90,7 @@ const OVERLAYS = {
 
 const lazyAll = (loaders) => Object.fromEntries(Object.entries(loaders).map(([k, f]) => [k, lazyChunk(f)]));
 
-const { AgentDash, TeamLeadDash, ManagementDash, MasterDash, LeadsView, CalendarView, TeamView, AccountsView, RequestsView, ProfileView, PropertiesView, AvailableUnitsView, BookingsView, PipelineView, ClientsView, ReportsView, AgentPerformanceView, InventoryView, ConversationsView } = lazyAll(PAGES);
+const { AgentDash, TeamLeadDash, ManagementDash, MasterDash, LeadsView, CalendarView, TeamView, AccountsView, RelayView, RequestsView, ProfileView, PropertiesView, AvailableUnitsView, BookingsView, PipelineView, ClientsView, ReportsView, AgentPerformanceView, InventoryView, ConversationsView } = lazyAll(PAGES);
 const OVERLAY_COMPONENTS = Object.entries(lazyAll(OVERLAYS));
 const LandingPage = lazyChunk(() => import('./components/LandingPage.jsx'));
 const SignIn1 = lazyChunk(() => import('./components/ui/modern-stunning-sign-in.jsx').then(m => ({ default: m.SignIn1 })));
@@ -355,6 +356,7 @@ function PageBody() {
   if (view === 'agentperf') return <AgentPerformanceView />;
   if (view === 'team') return <TeamView />;
   if (view === 'accounts') return <AccountsView />;
+  if (view === 'relay') return <RelayView />;
   if (view === 'inventory') return <InventoryView />;
   if (view === 'requests') return <RequestsView />;
   if (view === 'profile') return <ProfileView />;

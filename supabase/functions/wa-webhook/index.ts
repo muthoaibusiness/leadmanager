@@ -117,14 +117,26 @@ async function findLeadId(phone: string): Promise<string | null> {
   return rows?.[0]?.id ?? null;
 }
 
+// Wasender gives each session one webhook slot, so wa-bot-eyad/wa-bot-dubai
+// forward the raw payload here themselves (?account=eyad|dubai) instead of
+// Wasender fanning out to two URLs. A direct Wasender call (no bots in the
+// loop) has no account param and falls back to 'eyad', the original
+// single-account default.
+const ACCOUNTS = ["dubai", "eyad"];
+function accountFromReq(req: Request): string {
+  const a = new URL(req.url).searchParams.get("account") ?? "";
+  return ACCOUNTS.includes(a) ? a : "eyad";
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
   if (req.method !== "POST") return json({ error: "Method not allowed" }, 405);
 
+  const account = accountFromReq(req);
   const rawBody = await req.text();
 
   // ── signature ────────────────────────────────────────────────────────────
-  const { webhookSecret } = await getCredentials();
+  const { webhookSecret } = await getCredentials(account);
   if (webhookSecret) {
     const sig = req.headers.get("x-webhook-signature") ?? req.headers.get("x-wasender-signature") ?? "";
     if (!safeEqual(sig, webhookSecret)) {
@@ -189,6 +201,11 @@ Deno.serve(async (req) => {
   ].filter(Boolean).map(String);
   const phoneJid = phoneJidCandidates.find((j) => j.endsWith("@s.whatsapp.net")) ?? "";
   const phone = jidToPhone(phoneJid || jid);
+  // Conversation PK matches the client's waConvId(account, jid) convention
+  // (src/lib/wa.js) — without the prefix, Dubai and Eyad threads for the same
+  // number would collide, and the app's own account-scoped lookups would miss
+  // the row entirely.
+  const convId = `${account}:${jid}`;
   const ad = extractAd(inner, data);
   const pushName: string = msgNode?.pushName ?? data?.pushName ?? "";
   const tsSeconds = Number(msgNode?.messageTimestamp ?? data?.timestamp ?? 0);
@@ -198,16 +215,17 @@ Deno.serve(async (req) => {
   if (media.url) mediaUrl = await mirrorMedia(media.url, media.name ?? "file", media.mime ?? "");
 
   // Conversation first, so the message never references a missing thread.
-  const existing = await sbSelect(`wa_conversations?id=eq.${encodeURIComponent(jid)}&select=id,name,lead_id,source`);
+  const existing = await sbSelect(`wa_conversations?id=eq.${encodeURIComponent(convId)}&select=id,name,lead_id,source`);
   const leadId = existing?.[0]?.lead_id ?? (await findLeadId(phone));
 
   // pushName on a fromMe message is our own WhatsApp profile name, not the
   // customer's — it must never overwrite the thread title.
   const convRow: Record<string, unknown> = {
-    id: jid,
+    id: convId,
     phone,
     name: (fromMe ? "" : pushName) || existing?.[0]?.name || phone,
     lead_id: leadId,
+    account,
   };
   // Only stamp the ad payload once — the referral arrives on the first message
   // and must not be wiped by later plain messages in the same thread.
@@ -228,8 +246,9 @@ Deno.serve(async (req) => {
   await sbUpsert("wa_messages", [{
     id: msgId,
     wa_id: msgId,
-    conversation_id: jid,
+    conversation_id: convId,
     phone,
+    account,
     direction: fromMe ? "OUT" : "IN",
     type: media.type,
     body: media.type === "text" ? text : "",
@@ -245,7 +264,7 @@ Deno.serve(async (req) => {
 
   // Atomic — two messages landing together can't clobber each other's count.
   await sbRpc("wa_bump_unread", {
-    p_conv: jid,
+    p_conv: convId,
     p_preview: String(preview).slice(0, 180),
     p_at: at,
     p_dir: fromMe ? "OUT" : "IN",

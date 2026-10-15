@@ -81,14 +81,22 @@ export async function claimEvent(id: string, eventType: string): Promise<boolean
 }
 
 // ── credentials ─────────────────────────────────────────────────────────────
-// wa_secrets wins so the token can be rotated from the admin UI without a
-// redeploy; the env var is the bootstrap/fallback.
-export async function getCredentials(): Promise<{ token: string; webhookSecret: string }> {
-  const rows = await sbSelect("wa_secrets?id=eq.default&select=api_token,webhook_secret");
-  const row = rows?.[0] ?? {};
+// wa_secrets wins so a token can be rotated from the admin UI without a
+// redeploy; the env var is the bootstrap/fallback. Dubai and Eyad are
+// separate Wasender sessions with separate tokens — a row per account
+// (id: "dubai" | "eyad"), each falling back to its own env var, then to the
+// old shared "default" row / WASENDER_API_TOKEN for anything not yet split.
+export async function getCredentials(account = "eyad"): Promise<{ token: string; webhookSecret: string }> {
+  const acc = account === "dubai" ? "dubai" : "eyad";
+  const rows = await sbSelect(`wa_secrets?id=in.(${acc},default)&select=id,api_token,webhook_secret`);
+  const byId = Object.fromEntries((rows || []).map((r: any) => [r.id, r]));
+  const row = byId[acc] ?? {};
+  const fallback = byId["default"] ?? {};
+  const envToken = Deno.env.get(`WASENDER_API_TOKEN_${acc.toUpperCase()}`) ?? Deno.env.get("WASENDER_API_TOKEN") ?? "";
+  const envSecret = Deno.env.get(`WASENDER_WEBHOOK_SECRET_${acc.toUpperCase()}`) ?? Deno.env.get("WASENDER_WEBHOOK_SECRET") ?? "";
   return {
-    token: row.api_token || Deno.env.get("WASENDER_API_TOKEN") || "",
-    webhookSecret: row.webhook_secret || Deno.env.get("WASENDER_WEBHOOK_SECRET") || "",
+    token: row.api_token || fallback.api_token || envToken || "",
+    webhookSecret: row.webhook_secret || fallback.webhook_secret || envSecret || "",
   };
 }
 
