@@ -93,8 +93,12 @@ const REF_CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
 const digits = (n) => Array.from(randomWords(n), (x, i) => (i ? x % 10 : 1 + (x % 9))).join(''); // no leading 0
 export const newReferenceId = () => Array.from(randomWords(10), (x) => REF_CHARS[x % REF_CHARS.length]).join('');
 export const newTransactionId = () => `${digits(17)}-${digits(17)}`;
+// A generated Invoice no. carries WEPRO's prefix, never Meta's FBADS-…: it can't
+// coincide with a real Meta invoice number or read as one Meta issued.
+export const newInvoiceNo = () => `WEPRO-INV-${digits(9)}`;
 export const REFERENCE_ID_RE = /^[A-Z0-9]{10}$/;
 export const TRANSACTION_ID_RE = /^[1-9]\d{16}-[1-9]\d{16}$/;
+export const INVOICE_NO_RE = /^WEPRO-INV-[1-9]\d{8}$/;
 // End of a period `months` long starting on `from` (YYYY-MM-DD): the day before
 // the same date `months` later, so 2026-10-12 + 12 → 2027-10-11.
 export function periodEnd(from, months) {
@@ -181,6 +185,7 @@ export const TEMPLATES = {
       name: 'Meta Platforms Ireland Limited',
       address: ['Merrion Road', 'Dublin 4', 'D04 X2K5', 'Ireland'],
     },
+    to: ['Bangladesh', 'BIN: 000414907-0503'], // the fixed lines opposite the vendor on Meta.pdf
     refLabel: 'Transaction ID',
     paymentMethods: ['Credit card', 'Prepaid balance', 'Agency'],
     defaults: {
@@ -459,8 +464,8 @@ const SHARE_SCRIPT = `<script>(() => {
 // The page around a template's blocks: the share page's bar (chrome) or the
 // bare frame, one A4 page holding the blocks and the footer, and on the share
 // page the script that paginates it.
-function pageHtml(d, chrome, { css, bar, body, foot }) {
-  const label = `${d.number ? `Statement ${d.number}` : 'Draft statement'} · ${d.title}`;
+function pageHtml(d, chrome, { css, bar, body, foot, label: own }) {
+  const label = own ?? `${d.number ? `Statement ${d.number}` : 'Draft statement'} · ${d.title}`;
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex">
 <title>${esc(d.number || 'Draft')} · ${esc(d.title)}</title>
 <style>${PAGE_CSS}${css}</style></head><body class="${chrome ? 'page' : 'embed'}">
@@ -615,11 +620,8 @@ function adSpend(d, t) {
     g.lines.push(l);
   }
   const paidOn = L.paidOn || d.issuedOn;
-  // Generated IDs (see INTERNAL_NOTE); the Reference number only prints under a payment method.
+  // Generated IDs print under WEPRO's own label; the Reference number only prints under a payment method.
   const txnGen = !!(L.vendorRef && L.vendorRefGen), payGen = !!(L.paymentMethod && L.paymentRef && L.paymentRefGen);
-  // Impressions worked out from the CPM (not typed from Meta) carry a * and a note.
-  const estLine = d.lines.find((l) => l.extra.est && num(l.extra.impressions));
-  const estCpm = estLine ? num(estLine.extra.cpm || L.cpm) : 0;
   const client = String(d.billTo || '').split('\n')[0];
   const css = `
     .sheet{font-family:Helvetica,Arial,sans-serif;color:#1c1e21}
@@ -648,12 +650,15 @@ function adSpend(d, t) {
 </div>
 <h3 data-pg="keep">Campaigns</h3>
 <div class="camps" data-pg="list">${groups.map((g) => `<div class="camp" data-pg="group"><div class="ch" data-pg-head><div><b>${esc(g.name)}</b>${range}</div><span class="tot">${fmtMoney(g.lines.reduce((s, l) => s + l.amount, 0), cur)}</span></div>
-${g.lines.map((l) => `<div class="as"><span>${esc(String(l.description || '—').split('\n')[0])}</span><span class="i">${num(l.extra.impressions) ? fmtCount(l.extra.impressions) + ' Impressions' + (l.extra.est ? '*' : '') : ''}</span><span>${fmtMoney(l.amount, cur)}</span></div>`).join('')}</div>`).join('')}</div>
+${g.lines.map((l) => `<div class="as"><span>${esc(String(l.description || '—').split('\n')[0])}</span><span class="i">${num(l.extra.impressions) ? fmtCount(l.extra.impressions) + ' Impressions' + (l.extra.est ? ' (est.)' : '') : ''}</span><span>${fmtMoney(l.amount, cur)}</span></div>`).join('')}</div>`).join('')}</div>
 ${d.notes ? `<div class="note" style="color:#1c1e21;white-space:pre-line">${esc(d.notes)}</div>` : ''}`;
-  const foot = `<div class="ft"><div>${esc(v.name || '')}${(v.address || []).map((a) => '<br>' + esc(a)).join('')}</div><div class="r">${esc(d.billTo ? String(d.billTo).split('\n').slice(1).join(', ') || 'Bangladesh' : 'Bangladesh')}<br>Statement no. ${esc(d.number) || 'Assigned on save'}${d.budgetTitle ? '<br>Budget: ' + esc(d.budgetTitle) : ''}</div></div>
-${estCpm ? `<div class="note">* Estimated impressions = 1,000 × amount ÷ CPM (${fmtMoney(estCpm, cur)} per 1,000 impressions).</div>` : ''}
-<div class="note">Prepared by WEPRO from ${esc(t.name)} receipt${L.vendorRef && !txnGen ? ' ' + esc(L.vendorRef) : ''}.${txnGen || payGen ? ' ' + esc(INTERNAL_NOTE) : ''}${d.footer ? ' ' + esc(d.footer) : ''}</div>`;
-  return { css, body, foot };
+  // From: the vendor, as on the receipt. To: the fixed lines from the receipt,
+  // then the invoice number: Meta's when copied from the receipt, else WEPRO's
+  // generated one under WEPRO's label (layout.invoiceNo / invoiceNoGen).
+  const invGen = !!(L.invoiceNo && L.invoiceNoGen);
+  const foot = `<div class="ft"><div>${esc(v.name || '')}${(v.address || []).map((a) => '<br>' + esc(a)).join('')}</div><div class="r">${(t.to || []).map(esc).join('<br>')}${L.invoiceNo ? `<br>${invGen ? 'WEPRO internal invoice no.' : 'Invoice no.'} ${esc(L.invoiceNo)}` : ''}</div></div>
+<div class="note">Prepared by WEPRO from ${esc(t.name)} receipt.${d.footer ? ' ' + esc(d.footer) : ''}</div>`;
+  return { css, body, foot, label: '' }; // no "Draft statement · …" at the page foot, only "Page i of n"
 }
 
 const VENDOR_RENDERERS = { receipt, adSpend };
@@ -666,7 +671,7 @@ export function renderStatement(doc, { chrome = false } = {}) {
   const t = templateOf(d.template);
   const vendor = VENDOR_RENDERERS[t.layout];
   if (!vendor) return standardPage(d, chrome);
-  const { css, body, foot } = vendor(d, t);
+  const { css, body, foot, label } = vendor(d, t);
   const bar = `<div class="bar"><span>${esc(d.number) || 'Draft'} · ${d.final ? 'Final' : 'Draft'} statement</span><button type="button" class="btn" onclick="window.print()">Print / Save as PDF</button></div>`;
-  return pageHtml(d, chrome, { css: VENDOR_CSS + css, bar, body, foot });
+  return pageHtml(d, chrome, { css: VENDOR_CSS + css, bar, body, foot, label });
 }

@@ -5,7 +5,7 @@ import { fmtBDT } from '../../lib/helpers.js';
 import {
   CATEGORIES, OTHERS, categoryOf, categoryValue, PAY_METHODS, EXPENSE_KIND, readAsBase64, statementTotal, statementDoc, renderStatement,
   docMoney, fmtMoney, staleLines, TEMPLATE_LIST, templateOf, templateForCategory, CURRENCIES, periodEnd, adSetExtra, docDate, time12,
-  newReferenceId, newTransactionId,
+  newReferenceId, newTransactionId, newInvoiceNo,
 } from '../../lib/finance.js';
 import useDiscardGuard from '../../hooks/useDiscardGuard.js';
 import { usePageOverlay } from '../../hooks/useNavHistory.js';
@@ -82,12 +82,14 @@ function useCategory(stored) {
 // second column and the custom name gets a row of its own when needed.
 // `required` (statements) marks it * and offers no "Uncategorised"; `error`
 // shows under it.
-function CategoryField({ cat, beside, required, error, ref }) {
-  const custom = <input className="fi" value={cat.name} onChange={e => cat.set({ name: e.target.value })} placeholder="e.g. Google Ads" aria-label="Custom category" />;
+// `locked` (a saved statement): shown, never changed.
+function CategoryField({ cat, beside, required, error, ref, locked }) {
+  const custom = <input className="fi" value={cat.name} onChange={e => cat.set({ name: e.target.value })} placeholder="e.g. Google Ads" aria-label="Custom category" readOnly={locked} />;
   return (
     <>
-      <div className="fg"><label>Category{required && <span className="fin-req" aria-hidden="true"> *</span>}</label>
-        <select ref={ref} className={`fsel${error ? ' fin-invalid' : ''}`} value={cat.key} onChange={e => cat.set({ key: e.target.value })} aria-label="Category" aria-required={required || undefined} aria-invalid={error ? true : undefined}>
+      <div className="fg"><div className="fin-pick-hd"><label>Category{required && <span className="fin-req" aria-hidden="true"> *</span>}</label>
+        {locked && <span className="fin-idlock" title="Set when the statement was first saved; it can't be changed"><Mi>lock</Mi>Locked</span>}</div>
+        <select ref={ref} className={`fsel${error ? ' fin-invalid' : ''}${locked ? ' fin-locked' : ''}`} value={cat.key} onChange={e => cat.set({ key: e.target.value })} disabled={locked} aria-label="Category" aria-required={required || undefined} aria-invalid={error ? true : undefined}>
           <option value="" disabled={required}>{required ? 'Select a category' : 'Uncategorised'}</option>
           {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
           <option value={OTHERS}>{OTHERS}</option>
@@ -257,7 +259,7 @@ function AdCampaigns({ lines, setLines, cpm, currency, billing, estimate, setAdA
           <button type="button" className="fin-addset" onClick={() => addSet(g.cid, g.name)}><Mi>add</Mi>Add Ad Set</button>
         </div>
       ))}
-      <div className="fin-help">Enter each ad set's Amount; Impressions = 1,000 × Amount ÷ CPM fills in (italic here, marked * as estimated on the statement). Type the exact number from Meta to replace one; clear it to go back to the formula.</div>
+      <div className="fin-help">Enter each ad set's Amount; Impressions = 1,000 × Amount ÷ CPM fills in (italic here, marked (est.) on the statement). Type the exact number from Meta to replace one; clear it to go back to the formula.</div>
       <div className="fin-sumline"><span>Total</span><span>{fmtMoney(total, currency)}</span></div>
       {Number(billing) > 0 && <div className={`fin-sumline${unallocated ? ' fin-unalloc' : ''}`}><span>Unallocated amount</span><span>{fmtMoney(unallocated, currency)}</span></div>}
     </div>
@@ -273,7 +275,7 @@ const dhakaNow = () => {
 };
 // Random IDs shaped like Meta's (finance-doc.js). They are WEPRO's own and
 // print as internal references (layout.*Gen, see INTERNAL_NOTE there).
-const NEW_ID = { vendorRef: newTransactionId, paymentRef: newReferenceId };
+const NEW_ID = { vendorRef: newTransactionId, paymentRef: newReferenceId, invoiceNo: newInvoiceNo };
 
 // A time stored as HH:MM (24-hour), picked on a 12-hour clock. "--" for the
 // hour clears it.
@@ -296,13 +298,14 @@ function Time12({ value, onChange, label }) {
 // One of the statement's IDs. Typed or pasted = copied from the vendor's
 // receipt; generated = a WEPRO internal reference. A typed ID is never
 // replaced by a click: clear it first to generate one. `locked`: issued on the
-// statement's first save; shown, never changed.
+// statement's first save; shown, never changed. Without `onGenerate` it can
+// only be copied from the receipt.
 function RefField({ label, value, gen, locked, onType, onGenerate }) {
   return (
     <div className="fg">
       <div className="fin-pick-hd"><label>{label}{value && <span className="fin-idsrc">{gen ? 'WEPRO internal' : 'From receipt'}</span>}</label>
         {locked ? <span className="fin-idlock" title="Issued on the first save; it can't be changed"><Mi>lock</Mi>Locked</span>
-          : (!value || gen) && <button type="button" className="fin-linkbtn" onClick={onGenerate}>{value ? 'New ID' : 'Generate'}</button>}
+          : onGenerate && (!value || gen) && <button type="button" className="fin-linkbtn" onClick={onGenerate}>{value ? 'New ID' : 'Generate'}</button>}
       </div>
       <input className="fi" value={value} onChange={e => onType(e.target.value)} placeholder={locked ? 'Issued when saved' : 'From the Meta receipt'} spellCheck={false} aria-label={label} readOnly={locked} />
     </div>
@@ -344,7 +347,7 @@ function SplitDivider({ grid, value, onChange, onDragging }) {
 // A new Meta statement gets generated IDs (internal, see NEW_ID) and today's
 // Bangladesh date and time as its payment date and time; both stay as saved
 // when the draft is reopened.
-const LAYOUT_KEYS = ['template', 'currency', 'accent', 'showQty', 'footer', 'vendorRef', 'paidOn', 'periodFrom', 'periodTo', 'paidTime', 'accountId', 'paymentMethod', 'paymentRef', 'productType', 'cpm', 'billingAmount', 'periodToTime', 'vendorRefGen', 'paymentRefGen'];
+const LAYOUT_KEYS = ['template', 'currency', 'accent', 'showQty', 'footer', 'vendorRef', 'paidOn', 'periodFrom', 'periodTo', 'paidTime', 'accountId', 'paymentMethod', 'paymentRef', 'productType', 'cpm', 'billingAmount', 'periodToTime', 'vendorRefGen', 'paymentRefGen', 'invoiceNo', 'invoiceNoGen'];
 const DEFAULT_TITLES = new Set(['', 'Expense statement', ...TEMPLATE_LIST.map(t => t.defaults?.title).filter(Boolean)]);
 const VENDOR_NAMES = new Set(TEMPLATE_LIST.map(t => t.vendor?.name).filter(Boolean));
 
@@ -353,7 +356,7 @@ export function StatementForm({ budget, expenses, initial, initialLines, onSave,
     const f = {
       title: 'Expense statement', issuedOn: today(), fromName: '', billTo: '', notes: '', accent: '#1F6FEB', showQty: true, footer: '',
       template: 'default', currency: 'BDT', vendorRef: '', paidOn: '', periodFrom: '', periodTo: '', paidTime: '', accountId: '', paymentMethod: '',
-      paymentRef: '', productType: '', cpm: '', billingAmount: '', periodToTime: '', vendorRefGen: false, paymentRefGen: false, ...(initial || {}),
+      paymentRef: '', productType: '', cpm: '', billingAmount: '', periodToTime: '', vendorRefGen: false, paymentRefGen: false, invoiceNo: '', invoiceNoGen: false, ...(initial || {}),
     };
     // Ad sets saved before campaign cards existed get a card key from their campaign name.
     const lines = (initialLines || []).map(l => ({ expenseId: l.expenseId || null, description: l.description, qty: l.qty, unitPrice: l.unitPrice,
@@ -407,13 +410,13 @@ export function StatementForm({ budget, expenses, initial, initialLines, onSave,
     if (id === f.template) return;
     const t = templateOf(id), d = t.defaults || {};
     const ad = t.columns === 'impressions', cpm = f.cpm || d.cpm || '';
-    const now = dhakaNow(), ids = { vendorRef: NEW_ID.vendorRef(), paymentRef: NEW_ID.paymentRef() };
+    const now = dhakaNow(), ids = { vendorRef: NEW_ID.vendorRef(), paymentRef: NEW_ID.paymentRef(), invoiceNo: NEW_ID.invoiceNo() };
     setF(x => {
       const from = x.periodFrom || x.issuedOn;
       // Meta: issued IDs come back, empty ones are generated, an empty payment
       // date / time is now in Bangladesh. Any other template drops issued IDs
       // and IDs still as generated (they are Meta-shaped); IDs from a receipt stay.
-      const refs = Object.fromEntries(['vendorRef', 'paymentRef'].flatMap(k => (ad
+      const refs = Object.fromEntries(['vendorRef', 'paymentRef', 'invoiceNo'].flatMap(k => (ad
         ? (issued[k] ? [[k, issued[k]], [k + 'Gen', !!issued[k + 'Gen']]] : x[k] ? [] : [[k, ids[k]], [k + 'Gen', true]])
         : (x[k + 'Gen'] || (issued[k] && x[k] === issued[k]) ? [[k, ''], [k + 'Gen', false]] : []))));
       return {
@@ -431,7 +434,10 @@ export function StatementForm({ budget, expenses, initial, initialLines, onSave,
     // An ad template shows one amount per line, so fold qty × price into it.
     else if (ad) setLines(ls => ls.map(l => estimate({ ...l, unitPrice: Number(l.qty || 0) * Number(l.unitPrice || 0), qty: 1, extra: l.extra || {} }, cpm)));
   };
-  const category = { ...cat, set: (patch) => { cat.set(patch); setCatErr(''); applyTemplate(templateForCategory(categoryValue(patch.key ?? cat.key, patch.name ?? cat.name))); } };
+  // The category is locked once the statement is saved with one (the finance
+  // function refuses a change too); a new statement picks it freely.
+  const catLocked = !!initial?.id && !!String(initial?.category ?? '').trim();
+  const category = { ...cat, set: (patch) => { if (catLocked) return; cat.set(patch); setCatErr(''); applyTemplate(templateForCategory(categoryValue(patch.key ?? cat.key, patch.name ?? cat.name))); } };
 
   const picked = new Set(lines.map(l => l.expenseId).filter(Boolean));
   const toggle = (e) => setLines(ls => {
@@ -481,7 +487,7 @@ export function StatementForm({ budget, expenses, initial, initialLines, onSave,
         <div className="fin-split-form">
           <Err msg={err} />
           <div className="fin-form">
-            <CategoryField cat={category} required error={catErr} ref={catRef} beside={<div className="fg"><label>Currency</label><select className="fsel" value={f.currency} onChange={set('currency')} aria-label="Currency">{CURRENCIES.map(c => <option key={c}>{c}</option>)}</select></div>} />
+            <CategoryField cat={category} required error={catErr} ref={catRef} locked={catLocked} beside={<div className="fg"><label>Currency</label><select className="fsel" value={f.currency} onChange={set('currency')} aria-label="Currency">{CURRENCIES.map(c => <option key={c}>{c}</option>)}</select></div>} />
             {isReceipt && <div className="fg full fin-help fin-tpl-note"><Mi>receipt</Mi>Laid out like a {tpl.name} receipt, headed STATEMENT, with a footer saying WEPRO prepared it from the {tpl.name} receipt. Attach the original receipt to the expense.</div>}
             <div className="fg"><label>Title</label><input className="fi" value={f.title} onChange={set('title')} /></div>
             <div className="fg"><label>{isReceipt ? 'Receipt date' : 'Date'}</label><input className="fi" type="date" value={f.issuedOn} onChange={set('issuedOn')} /></div>
@@ -507,9 +513,10 @@ export function StatementForm({ budget, expenses, initial, initialLines, onSave,
               {open.adv && <div id="fin-adv" className="fg full fin-disc-panel fin-ids">
                 <RefField label="Reference ID" value={f.paymentRef} gen={f.paymentRefGen} locked={!!issued.paymentRef} onType={typeRef('paymentRef')} onGenerate={() => genRef('paymentRef')} />
                 <RefField label="Transaction ID" value={f.vendorRef} gen={f.vendorRefGen} locked={!!issued.vendorRef} onType={typeRef('vendorRef')} onGenerate={() => genRef('vendorRef')} />
-                <div className="fin-help full">{issued.vendorRef && issued.paymentRef
+                <RefField label="Invoice no." value={f.invoiceNo} gen={f.invoiceNoGen} locked={!!issued.invoiceNo} onType={typeRef('invoiceNo')} onGenerate={() => genRef('invoiceNo')} />
+                <div className="fin-help full">{issued.vendorRef && issued.paymentRef && issued.invoiceNo
                   ? 'Issued when this statement was first saved. They can’t be edited or regenerated, and are never used again.'
-                  : 'Generated IDs print as WEPRO internal references, never as Meta’s. Paste the IDs from the Meta receipt to use those instead. Both are checked against every ID issued before and locked when the draft is first saved.'}</div>
+                  : 'Generated IDs (the Invoice no. as WEPRO-INV-…) print as WEPRO internal references, never as Meta’s. Paste the IDs from the Meta receipt to use those instead. All three are checked against every ID issued before and locked when the draft is first saved.'}</div>
               </div>}
               {open.time && <div id="fin-time" className="fg full fin-disc-panel">
                 <div className="fg"><label>Payment date</label><input className="fi" type="date" value={f.paidOn} onChange={set('paidOn')} /></div>
