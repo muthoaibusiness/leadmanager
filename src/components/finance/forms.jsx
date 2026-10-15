@@ -4,7 +4,8 @@ import { getDB, getProperties } from '../../lib/db.js';
 import { fmtBDT } from '../../lib/helpers.js';
 import {
   CATEGORIES, OTHERS, categoryOf, categoryValue, PAY_METHODS, EXPENSE_KIND, readAsBase64, statementTotal, statementDoc, renderStatement,
-  docMoney, fmtMoney, staleLines, TEMPLATE_LIST, templateOf, templateForCategory, CURRENCIES, periodEnd, adSetExtra,
+  docMoney, fmtMoney, staleLines, TEMPLATE_LIST, templateOf, templateForCategory, CURRENCIES, periodEnd, adSetExtra, docDate, time12,
+  newReferenceId, newTransactionId,
 } from '../../lib/finance.js';
 import useDiscardGuard from '../../hooks/useDiscardGuard.js';
 import { usePageOverlay } from '../../hooks/useNavHistory.js';
@@ -15,13 +16,16 @@ import DocPreview from './DocPreview.jsx';
 // throws the server's message on failure; the form shows that message inline.
 
 // `guard` (from useDiscardGuard) makes ✕, an outside click and Esc ask before
-// typed input is dropped; without it they close at once.
-export function Modal({ title, wide, xwide, onClose, children, footer, guard }) {
+// typed input is dropped; without it they close at once. `actions` (the
+// statement editor) puts the form's buttons in the header, top right, in place
+// of ✕ and the footer; an outside click, Esc and Back still close.
+export function Modal({ title, wide, xwide, onClose, children, footer, actions, guard }) {
   const backdrop = guard ? guard.backdropProps : { onClick: e => { if (e.target === e.currentTarget) onClose(); } };
   return (
     <div className="mov on" {...backdrop}>
       <div className={`modal fin-modal${wide ? ' wide' : ''}${xwide ? ' xwide' : ''}`} role="dialog" aria-modal="true" aria-label={title} {...(guard ? guard.modalProps : {})}>
-        <div className="m-hd"><div className="m-ttl">{title}</div><button type="button" className="m-x" onClick={guard ? guard.requestClose : onClose} aria-label="Close"><Mi>close</Mi></button></div>
+        <div className="m-hd"><div className="m-ttl">{title}</div>
+          {actions ? <div className="m-hd-a">{actions}</div> : <button type="button" className="m-x" onClick={guard ? guard.requestClose : onClose} aria-label="Close"><Mi>close</Mi></button>}</div>
         <div className="m-body">{children}</div>
         {footer && <div className="m-ft">{footer}</div>}
       </div>
@@ -260,6 +264,75 @@ function AdCampaigns({ lines, setLines, cpm, currency, billing, estimate, setAdA
   );
 }
 
+// ── Meta statement: IDs and payment time ──
+// The date and time now in Bangladesh, as YYYY-MM-DD and HH:MM (24-hour).
+const dhakaNow = () => {
+  const p = Object.fromEntries(new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Dhaka', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })
+    .formatToParts(new Date()).map(x => [x.type, x.value]));
+  return { date: `${p.year}-${p.month}-${p.day}`, time: `${p.hour}:${p.minute}` };
+};
+// Random IDs shaped like Meta's (finance-doc.js). They are WEPRO's own and
+// print as internal references (layout.*Gen, see INTERNAL_NOTE there).
+const NEW_ID = { vendorRef: newTransactionId, paymentRef: newReferenceId };
+
+// A time stored as HH:MM (24-hour), picked on a 12-hour clock. "--" for the
+// hour clears it.
+const HOURS = Array.from({ length: 12 }, (_, i) => String(i + 1));
+const MINUTES = Array.from({ length: 60 }, (_, i) => String(i).padStart(2, '0'));
+function Time12({ value, onChange, label }) {
+  const m = /^(\d{2}):(\d{2})$/.exec(value || '');
+  const h24 = m ? +m[1] : null;
+  const h = h24 == null ? '' : String(h24 % 12 || 12), min = m ? m[2] : '', ap = h24 != null && h24 >= 12 ? 'PM' : 'AM';
+  const put = (hh, mm, a) => onChange(hh === '' ? '' : `${String((+hh % 12) + (a === 'PM' ? 12 : 0)).padStart(2, '0')}:${mm || '00'}`);
+  return (
+    <div className="fin-time12" role="group" aria-label={label}>
+      <select className="fsel" value={h} onChange={e => put(e.target.value, min, ap)} aria-label="Hour"><option value="">--</option>{HOURS.map(x => <option key={x}>{x}</option>)}</select>
+      <select className="fsel" value={min} onChange={e => put(h || '12', e.target.value, ap)} aria-label="Minute"><option value="" disabled>--</option>{MINUTES.map(x => <option key={x}>{x}</option>)}</select>
+      <select className="fsel" value={ap} onChange={e => put(h || '12', min, e.target.value)} aria-label="AM or PM"><option>AM</option><option>PM</option></select>
+    </div>
+  );
+}
+
+// One of the statement's IDs. Typed or pasted = copied from the vendor's
+// receipt; generated = a WEPRO internal reference. A typed ID is never
+// replaced by a click: clear it first to generate one. `locked`: issued on the
+// statement's first save; shown, never changed.
+function RefField({ label, value, gen, locked, onType, onGenerate }) {
+  return (
+    <div className="fg">
+      <div className="fin-pick-hd"><label>{label}{value && <span className="fin-idsrc">{gen ? 'WEPRO internal' : 'From receipt'}</span>}</label>
+        {locked ? <span className="fin-idlock" title="Issued on the first save; it can't be changed"><Mi>lock</Mi>Locked</span>
+          : (!value || gen) && <button type="button" className="fin-linkbtn" onClick={onGenerate}>{value ? 'New ID' : 'Generate'}</button>}
+      </div>
+      <input className="fi" value={value} onChange={e => onType(e.target.value)} placeholder={locked ? 'Issued when saved' : 'From the Meta receipt'} spellCheck={false} aria-label={label} readOnly={locked} />
+    </div>
+  );
+}
+
+// ── the bar between the editor and its preview ──
+// Drag it to resize the two (the form gets 30–70%), double-click or Enter for
+// the default, ← → Home End when focused. The split is remembered per browser.
+const SPLIT_KEY = 'propcrm_fin_split', SPLIT_DEF = 0.5;
+const clampSplit = (v) => Math.min(0.7, Math.max(0.3, v));
+const readSplit = () => { try { const v = parseFloat(localStorage.getItem(SPLIT_KEY)); return v >= 0.3 && v <= 0.7 ? v : SPLIT_DEF; } catch { return SPLIT_DEF; } };
+const storeSplit = (v) => { try { localStorage.setItem(SPLIT_KEY, String(v)); } catch { /* storage blocked: the default next time */ } };
+function SplitDivider({ grid, value, onChange, onDragging }) {
+  const drag = useRef(null); // the pointer being dragged
+  const at = (clientX) => { const r = grid.current.getBoundingClientRect(); return clampSplit((clientX - r.left) / r.width); };
+  const end = (e, commit) => { if (drag.current !== e.pointerId) return; drag.current = null; onDragging(false); if (commit) onChange(at(e.clientX), true); };
+  const keys = { ArrowLeft: () => clampSplit(value - 0.02), ArrowRight: () => clampSplit(value + 0.02), Home: () => 0.3, End: () => 0.7, Enter: () => SPLIT_DEF };
+  return (
+    <div className="fin-divider" role="separator" aria-orientation="vertical" aria-label="Resize editor and preview" aria-valuemin={30} aria-valuemax={70} aria-valuenow={Math.round(value * 100)} tabIndex={0}
+      onPointerDown={e => { if (e.button !== 0) return; e.preventDefault(); e.currentTarget.setPointerCapture(e.pointerId); drag.current = e.pointerId; onDragging(true); }}
+      onPointerMove={e => { if (drag.current === e.pointerId) onChange(at(e.clientX), false); }}
+      onPointerUp={e => end(e, true)} onPointerCancel={e => end(e, false)}
+      onDoubleClick={() => onChange(SPLIT_DEF, true)}
+      onKeyDown={e => { const k = keys[e.key]; if (k) { e.preventDefault(); onChange(k(), true); } }}>
+      <span aria-hidden="true" />
+    </div>
+  );
+}
+
 // ── statement (invoice) editor ──
 // The form beside a live preview. The preview is drawn by the same renderer as
 // the saved statement and its share link, so it shows exactly what will print.
@@ -268,7 +341,10 @@ function AdCampaigns({ lines, setLines, cpm, currency, billing, estimate, setAdA
 // fields; switching only fills fields that are still empty or at a template's
 // default, so typed input is never replaced. Unsaved input is guarded: ✕,
 // Cancel, an outside click, Esc and the browser's Back all ask first.
-const LAYOUT_KEYS = ['template', 'currency', 'accent', 'showQty', 'footer', 'vendorRef', 'paidOn', 'periodFrom', 'periodTo', 'paidTime', 'accountId', 'paymentMethod', 'paymentRef', 'productType', 'cpm', 'billingAmount', 'periodToTime'];
+// A new Meta statement gets generated IDs (internal, see NEW_ID) and today's
+// Bangladesh date and time as its payment date and time; both stay as saved
+// when the draft is reopened.
+const LAYOUT_KEYS = ['template', 'currency', 'accent', 'showQty', 'footer', 'vendorRef', 'paidOn', 'periodFrom', 'periodTo', 'paidTime', 'accountId', 'paymentMethod', 'paymentRef', 'productType', 'cpm', 'billingAmount', 'periodToTime', 'vendorRefGen', 'paymentRefGen'];
 const DEFAULT_TITLES = new Set(['', 'Expense statement', ...TEMPLATE_LIST.map(t => t.defaults?.title).filter(Boolean)]);
 const VENDOR_NAMES = new Set(TEMPLATE_LIST.map(t => t.vendor?.name).filter(Boolean));
 
@@ -277,7 +353,7 @@ export function StatementForm({ budget, expenses, initial, initialLines, onSave,
     const f = {
       title: 'Expense statement', issuedOn: today(), fromName: '', billTo: '', notes: '', accent: '#1F6FEB', showQty: true, footer: '',
       template: 'default', currency: 'BDT', vendorRef: '', paidOn: '', periodFrom: '', periodTo: '', paidTime: '', accountId: '', paymentMethod: '',
-      paymentRef: '', productType: '', cpm: '', billingAmount: '', periodToTime: '', ...(initial || {}),
+      paymentRef: '', productType: '', cpm: '', billingAmount: '', periodToTime: '', vendorRefGen: false, paymentRefGen: false, ...(initial || {}),
     };
     // Ad sets saved before campaign cards existed get a card key from their campaign name.
     const lines = (initialLines || []).map(l => ({ expenseId: l.expenseId || null, description: l.description, qty: l.qty, unitPrice: l.unitPrice,
@@ -290,7 +366,12 @@ export function StatementForm({ budget, expenses, initial, initialLines, onSave,
   const [catErr, setCatErr] = useState('');
   const catRef = useRef(null);
   const [showAll, setShowAll] = useState(false);
+  const [open, setOpen] = useState({ adv: false, time: false }); // the Meta editor's Advanced and Time sections
   const [pane, setPane] = useState('edit'); // narrow screens show one side at a time
+  const [split, setSplit] = useState(readSplit); // the form's share of the width
+  const [dragging, setDragging] = useState(false);
+  const grid = useRef(null);
+  const resize = (v, commit) => { setSplit(v); if (commit) storeSplit(v); };
   const { busy, err, run } = useSubmit();
   const pickFields = (x) => Object.fromEntries(['title', 'issuedOn', 'fromName', 'billTo', 'notes', ...LAYOUT_KEYS].map(k => [k, x[k]]));
   const [baseline] = useState(() => JSON.stringify([pickFields(start.f), start.lines, String(initial?.category ?? '')]));
@@ -311,6 +392,14 @@ export function StatementForm({ budget, expenses, initial, initialLines, onSave,
     ? (v === '' ? estimate({ ...l, extra: { ...l.extra, impressions: '', est: undefined } }, f.cpm) : { ...l, extra: { ...l.extra, impressions: v, est: false } })
     : l)));
   const setCpm = (cpm) => { setF(x => ({ ...x, cpm })); setLines(ls => ls.map(l => estimate(l, cpm))); };
+  // vendorRef (Transaction ID) / paymentRef (Reference ID): typing marks the ID
+  // as copied from the receipt, Generate as WEPRO's own. Once the statement has
+  // been saved as Meta, the finance function has issued them (layout.issuedIds):
+  // those are locked, here and on the server.
+  const issued = initial?.issuedIds || {};
+  const typeRef = (k) => (v) => { if (!issued[k]) setF(x => ({ ...x, [k]: v, [k + 'Gen']: false })); };
+  const genRef = (k) => { if (issued[k]) return; const v = NEW_ID[k](); setF(x => ({ ...x, [k]: v, [k + 'Gen']: true })); };
+  const setNow = () => { const now = dhakaNow(); setF(x => ({ ...x, paidOn: now.date, paidTime: now.time })); };
 
   // The template for a category: Meta / Supabase get the vendor layout, the
   // rest WEPRO's own statement.
@@ -318,8 +407,15 @@ export function StatementForm({ budget, expenses, initial, initialLines, onSave,
     if (id === f.template) return;
     const t = templateOf(id), d = t.defaults || {};
     const ad = t.columns === 'impressions', cpm = f.cpm || d.cpm || '';
+    const now = dhakaNow(), ids = { vendorRef: NEW_ID.vendorRef(), paymentRef: NEW_ID.paymentRef() };
     setF(x => {
       const from = x.periodFrom || x.issuedOn;
+      // Meta: issued IDs come back, empty ones are generated, an empty payment
+      // date / time is now in Bangladesh. Any other template drops issued IDs
+      // and IDs still as generated (they are Meta-shaped); IDs from a receipt stay.
+      const refs = Object.fromEntries(['vendorRef', 'paymentRef'].flatMap(k => (ad
+        ? (issued[k] ? [[k, issued[k]], [k + 'Gen', !!issued[k + 'Gen']]] : x[k] ? [] : [[k, ids[k]], [k + 'Gen', true]])
+        : (x[k + 'Gen'] || (issued[k] && x[k] === issued[k]) ? [[k, ''], [k + 'Gen', false]] : []))));
       return {
         ...x, template: t.id, currency: t.currency, accent: t.accent || '#1F6FEB',
         title: DEFAULT_TITLES.has(x.title.trim()) ? d.title || 'Expense statement' : x.title,
@@ -327,6 +423,8 @@ export function StatementForm({ budget, expenses, initial, initialLines, onSave,
         billTo: x.billTo.trim() ? x.billTo : d.billTo || '',
         paymentMethod: x.paymentMethod || d.paymentMethod || '', productType: x.productType || d.productType || '', cpm: x.cpm || d.cpm || '',
         ...(d.months && !x.periodTo ? { periodFrom: from, periodTo: periodEnd(from, d.months) } : {}),
+        ...refs,
+        ...(ad ? { paidOn: x.paidOn || now.date, paidTime: x.paidTime || now.time } : {}),
       };
     });
     if (d.lines && !lines.length) setLines(d.lines.map(l => (ad ? estimate({ expenseId: null, ...l, extra: { ...l.extra, cid: newCid() } }, cpm) : { expenseId: null, ...l })));
@@ -371,11 +469,11 @@ export function StatementForm({ budget, expenses, initial, initialLines, onSave,
     lines, budget, expenses,
   })));
   return (
-    <Modal xwide guard={guard} title={initial?.id ? `Edit ${initial.number}` : `New statement · ${budget.title}`} onClose={onClose} footer={<>
-      <button type="button" className="btn btn-g" onClick={guard.requestClose}>Cancel</button>
-      <button type="button" className="btn btn-p" onClick={submit} disabled={busy}><Mi>check</Mi>Save draft</button>
+    <Modal xwide guard={guard} title={initial?.id ? `Edit ${initial.number}` : `New statement · ${budget.title}`} onClose={onClose} actions={<>
+      <button type="button" className="btn btn-g btn-sm" onClick={guard.requestClose}>Cancel</button>
+      <button type="button" className="btn btn-p btn-sm" onClick={submit} disabled={busy}><Mi>check</Mi>Save draft</button>
     </>}>
-      <div className={`fin-split on-${pane}`}>
+      <div ref={grid} className={`fin-split on-${pane}${dragging ? ' dragging' : ''}`} style={{ '--fin-l': `${Math.round(split * 100)}fr`, '--fin-r': `${100 - Math.round(split * 100)}fr` }}>
         <div className="fin-panes" role="tablist" aria-label="Editor view">
           <button type="button" role="tab" aria-selected={pane === 'edit'} className={pane === 'edit' ? 'on' : ''} onClick={() => setPane('edit')}><Mi>edit</Mi>Edit</button>
           <button type="button" role="tab" aria-selected={pane === 'preview'} className={pane === 'preview' ? 'on' : ''} onClick={() => setPane('preview')}><Mi>visibility</Mi>Preview</button>
@@ -387,12 +485,11 @@ export function StatementForm({ budget, expenses, initial, initialLines, onSave,
             {isReceipt && <div className="fg full fin-help fin-tpl-note"><Mi>receipt</Mi>Laid out like a {tpl.name} receipt, headed STATEMENT, with a footer saying WEPRO prepared it from the {tpl.name} receipt. Attach the original receipt to the expense.</div>}
             <div className="fg"><label>Title</label><input className="fi" value={f.title} onChange={set('title')} /></div>
             <div className="fg"><label>{isReceipt ? 'Receipt date' : 'Date'}</label><input className="fi" type="date" value={f.issuedOn} onChange={set('issuedOn')} /></div>
-            {isReceipt && <>
-              <div className="fg"><label>{tpl.refLabel || 'Vendor reference'}</label><input className="fi" value={f.vendorRef} onChange={set('vendorRef')} placeholder="As printed on the vendor receipt" /></div>
+            {isReceipt && !isAd && <>
+              <div className="fg"><label>{tpl.refLabel || 'Vendor reference'}</label><input className="fi" value={f.vendorRef} onChange={e => typeRef('vendorRef')(e.target.value)} placeholder="As printed on the vendor receipt" /></div>
               <div className="fg"><label>Payment date</label><input className="fi" type="date" value={f.paidOn} onChange={set('paidOn')} /></div>
             </>}
             {isAd && <>
-              <div className="fg"><label>Payment time</label><input className="fi" type="time" value={f.paidTime} onChange={set('paidTime')} /></div>
               <div className="fg"><label>Client name</label><input className="fi" value={f.billTo} onChange={set('billTo')} placeholder="e.g. P2P & WECON" /></div>
               <div className="fg"><label>Account ID</label><input className="fi" value={f.accountId} onChange={set('accountId')} placeholder="Ad account ID" /></div>
               <div className="fg"><label>Billing amount ({f.currency})</label><input className="fi" type="number" min="0" step="0.01" value={f.billingAmount} onChange={set('billingAmount')} placeholder="As on the receipt" /><div className="fin-help">The campaigns below should add up to this.</div></div>
@@ -400,9 +497,26 @@ export function StatementForm({ budget, expenses, initial, initialLines, onSave,
                 <select className="fsel" value={f.paymentMethod} onChange={set('paymentMethod')}>
                   {[...new Set([...(tpl.paymentMethods || []), f.paymentMethod].filter(Boolean))].map(m => <option key={m}>{m}</option>)}
                 </select></div>
-              <div className="fg"><label>Reference number</label><input className="fi" value={f.paymentRef} onChange={set('paymentRef')} placeholder="From the receipt (optional)" /></div>
               <div className="fg"><label>Product type</label><input className="fi" value={f.productType} onChange={set('productType')} /></div>
               <div className="fg"><label>CPM ({f.currency} per 1,000 impressions)</label><input className="fi" type="number" min="0" step="0.01" value={f.cpm} onChange={e => setCpm(e.target.value)} /><div className="fin-help">Impressions = 1,000 × Amount ÷ CPM, filled in for each ad set.</div></div>
+              <div className="fg full fin-disc-row">
+                <button type="button" className="fin-disc" aria-expanded={open.adv} aria-controls="fin-adv" onClick={() => setOpen(o => ({ ...o, adv: !o.adv }))}>Advanced<Mi className="chev">expand_more</Mi></button>
+                <button type="button" className="fin-disc" aria-expanded={open.time} aria-controls="fin-time" onClick={() => setOpen(o => ({ ...o, time: !o.time }))}>
+                  Time<span className="v">{f.paidOn ? docDate(f.paidOn) : 'Receipt date'}{f.paidTime ? `, ${time12(f.paidTime)}` : ''}</span><Mi className="chev">expand_more</Mi></button>
+              </div>
+              {open.adv && <div id="fin-adv" className="fg full fin-disc-panel fin-ids">
+                <RefField label="Reference ID" value={f.paymentRef} gen={f.paymentRefGen} locked={!!issued.paymentRef} onType={typeRef('paymentRef')} onGenerate={() => genRef('paymentRef')} />
+                <RefField label="Transaction ID" value={f.vendorRef} gen={f.vendorRefGen} locked={!!issued.vendorRef} onType={typeRef('vendorRef')} onGenerate={() => genRef('vendorRef')} />
+                <div className="fin-help full">{issued.vendorRef && issued.paymentRef
+                  ? 'Issued when this statement was first saved. They can’t be edited or regenerated, and are never used again.'
+                  : 'Generated IDs print as WEPRO internal references, never as Meta’s. Paste the IDs from the Meta receipt to use those instead. Both are checked against every ID issued before and locked when the draft is first saved.'}</div>
+              </div>}
+              {open.time && <div id="fin-time" className="fg full fin-disc-panel">
+                <div className="fg"><label>Payment date</label><input className="fi" type="date" value={f.paidOn} onChange={set('paidOn')} /></div>
+                <div className="fg"><div className="fin-pick-hd"><label>Payment time</label><button type="button" className="fin-linkbtn" onClick={setNow}>Now</button></div>
+                  <Time12 label="Payment time" value={f.paidTime} onChange={v => setF(x => ({ ...x, paidTime: v }))} /></div>
+                <div className="fin-help full">Bangladesh time (Asia/Dhaka). With no payment date the receipt date prints.</div>
+              </div>}
             </>}
             <div className="fg full"><label>Duration</label>
               <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
@@ -467,7 +581,8 @@ export function StatementForm({ budget, expenses, initial, initialLines, onSave,
             <div className="fg full"><label>{isReceipt ? 'Memo' : 'Notes'}</label><textarea className="fi" rows={2} value={f.notes} onChange={set('notes')} /></div>
           </div>
         </div>
-        <div className="fin-split-preview" aria-label="Live preview"><DocPreview fit="contain" html={html} title="Statement preview" /></div>
+        <SplitDivider grid={grid} value={split} onChange={resize} onDragging={setDragging} />
+        <div className="fin-split-preview" aria-label="Live preview"><DocPreview fit="canvas" html={html} title="Statement preview" /></div>
       </div>
     </Modal>
   );

@@ -1,4 +1,4 @@
-import { useEffect, useImperativeHandle, useRef, useState } from 'react';
+import { useEffect, useImperativeHandle, useLayoutEffect, useRef, useState } from 'react';
 import Mi from '../Mi.jsx';
 import { paginateDoc } from '../../lib/finance.js';
 
@@ -16,10 +16,14 @@ import { paginateDoc } from '../../lib/finance.js';
 // the frame, never on the pages), so the pages keep their real layout:
 //   fit="height"  (statement view) every page, one under the other, scaled to
 //                 the panel's width; the panel scrolls.
-//   fit="contain" (editor preview) one whole page, scaled to fit the box, with
-//                 Page 1 of n buttons when there are more. Nothing scrolls.
+//   fit="canvas"  (editor preview) a PDF-viewer canvas: every page, one under
+//                 the other, on a scrolling grey sheet, with a toolbar to zoom
+//                 (fit to page, fit to width, in / out, 100%; Ctrl+wheel too)
+//                 and to step through the pages.
 const PAGE_W = 794; // A4 width in CSS px (210 mm at 96 dpi)
-const PAGER_H = 40; // room under the page for the pager
+const PAD = 12; // canvas: room around the pages
+const ZOOM_MIN = 0.25, ZOOM_MAX = 4, ZOOM_STEP = 1.25;
+const clampZoom = (v) => Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, Math.round(v * 100) / 100));
 
 // The paginated document's geometry: page count, full height, one page's
 // height and the distance from one page's top to the next.
@@ -38,30 +42,32 @@ function measure(d) {
 
 export default function DocPreview({ html, title, ref, fit = 'height' }) {
   const frame = useRef(null);
-  const box = useRef(null);
-  const contain = fit === 'contain';
+  const box = useRef(null); // the panel (height) or the scrolling sheet (canvas)
+  const paged = useRef(false); // the loaded document is paginated
+  const canvas = fit === 'canvas';
   const [geo, setGeo] = useState(null);
   const [area, setArea] = useState(null); // the box the pages are fitted to
-  const [at, setAt] = useState(0); // contain: the page shown
+  const [zoom, setZoom] = useState('page'); // canvas: 'page' | 'width' | a scale (1 = 100%)
+  const [page, setPage] = useState(0); // canvas: the page at the middle of the view
 
   // Paginate the frame's document. A frame loaded while hidden (the phone's
   // Edit pane) has no layout yet; paginateDoc then returns 0 and this runs
   // again once the box has a size.
   const layout = () => {
     const d = frame.current?.contentDocument;
-    if (d && paginateDoc(d)) setGeo(measure(d));
+    if (d && paginateDoc(d)) { paged.current = true; setGeo(measure(d)); }
   };
   useEffect(() => {
     const el = box.current;
     if (!el || typeof ResizeObserver === 'undefined') return undefined;
     const ro = new ResizeObserver(([entry]) => {
-      const { width, height } = entry.contentRect;
-      setArea({ w: width, h: height });
-      layout();
+      // The canvas scrolls: the room is what is inside its scrollbar gutter.
+      setArea(canvas ? { w: el.clientWidth, h: el.clientHeight } : { w: entry.contentRect.width, h: entry.contentRect.height });
+      if (!paged.current) layout();
     });
     ro.observe(el);
     return () => ro.disconnect();
-  }, []);
+  }, [canvas]);
 
   useImperativeHandle(ref, () => ({
     print: () => {
@@ -73,37 +79,74 @@ export default function DocPreview({ html, title, ref, fit = 'height' }) {
     },
   }), []);
 
-  const frameEl = (style) => <iframe ref={frame} className="fin-docframe" title={title} srcDoc={html} onLoad={layout} sandbox="allow-same-origin allow-modals" style={style} />;
   const ready = geo && area && area.w > 0;
-
-  if (!contain) {
-    const s = ready ? Math.min(area.w / PAGE_W, 1) : 0;
-    return (
-      <div ref={box} className="fin-docpages">
-        <div className="fin-docpages-in" style={{ width: Math.floor(PAGE_W * s) || '100%', height: ready ? Math.ceil(geo.h * s) : 1123, visibility: s ? 'visible' : 'hidden' }}>
-          {frameEl({ width: PAGE_W, height: geo?.h || 1123, transform: `scale(${s || 1})` })}
-        </div>
-      </div>
-    );
-  }
-
-  // One page at a time: the whole page, scaled down until it fits (never up).
   const n = geo?.pages || 1;
-  const k = Math.min(at, n - 1);
-  const room = ready ? { w: area.w, h: area.h - (n > 1 ? PAGER_H : 0) } : null;
-  const s = room && room.h > 0 ? Math.min(room.w / PAGE_W, room.h / geo.pageH, 1) : 0;
+  const cur = Math.min(page, n - 1);
+  // canvas: the scale from the zoom (a fit follows the box's size)
+  const fitW = ready ? (area.w - 2 * PAD) / PAGE_W : 0;
+  const fitP = ready ? Math.min(fitW, (area.h - 2 * PAD) / geo.pageH) : 0;
+  const s = !ready ? 0 : !canvas ? Math.min(area.w / PAGE_W, 1) : zoom === 'page' ? fitP : zoom === 'width' ? fitW : zoom;
+  const sRef = useRef(s); // for the wheel listener, which outlives a render
+  useEffect(() => { sRef.current = s; }, [s]);
+
+  // canvas: a new scale keeps what was at the middle of the view at the middle
+  const prev = useRef(0);
+  useLayoutEffect(() => {
+    const el = box.current, p = prev.current;
+    prev.current = s;
+    if (!canvas || !el || !p || !s || p === s) return;
+    const k = s / p, cw = el.clientWidth, ch = el.clientHeight;
+    const off = (sc) => Math.max(0, (cw - PAGE_W * sc) / 2); // the pages are centred while narrower than the box
+    el.scrollTop = (el.scrollTop + ch / 2 - PAD) * k + PAD - ch / 2;
+    el.scrollLeft = (el.scrollLeft + cw / 2 - off(p)) * k + off(s) - cw / 2;
+  }, [s, canvas]);
+  // canvas: Ctrl / ⌘ + wheel zooms the pages instead of the app
+  useEffect(() => {
+    const el = box.current;
+    if (!canvas || !el) return undefined;
+    const onWheel = (e) => { if (!e.ctrlKey && !e.metaKey) return; e.preventDefault(); setZoom(clampZoom(sRef.current * (e.deltaY < 0 ? ZOOM_STEP : 1 / ZOOM_STEP))); };
+    el.addEventListener('wheel', onWheel, { passive: false });
+    return () => el.removeEventListener('wheel', onWheel);
+  }, [canvas]);
+
+  const frameEl = <iframe ref={frame} className="fin-docframe" title={title} srcDoc={html} onLoad={() => { paged.current = false; layout(); }} sandbox="allow-same-origin allow-modals" style={{ width: PAGE_W, height: geo?.h || 1123, transform: `scale(${s || 1})` }} />;
+  const sheet = (
+    <div className="fin-docpages-in" style={{ width: Math.floor(PAGE_W * s) || '100%', height: ready ? Math.ceil(geo.h * s) : 1123, visibility: s ? 'visible' : 'hidden' }}>{frameEl}</div>
+  );
+  if (!canvas) return <div ref={box} className="fin-docpages">{sheet}</div>;
+
+  const stepPx = geo ? geo.step * s : 0;
+  const onScroll = () => {
+    const el = box.current;
+    if (!el || !stepPx) return;
+    const k = Math.min(n - 1, Math.max(0, Math.floor((el.scrollTop + el.clientHeight / 2 - PAD) / stepPx)));
+    if (k !== page) setPage(k);
+  };
+  const goTo = (k) => { if (box.current) box.current.scrollTop = k * stepPx; setPage(k); };
+  const zoomTo = (v) => setZoom(clampZoom(v));
+  const fitBtn = (mode, icon, label) => <button type="button" className={`fin-tb${zoom === mode ? ' on' : ''}`} aria-pressed={zoom === mode} onClick={() => setZoom(mode)} title={label} aria-label={label}><Mi>{icon}</Mi></button>;
   return (
-    <div ref={box} className="fin-docfit">
-      <div className="fin-docfit-page" style={{ width: Math.floor(PAGE_W * s), height: Math.floor((geo?.pageH || 1123) * s), visibility: s ? 'visible' : 'hidden' }}>
-        {frameEl({ width: PAGE_W, height: geo?.h || 1123, transform: `scale(${s || 0.0001}) translateY(${-k * (geo?.step || 0)}px)` })}
-      </div>
-      {n > 1 && (
-        <div className="fin-pager" role="group" aria-label="Preview pages">
-          <button type="button" className="fin-pager-b" onClick={() => setAt(Math.max(0, k - 1))} disabled={k === 0} aria-label="Previous page"><Mi>chevron_left</Mi></button>
-          <span aria-live="polite">Page {k + 1} of {n}</span>
-          <button type="button" className="fin-pager-b" onClick={() => setAt(Math.min(n - 1, k + 1))} disabled={k === n - 1} aria-label="Next page"><Mi>chevron_right</Mi></button>
+    <div className="fin-doccanvas">
+      <div className="fin-doctb" role="toolbar" aria-label="Preview">
+        <div className="g">
+          <button type="button" className="fin-tb" onClick={() => zoomTo(s / ZOOM_STEP)} disabled={!ready || s <= ZOOM_MIN} title="Zoom out (Ctrl + wheel)" aria-label="Zoom out"><Mi>zoom_out</Mi></button>
+          <span className="pct" aria-live="polite" aria-label="Zoom">{ready ? `${Math.round(s * 100)}%` : '—'}</span>
+          <button type="button" className="fin-tb" onClick={() => zoomTo(s * ZOOM_STEP)} disabled={!ready || s >= ZOOM_MAX} title="Zoom in (Ctrl + wheel)" aria-label="Zoom in"><Mi>zoom_in</Mi></button>
         </div>
-      )}
+        <div className="g">
+          {fitBtn('page', 'fit_page', 'Fit to page')}
+          {fitBtn('width', 'fit_width', 'Fit to width')}
+          {fitBtn(1, 'restart_alt', 'Reset zoom (100%)')}
+        </div>
+        {n > 1 && (
+          <div className="g nav" role="group" aria-label="Pages">
+            <button type="button" className="fin-tb" onClick={() => goTo(cur - 1)} disabled={cur === 0} title="Previous page" aria-label="Previous page"><Mi>chevron_left</Mi></button>
+            <span className="pg" aria-live="polite"><b>{cur + 1}</b> / {n}</span>
+            <button type="button" className="fin-tb" onClick={() => goTo(cur + 1)} disabled={cur === n - 1} title="Next page" aria-label="Next page"><Mi>chevron_right</Mi></button>
+          </div>
+        )}
+      </div>
+      <div ref={box} className="fin-doccanvas-s" onScroll={onScroll}>{sheet}</div>
     </div>
   );
 }
