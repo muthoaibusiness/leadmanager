@@ -106,7 +106,7 @@ export async function getCredentials(account = "eyad"): Promise<{ token: string;
 // building a vector index for it.
 export async function getActiveProjects(): Promise<any[]> {
   return sbSelect(
-    "wa_projects?is_active=eq.true&select=name,keywords,region,nature,sft,address,brochure_url,photos,floor_plans,video_url,google_map_url",
+    "wa_projects?is_active=eq.true&select=name,keywords,region,nature,sft,address,brochure_url,photos,floor_plans,floor_plan_labels,video_url,google_map_url,map_image_url",
   );
 }
 
@@ -144,9 +144,13 @@ export async function sendWaMessageMirrored(
     console.error("sendWaMessageMirrored: no Wasender token configured for", account);
     return false;
   }
+  // Wasender rejects image/document sends with an empty "text" — its
+  // validator treats "" as missing, not as a string (confirmed directly
+  // against the API: documentUrl + text:"" => 422 "text field must be a
+  // string"; a non-empty caption succeeds). Always fall back to something.
   const payload =
-    msg.type === "image" ? { to, text: msg.text || "", imageUrl: msg.mediaUrl } :
-    msg.type === "document" ? { to, text: msg.text || "", documentUrl: msg.mediaUrl, fileName: msg.fileName || "document" } :
+    msg.type === "image" ? { to, text: msg.text || "Photo", imageUrl: msg.mediaUrl } :
+    msg.type === "document" ? { to, text: msg.text || (msg.fileName || "Document"), documentUrl: msg.mediaUrl, fileName: msg.fileName || "document" } :
     { to, text: msg.text || "" };
 
   let ok = false;
@@ -185,6 +189,52 @@ export async function sendWaMessageMirrored(
     wa_timestamp: now,
   }]);
   return true;
+}
+
+// ── admin-configurable automation toggles (WA Relay tab) ───────────────────
+export async function getBotSettings(): Promise<{ autoForwardEnabled: boolean; faqAgentEnabled: boolean }> {
+  const rows = await sbSelect("wa_settings?id=eq.default&select=auto_forward_enabled,faq_agent_enabled");
+  const row = rows?.[0] ?? {};
+  return {
+    autoForwardEnabled: row.auto_forward_enabled === true,
+    faqAgentEnabled: row.faq_agent_enabled !== false, // defaults on if the row/column is missing
+  };
+}
+
+// /send<code> → project name, admin-editable via wa_projects.send_code
+// (was a hardcoded CODE_TO_PROJECT map in wa-bot-eyad).
+export async function getProjectBySendCode(code: string): Promise<{ name: string } | null> {
+  const rows = await sbSelect(`wa_projects?send_code=eq.${encodeURIComponent(code)}&is_active=eq.true&select=name&limit=1`);
+  return rows?.[0] ?? null;
+}
+
+// ── /n and /f* ... note commands ────────────────────────────────────────────
+// Attach the thread to the most recently created lead with this number — the
+// same "last 9 digits" tolerance findLeadId uses (prefix/+880 differences).
+export async function findLeadForNote(phone: string): Promise<{ id: string; companyId: string | null } | null> {
+  const tail = phone.replace(/\D/g, "").slice(-9);
+  if (tail.length < 8) return null;
+  const rows = await sbSelect(
+    `leads?phone=like.*${encodeURIComponent(tail)}&select=id,company_id&order=created_at.desc&limit=1`,
+  );
+  const row = rows?.[0];
+  return row ? { id: row.id, companyId: row.company_id ?? null } : null;
+}
+
+// Writes the same shape the app's own NoteModal writes (aToR in src/lib/supabase.js)
+// — type NOTE, so it renders in the lead's activity timeline like any manual note.
+export async function logNoteActivity(leadId: string, companyId: string | null, description: string, source: string): Promise<boolean> {
+  return sbUpsert("activities", [{
+    id: crypto.randomUUID(),
+    lead_id: leadId,
+    type: "NOTE",
+    description,
+    user_id: null,
+    user_name: source,
+    duration_seconds: 0,
+    timestamp: new Date().toISOString(),
+    company_id: companyId,
+  }]);
 }
 
 // The CRM has no Supabase Auth session, so an admin action is authorised by

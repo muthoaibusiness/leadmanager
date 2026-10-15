@@ -30,18 +30,21 @@ interface SendBody {
   webhookSecret?: string;
 }
 
-// Map our message type onto the Wasender payload shape.
+// Map our message type onto the Wasender payload shape. Wasender rejects an
+// image/document/video send with an empty "text" (its validator treats ""
+// as missing, not as a string — confirmed directly against the API), so a
+// caption-less send always needs a fallback.
 function buildPayload(b: SendBody) {
   const to = b.to || "";
   switch (b.type) {
     case "image":
-      return { to, text: b.caption || "", imageUrl: b.mediaUrl };
+      return { to, text: b.caption || "Photo", imageUrl: b.mediaUrl };
     case "video":
-      return { to, text: b.caption || "", videoUrl: b.mediaUrl };
+      return { to, text: b.caption || "Video", videoUrl: b.mediaUrl };
     case "audio":
       return { to, audioUrl: b.mediaUrl };
     case "document":
-      return { to, text: b.caption || "", documentUrl: b.mediaUrl, fileName: b.mediaName || "file" };
+      return { to, text: b.caption || (b.mediaName || "Document"), documentUrl: b.mediaUrl, fileName: b.mediaName || "file" };
     default:
       return { to, text: b.text || "" };
   }

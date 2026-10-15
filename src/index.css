@@ -6773,6 +6773,11 @@ textarea.fi {
   margin-bottom: 16px
 }
 
+/* A bordered row inside an .analytics-card list — last one in the card
+   drops its divider so the card's own bottom edge closes it off. */
+.relay-row { padding: 14px 18px; border-bottom: 1px solid var(--bd) }
+.relay-row:last-child { border-bottom: none }
+
 .ac-hd {
   display: flex;
   align-items: center;

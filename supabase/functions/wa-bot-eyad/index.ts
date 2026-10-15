@@ -23,8 +23,9 @@
 import {
   CORS, json, SUPABASE_URL, SERVICE_KEY, WASENDER_BASE,
   claimEvent, getCredentials, getActiveProjects, getRecentHistory, sendWaMessageMirrored,
+  findLeadForNote, logNoteActivity, getBotSettings, getProjectBySendCode,
 } from "../_shared/wa.ts";
-import { askAgent, resolveMedia } from "../_shared/ai.ts";
+import { askAgent, resolveMedia, fixGrammar } from "../_shared/ai.ts";
 
 // ── fixed literals from the source workflow ──────────────────────────────
 // Hard-coded in the live n8n workflow for this one bot instance (Eyad /
@@ -37,23 +38,6 @@ const WA_TAG = "Eyad";
 
 // Region → forwarding-pool command (Compute Forward's REGION_CMD map).
 const REGION_CMD: Record<string, string> = { Dhaka: "/fdh", Chattogram: "/fctg", Cumilla: "/fcml" };
-
-// /send<code> → project name (Resolve Send Doc's CODE_TO_PROJECT map).
-// "P2P Helthcare" is spelled exactly that way in the source — preserved
-// verbatim because it has to match whatever string the drip side expects.
-const CODE_TO_PROJECT: Record<string, string> = {
-  "/sendjm": "Wecon JM Heritage Mall",
-  "/senddk": "Wecon Dakshinayan",
-  "/sendio": "Wecon Iqbal Orchid",
-  "/sendmm": "Momtaz Manor",
-  "/sendsb": "Wecon Summer Breeze",
-  "/sendca": "Wecon Chowdhury Arcade",
-  "/sendsd": "Wecon South Dale",
-  "/sendss": "Shafiq Sapphire",
-  "/sendos": "Wecon Osman",
-  "/sendphc": "P2P Helthcare",
-  "/sendnz": "Wecon Nuznan",
-};
 
 // ── customer-facing message templates, verbatim from §3 of the spec ─────
 const firstToken = (name: string) => (name || "").trim().split(/\s+/)[0] || "";
@@ -255,20 +239,27 @@ function parseEvent(payload: any): ParsedEvent {
 // ── FAQ agent (OpenRouter) — answers general questions about WECON projects
 // and, on request, follows up with a photo / floor plan / brochure. See
 // _shared/ai.ts for the prompt and _shared/wa.ts for send+mirror.
-async function runFaqAgent(account: string, phone: string, remote: string, text: string): Promise<void> {
+async function runFaqAgent(account: string, phone: string, remote: string, text: string, adProject?: string): Promise<void> {
   try {
     const convId = `${account}:${remote}`;
     const [projects, history] = await Promise.all([getActiveProjects(), getRecentHistory(convId)]);
-    const result = await askAgent(history, text, projects);
+    const result = await askAgent(history, text, projects, adProject);
     if (result.reply) {
       await sendWaMessageMirrored(account, phone, convId, phone, { type: "text", text: result.reply });
+      // Wasender's account-protection rate limit is 1 message per 5s — a
+      // media send right behind the text reply gets a 429 and is dropped.
+      if (result.send) await new Promise((r) => setTimeout(r, 5500));
     }
     if (result.send) {
-      const media = resolveMedia(result.send, projects);
-      if (media) {
+      const mediaList = resolveMedia(result.send, projects);
+      for (let i = 0; i < mediaList.length; i++) {
+        const media = mediaList[i];
         await sendWaMessageMirrored(account, phone, convId, phone, {
-          type: media.type, mediaUrl: media.url, fileName: media.fileName,
+          type: media.type, mediaUrl: media.url, fileName: media.fileName, text: media.caption,
         });
+        // Rate limit is 1 message per 5s — needed between every item, not
+        // just before the first (a multi-floor "send all" is several sends).
+        if (i < mediaList.length - 1) await new Promise((r) => setTimeout(r, 5500));
       }
     }
   } catch (e) {
@@ -295,6 +286,7 @@ async function handleInbound(p: ParsedEvent): Promise<void> {
   }
 
   const preleadId = upsert.id;
+  const settings = await getBotSettings();
 
   // ── Save Prelead WA: tag which bot handled this contact (swallows failure) ─
   if (preleadId) {
@@ -315,8 +307,8 @@ async function handleInbound(p: ParsedEvent): Promise<void> {
   // Never runs once a human has taken over (/t), and only on real text (an
   // ad click with no message body, or a photo with no caption, has nothing
   // for the model to answer).
-  if (p.text && upsert.takeover !== true && p.remote) {
-    await runFaqAgent("eyad", p.phone, p.remote, p.text);
+  if (settings.faqAgentEnabled && p.text && upsert.takeover !== true && p.remote) {
+    await runFaqAgent("eyad", p.phone, p.remote, p.text, upsert.property_interest || undefined);
   }
 
   // ── Get Prelead Status → Get Projects → Compute Forward ────────────────
@@ -345,17 +337,25 @@ async function handleInbound(p: ParsedEvent): Promise<void> {
     await sbPatchJson("preleads", `id=eq.${encodeURIComponent(preleadId)}`, { region: projectRegion });
   }
 
-  // Eligible? → Auto Forward Create Lead is DISABLED in the live workflow, so
-  // the lead-creation call itself is inert — do not call wa_create_lead here
-  // without the user explicitly asking to re-enable this feature. BUT a
-  // disabled n8n node with live downstream wiring still passes its input
-  // through, so production still runs the region-sync side effect that
-  // follows it (Get Prelead Region → Has Region for Lead? → Save Lead
-  // Region) — keep that part live.
+  // Eligible? → Auto Forward Create Lead was DISABLED in the source n8n
+  // workflow (the lead-create call was wired but never actually ran) — now
+  // admin-controlled via wa_settings.auto_forward_enabled (WA Relay tab),
+  // off by default to match that original behavior until someone turns it
+  // on. The region-sync side effect that followed it in the n8n graph stays
+  // live either way.
   if (eligible) {
-    console.log("auto-forward eligible (lead-create inert — Auto Forward Create Lead is disabled upstream)", {
-      preleadId, phone: p.phone, forwardCmd, msgCount,
-    });
+    if (settings.autoForwardEnabled) {
+      const result = await sbRpcJson("wa_create_lead", {
+        p_phone: p.phone,
+        p_cmd: forwardCmd,
+        p_company_id: COMPANY_ID,
+      });
+      console.log("auto-forward: wa_create_lead", { preleadId, phone: p.phone, forwardCmd, result: result?.status });
+    } else {
+      console.log("auto-forward eligible (auto_forward_enabled is off — lead-create skipped)", {
+        preleadId, phone: p.phone, forwardCmd, msgCount,
+      });
+    }
     if (projectRegion) {
       await sbPatchJson("leads", `phone=eq.${encodeURIComponent(p.phone)}`, { region: projectRegion });
     }
@@ -374,6 +374,36 @@ async function handleTakeover(p: ParsedEvent): Promise<void> {
   await sendWaText(p.phone, handoverText(p.name));
 }
 
+// A command line can carry trailing free text as a note, e.g.
+// "/fdh this client wants a morning call" — everything after the command
+// token itself is the note, no special keyword needed. "/n <note>" is the
+// standalone form (no command/lead action attached, just logs the note).
+function extractTrailingNote(rawText: string): string {
+  const tokens = rawText.trim().split(/\s+/);
+  return tokens.slice(1).join(" ").trim();
+}
+
+async function writeNoteForLead(leadId: string, rawNote: string, source: string): Promise<void> {
+  if (!rawNote) return;
+  try {
+    const fixed = await fixGrammar(rawNote);
+    await logNoteActivity(leadId, COMPANY_ID, fixed, source);
+  } catch (e) {
+    console.error("writeNoteForLead error", e);
+  }
+}
+
+async function handleNote(p: ParsedEvent): Promise<void> {
+  const raw = p.text.trim().split(/\s+/).slice(1).join(" ").trim();
+  if (!raw) return;
+  const lead = await findLeadForNote(p.phone);
+  if (!lead) {
+    console.warn("handleNote: no lead found for phone", p.phone);
+    return;
+  }
+  await writeNoteForLead(lead.id, raw, "Eyad Bot (WhatsApp /n)");
+}
+
 async function handleCreateLead(p: ParsedEvent): Promise<void> {
   const lead = await sbRpcJson("wa_create_lead", {
     p_phone: p.phone,
@@ -383,6 +413,13 @@ async function handleCreateLead(p: ParsedEvent): Promise<void> {
   if (!lead) {
     console.error("handleCreateLead: wa_create_lead returned nothing", p.phone, p.command);
     throw new Error("wa_create_lead failed");
+  }
+
+  // "/fdh note ..." — log the trailing note against whichever lead this
+  // command just touched, new or already existing.
+  const trailingNote = extractTrailingNote(p.text);
+  if (trailingNote && lead.lead_id) {
+    await writeNoteForLead(String(lead.lead_id), trailingNote, `Eyad Bot (WhatsApp ${p.command})`);
   }
 
   // Branch 1 — Lead CTWA? → Send Meta CAPI Event → CAPI OK? → Mark CAPI Sent
@@ -469,9 +506,11 @@ async function sendMetaCapiEvent(lead: any, p: ParsedEvent): Promise<void> {
 }
 
 async function handleSendDocs(p: ParsedEvent): Promise<void> {
-  const project = CODE_TO_PROJECT[p.command] ?? null;
+  // Admin-editable mapping (wa_projects.send_code — see the WA Relay tab),
+  // replacing the old hardcoded CODE_TO_PROJECT map.
+  const project = await getProjectBySendCode(p.command);
   if (!project) return; // unrecognized /send... code — silent no-op, matches source
-  await triggerDrip(p.phone, p.name, project);
+  await triggerDrip(p.phone, p.name, project.name);
 }
 
 // ── entry point ────────────────────────────────────────────────────────────
@@ -534,6 +573,8 @@ Deno.serve(async (req) => {
     } else if (p.kind === "command") {
       if (p.command === "/t") {
         await handleTakeover(p);
+      } else if (p.command === "/n") {
+        await handleNote(p);
       } else if (p.command.startsWith("/f")) {
         await handleCreateLead(p);
       } else if (p.command.startsWith("/send")) {

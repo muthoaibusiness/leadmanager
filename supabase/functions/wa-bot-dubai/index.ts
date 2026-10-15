@@ -39,8 +39,9 @@
 import {
   CORS, json, SUPABASE_URL, SERVICE_KEY, WASENDER_BASE,
   claimEvent, getCredentials, getActiveProjects, getRecentHistory, sendWaMessageMirrored,
+  findLeadForNote, logNoteActivity, getBotSettings,
 } from "../_shared/wa.ts";
-import { askAgent, resolveMedia } from "../_shared/ai.ts";
+import { askAgent, resolveMedia, fixGrammar } from "../_shared/ai.ts";
 
 // ── local REST helpers ───────────────────────────────────────────────────
 // _shared/wa.ts's sbRpc/sbPatch deliberately return only ok/not-ok (wa-send
@@ -400,33 +401,73 @@ async function handleInbound(evt: ParsedEvent): Promise<void> {
   // ad click with no message body, or a photo with no caption, has nothing
   // for the model to answer).
   if (evt.text && !takeover && evt.remote) {
-    await runFaqAgent("dubai", evt.waTo, evt.remote, evt.text);
+    const settings = await getBotSettings();
+    if (settings.faqAgentEnabled) {
+      await runFaqAgent("dubai", evt.waTo, evt.remote, evt.text, prelead.property_interest || undefined);
+    }
   }
 }
 
 // ── FAQ agent (OpenRouter) — answers general questions about WECON projects
 // and, on request, follows up with a photo / floor plan / brochure. See
 // _shared/ai.ts for the prompt and _shared/wa.ts for send+mirror.
-async function runFaqAgent(account: string, to: string, remote: string, text: string): Promise<void> {
+async function runFaqAgent(account: string, to: string, remote: string, text: string, adProject?: string): Promise<void> {
   try {
     const convId = `${account}:${remote}`;
     const phone = to.replace(/@.*$/, "");
     const [projects, history] = await Promise.all([getActiveProjects(), getRecentHistory(convId)]);
-    const result = await askAgent(history, text, projects);
+    const result = await askAgent(history, text, projects, adProject);
     if (result.reply) {
       await sendWaMessageMirrored(account, to, convId, phone, { type: "text", text: result.reply });
+      // Wasender's account-protection rate limit is 1 message per 5s — a
+      // media send right behind the text reply gets a 429 and is dropped.
+      if (result.send) await new Promise((r) => setTimeout(r, 5500));
     }
     if (result.send) {
-      const media = resolveMedia(result.send, projects);
-      if (media) {
+      const mediaList = resolveMedia(result.send, projects);
+      for (let i = 0; i < mediaList.length; i++) {
+        const media = mediaList[i];
         await sendWaMessageMirrored(account, to, convId, phone, {
-          type: media.type, mediaUrl: media.url, fileName: media.fileName,
+          type: media.type, mediaUrl: media.url, fileName: media.fileName, text: media.caption,
         });
+        // Rate limit is 1 message per 5s — needed between every item, not
+        // just before the first (a multi-floor "send all" is several sends).
+        if (i < mediaList.length - 1) await new Promise((r) => setTimeout(r, 5500));
       }
     }
   } catch (e) {
     console.error("runFaqAgent error", e);
   }
+}
+
+// A command line can carry trailing free text as a note, e.g.
+// "/fdh this client wants a morning call" — everything after the command
+// token itself is the note, no special keyword needed. "/n <note>" is the
+// standalone form (no command/lead action attached, just logs the note).
+function extractTrailingNote(rawText: string): string {
+  const tokens = rawText.trim().split(/\s+/);
+  return tokens.slice(1).join(" ").trim();
+}
+
+async function writeNoteForLead(leadId: string, rawNote: string, source: string): Promise<void> {
+  if (!rawNote) return;
+  try {
+    const fixed = await fixGrammar(rawNote);
+    await logNoteActivity(leadId, "c1", fixed, source);
+  } catch (e) {
+    console.error("writeNoteForLead error", e);
+  }
+}
+
+async function handleNote(evt: ParsedEvent): Promise<void> {
+  const raw = evt.text.trim().split(/\s+/).slice(1).join(" ").trim();
+  if (!raw) return;
+  const lead = await findLeadForNote(evt.phone);
+  if (!lead) {
+    console.warn("handleNote: no lead found for phone", evt.phone);
+    return;
+  }
+  await writeNoteForLead(lead.id, raw, "Dubai Bot (WhatsApp /n)");
 }
 
 // ── Branch B: agent-typed command ────────────────────────────────────────
@@ -441,6 +482,11 @@ async function handleCommand(evt: ParsedEvent): Promise<void> {
     return; // dead end, as in the source
   }
 
+  if (evt.command === "/n") {
+    await handleNote(evt);
+    return;
+  }
+
   if (evt.command.startsWith("/f")) {
     // Create Lead
     const result = await sbRpcJson("wa_create_lead", {
@@ -451,6 +497,13 @@ async function handleCommand(evt: ParsedEvent): Promise<void> {
     if (!result) {
       console.error("wa-bot-dubai: wa_create_lead returned nothing for", evt.phone, evt.command);
       throw new Error("wa_create_lead failed");
+    }
+
+    // "/fdh note ..." — log the trailing note against whichever lead this
+    // command just touched, new or already existing.
+    const trailingNote = extractTrailingNote(evt.text);
+    if (trailingNote && result.lead_id) {
+      await writeNoteForLead(String(result.lead_id), trailingNote, `Dubai Bot (WhatsApp ${evt.command})`);
     }
 
     // (B1) Lead CTWA?
