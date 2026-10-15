@@ -192,13 +192,52 @@ export async function sendWaMessageMirrored(
 }
 
 // ── admin-configurable automation toggles (WA Relay tab) ───────────────────
-export async function getBotSettings(): Promise<{ autoForwardEnabled: boolean; faqAgentEnabled: boolean }> {
-  const rows = await sbSelect("wa_settings?id=eq.default&select=auto_forward_enabled,faq_agent_enabled");
-  const row = rows?.[0] ?? {};
-  return {
-    autoForwardEnabled: row.auto_forward_enabled === true,
-    faqAgentEnabled: row.faq_agent_enabled !== false, // defaults on if the row/column is missing
+export type BotName = "eyad" | "dubai";
+export interface BotSettings {
+  autoForwardEnabled: boolean; autoForwardAfterMessages: number;
+  faqAgentEnabled: boolean; aiMediaEnabled: boolean;
+  welcomeEnabled: boolean; welcomeMessage: string;
+  manualForwardEnabled: boolean; docsCommandEnabled: boolean;
+  takeoverEnabled: boolean; notesEnabled: boolean;
+  customerNotifyEnabled: boolean; metaCapiEnabled: boolean;
+}
+
+// Each bot reads its own wa_bot_settings row (migration 0034). A missing row or
+// table falls back to the old global wa_settings values, so the functions work
+// before the migration is run. Every toggle defaults to ON except Eyad's
+// auto-forward, which has always been opt-in.
+export async function getBotSettings(bot: BotName): Promise<BotSettings> {
+  const [botRows, globalRows] = await Promise.all([
+    sbSelect(`wa_bot_settings?bot=eq.${bot}&select=*`),
+    sbSelect("wa_settings?id=eq.default&select=auto_forward_enabled,auto_forward_after_messages,faq_agent_enabled,welcome_enabled,welcome_message"),
+  ]);
+  const row = botRows?.[0];
+  const g = globalRows?.[0] ?? {};
+  const src = row ?? {
+    ...g,
+    auto_forward_enabled: bot === "dubai" ? true : g.auto_forward_enabled === true,
   };
+  const on = (v: unknown) => v !== false; // defaults on if the row/column is missing
+  return {
+    autoForwardEnabled: src.auto_forward_enabled === true,
+    autoForwardAfterMessages: Number.isFinite(src.auto_forward_after_messages) ? src.auto_forward_after_messages : 3,
+    faqAgentEnabled: on(src.faq_agent_enabled),
+    aiMediaEnabled: on(src.ai_media_enabled),
+    welcomeEnabled: on(src.welcome_enabled),
+    welcomeMessage: src.welcome_message || "", // empty = each bot's own hardcoded default
+    manualForwardEnabled: on(src.manual_forward_enabled),
+    docsCommandEnabled: on(src.docs_command_enabled),
+    takeoverEnabled: on(src.takeover_enabled),
+    notesEnabled: on(src.notes_enabled),
+    customerNotifyEnabled: on(src.customer_notify_enabled),
+    metaCapiEnabled: on(src.meta_capi_enabled),
+  };
+}
+
+// {name} in the admin-set welcome text → the customer's name, same "there"
+// fallback the hardcoded templates already use.
+export function fillWelcomeTemplate(text: string, name: string): string {
+  return text.replace(/\{name\}/g, name || "there");
 }
 
 // /send<code> → project name, admin-editable via wa_projects.send_code

@@ -23,8 +23,9 @@
 import {
   CORS, json, SUPABASE_URL, SERVICE_KEY, WASENDER_BASE,
   claimEvent, getCredentials, getActiveProjects, getRecentHistory, sendWaMessageMirrored,
-  findLeadForNote, logNoteActivity, getBotSettings, getProjectBySendCode,
+  findLeadForNote, logNoteActivity, getBotSettings, getProjectBySendCode, fillWelcomeTemplate,
 } from "../_shared/wa.ts";
+import type { BotSettings } from "../_shared/wa.ts";
 import { askAgent, resolveMedia, fixGrammar } from "../_shared/ai.ts";
 
 // ── fixed literals from the source workflow ──────────────────────────────
@@ -239,7 +240,7 @@ function parseEvent(payload: any): ParsedEvent {
 // ── FAQ agent (OpenRouter) — answers general questions about WECON projects
 // and, on request, follows up with a photo / floor plan / brochure. See
 // _shared/ai.ts for the prompt and _shared/wa.ts for send+mirror.
-async function runFaqAgent(account: string, phone: string, remote: string, text: string, adProject?: string): Promise<void> {
+async function runFaqAgent(account: string, phone: string, remote: string, text: string, adProject?: string, allowMedia = true): Promise<void> {
   try {
     const convId = `${account}:${remote}`;
     const [projects, history] = await Promise.all([getActiveProjects(), getRecentHistory(convId)]);
@@ -248,9 +249,9 @@ async function runFaqAgent(account: string, phone: string, remote: string, text:
       await sendWaMessageMirrored(account, phone, convId, phone, { type: "text", text: result.reply });
       // Wasender's account-protection rate limit is 1 message per 5s — a
       // media send right behind the text reply gets a 429 and is dropped.
-      if (result.send) await new Promise((r) => setTimeout(r, 5500));
+      if (allowMedia && result.send) await new Promise((r) => setTimeout(r, 5500));
     }
-    if (result.send) {
+    if (allowMedia && result.send) {
       const mediaList = resolveMedia(result.send, projects);
       for (let i = 0; i < mediaList.length; i++) {
         const media = mediaList[i];
@@ -286,7 +287,7 @@ async function handleInbound(p: ParsedEvent): Promise<void> {
   }
 
   const preleadId = upsert.id;
-  const settings = await getBotSettings();
+  const settings = await getBotSettings("eyad");
 
   // ── Save Prelead WA: tag which bot handled this contact (swallows failure) ─
   if (preleadId) {
@@ -299,8 +300,8 @@ async function handleInbound(p: ParsedEvent): Promise<void> {
   // SUPPRESSED whenever should_drip is true and takeover is false, regardless
   // of is_new. Welcome only fires via the FALSE branch → New Contact? (true).
   const shouldDrip = upsert.should_drip === true && upsert.takeover !== true;
-  if (!shouldDrip && upsert.is_new === true) {
-    await sendWaText(p.phone, welcomeText(p.name));
+  if (settings.welcomeEnabled && !shouldDrip && upsert.is_new === true) {
+    await sendWaText(p.phone, settings.welcomeMessage ? fillWelcomeTemplate(settings.welcomeMessage, p.name) : welcomeText(p.name));
   }
 
   // ── FAQ agent — not part of the n8n port, an addition on top of it.
@@ -308,7 +309,7 @@ async function handleInbound(p: ParsedEvent): Promise<void> {
   // ad click with no message body, or a photo with no caption, has nothing
   // for the model to answer).
   if (settings.faqAgentEnabled && p.text && upsert.takeover !== true && p.remote) {
-    await runFaqAgent("eyad", p.phone, p.remote, p.text, upsert.property_interest || undefined);
+    await runFaqAgent("eyad", p.phone, p.remote, p.text, upsert.property_interest || undefined, settings.aiMediaEnabled);
   }
 
   // ── Get Prelead Status → Get Projects → Compute Forward ────────────────
@@ -330,7 +331,7 @@ async function handleInbound(p: ParsedEvent): Promise<void> {
   else if (projectRegion && REGION_CMD[projectRegion]) forwardCmd = REGION_CMD[projectRegion];
 
   const eligible =
-    msgCount >= 3 && status.forwarded !== true && upsert.takeover !== true && !!forwardCmd;
+    msgCount >= settings.autoForwardAfterMessages && status.forwarded !== true && upsert.takeover !== true && !!forwardCmd;
 
   // Has Region? → Save Prelead Region (this part IS live/enabled).
   if (projectRegion) {
@@ -404,7 +405,7 @@ async function handleNote(p: ParsedEvent): Promise<void> {
   await writeNoteForLead(lead.id, raw, "Eyad Bot (WhatsApp /n)");
 }
 
-async function handleCreateLead(p: ParsedEvent): Promise<void> {
+async function handleCreateLead(p: ParsedEvent, settings: BotSettings): Promise<void> {
   const lead = await sbRpcJson("wa_create_lead", {
     p_phone: p.phone,
     p_cmd: p.command,
@@ -424,12 +425,14 @@ async function handleCreateLead(p: ParsedEvent): Promise<void> {
 
   // Branch 1 — Lead CTWA? → Send Meta CAPI Event → CAPI OK? → Mark CAPI Sent
   // Only a newly-created lead with a Meta click id goes to CAPI.
-  if (lead.status === "created" && lead.ctwa_clid) {
+  if (settings.metaCapiEnabled && lead.status === "created" && lead.ctwa_clid) {
     await sendMetaCapiEvent(lead, p);
   }
 
   // Branch 2 — Lead Result → customer-facing messages
-  if (lead.status === "created" && lead.notify === true) {
+  if (!settings.customerNotifyEnabled) {
+    // admin turned off the customer-facing "expert assigned" messages
+  } else if (lead.status === "created" && lead.notify === true) {
     await sendWaText(p.phone, assignedText(lead.first_name, lead.agent_name, lead.agent_phone));
   } else if (lead.status === "exists") {
     await sendWaText(p.phone, alreadyAssignedText(lead.first_name, lead.agent_name, lead.agent_phone));
@@ -571,14 +574,15 @@ Deno.serve(async (req) => {
     if (p.kind === "inbound") {
       await handleInbound(p);
     } else if (p.kind === "command") {
+      const cmdSettings = await getBotSettings("eyad");
       if (p.command === "/t") {
-        await handleTakeover(p);
+        if (cmdSettings.takeoverEnabled) await handleTakeover(p);
       } else if (p.command === "/n") {
-        await handleNote(p);
+        if (cmdSettings.notesEnabled) await handleNote(p);
       } else if (p.command.startsWith("/f")) {
-        await handleCreateLead(p);
+        if (cmdSettings.manualForwardEnabled) await handleCreateLead(p, cmdSettings);
       } else if (p.command.startsWith("/send")) {
-        await handleSendDocs(p);
+        if (cmdSettings.docsCommandEnabled) await handleSendDocs(p);
       }
       // any other /command: unrecognized → silent no-op, matches source
     }

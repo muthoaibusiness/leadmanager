@@ -39,7 +39,7 @@
 import {
   CORS, json, SUPABASE_URL, SERVICE_KEY, WASENDER_BASE,
   claimEvent, getCredentials, getActiveProjects, getRecentHistory, sendWaMessageMirrored,
-  findLeadForNote, logNoteActivity, getBotSettings,
+  findLeadForNote, logNoteActivity, getBotSettings, fillWelcomeTemplate,
 } from "../_shared/wa.ts";
 import { askAgent, resolveMedia, fixGrammar } from "../_shared/ai.ts";
 
@@ -333,6 +333,8 @@ async function startDrip(phone: string, name: string, project: string): Promise<
 
 // ── Branch A: inbound customer message ───────────────────────────────────
 async function handleInbound(evt: ParsedEvent): Promise<void> {
+  const settings = await getBotSettings("dubai");
+
   // Upsert Prelead
   const prelead = await sbRpcJson("wa_upsert_prelead", {
     p_phone: evt.phone,
@@ -362,7 +364,9 @@ async function handleInbound(evt: ParsedEvent): Promise<void> {
   // Create a row1 — unconditional insert, every qualifying inbound message,
   // no "does a lead already exist for this phone" check (contrast with the
   // /f* command path below, which dedupes via wa_create_lead itself).
-  const lead = await sbInsertJson("leads", {
+  // "Auto forward" for this bot = create a lead for every inbound contact.
+  // Admin can switch it off (WA Relay tab); the prelead above is still saved.
+  const lead = !settings.autoForwardEnabled ? null : await sbInsertJson("leads", {
     name: prelead.name,
     phone: prelead.phone ?? evt.phone,
     property_interest: prelead.property_interest,
@@ -376,7 +380,7 @@ async function handleInbound(evt: ParsedEvent): Promise<void> {
     team_id: "txo3gm1fwmsvp5ycl",
     ctwa_clid: prelead.ctwa_clid ?? "",
   });
-  if (!lead) {
+  if (settings.autoForwardEnabled && !lead) {
     console.error("wa-bot-dubai: lead insert failed for", evt.phone);
     throw new Error("leads insert failed");
   }
@@ -385,14 +389,14 @@ async function handleInbound(evt: ParsedEvent): Promise<void> {
   const shouldDrip = prelead.should_drip === true;
   const takeover = prelead.takeover === true;
   if (shouldDrip && !takeover) {
-    await startDrip(evt.waTo, evt.name, prelead.property_interest ?? "");
-  } else if (prelead.is_new === true) {
+    if (settings.docsCommandEnabled) await startDrip(evt.waTo, evt.name, prelead.property_interest ?? "");
+  } else if (settings.welcomeEnabled && prelead.is_new === true) {
     // New Contact? → Send Welcome
-    await sendWaText(evt.waTo, welcomeMessage(evt.name));
+    await sendWaText(evt.waTo, settings.welcomeMessage ? fillWelcomeTemplate(settings.welcomeMessage, evt.name) : welcomeMessage(evt.name));
   }
 
   // (A2) Ad Lead?
-  if ((evt.ctwaClid || "") !== "") {
+  if (settings.metaCapiEnabled && lead && (evt.ctwaClid || "") !== "") {
     await sendMetaCapiEvent({ leadId: String(lead.id ?? ""), ctwaClid: evt.ctwaClid || "" });
   }
 
@@ -400,18 +404,15 @@ async function handleInbound(evt: ParsedEvent): Promise<void> {
   // Never runs once a human has taken over (/t), and only on real text (an
   // ad click with no message body, or a photo with no caption, has nothing
   // for the model to answer).
-  if (evt.text && !takeover && evt.remote) {
-    const settings = await getBotSettings();
-    if (settings.faqAgentEnabled) {
-      await runFaqAgent("dubai", evt.waTo, evt.remote, evt.text, prelead.property_interest || undefined);
-    }
+  if (settings.faqAgentEnabled && evt.text && !takeover && evt.remote) {
+    await runFaqAgent("dubai", evt.waTo, evt.remote, evt.text, prelead.property_interest || undefined, settings.aiMediaEnabled);
   }
 }
 
 // ── FAQ agent (OpenRouter) — answers general questions about WECON projects
 // and, on request, follows up with a photo / floor plan / brochure. See
 // _shared/ai.ts for the prompt and _shared/wa.ts for send+mirror.
-async function runFaqAgent(account: string, to: string, remote: string, text: string, adProject?: string): Promise<void> {
+async function runFaqAgent(account: string, to: string, remote: string, text: string, adProject?: string, allowMedia = true): Promise<void> {
   try {
     const convId = `${account}:${remote}`;
     const phone = to.replace(/@.*$/, "");
@@ -421,9 +422,9 @@ async function runFaqAgent(account: string, to: string, remote: string, text: st
       await sendWaMessageMirrored(account, to, convId, phone, { type: "text", text: result.reply });
       // Wasender's account-protection rate limit is 1 message per 5s — a
       // media send right behind the text reply gets a 429 and is dropped.
-      if (result.send) await new Promise((r) => setTimeout(r, 5500));
+      if (allowMedia && result.send) await new Promise((r) => setTimeout(r, 5500));
     }
-    if (result.send) {
+    if (allowMedia && result.send) {
       const mediaList = resolveMedia(result.send, projects);
       for (let i = 0; i < mediaList.length; i++) {
         const media = mediaList[i];
@@ -472,7 +473,10 @@ async function handleNote(evt: ParsedEvent): Promise<void> {
 
 // ── Branch B: agent-typed command ────────────────────────────────────────
 async function handleCommand(evt: ParsedEvent): Promise<void> {
+  const settings = await getBotSettings("dubai");
+
   if (evt.command === "/t") {
+    if (!settings.takeoverEnabled) return;
     // Set Takeover
     const row = await sbPatchJson("preleads", `phone=eq.${encodeURIComponent(evt.phone)}`, {
       takeover: "true",
@@ -483,11 +487,12 @@ async function handleCommand(evt: ParsedEvent): Promise<void> {
   }
 
   if (evt.command === "/n") {
-    await handleNote(evt);
+    if (settings.notesEnabled) await handleNote(evt);
     return;
   }
 
   if (evt.command.startsWith("/f")) {
+    if (!settings.manualForwardEnabled) return;
     // Create Lead
     const result = await sbRpcJson("wa_create_lead", {
       p_phone: evt.phone,
@@ -507,13 +512,15 @@ async function handleCommand(evt: ParsedEvent): Promise<void> {
     }
 
     // (B1) Lead CTWA?
-    if (result.status === "created" && (result.ctwa_clid || "") !== "") {
+    if (settings.metaCapiEnabled && result.status === "created" && (result.ctwa_clid || "") !== "") {
       await sendMetaCapiEvent({ leadId: String(result.lead_id ?? ""), ctwaClid: result.ctwa_clid || "" });
     }
 
     // (B2) Lead Result
     const firstName = String(result.first_name ?? "").trim();
-    if (result.status === "created" && result.notify === true) {
+    if (!settings.customerNotifyEnabled) {
+      // admin turned off the customer-facing "expert assigned" messages
+    } else if (result.status === "created" && result.notify === true) {
       await sendWaText(evt.waTo, assignedMessage(firstName, result.agent_name ?? "", result.agent_phone ?? ""));
     } else if (result.status === "exists") {
       await sendWaText(evt.waTo, alreadyAssignedMessage(firstName, result.agent_name ?? "", result.agent_phone ?? ""));

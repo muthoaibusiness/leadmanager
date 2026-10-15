@@ -1,36 +1,13 @@
 import { useEffect, useState } from 'react';
 import Mi from '../Mi.jsx';
 import { useApp } from '../../context/AppContext.jsx';
-import { waLoadSettings, waSaveSettings, isChatAdmin } from '../../lib/wa.js';
+import { isChatAdmin } from '../../lib/wa.js';
 import { sbGet, sbUpsert, sbDelete } from '../../lib/supabase.js';
 
-// Where these come from: supabase/functions/{wa-send,wa-webhook,wa-bot-eyad,
-// wa-bot-dubai}, deployed straight into the CRM's own Supabase project — no
-// cross-project hop needed, the platform-injected SUPABASE_URL/SERVICE_ROLE_KEY
-// already point at this same project. Replaces n8n as the thing that holds the
-// Wasender token and talks to it (wa-send/wa-webhook), and as the two WhatsApp
-// bots (wa-bot-eyad/wa-bot-dubai, ported from "Wecon WA Bot"/"Wecon WA Bot
-// Dubai"). The two bots are independent Wasender webhook subscriptions of
-// their own — Wasender fans each delivery out to a bot function AND
-// wa-webhook in parallel, same as n8n's trigger fanned out to "Parse Event"
-// and "Forward to CRM Chat".
-// Derived from the same VITE_SUPABASE_URL every other client call uses —
-// a literal copy of that URL here trips Netlify's secrets scanner (it flags
-// any build output that echoes a configured env var's value verbatim).
-const FN_BASE = `${(import.meta.env.VITE_SUPABASE_URL || '').replace(/\/$/, '')}/functions/v1`;
-const EDGE_SEND_URL = `${FN_BASE}/wa-send`;
-const EDGE_WEBHOOK_URL = `${FN_BASE}/wa-webhook`;
-const EDGE_BOT_EYAD_URL = `${FN_BASE}/wa-bot-eyad`;
-const EDGE_BOT_DUBAI_URL = `${FN_BASE}/wa-bot-dubai`;
-
-const DEPLOY_COMMANDS = `cd c:\\Projects\\wepro
-npx supabase link --project-ref sbqmougcvnplgjgihpwe
-npx supabase functions deploy wa-send --no-verify-jwt
-npx supabase functions deploy wa-webhook --no-verify-jwt
-npx supabase functions deploy wa-bot-eyad --no-verify-jwt
-npx supabase functions deploy wa-bot-dubai --no-verify-jwt
-npx supabase secrets set META_CAPI_ACCESS_TOKEN=<the Meta CAPI token>
-npx supabase secrets set OPENROUTER_API_KEY=<the OpenRouter key>`;
+// Supabase Edge Functions (wa-send, wa-webhook, wa-bot-eyad, wa-bot-dubai)
+// hold the Wasender token, run the two bots, and answer customer questions
+// from the catalog below — this tab controls that behaviour, not their
+// deploy/webhook plumbing (see supabase/functions/ for that).
 
 // A small uppercase label above a section's title — the only decoration this
 // page uses instead of boxed info callouts, kept consistent everywhere.
@@ -43,97 +20,226 @@ function SectionHead({ icon, title, action }) {
   );
 }
 
-function CopyRow({ value, onCopy }) {
-  const [copied, setCopied] = useState(false);
-  const copy = async () => {
-    try { await navigator.clipboard.writeText(value); setCopied(true); setTimeout(() => setCopied(false), 1500); onCopy?.(); }
-    catch { /* clipboard not available — the field is still selectable */ }
-  };
-  return (
-    <div className="relay-copy-row">
-      <input className="finp" value={value} readOnly onFocus={e => e.target.select()} />
-      <button type="button" className="btn btn-g" onClick={copy}><Mi>{copied ? 'check' : 'content_copy'}</Mi>{copied ? 'Copied' : 'Copy'}</button>
-    </div>
-  );
-}
+// The checklist for one bot. Every switch is a column on that bot's
+// wa_bot_settings row (migration 0034); the Edge Functions read the row on every
+// message, so a change lands immediately. The note says what Off actually does.
+const BOTS = [
+  { bot: 'eyad', name: 'Eyad Bot', blurb: 'Wecon Properties WhatsApp number' },
+  { bot: 'dubai', name: 'Dubai Bot', blurb: 'Dubai WhatsApp number' },
+];
 
-// One row per deployed function: name, live/unknown status (checked lazily,
-// never assumed), its URL, copy. A function that exists answers (even a
-// 400/401 is a real response); one that was never deployed times out.
-function EndpointRow({ label, sub, url }) {
-  const [state, setState] = useState('unknown'); // unknown | checking | up | down
-  const check = async () => {
-    setState('checking');
-    try {
-      await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'ping' }) });
-      setState('up');
-    } catch {
-      setState('down');
-    }
-  };
-  const badge = { unknown: null, checking: '…', up: 'Live', down: 'Unreachable' }[state];
-  const tone = { unknown: 'off', checking: 'off', up: 'ok', down: 'warn' }[state];
+const CHECKLIST = {
+  eyad: [
+    ['welcome_enabled', 'Intro / greeting message', 'First-contact welcome is not sent.'],
+    ['faq_agent_enabled', 'AI reply (FAQ agent)', 'No automatic answers to customer questions.'],
+    ['ai_media_enabled', 'AI sends photo / floor plan / brochure', 'AI answers in text only.'],
+    ['auto_forward_enabled', 'Auto forward', 'Leads are never created automatically after the message count below.'],
+    ['manual_forward_enabled', 'Manual forward (/fdh /fctg /fcml /fdu)', 'Agent forward commands are ignored.'],
+    ['docs_command_enabled', 'Document sending (/send… commands)', 'Agent /send commands send nothing.'],
+    ['takeover_enabled', 'Takeover (/t)', 'The handover message is not sent.'],
+    ['notes_enabled', 'Notes (/n)', 'Agent notes are not saved to the lead.'],
+    ['customer_notify_enabled', 'Notify customer when an agent is assigned', 'The customer gets no message about their assigned agent.'],
+    ['meta_capi_enabled', 'Meta ads lead event (CAPI)', 'New ad leads are not reported to Meta.'],
+  ],
+  dubai: [
+    ['welcome_enabled', 'Intro / greeting message', 'First-contact welcome is not sent.'],
+    ['faq_agent_enabled', 'AI reply (FAQ agent)', 'No automatic answers to customer questions.'],
+    ['ai_media_enabled', 'AI sends photo / floor plan / brochure', 'AI answers in text only.'],
+    ['auto_forward_enabled', 'Auto forward (create a lead for every new contact)', 'Contacts are saved as pre-leads only, no lead is created.'],
+    ['manual_forward_enabled', 'Manual forward (/f… commands)', 'Agent forward commands are ignored.'],
+    ['docs_command_enabled', 'Document sending (drip)', 'The documents drip is not started.'],
+    ['takeover_enabled', 'Takeover (/t)', 'The handover message is not sent.'],
+    ['notes_enabled', 'Notes (/n)', 'Agent notes are not saved to the lead.'],
+    ['customer_notify_enabled', 'Notify customer when an agent is assigned', 'The customer gets no message about their assigned agent.'],
+    ['meta_capi_enabled', 'Meta ads lead event (CAPI)', 'New ad leads are not reported to Meta.'],
+  ],
+};
 
-  return (
-    <div className="relay-row">
-      <div className="ea-row" style={{ marginBottom: '8px' }}>
-        <div>
-          <div style={{ fontWeight: 600 }}>{label}</div>
-          {sub && <div className="ea-count" style={{ margin: 0 }}>{sub}</div>}
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          {badge && <span className={`cot-badge ${tone}`}>{badge}</span>}
-          <button type="button" className="btn btn-g" disabled={state === 'checking'} onClick={check}>
-            <Mi>network_check</Mi>Check
-          </button>
-        </div>
-      </div>
-      <CopyRow value={url} />
-    </div>
-  );
-}
+// What the bot sends when an agent gets assigned. Read-only here: the text lives
+// in each bot's Edge Function, so editing it means changing that function.
+const ASSIGN_TEMPLATES = {
+  eyad: [
+    ['New assignment', `প্রিয় {first name},
 
-// Plain on/off switch, backed directly by a wa_settings column. Each toggle
-// owns its own load/save — a slow save on one never blocks the other.
-function SettingToggle({ label, hint, column }) {
-  const [value, setValue] = useState(null); // null = still loading
-  const [saving, setSaving] = useState(false);
+আপনার জন্য একজন ডেডিকেটেড এক্সপার্ট নির্ধারণ করা হয়েছে।
+
+👨‍💼 {agent name}
+📞 {agent phone}
+
+তিনি শীঘ্রই আপনার সাথে যোগাযোগ করে সব কিছু বুঝিয়ে দেবেন।`],
+    ['Already assigned', `প্রিয় {first name},
+
+আপনি ইতিমধ্যে আমাদের একজন ডেডিকেটেড এক্সপার্টের সাথে যুক্ত আছেন।
+
+👨‍💼 {agent name}
+📞 {agent phone}
+
+তিনি আপনার সব প্রশ্নের উত্তর দিতে থাকবেন।`],
+  ],
+  dubai: [
+    ['New assignment', `Hello {first name},
+
+A dedicated sales consultant has been assigned to assist you.
+
+👨‍💼 {agent name}
+📞 {agent phone}
+
+He will contact you shortly and guide you through everything. 🤝
+
+If you need anything in the meantime, feel free to reach out. Thank you! 💙`],
+    ['Already assigned', `Hello {first name},
+
+Thanks for reaching out again!
+You’re already connected with one of our dedicated sales consultants.
+
+👨‍💼 {agent name}
+📞 {agent phone}
+
+He is handling your query and will continue assisting you with all the details.
+
+If you have any new questions or need further support, feel free to let us know anytime. Thank you!`],
+  ],
+};
+
+// Mirrors the column defaults in migration 0034 so the panel still renders
+// before the migration has been run.
+const BOT_DEFAULTS = {
+  welcome_enabled: true, welcome_message: '', faq_agent_enabled: true, ai_media_enabled: true,
+  auto_forward_enabled: false, auto_forward_after_messages: 3, manual_forward_enabled: true,
+  docs_command_enabled: true, takeover_enabled: true, notes_enabled: true,
+  customer_notify_enabled: true, meta_capi_enabled: true,
+};
+
+function BotPanel({ bot, name, blurb, showToast }) {
+  const [row, setRow] = useState(null); // null = still loading
+  const [busy, setBusy] = useState(null);
+  const [text, setText] = useState('');
+  const [n, setN] = useState(3);
+  const [dirty, setDirty] = useState({ text: false, n: false });
 
   useEffect(() => {
     let live = true;
-    sbGet(`wa_settings?id=eq.default&select=${column}`).then(rows => {
-      if (live) setValue(rows?.[0]?.[column] === true);
+    sbGet(`wa_bot_settings?bot=eq.${bot}&select=*`).then(rows => {
+      if (!live) return;
+      const r = { ...BOT_DEFAULTS, ...(bot === 'dubai' ? { auto_forward_enabled: true } : {}), ...(rows?.[0] || {}) };
+      setRow(r);
+      setText(r.welcome_message || '');
+      setN(r.auto_forward_after_messages ?? 3);
     });
     return () => { live = false; };
-  }, [column]);
+  }, [bot]);
 
-  const toggle = async () => {
-    const next = !value;
-    setValue(next); // optimistic — a bot reads this within ~0 extra latency of it landing
-    setSaving(true);
-    try {
-      const res = await sbUpsert('wa_settings', [{ id: 'default', [column]: next }]);
-      if (res?.ok === false && !res.skipped) setValue(!next); // revert on a real failure
-    } finally {
-      setSaving(false);
+  // One upsert per change; display_name rides along so the insert is valid
+  // even when this bot's row doesn't exist yet.
+  const save = async (patch) => {
+    const res = await sbUpsert('wa_bot_settings', [{ bot, display_name: name, ...patch }]);
+    if (res?.ok === false) {
+      showToast('Could not save. Run migration 0034 first.', 'err');
+      return false;
     }
+    return true;
   };
 
+  const toggle = async (col) => {
+    const next = !row[col];
+    setRow(r => ({ ...r, [col]: next })); // optimistic
+    setBusy(col);
+    if (!(await save({ [col]: next }))) setRow(r => ({ ...r, [col]: !next }));
+    setBusy(null);
+  };
+
+  const saveText = async () => {
+    setBusy('welcome_message');
+    if (await save({ welcome_message: text.trim() || null })) setDirty(d => ({ ...d, text: false }));
+    setBusy(null);
+  };
+
+  const saveN = async () => {
+    const value = Math.max(1, Number(n) || 3);
+    setN(value);
+    setBusy('auto_forward_after_messages');
+    if (await save({ auto_forward_after_messages: value })) setDirty(d => ({ ...d, n: false }));
+    setBusy(null);
+  };
+
+  const list = CHECKLIST[bot];
+  const onCount = row ? list.filter(([col]) => row[col]).length : 0;
+
   return (
-    <div className="ea-row relay-row">
-      <div>
-        <div style={{ fontWeight: 600 }}>{label}</div>
-        <div className="ea-count" style={{ margin: 0 }}>{hint}</div>
+    <div className="analytics-card" style={{ marginBottom: '18px' }}>
+      <div className="ea-row relay-row">
+        <div>
+          <div style={{ fontWeight: 700 }}>{name}</div>
+          <div className="ea-count" style={{ margin: 0 }}>{blurb}</div>
+        </div>
+        <span className="ea-count" style={{ margin: 0 }}>{row ? `${onCount} of ${list.length} on` : '…'}</span>
       </div>
-      <button
-        type="button"
-        className={`cot-badge ${value ? 'ok' : 'off'}`}
-        style={{ cursor: 'pointer', border: 'none', minWidth: '46px', flexShrink: 0 }}
-        disabled={value === null || saving}
-        onClick={toggle}
-      >
-        {value === null ? '…' : value ? 'On' : 'Off'}
-      </button>
+
+      {row && list.map(([col, label, note]) => (
+        <div key={col}>
+          <div className="ea-row relay-row">
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontWeight: 600 }}>{label}</div>
+              {!row[col] && <div className="ea-count" style={{ margin: 0 }}>Off: {note}</div>}
+            </div>
+            <button
+              type="button"
+              className={`cot-badge ${row[col] ? 'ok' : 'off'}`}
+              style={{ cursor: 'pointer', border: 'none', minWidth: '46px', flexShrink: 0 }}
+              disabled={busy === col}
+              onClick={() => toggle(col)}
+            >
+              {row[col] ? 'On' : 'Off'}
+            </button>
+          </div>
+
+          {col === 'customer_notify_enabled' && (
+            <details className="relay-row">
+              <summary className="ea-count" style={{ margin: 0, cursor: 'pointer' }}>View message templates</summary>
+              {ASSIGN_TEMPLATES[bot].map(([title, body]) => (
+                <div key={title} style={{ marginTop: '10px' }}>
+                  <div style={{ fontWeight: 600, fontSize: '12px' }}>{title}</div>
+                  <pre className="fi" style={{ whiteSpace: 'pre-wrap', margin: '4px 0 0', fontFamily: 'inherit' }}>{body}</pre>
+                </div>
+              ))}
+            </details>
+          )}
+
+          {col === 'welcome_enabled' && row.welcome_enabled && (
+            <div className="relay-row">
+              <div className="fg" style={{ margin: 0 }}>
+                <label>Greeting text — leave empty to use the default</label>
+                <textarea
+                  className="fi" rows={3} value={text}
+                  onChange={e => { setText(e.target.value); setDirty(d => ({ ...d, text: true })); }}
+                  placeholder={'Hi {name},\nThank you for your interest in Wecon Properties Limited.'}
+                />
+              </div>
+              <div className="ea-row" style={{ marginTop: '8px' }}>
+                <div className="ea-count" style={{ margin: 0 }}>Use <code>{'{name}'}</code> for the customer's name.</div>
+                <button type="button" className="btn btn-g" disabled={!dirty.text || busy === 'welcome_message'} onClick={saveText}>
+                  {busy === 'welcome_message' ? 'Saving…' : 'Save'}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {col === 'auto_forward_enabled' && bot === 'eyad' && row.auto_forward_enabled && (
+            <div className="ea-row relay-row">
+              <label style={{ margin: 0, fontWeight: 600 }}>Forward after this many messages</label>
+              <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                <input
+                  type="number" min={1} className="fi" style={{ width: '64px' }}
+                  value={n} onChange={e => { setN(e.target.value); setDirty(d => ({ ...d, n: true })); }}
+                />
+                <button type="button" className="btn btn-g" disabled={!dirty.n || busy === 'auto_forward_after_messages'} onClick={saveN}>
+                  {busy === 'auto_forward_after_messages' ? 'Saving…' : 'Save'}
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      ))}
     </div>
   );
 }
@@ -300,34 +406,11 @@ function ProjectsManager({ showToast }) {
 }
 
 export default function RelayView() {
-  const { user, waSettings, setWaSettings, showToast } = useApp();
-  const [switching, setSwitching] = useState(false);
-  const [showCmds, setShowCmds] = useState(false);
+  const { user, showToast } = useApp();
 
   if (!isChatAdmin(user)) {
     return <div className="ea-count" style={{ padding: 18 }}>Only Management can see the WhatsApp relay setup.</div>;
   }
-
-  const s = waSettings;
-  const onEdge = s?.relayUrl === EDGE_SEND_URL;
-
-  const switchToEdge = async () => {
-    setSwitching(true);
-    try {
-      const next = {
-        relayUrl: EDGE_SEND_URL, webhookUrl: EDGE_WEBHOOK_URL,
-        sessionName: s?.sessionName || '', enabled: s?.enabled !== false, allowedUserIds: s?.allowedUserIds || [],
-      };
-      const res = await waSaveSettings(next, user);
-      if (res && res.ok === false && !res.skipped) { showToast('Could not save — the database may still be unavailable.', 'err'); return; }
-      setWaSettings(await waLoadSettings());
-      showToast('Relay switched to the Edge Function. Paste the webhook URL into Wasender too.', 'ok');
-    } catch (e) {
-      showToast(e.message || 'Could not reach the database.', 'err');
-    } finally {
-      setSwitching(false);
-    }
-  };
 
   return (
     <div className="acc">
@@ -336,62 +419,13 @@ export default function RelayView() {
         questions from the catalog below. Deployed straight into this CRM's own Supabase project.
       </p>
 
-      <SectionHead icon="dns" title="Relay" />
-      <div className="analytics-card">
-        <div className="relay-row">
-          <div className="ea-row" style={{ marginBottom: '10px' }}>
-            <div style={{ fontWeight: 600 }}>Send relay</div>
-            <span className={`cot-badge ${onEdge ? 'ok' : 'off'}`}>{onEdge ? 'Edge Function' : (s?.relayUrl ? 'n8n / custom' : 'Not set')}</span>
-          </div>
-          <CopyRow value={EDGE_SEND_URL} />
-          {!onEdge && (
-            <button type="button" className="btn btn-p" style={{ marginTop: '10px' }} disabled={switching} onClick={switchToEdge}>
-              <Mi>swap_horiz</Mi>{switching ? 'Switching…' : 'Switch to this'}
-            </button>
-          )}
-        </div>
-        <div className="relay-row">
-          <div style={{ fontWeight: 600, marginBottom: '8px' }}>Inbound webhook — paste into Wasender</div>
-          <CopyRow value={EDGE_WEBHOOK_URL} />
-        </div>
-      </div>
-
-      <SectionHead icon="smart_toy" title="Bots" />
+      <SectionHead icon="tune" title="Bots" />
       <p className="ea-count" style={{ margin: '0 0 12px' }}>
-        Each is its own Wasender webhook subscription (paste its URL into the matching session) — welcome message,
-        /t /n /f* /send* commands, Meta CAPI, and the FAQ agent, independent of the inbound mirror above.
+        Each bot has its own checklist. Changes apply to the next message, no redeploy needed.
       </p>
-      <div className="analytics-card">
-        <EndpointRow label="Eyad" sub="paste into Wasender → Eyad session" url={EDGE_BOT_EYAD_URL} />
-        <EndpointRow label="Dubai" sub="paste into Wasender → Dubai session" url={EDGE_BOT_DUBAI_URL} />
-      </div>
-
-      <SectionHead icon="tune" title="Automation" />
-      <div className="analytics-card">
-        <SettingToggle
-          column="faq_agent_enabled"
-          label="FAQ / Knowledge agent"
-          hint="Answers customer questions from the catalog below, sends photos/floor plans/brochures on request."
-        />
-        <SettingToggle
-          column="auto_forward_enabled"
-          label="Auto-forward eligible leads (Eyad)"
-          hint="After 3+ messages with no region set and no takeover, run the forward command automatically."
-        />
-      </div>
+      {BOTS.map(b => <BotPanel key={b.bot} {...b} showToast={showToast} />)}
 
       <ProjectsManager showToast={showToast} />
-
-      <div style={{ marginTop: '28px' }}>
-        <button type="button" className="btn btn-g" onClick={() => setShowCmds(v => !v)}>
-          <Mi>terminal</Mi>{showCmds ? 'Hide deploy commands' : 'Show deploy commands'}
-        </button>
-        {showCmds && (
-          <pre style={{ background: 'var(--surf2)', border: '1px solid var(--bd)', borderRadius: 'var(--r-sm)', padding: '12px 14px', marginTop: '10px', fontSize: '12px', overflowX: 'auto', whiteSpace: 'pre' }}>
-            {DEPLOY_COMMANDS}
-          </pre>
-        )}
-      </div>
     </div>
   );
 }
