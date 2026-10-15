@@ -31,6 +31,7 @@ export {
   CATEGORIES, OTHERS, categoryOf, categoryValue,
   PAYMENT_LABEL, paymentStatus, staleLines,
   TEMPLATES, TEMPLATE_LIST, templateOf, templateForCategory, CURRENCIES, periodEnd, impressionsFor, adSetExtra, paginateDoc,
+  docDate, time12, newReferenceId, newTransactionId,
 } from '../../supabase/functions/_shared/finance-doc.js';
 
 // snake_case rows → camelCase, recursively. Map keys that are ids (figures) are
