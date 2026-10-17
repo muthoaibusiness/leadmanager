@@ -13,7 +13,7 @@ import { NAV_META } from '../lib/navMeta.js';
 const SECTIONS = [
   { label: null, keys: ['dashboard', 'companies', 'reports', 'agentperf', 'requests'] },
   { label: 'Sales Team', keys: ['leadsGroup', 'conversations', 'calendar', 'properties'] },
-  { label: 'Admin', keys: ['inventory', 'team', 'accounts', 'relay'] },
+  { label: 'Admin', keys: ['inventory', 'team', 'accounts', 'relay', 'aitrainer'] },
 ];
 
 // Collapsible groups. The header only opens/closes; each child is a page, and

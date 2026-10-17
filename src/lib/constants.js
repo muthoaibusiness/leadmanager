@@ -38,6 +38,7 @@ export const NAV_SCOPES = {
   // The old separate Users tab is merged into Accounts (one roster page).
   accounts: ['MANAGEMENT'],
   relay: ['MANAGEMENT'],
+  aitrainer: ['MANAGEMENT'],
   companies: ['MASTER'],   // master-admin company-wise overview
   profile: [...ALL_ROLES, 'MASTER'],
 };
@@ -87,11 +88,11 @@ export const isNiHandler = (user) => !!user && Array.isArray(user.allowedFeature
 // people created (without it, only their own) and add corrections to finance
 // history. Checked again server-side by the finance Edge Function, which reads
 // the same allowed_features column.
-export const FEATURE_KEYS = ['dashboard', 'leads', 'add_customer', 'conversations', 'calendar', 'meeting', 'pipeline', 'properties', 'reports', 'agentperf', 'requests', 'inventory', 'finance_approve', 'team', 'accounts', 'relay', 'self_forward'];
+export const FEATURE_KEYS = ['dashboard', 'leads', 'add_customer', 'conversations', 'calendar', 'meeting', 'pipeline', 'properties', 'reports', 'agentperf', 'requests', 'inventory', 'finance_approve', 'team', 'accounts', 'relay', 'aitrainer', 'self_forward'];
 export const FEATURE_LABELS = {
   dashboard: 'Home', leads: 'Leads', add_customer: 'Add Customer', conversations: 'Conversations', calendar: 'Calendar', meeting: 'Meeting', pipeline: 'Pipeline', properties: 'Projects',
   reports: 'Reports', agentperf: 'Performance', requests: 'Requests', inventory: 'Inventory', finance_approve: 'Manage all budgets', team: 'Team',
-  accounts: 'Users & Accounts', relay: 'WhatsApp Relay', self_forward: 'Self-forward leads',
+  accounts: 'Users & Accounts', relay: 'WhatsApp Relay', aitrainer: 'AI Trainer', self_forward: 'Self-forward leads',
 };
 // What a grant does when its label alone doesn't say it.
 export const FEATURE_HINTS = {

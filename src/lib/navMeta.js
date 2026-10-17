@@ -16,6 +16,7 @@ export const NAV_META = {
   team: { ico: 'groups', lbl: 'Team' },
   accounts: { ico: 'manage_accounts', lbl: 'Users' },
   relay: { ico: 'dns', lbl: 'WA Relay' },
+  aitrainer: { ico: 'smart_toy', lbl: 'AI Trainer' },
   companies: { ico: 'corporate_fare', lbl: 'Companies' },
   profile: { ico: 'account_circle', lbl: 'Profile' },
 };

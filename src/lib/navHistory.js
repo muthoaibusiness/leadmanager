@@ -20,6 +20,7 @@ export const VIEW_TITLES = {
   team: 'My Team',
   accounts: 'Users',
   relay: 'WhatsApp Relay',
+  aitrainer: 'AI Trainer',
   requests: 'Hold Requests',
   inventory: 'Inventory',
   profile: 'My Profile',
