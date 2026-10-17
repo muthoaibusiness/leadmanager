@@ -9,7 +9,7 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "test:commands": "node --test scripts/command-compat/routing.test.ts",
-    "test:trainer": "node --test supabase/functions/_shared/trainer-core.test.ts",
+    "test:trainer": "node --test supabase/functions/_shared/trainer-core.test.ts supabase/functions/_shared/trainer-handler.test.ts",
     "test:0037": "node scripts/test-0037.mjs"
   },
   "dependencies": {
