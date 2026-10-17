@@ -38,7 +38,7 @@
 
 import {
   CORS, json, SUPABASE_URL, SERVICE_KEY, WASENDER_BASE,
-  claimEvent, getCredentials, getActiveProjects, getRecentHistory, sendWaMessageMirrored,
+  claimEvent, getCredentials, getActiveProjects, getRecentHistory, sendWaMessageMirrored, getKnowledge, getCorrections,
   findLeadForNote, logNoteActivity, getBotSettings, fillWelcomeTemplate,
 } from "../_shared/wa.ts";
 import { askAgent, resolveMedia, fixGrammar } from "../_shared/ai.ts";
@@ -416,8 +416,10 @@ async function runFaqAgent(account: string, to: string, remote: string, text: st
   try {
     const convId = `${account}:${remote}`;
     const phone = to.replace(/@.*$/, "");
-    const [projects, history] = await Promise.all([getActiveProjects(), getRecentHistory(convId)]);
-    const result = await askAgent(history, text, projects, adProject);
+    const [projects, history, knowledge, corrections] = await Promise.all([
+      getActiveProjects(), getRecentHistory(convId), getKnowledge(), getCorrections(),
+    ]);
+    const result = await askAgent(history, text, projects, adProject, knowledge, corrections);
     if (result.reply) {
       await sendWaMessageMirrored(account, to, convId, phone, { type: "text", text: result.reply });
       // Wasender's account-protection rate limit is 1 message per 5s — a

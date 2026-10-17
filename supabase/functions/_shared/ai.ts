@@ -100,7 +100,26 @@ function projectsBlock(projects: ProjectRow[]): string {
     .join("\n");
 }
 
-const SYSTEM_PROMPT = (projects: ProjectRow[], adProject?: string) => `You are a WECON Properties WhatsApp assistant. You answer customer
+function knowledgeBlock(knowledge: { title: string; body: string }[]): string {
+  if (!knowledge.length) return "";
+  return `\nAdditional knowledge & rules (admin-managed — follow these exactly,
+they override any general instinct you'd otherwise have):
+${knowledge.map((k) => `- ${k.title}: ${k.body}`).join("\n")}\n`;
+}
+
+function correctionsBlock(corrections: { customer_message: string; corrected_reply: string }[]): string {
+  if (!corrections.length) return "";
+  return `\nPast mistakes an admin corrected — match this pattern whenever a
+similar question comes up again, instead of repeating the original mistake:
+${corrections.map((c) => `- Customer asked: "${c.customer_message}" → correct reply: "${c.corrected_reply}"`).join("\n")}\n`;
+}
+
+const SYSTEM_PROMPT = (
+  projects: ProjectRow[],
+  adProject: string | undefined,
+  knowledge: { title: string; body: string }[],
+  corrections: { customer_message: string; corrected_reply: string }[],
+) => `You are a WECON Properties WhatsApp assistant. You answer customer
 questions about WECON's own real-estate projects ONLY, using the catalog
 below — never invent a project, price, or fact that isn't in it.
 
@@ -123,50 +142,13 @@ Reply style (match the brand's existing WhatsApp templates):
   floor plan dao"), set "floor" to "all" — every image is sent. If they ask
   for "the floor plan" without naming one and without asking for all, ask
   briefly which floor they want instead of guessing (don't set "send" yet).
-- Land/plot ACQUISITION questions — the customer offering their OWN land or
-  plot to WECON (e.g. "are you taking plots at X", "amar jomi ache, nite
-  parben?"), not asking to buy a unit. This is a different business
-  function than project sales and isn't in the catalog at all — never
-  answer with project details. Give the Land Team's number, 01335142002,
-  say the Land Team will contact them, and ask them to send over the land
-  documents if they have them ready (adapt the wording to the customer's
-  language). Don't set "send".
-- Price / payment-plan / payment-system questions (price, cost, taka koto,
-  down payment, installment, EMI, booking money — any money/payment detail).
-  Never quote an exact number or a specific plan — only the one rough range
-  below is allowed, and only for a Jolshiri Abashon project (address
-  contains "Jolshiri"):
-  - FIRST price question in this conversation (check the history above —
-    no earlier reply here already covered price), for a Jolshiri project
-    (named or general, e.g. their ad project): give a one-time rough idea
-    AND the meeting offer together, along the lines of "Jolshiri te to onek
-    dhoroner project hoy, lake side hole ektu beshi price hoy. Jolshiri te
-    motamoti 3-4 crore er moddhe pricing thake. Apni chaile pricing niye
-    kotha bolte ami agent er sathe ekta meeting set kore dite pari." (adapt
-    to the customer's language/phrasing — keep "3-4 crore" as the figure,
-    don't invent a different range). If no specific project is already
-    pinned down, also set send to {"type":"map","project":"<their ad
-    project, or the one being discussed>"} so its location-map goes out
-    with it.
-  - Every price question AFTER the first one in this conversation, or any
-    price question for a non-Jolshiri project at any point: skip the
-    range (already given, or never applicable) — reply along the lines of
-    "Apni jodi price niye discuss korte chan tahole ami ekta meeting set
-    korte pari amader agent er sathe" (adapt to the customer's
-    language/phrasing). Don't just repeat the question or say someone will
-    "follow up" — offer the meeting directly.
-  - Any other catalog gap (availability, booking, etc.) — say briefly that
-    a sales consultant will follow up with those details.
-
-"Kon floor khali ache" / unit availability — not in the catalog. Treat it
-exactly like the price/payment case above: offer to set up a meeting with a
-sales agent (same scripted line), don't say you can't confirm it and stop.
-
+- For anything not covered by the catalog or the rules below, say briefly
+  that a sales consultant will follow up with those details — never guess.
+${knowledgeBlock(knowledge)}${correctionsBlock(corrections)}
 Never deflect with a bare refusal and stop there — things like "ami ekhane
 bolte parbo na", "seta ami confirm korte parbo na", "I can't tell you that
 here", "I can't discuss this": every one of those gaps always ends in one of
-the scripted replies above (Jolshiri location question, meeting offer, or
-sales consultant follow-up) — never a plain no with nothing after it.
+the scripted replies above — never a plain no with nothing after it.
 
 Respond with STRICT JSON only, no markdown fences, exactly this shape:
 {"reply": "<short text, or \\"\\" for no reply needed>", "send": null | {"type": "photo"|"floorplan"|"brochure"|"map", "project": "<exact project name from the catalog>", "floor": "<exact label from floor_plan_labels, only for type floorplan on a project that has labels>"}}`;
@@ -193,6 +175,8 @@ export async function askAgent(
   userText: string,
   projects: ProjectRow[],
   adProject?: string,
+  knowledge: { title: string; body: string }[] = [],
+  corrections: { customer_message: string; corrected_reply: string }[] = [],
 ): Promise<AgentReply> {
   const apiKey = Deno.env.get("OPENROUTER_API_KEY") ?? "";
   if (!apiKey) {
@@ -201,7 +185,7 @@ export async function askAgent(
   }
 
   const messages = [
-    { role: "system", content: SYSTEM_PROMPT(projects, adProject) },
+    { role: "system", content: SYSTEM_PROMPT(projects, adProject, knowledge, corrections) },
     ...history.map((h) => ({ role: h.role, content: h.text })),
     { role: "user", content: userText },
   ];

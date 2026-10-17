@@ -186,6 +186,9 @@ export async function sendWaMessageMirrored(
     media_url: msg.mediaUrl || "",
     media_name: msg.fileName || "",
     status: "SENT",
+    // Tags this row as FAQ-agent-authored (not a template send, not a human
+    // agent's own typed reply) so the Training UI can find and correct it.
+    sender_name: "AI Agent",
     wa_timestamp: now,
   }]);
   return true;
@@ -263,6 +266,22 @@ export function fillWelcomeTemplate(text: string, name: string): string {
 export async function getProjectBySendCode(code: string): Promise<{ name: string } | null> {
   const rows = await sbSelect(`wa_projects?send_code=eq.${encodeURIComponent(code)}&is_active=eq.true&select=name&limit=1`);
   return rows?.[0] ?? null;
+}
+
+// Admin-editable behavioral rules (WA Relay tab → Knowledge & Rules) —
+// replaces what used to be hardcoded in the system prompt (land-team
+// contact, price-range wording, etc.). Every active row is appended as-is.
+export async function getKnowledge(): Promise<{ title: string; body: string }[]> {
+  return sbSelect("wa_knowledge?is_active=eq.true&select=title,body&order=created_at.asc");
+}
+
+// Admin corrections of past AI replies (WA Relay tab → Training) — fed back
+// into the prompt as few-shot examples. Capped by the caller via `limit` so
+// the prompt doesn't grow unbounded as corrections pile up.
+export async function getCorrections(limit = 25): Promise<{ customer_message: string; corrected_reply: string }[]> {
+  return sbSelect(
+    `wa_message_corrections?is_active=eq.true&select=customer_message,corrected_reply&order=created_at.desc&limit=${limit}`,
+  );
 }
 
 // ── /n and /f* ... note commands ────────────────────────────────────────────
