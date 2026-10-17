@@ -89,7 +89,7 @@ export default function UserMenu() {
   return (
     <div className={`hd-um${open ? ' open' : ''}${impersonator ? ' imp' : ''}`} ref={ref} onKeyDown={onEsc}>
       {/* Until HeaderFace loads, the same markup AvatarGroup renders, minus the
-          lift and the tooltip. */}
+          tooltip. */}
       <Suspense fallback={(
         <div data-slot="avatar-group" className="ag">
           <div data-slot="avatar-container" className="ag-slot" style={{ zIndex: 0 }}><div>{face(null)}</div></div>

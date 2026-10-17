@@ -111,15 +111,18 @@ function StatementList({ api, user, onOpen, onOpenBudget }) {
             {customNames.map(n => <option key={n} value={n}>{n}</option>)}
           </select>
         )}
-        <div className="fin-chips" role="group" aria-label="Status">
-          {[['ALL', 'All'], ['DRAFT', 'Draft'], ['FINAL', 'Final']].map(([k, l]) => <button key={k} type="button" className={`fin-chip${status === k ? ' on' : ''}`} onClick={() => setStatus(k)}>{l}</button>)}
+        {/* Status, payment and New statement: one line on phones (finance.css). */}
+        <div className="fin-tools-row">
+          <div className="fin-chips" role="group" aria-label="Status">
+            {[['ALL', 'All'], ['DRAFT', 'Draft'], ['FINAL', 'Final']].map(([k, l]) => <button key={k} type="button" className={`fin-chip${status === k ? ' on' : ''}`} onClick={() => setStatus(k)}>{l}</button>)}
+          </div>
+          <select className="fsel fin-filter" value={pay} onChange={e => setPay(e.target.value)} aria-label="Payment">
+            <option value="ALL">Any payment</option>
+            {Object.entries(PAYMENT_LABEL).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+          </select>
+          <span className="sp" />
+          <button type="button" className="btn btn-p" onClick={() => setPicking(true)}><Mi>add</Mi>New statement</button>
         </div>
-        <select className="fsel fin-filter" value={pay} onChange={e => setPay(e.target.value)} aria-label="Payment">
-          <option value="ALL">Any payment</option>
-          {Object.entries(PAYMENT_LABEL).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
-        </select>
-        <span className="sp" />
-        <button type="button" className="btn btn-p" onClick={() => setPicking(true)}><Mi>add</Mi>New statement</button>
       </div>
       <BulkBar sel={sel} noun="statement" onAction={removeDrafts} busy={busy} actionLabel="Delete drafts" actionIcon="delete" />
       <div className="fin-card">

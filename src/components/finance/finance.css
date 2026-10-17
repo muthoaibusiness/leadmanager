@@ -60,6 +60,29 @@
 .fin-chips { display: flex; gap: 6px; flex-wrap: wrap; }
 .fin-chip { padding: 6px 11px; border: 1px solid var(--bd); border-radius: 999px; background: var(--surf); color: var(--t2); font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; }
 .fin-chip.on { border-color: var(--accent); color: var(--accent); }
+/* Statements: status chips, payment filter, New statement. Wide screens: plain
+   members of .fin-tools (the wrapper adds no box). Phones: one line, in that
+   order, compact and sized to the screen; it scrolls sideways only when even
+   that cannot fit (the narrowest phones). */
+.fin-tools-row { display: contents; }
+@media (max-width: 767px) {
+  .fin-tools-row {
+    --row-h: 36px;
+    --row-fs: clamp(10px, 2.7vw, 12px);
+    --row-px: clamp(6px, 1.85vw, 10px);
+    display: flex; align-items: center; gap: 4px; flex: 1 1 100%; min-width: 0;
+    flex-wrap: nowrap; overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: none;
+    padding: 2px; margin: -2px;   /* room for the focus ring inside the scroller */
+  }
+  .fin-tools-row::-webkit-scrollbar { display: none; }
+  .fin-tools-row > * { flex-shrink: 0; }
+  .fin-tools-row .sp { display: none; }   /* the button's auto margin does its job, without a second gap */
+  .fin-tools-row .fin-chips { flex-wrap: nowrap; gap: 3px; }
+  .fin-tools-row .fin-chip { height: var(--row-h); padding: 0 var(--row-px); font-size: var(--row-fs); white-space: nowrap; }
+  .fin-tools-row .fin-filter { min-width: 0; height: var(--row-h); min-height: var(--row-h); padding: 0 calc(var(--row-px) + 14px) 0 var(--row-px); background-position: right var(--row-px) center; font-size: var(--row-fs); }
+  .fin-tools-row .btn { margin-left: auto; min-height: var(--row-h); height: var(--row-h); padding: 0 var(--row-px); gap: 2px; font-size: var(--row-fs); letter-spacing: .02em; white-space: nowrap; }
+  .fin-tools-row .btn .mi { font-size: 14px; }
+}
 .fin-scroll { overflow-x: auto; }
 .fin-tbl { width: 100%; border-collapse: collapse; font-size: 13px; }
 .fin-tbl .fin-chk { width: 36px; padding-right: 0; }

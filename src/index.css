@@ -132,7 +132,10 @@
 }
 
 html {
-  font-size: 14px
+  font-size: 14px;
+  /* no iOS text inflation on rotation: sizes stay as set in every orientation */
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%
 }
 
 body {
@@ -1523,6 +1526,12 @@ a {
   position: relative
 }
 
+/* Pages scroll inside .pg-body, never the document. Without this, a pull past
+   either end of a list chains to the root, and iOS Safari's rubber band (or
+   Android's overscroll stretch) drags the whole shell, header and account face
+   with it. The scroller's own bounce is untouched. */
+html, body { overscroll-behavior: none }
+
 /* Desktop inset shell: the sidebar sits flush on the canvas (same surface, no
    divider) and the page is a rounded, bordered panel held --inset off the
    viewport's top, right and bottom edges. The ≤1023px drawer layout keeps
@@ -2166,7 +2175,8 @@ a {
   color: var(--t2);
   font: 600 12px/1 var(--font-display);
   user-select: none;
-  cursor: pointer
+  cursor: pointer;
+  flex-shrink: 0
 }
 .ag-av:focus-visible { outline: 2px solid var(--t1); outline-offset: 1px }
 .ag-img { display: block; width: 100%; height: 100%; object-fit: cover }
@@ -2613,7 +2623,16 @@ a {
   .pg-head .hd-um { order: -1 }
   .pg-head .thtog { display: none }
   .umenu-theme { display: flex }
+  /* No Back and no breadcrumb on phones: the page hero names the page. The
+     face's auto margin takes the trail's room, so the face stays at the left
+     edge and the controls at the right on every page. */
+  .pg-head .hd-back, .pg-head .hd-crumb { display: none }
+  .pg-head .hd-um { margin-right: auto }
 }
+
+/* The account face never gives up width to the trail, so it keeps its size
+   and place on every page and at every width. */
+.pg-head .hd-um { flex-shrink: 0 }
 
 /* Show-sidebar button, first in the header, with the hide button's glyph and
    look: always there for the ≤1023px drawer, on desktop only while the sidebar
