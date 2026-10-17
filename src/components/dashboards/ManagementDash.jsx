@@ -3,10 +3,11 @@ import { getDB, getBookings } from '../../lib/db.js';
 import DashGreeting from './DashGreeting.jsx';
 import CustomersTable from '../ui/customers-table.jsx';
 import Mi from '../Mi.jsx';
-import { fmtBDT, slabel, srclabel } from '../../lib/helpers.js';
+import { fmtBDT, slabel } from '../../lib/helpers.js';
 import { ROLES } from '../../lib/constants.js';
 import KpiRow from './KpiRow.jsx';
-import { Donut } from '../charts/Charts.jsx';
+import ContactTracker from './ContactTracker.jsx';
+import LeadSourcesCard from './LeadSourcesCard.jsx';
 import TrendChart from '../charts/TrendChart.jsx';
 import { CHART_COLORS } from '../charts/chartColors.js';
 import useActWindow from '../../hooks/useActWindow.js';
@@ -42,15 +43,7 @@ export default function ManagementDash() {
   const coLeadIds = new Set(coLeads.map(l => l.id));
   const coProps = (db.properties || []).filter(p => sameCo(p.companyId));
 
-  // 14-day new-lead trend
   const today0 = new Date(); today0.setHours(0, 0, 0, 0);
-  const trend = [];
-  for (let i = 13; i >= 0; i--) {
-    const d = new Date(today0); d.setDate(d.getDate() - i);
-    const nx = new Date(d); nx.setDate(nx.getDate() + 1);
-    const cnt = coLeads.filter(l => { const c = new Date(l.createdAt); return c >= d && c < nx; }).length;
-    trend.push({ label: String(d.getDate()), value: cnt });
-  }
   // Bookings & collections
   const allBookings = getBookings().filter(b => !cid || b.companyId === cid || coLeadIds.has(b.leadId));
   const bookings = allBookings.filter(b => !['EXPIRED', 'CANCELLED'].includes(b.status) && coProps.some(p => p.id === b.propertyId));
@@ -76,7 +69,6 @@ export default function ManagementDash() {
   // 14-day daily series for trend cards
   const days14 = Array.from({ length: 14 }, (_, i) => { const d = new Date(today0); d.setDate(d.getDate() - (13 - i)); const nx = new Date(d); nx.setDate(nx.getDate() + 1); return [d, nx]; });
   const revSeries = days14.map(([d, nx]) => coLeads.filter(l => l.status === 'DEAL_CLOSED_WON' && l.updatedAt && new Date(l.updatedAt) >= d && new Date(l.updatedAt) < nx).reduce((s, l) => s + (l.dealValue || 0), 0));
-  const leadSeries = trend.map(t => t.value);
   const allPays = bookings.flatMap(b => b.payments || []);
   const collSeries = days14.map(([d, nx]) => allPays.filter(p => new Date(p.date) >= d && new Date(p.date) < nx).reduce((s, p) => s + (p.amount || 0), 0));
 
@@ -87,18 +79,14 @@ export default function ManagementDash() {
   const salesByProject = Object.entries(byProj).map(([label, value], i) => ({ label, value, color: CHART_COLORS[i % CHART_COLORS.length] }))
     .sort((a, b) => b.value - a.value).slice(0, 6);
 
-  const bySrc = {};
-  coLeads.forEach(l => { const k = srclabel(l.source); bySrc[k] = (bySrc[k] || 0) + 1; });
-  const leadSources = Object.entries(bySrc).map(([label, value], i) => ({ label, value, color: CHART_COLORS[i % CHART_COLORS.length] }));
 
-  // Two trend charts, split by scale (money vs. count) rather than sharing one
-  // axis — a lead-count line would flatten to near-zero next to revenue figures.
-  const dayLabels = trend.map(t => t.label);
+  // Money gets its own chart; the prospect-contact count sits in ContactTracker,
+  // on its own scale — a count line would flatten to near-zero next to revenue.
+  const dayLabels = days14.map(([d]) => String(d.getDate()));
   const moneyTrend = [
     { key: 'rev', label: 'Revenue', color: CHART_COLORS[0], points: revSeries },
     { key: 'coll', label: 'Collected', color: CHART_COLORS[2], points: collSeries },
   ];
-  const leadTrend = [{ key: 'leads', label: 'New Leads', color: CHART_COLORS[1], points: leadSeries }];
 
   return (
     <>
@@ -108,22 +96,18 @@ export default function ManagementDash() {
       <KpiRow />
 
       <div className="sec-hd"><div className="sec-t"><Mi>bar_chart</Mi>Performance Reports</div></div>
+      {/* Two columns, row by row: contacts | sources, then sales | revenue.
+          Phones stack them in this same order. */}
       <div className="rep-grid" style={{ marginBottom: '20px' }}>
-        <div className="rep-card" style={{ '--rep-accent': CHART_COLORS[0] }}>
-          <div className="rep-hd"><Mi>trending_up</Mi>Revenue &amp; collections <span className="rep-hd-sub">14 days</span></div>
-          <div className="rep-body"><TrendChart series={moneyTrend} labels={dayLabels} labelEvery={2} /></div>
-        </div>
-        <div className="rep-card" style={{ '--rep-accent': CHART_COLORS[1] }}>
-          <div className="rep-hd"><Mi>person_add</Mi>New leads <span className="rep-hd-sub">14 days</span></div>
-          <div className="rep-body"><TrendChart series={leadTrend} labels={dayLabels} labelEvery={2} /></div>
-        </div>
+        <ContactTracker />
+        <LeadSourcesCard leads={coLeads} />
         <div className="rep-card" style={{ '--rep-accent': CHART_COLORS[2] }}>
           <div className="rep-hd"><Mi>apartment</Mi>Sales by project</div>
           <div className="rep-body"><MoneyBars data={salesByProject} /></div>
         </div>
-        <div className="rep-card" style={{ '--rep-accent': CHART_COLORS[4] }}>
-          <div className="rep-hd"><Mi>donut_small</Mi>Lead sources</div>
-          <div className="rep-body">{leadSources.length ? <Donut data={leadSources} centerVal={coLeads.length} centerSub="leads" /> : <div className="rep-empty">No leads yet.</div>}</div>
+        <div className="rep-card" style={{ '--rep-accent': CHART_COLORS[0] }}>
+          <div className="rep-hd"><Mi>trending_up</Mi>Revenue &amp; collections <span className="rep-hd-sub">14 days</span></div>
+          <div className="rep-body"><TrendChart series={moneyTrend} labels={dayLabels} labelEvery={2} /></div>
         </div>
       </div>
 
