@@ -121,3 +121,126 @@ export function itemApplies(item: { bots: Bot[]; project_ref: string | null }, b
   if (!item.bots.includes(bot)) return false;
   return item.project_ref === null || resolved.includes(item.project_ref);
 }
+
+// ── snapshot freeze ─────────────────────────────────────────────────────────
+export type ItemRow = {
+  id: string; kind: Kind; revision: number; status: "active" | "retired";
+  bots: Bot[]; project_ref: string | null; body: any;
+};
+export type SnapshotContent = {
+  schema: 1; projects: ItemRow[]; items: ItemRow[]; retrieval: { mode: "full" };
+  model_config: { reply_model: string; max_tokens: number }; prompt_version: string;
+  rubric: { key: string; version: number };
+};
+export const PROMPT_VERSION = "p1";
+
+const norm = (s: string) => s.normalize("NFC").replace(/[​-‍﻿]/g, "").toLowerCase().trim();
+
+function aliasesOf(p: ItemRow): string[] {
+  const a = p.body?.aliases || {};
+  return [p.body?.name, ...(a.bn || []), ...(a.banglish || []), ...(a.en || [])]
+    .filter((x) => typeof x === "string" && x.trim()).map(norm);
+}
+
+// Copies active rows by value, sorted by id, so the content (and its checksum)
+// depends only on what is active, not on load order.
+export function freezeContent(
+  rows: ItemRow[], cfg: { reply_model: string; max_tokens: number; rubric_version: number },
+): { content: SnapshotContent; errors: string[] } {
+  const active = rows.filter((r) => r.status === "active");
+  const byId = (a: ItemRow, b: ItemRow) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
+  const projects = active.filter((r) => r.kind === "project").sort(byId);
+  const items = active.filter((r) => r.kind !== "project").sort(byId);
+  const errors: string[] = [];
+  const pids = new Set(projects.map((p) => p.id));
+  for (const r of active) {
+    for (const e of validateItem(r.kind, r.body)) errors.push(`${r.kind} ${r.id}: ${e}`);
+    if (r.project_ref && !pids.has(r.project_ref)) errors.push(`${r.kind} ${r.id}: project ${r.project_ref} is not in the snapshot`);
+  }
+  const seen = new Map<string, string>();
+  for (const p of projects) for (const a of new Set(aliasesOf(p))) {
+    const other = seen.get(a);
+    if (other && other !== p.id) errors.push(`alias "${a}" is used by ${other} and ${p.id}`);
+    seen.set(a, p.id);
+  }
+  const strip = (r: ItemRow): ItemRow => ({
+    id: r.id, kind: r.kind, revision: r.revision, status: r.status, bots: [...r.bots].sort() as Bot[],
+    project_ref: r.project_ref, body: r.body,
+  });
+  return {
+    errors,
+    content: {
+      schema: 1, projects: projects.map(strip), items: items.map(strip), retrieval: { mode: "full" },
+      model_config: { reply_model: cfg.reply_model, max_tokens: cfg.max_tokens },
+      prompt_version: PROMPT_VERSION, rubric: { key: "sales-default", version: cfg.rubric_version },
+    },
+  };
+}
+
+// ── language ────────────────────────────────────────────────────────────────
+const BANGLISH = ["ami", "apni", "apnar", "koto", "dam", "taka", "ache", "achhe", "chai", "den", "dao", "kothay",
+  "jomi", "kemon", "er", "ki", "na", "hobe", "korte", "bolen", "dite", "pathan", "kobe", "kono", "shob", "sob"];
+
+export function detectLanguage(text: string): "bn" | "banglish" | "en" {
+  const t = norm(text);
+  const letters = [...t].filter((c) => /\p{L}/u.test(c));
+  if (!letters.length) return "en";
+  const bangla = letters.filter((c) => /[ঀ-৿]/.test(c)).length;
+  if (bangla / letters.length >= 0.3 || bangla >= 2) return "bn";
+  const words = t.split(/[^a-z]+/).filter(Boolean);
+  const hits = words.filter((w) => BANGLISH.includes(w)).length;
+  return hits >= 1 && hits / words.length >= 0.2 ? "banglish" : "en";
+}
+
+// ── conversation state and project resolution ───────────────────────────────
+export type Turn = { role: "customer" | "bot" | "agent"; text: string };
+export type ConvState = {
+  active_project: string | null; active_source: "explicit" | "ad" | "state" | null;
+  language: "bn" | "banglish" | "en" | null; first_price_at: Record<string, string>; asked: string[]; paused: boolean;
+};
+export const emptyState = (): ConvState => ({
+  active_project: null, active_source: null, language: null, first_price_at: {}, asked: [], paused: false,
+});
+
+// A word that is a common English word never resolves a project on its own;
+// it only counts as part of a longer alias such as "summer breeze".
+const GENERIC = new Set(["summer", "arcade", "heritage", "breeze", "wecon", "mall", "manor", "orchid", "dale"]);
+
+// \p{M} is kept: Bangla vowel signs and the hasanta are combining marks, and
+// dropping them would split a word like "ওসমান" in two.
+function mentioned(text: string, projects: ItemRow[]): string[] {
+  const t = ` ${norm(text).replace(/[^\p{L}\p{M}\p{N}]+/gu, " ")} `;
+  const hit = new Set<string>();
+  for (const p of projects) {
+    for (const a of aliasesOf(p)) {
+      const alias = a.replace(/[^\p{L}\p{M}\p{N}]+/gu, " ").trim();
+      if (!alias || GENERIC.has(alias)) continue;
+      if (t.includes(` ${alias} `) || (/[ঀ-৿]/.test(alias) && t.includes(alias))) { hit.add(p.id); break; }
+    }
+  }
+  return [...hit];
+}
+
+export function resolveProject(
+  text: string, state: ConvState, ad: { isAd: boolean; adText?: string }, projects: ItemRow[],
+): { projects: string[]; source: "explicit" | "state" | "ad" | null; ambiguous: boolean } {
+  const named = mentioned(text, projects);
+  if (named.length) return { projects: named, source: "explicit", ambiguous: false };
+  if (state.active_project && projects.some((p) => p.id === state.active_project)) {
+    return { projects: [state.active_project], source: "state", ambiguous: false };
+  }
+  if (ad.isAd && ad.adText) {
+    const fromAd = mentioned(ad.adText, projects);
+    if (fromAd.length === 1) return { projects: fromAd, source: "ad", ambiguous: false };
+    if (fromAd.length > 1) return { projects: [], source: null, ambiguous: true };
+  }
+  return { projects: [], source: null, ambiguous: false };
+}
+
+// ── history ────────────────────────────────────────────────────────────────
+// Agent commands (/f…, /n…, /t) and empty rows never reach the model; human
+// agent messages are labelled as the sales agent, not as the bot.
+export function buildHistory(rows: Turn[], limit = 20): Turn[] {
+  return rows.filter((r) => r.text && r.text.trim() && !(r.role === "agent" && r.text.trim().startsWith("/")))
+    .slice(-limit);
+}
