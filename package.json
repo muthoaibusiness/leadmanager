@@ -9,7 +9,8 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "test:commands": "node --test scripts/command-compat/routing.test.ts",
-    "test:trainer": "node --test supabase/functions/_shared/trainer-core.test.ts"
+    "test:trainer": "node --test supabase/functions/_shared/trainer-core.test.ts",
+    "test:0037": "node scripts/test-0037.mjs"
   },
   "dependencies": {
     "@ark-ui/react": "^5.37.2",
@@ -23,6 +24,7 @@
     "react-dom": "^19.2.5"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "^0.3.15",
     "@eslint/js": "^10.0.1",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
