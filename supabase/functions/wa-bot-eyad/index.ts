@@ -22,8 +22,9 @@
 
 import {
   CORS, json, SUPABASE_URL, SERVICE_KEY, WASENDER_BASE,
-  claimEvent, getCredentials, getActiveProjects, getRecentHistory, sendWaMessageMirrored,
-  findLeadForNote, logNoteActivity, getBotSettings, getProjectBySendCode, fillWelcomeTemplate,
+  claimEvent, getCredentials, getActiveProjects, getRecentHistory, sendWaMessageMirrored, getKnowledge, getCorrections,
+  findLeadForNote, logNoteActivity, getBotSettings, getProjectBySendCode, fillWelcomeTemplate, fixLeadPhoneFromNote, splitPhoneFromNote,
+  logConversationHistory,
 } from "../_shared/wa.ts";
 import type { BotSettings } from "../_shared/wa.ts";
 import { askAgent, resolveMedia, fixGrammar } from "../_shared/ai.ts";
@@ -204,17 +205,12 @@ function parseEvent(payload: any): ParsedEvent {
   ).trim();
   const mediaLabel = m.imageMessage ? "[image]" : m.audioMessage ? "[audio]" : m.videoMessage ? "[video]" : m.documentMessage ? "[document]" : "";
 
-  // NOTE (spec open question #1, ported literally): a customer message
-  // delivered under event === 'messages.upsert' is never classified as
-  // 'inbound' here, even though it has real content and !fromMe. That is
-  // exactly how the live n8n workflow behaves today; verify against real
-  // Wasender payloads before "fixing" this.
   let kind: ParsedEvent["kind"] = "ignore";
   if (!phone || remote.endsWith("@g.us")) {
     kind = "ignore";
   } else if (fromMe && text.startsWith("/")) {
     kind = "command";
-  } else if (!fromMe && event !== "messages.upsert") {
+  } else if (!fromMe) {
     kind = "inbound";
   }
 
@@ -243,8 +239,10 @@ function parseEvent(payload: any): ParsedEvent {
 async function runFaqAgent(account: string, phone: string, remote: string, text: string, adProject?: string, allowMedia = true): Promise<void> {
   try {
     const convId = `${account}:${remote}`;
-    const [projects, history] = await Promise.all([getActiveProjects(), getRecentHistory(convId)]);
-    const result = await askAgent(history, text, projects, adProject);
+    const [projects, history, knowledge, corrections] = await Promise.all([
+      getActiveProjects(), getRecentHistory(convId), getKnowledge(), getCorrections(),
+    ]);
+    const result = await askAgent(history, text, projects, adProject, knowledge, corrections);
     if (result.reply) {
       await sendWaMessageMirrored(account, phone, convId, phone, { type: "text", text: result.reply });
       // Wasender's account-protection rate limit is 1 message per 5s — a
@@ -308,6 +306,10 @@ async function handleInbound(p: ParsedEvent): Promise<void> {
   // Never runs once a human has taken over (/t), and only on real text (an
   // ad click with no message body, or a photo with no caption, has nothing
   // for the model to answer).
+  console.log("faq-agent gate", {
+    phone: p.phone, faqAgentEnabled: settings.faqAgentEnabled, hasText: !!p.text,
+    takeover: upsert.takeover, remote: p.remote,
+  });
   if (settings.faqAgentEnabled && p.text && upsert.takeover !== true && p.remote) {
     await runFaqAgent("eyad", p.phone, p.remote, p.text, upsert.property_interest || undefined, settings.aiMediaEnabled);
   }
@@ -417,11 +419,16 @@ async function handleCreateLead(p: ParsedEvent, settings: BotSettings): Promise<
   }
 
   // "/fdh note ..." — log the trailing note against whichever lead this
-  // command just touched, new or already existing.
+  // command just touched, new or already existing. A phone number mentioned
+  // in it moves to the lead's own phone field (if the WA one is a LID) and
+  // is stripped out of the note text — it has a home of its own now.
   const trailingNote = extractTrailingNote(p.text);
   if (trailingNote && lead.lead_id) {
-    await writeNoteForLead(String(lead.lead_id), trailingNote, `Eyad Bot (WhatsApp ${p.command})`);
+    const { phone: notedPhone, text: noteText } = splitPhoneFromNote(trailingNote);
+    await writeNoteForLead(String(lead.lead_id), noteText || trailingNote, `Eyad Bot (WhatsApp ${p.command})`);
+    await fixLeadPhoneFromNote(String(lead.lead_id), p.phone, notedPhone);
   }
+  if (lead.lead_id) await logConversationHistory(String(lead.lead_id), COMPANY_ID, p.phone, `Eyad Bot (WhatsApp ${p.command})`);
 
   // Branch 1 — Lead CTWA? → Send Meta CAPI Event → CAPI OK? → Mark CAPI Sent
   // Only a newly-created lead with a Meta click id goes to CAPI.

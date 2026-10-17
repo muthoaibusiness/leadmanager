@@ -7,7 +7,7 @@ import { ROLES, effectiveRole } from './constants.js';
 // reachable, any new lead is refused (upgrade popup) until the lock expires, then
 // the counter resets. Rolled out to the teams in LIMITED_TEAMS only (testing).
 // State is stored in Supabase (agent_lead_quota, migration 0019).
-export const LEAD_LIMIT = 3;
+export const LEAD_LIMIT = 10;
 export const LOCK_MS = 24 * 60 * 60 * 1000;
 // Matched by team name, or by id — the Eayd Islam test team has no row in `teams`, so its name can't be resolved.
 const LIMITED_TEAMS = ['eayd islam'];

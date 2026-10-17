@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import Mi from '../Mi.jsx';
 import { useApp } from '../../context/AppContext.jsx';
 import { isChatAdmin } from '../../lib/wa.js';
-import { sbGet, sbUpsert, sbDelete } from '../../lib/supabase.js';
+import { sbGet, sbUpsert, sbDelete, sbCount } from '../../lib/supabase.js';
 
 // Supabase Edge Functions (wa-send, wa-webhook, wa-bot-eyad, wa-bot-dubai)
 // hold the Wasender token, run the two bots, and answer customer questions
@@ -410,7 +410,7 @@ function ProjectsManager({ showToast }) {
   return (
     <div>
       <SectionHead
-        icon="apartment" title="Knowledge"
+        icon="apartment" title="Projects"
         action={(
           <button type="button" className="btn btn-p" onClick={() => setEditing(rowToForm(EMPTY_PROJECT))}>
             <Mi>add</Mi>Add Project
@@ -455,6 +455,273 @@ function ProjectsManager({ showToast }) {
   );
 }
 
+const EMPTY_KNOWLEDGE = { id: null, title: '', body: '', is_active: true };
+
+function KnowledgeModal({ initial, onClose, onSaved, showToast }) {
+  const [f, setF] = useState(initial);
+  const [saving, setSaving] = useState(false);
+
+  const save = async () => {
+    if (!f.title.trim() || !f.body.trim()) { showToast('Title and text are both required', 'err'); return; }
+    setSaving(true);
+    try {
+      const row = { title: f.title.trim(), body: f.body.trim(), is_active: !!f.is_active };
+      if (f.id != null) row.id = f.id;
+      const res = await sbUpsert('wa_knowledge', [row]);
+      if (res?.ok === false && !res.skipped) { showToast('Could not save — the database may be unavailable.', 'err'); return; }
+      showToast('Saved', 'ok');
+      onSaved();
+      onClose();
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="mov on" onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="modal" style={{ maxWidth: '560px' }}>
+        <div className="m-hd">
+          <div className="m-ttl">{f.id == null ? 'Add Rule' : 'Edit Rule'}</div>
+          <button className="m-x" onClick={onClose}><Mi>close</Mi></button>
+        </div>
+        <div className="m-body" style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+          <div className="fg"><label>Title</label><input className="fi" value={f.title} onChange={e => setF(v => ({ ...v, title: e.target.value }))} placeholder="e.g. Land acquisition inquiries" /></div>
+          <div className="fg">
+            <label>What the AI should do / know</label>
+            <textarea
+              className="fi" rows={6} value={f.body}
+              onChange={e => setF(v => ({ ...v, body: e.target.value }))}
+              placeholder="Write it the way you'd brief a new team member. Bangla or English, the AI reads both."
+            />
+          </div>
+          <div className="ea-row" style={{ margin: 0 }}>
+            <label style={{ margin: 0 }}>Active</label>
+            <input type="checkbox" checked={f.is_active} onChange={e => setF(v => ({ ...v, is_active: e.target.checked }))} />
+          </div>
+        </div>
+        <div className="m-ft">
+          <button className="btn btn-g" onClick={onClose}>Cancel</button>
+          <button className="btn btn-p" disabled={saving} onClick={save}>{saving ? 'Saving…' : 'Save'}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Free-text behavioural rules the FAQ agent follows — e.g. the Land Team's
+// number, the Jolshiri price-range script. Every active row is appended to
+// the system prompt (getKnowledge() in _shared/wa.ts) so these change
+// without touching code.
+function KnowledgeManager({ showToast }) {
+  const [rows, setRows] = useState(null); // null = loading
+  const [editing, setEditing] = useState(null);
+
+  const reload = () => {
+    sbGet('wa_knowledge?select=*&order=created_at.asc').then(setRows);
+  };
+  useEffect(reload, []);
+
+  const del = async (row) => {
+    if (!window.confirm(`Delete "${row.title}"?`)) return;
+    await sbDelete('wa_knowledge', [row.id]);
+    showToast('Deleted', 'ok');
+    reload();
+  };
+
+  return (
+    <div>
+      <SectionHead
+        icon="menu_book" title="Knowledge &amp; Rules"
+        action={(
+          <button type="button" className="btn btn-p" onClick={() => setEditing(EMPTY_KNOWLEDGE)}>
+            <Mi>add</Mi>Add Rule
+          </button>
+        )}
+      />
+      <p className="ea-count" style={{ margin: '0 0 12px' }}>
+        How the AI should handle a type of question — the Land Team's number, the price-range script, anything else
+        not covered by a project's own details.
+      </p>
+
+      {rows === null ? (
+        <div className="ea-count">Loading…</div>
+      ) : rows.length === 0 ? (
+        <div className="ea-count">No rules yet.</div>
+      ) : (
+        <div className="analytics-card">
+          {rows.map(r => (
+            <div key={r.id} className="relay-row">
+              <div className="ea-row" style={{ marginBottom: '4px' }}>
+                <div style={{ fontWeight: 600, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  {r.title}
+                  {!r.is_active && <span className="cot-badge off">inactive</span>}
+                </div>
+                <div style={{ display: 'flex', gap: '8px', flexShrink: 0 }}>
+                  <button type="button" className="btn btn-g" onClick={() => setEditing(r)}><Mi>edit</Mi></button>
+                  <button type="button" className="btn btn-g" onClick={() => del(r)}><Mi>delete</Mi></button>
+                </div>
+              </div>
+              <div className="ea-count" style={{ margin: 0, whiteSpace: 'pre-wrap' }}>{r.body}</div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {editing && (
+        <KnowledgeModal initial={editing} onClose={() => setEditing(null)} onSaved={reload} showToast={showToast} />
+      )}
+    </div>
+  );
+}
+
+// Headline numbers for the Training section — how much the AI is actually
+// carrying, and how often it needed a human correction.
+function TrainingStats() {
+  const [stats, setStats] = useState(null);
+
+  useEffect(() => {
+    let live = true;
+    (async () => {
+      const todayISO = new Date(new Date().toDateString()).toISOString();
+      const [total, today, eyad, dubai, corrections] = await Promise.all([
+        sbCount('wa_messages?sender_name=eq.AI Agent&direction=eq.OUT&type=eq.text'),
+        sbCount(`wa_messages?sender_name=eq.AI Agent&direction=eq.OUT&type=eq.text&wa_timestamp=gte.${encodeURIComponent(todayISO)}`),
+        sbCount('wa_messages?sender_name=eq.AI Agent&direction=eq.OUT&type=eq.text&conversation_id=like.eyad:*'),
+        sbCount('wa_messages?sender_name=eq.AI Agent&direction=eq.OUT&type=eq.text&conversation_id=like.dubai:*'),
+        sbCount('wa_message_corrections?is_active=eq.true'),
+      ]);
+      if (!live) return;
+      setStats({ total, today, eyad, dubai, corrections });
+    })();
+    return () => { live = false; };
+  }, []);
+
+  if (!stats) return null;
+  const items = [
+    { label: 'Replies today', value: stats.today },
+    { label: 'Replies total', value: stats.total },
+    { label: 'Eyad bot', value: stats.eyad },
+    { label: 'Dubai bot', value: stats.dubai },
+    { label: 'Corrections made', value: stats.corrections },
+  ];
+  return (
+    <div className="ea-row" style={{ gap: '12px', flexWrap: 'wrap', margin: '0 0 16px' }}>
+      {items.map(it => (
+        <div key={it.label} className="analytics-card" style={{ padding: '10px 16px', minWidth: '120px' }}>
+          <div style={{ fontSize: '22px', fontWeight: 700 }}>{it.value}</div>
+          <div className="ea-count">{it.label}</div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// One past AI reply, with an inline editor to mark it wrong and save the fix.
+function TrainingRow({ item, onCorrected, showToast }) {
+  const [editing, setEditing] = useState(false);
+  const [text, setText] = useState(item.aiReply);
+  const [saving, setSaving] = useState(false);
+
+  const save = async () => {
+    if (!text.trim()) return;
+    setSaving(true);
+    try {
+      const res = await sbUpsert('wa_message_corrections', [{
+        conversation_id: item.conversationId, phone: item.phone,
+        customer_message: item.customerMessage, original_reply: item.aiReply,
+        corrected_reply: text.trim(),
+      }]);
+      if (res?.ok === false && !res.skipped) { showToast('Could not save — the database may be unavailable.', 'err'); return; }
+      showToast('Correction saved — the AI will use it going forward', 'ok');
+      setEditing(false);
+      onCorrected();
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="relay-row">
+      <div className="ea-count" style={{ margin: '0 0 4px' }}>
+        {item.phone} · {new Date(item.wa_timestamp).toLocaleString()}
+      </div>
+      <div style={{ marginBottom: '6px' }}><span style={{ fontWeight: 600 }}>Customer: </span>{item.customerMessage || '—'}</div>
+      <div style={{ marginBottom: '8px' }}><span style={{ fontWeight: 600 }}>AI replied: </span>{item.aiReply}</div>
+      {item.hasCorrection && !editing && (
+        <div className="ea-count" style={{ margin: '0 0 8px', color: 'var(--green)' }}><Mi>check_circle</Mi> Already corrected</div>
+      )}
+      {editing ? (
+        <>
+          <textarea className="fi" rows={3} value={text} onChange={e => setText(e.target.value)} />
+          <div className="ea-row" style={{ marginTop: '8px' }}>
+            <button type="button" className="btn btn-g" onClick={() => setEditing(false)}>Cancel</button>
+            <button type="button" className="btn btn-p" disabled={saving} onClick={save}>{saving ? 'Saving…' : 'Save correction'}</button>
+          </div>
+        </>
+      ) : (
+        <button type="button" className="btn btn-g" onClick={() => setEditing(true)}>
+          <Mi>edit</Mi>{item.hasCorrection ? 'Edit correction' : 'This was wrong — fix it'}
+        </button>
+      )}
+    </div>
+  );
+}
+
+// Lets an admin review what the AI has been telling customers and, where it
+// got something wrong, write the correct reply — saved corrections are fed
+// back into the prompt (getCorrections() in _shared/wa.ts) as examples, so
+// the same mistake doesn't repeat.
+function TrainingManager({ showToast }) {
+  const [items, setItems] = useState(null); // null = loading
+  const [reloadKey, setReloadKey] = useState(0);
+
+  useEffect(() => {
+    let live = true;
+    (async () => {
+      const replies = await sbGet(
+        'wa_messages?sender_name=eq.AI Agent&direction=eq.OUT&type=eq.text&order=wa_timestamp.desc&limit=30&select=id,conversation_id,phone,body,wa_timestamp',
+      );
+      const [customerMsgs, corrections] = await Promise.all([
+        Promise.all(replies.map(r => sbGet(
+          `wa_messages?conversation_id=eq.${encodeURIComponent(r.conversation_id)}&direction=eq.IN&wa_timestamp=lt.${encodeURIComponent(r.wa_timestamp)}&order=wa_timestamp.desc&limit=1&select=body`,
+        ))),
+        sbGet(`wa_message_corrections?is_active=eq.true&select=conversation_id,original_reply`),
+      ]);
+      if (!live) return;
+      const correctedKeys = new Set(corrections.map(c => `${c.conversation_id}::${c.original_reply}`));
+      setItems(replies.map((r, i) => ({
+        id: r.id, conversationId: r.conversation_id, phone: r.phone, aiReply: r.body, wa_timestamp: r.wa_timestamp,
+        customerMessage: customerMsgs[i]?.[0]?.body || '',
+        hasCorrection: correctedKeys.has(`${r.conversation_id}::${r.body}`),
+      })));
+    })();
+    return () => { live = false; };
+  }, [reloadKey]);
+
+  return (
+    <div>
+      <SectionHead icon="school" title="Training" />
+      <p className="ea-count" style={{ margin: '0 0 12px' }}>
+        Recent AI replies to customers. Wrong one? Fix it here — the correction feeds back into future replies.
+      </p>
+
+      <TrainingStats />
+
+      {items === null ? (
+        <div className="ea-count">Loading…</div>
+      ) : items.length === 0 ? (
+        <div className="ea-count">No AI replies yet.</div>
+      ) : (
+        <div className="analytics-card">
+          {items.map(item => (
+            <TrainingRow key={item.id} item={item} showToast={showToast} onCorrected={() => setReloadKey(k => k + 1)} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function RelayView() {
   const { user, showToast } = useApp();
 
@@ -469,6 +736,8 @@ export default function RelayView() {
         questions from the catalog below. Deployed straight into this CRM's own Supabase project.
       </p>
 
+      <KnowledgeManager showToast={showToast} />
+
       <SectionHead icon="tune" title="Bots" />
       <p className="ea-count" style={{ margin: '0 0 12px' }}>
         Each bot has its own checklist. Changes apply to the next message, no redeploy needed.
@@ -476,6 +745,7 @@ export default function RelayView() {
       {BOTS.map(b => <BotPanel key={b.bot} {...b} showToast={showToast} />)}
 
       <ProjectsManager showToast={showToast} />
+      <TrainingManager showToast={showToast} />
     </div>
   );
 }

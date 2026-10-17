@@ -186,6 +186,9 @@ export async function sendWaMessageMirrored(
     media_url: msg.mediaUrl || "",
     media_name: msg.fileName || "",
     status: "SENT",
+    // Tags this row as FAQ-agent-authored (not a template send, not a human
+    // agent's own typed reply) so the Training UI can find and correct it.
+    sender_name: "AI Agent",
     wa_timestamp: now,
   }]);
   return true;
@@ -265,6 +268,22 @@ export async function getProjectBySendCode(code: string): Promise<{ name: string
   return rows?.[0] ?? null;
 }
 
+// Admin-editable behavioral rules (WA Relay tab → Knowledge & Rules) —
+// replaces what used to be hardcoded in the system prompt (land-team
+// contact, price-range wording, etc.). Every active row is appended as-is.
+export async function getKnowledge(): Promise<{ title: string; body: string }[]> {
+  return sbSelect("wa_knowledge?is_active=eq.true&select=title,body&order=created_at.asc");
+}
+
+// Admin corrections of past AI replies (WA Relay tab → Training) — fed back
+// into the prompt as few-shot examples. Capped by the caller via `limit` so
+// the prompt doesn't grow unbounded as corrections pile up.
+export async function getCorrections(limit = 25): Promise<{ customer_message: string; corrected_reply: string }[]> {
+  return sbSelect(
+    `wa_message_corrections?is_active=eq.true&select=customer_message,corrected_reply&order=created_at.desc&limit=${limit}`,
+  );
+}
+
 // ── /n and /f* ... note commands ────────────────────────────────────────────
 // Attach the thread to the most recently created lead with this number — the
 // same "last 9 digits" tolerance findLeadId uses (prefix/+880 differences).
@@ -276,6 +295,65 @@ export async function findLeadForNote(phone: string): Promise<{ id: string; comp
   );
   const row = rows?.[0];
   return row ? { id: row.id, companyId: row.company_id ?? null } : null;
+}
+
+// A WhatsApp contact sometimes only exposes a LID (linked/multi-device id),
+// not a real phone — the bot still has to pick *some* phone for the row, so
+// it ends up with a long non-standard digit string that can't actually be
+// dialed. Bangladeshi mobile numbers are 01[3-9]XXXXXXXX (11 digits) or
+// 880 + that (13 digits) — anything else is treated as "not a real number".
+const BD_MOBILE = /^(?:880)?1[3-9]\d{8}$/;
+export function looksLikeRealPhone(phone: string): boolean {
+  return BD_MOBILE.test(String(phone || "").replace(/\D/g, ""));
+}
+
+// Pulls the first Bangladeshi mobile number mentioned in free text — an
+// agent's "/f* note: ... his number is 01730078392" is the main source, for
+// a contact whose WhatsApp phone turned out to be a LID (see
+// looksLikeRealPhone above) — and returns the note with that mention
+// stripped out, so it isn't left sitting in the note once the number has
+// its own place (the lead's phone field).
+export function splitPhoneFromNote(text: string): { phone: string | null; text: string } {
+  const raw = String(text || "");
+  const m = raw.match(/(?:\+?880[\s-]?|0)1[3-9]\d(?:[\s-]?\d){7}/);
+  if (!m) return { phone: null, text: raw };
+  const digits = m[0].replace(/\D/g, "");
+  const norm = digits.startsWith("880") ? digits : "880" + digits.replace(/^0/, "");
+  if (!looksLikeRealPhone(norm)) return { phone: null, text: raw };
+  // Drop the number itself plus a short leading "his/her number is" /
+  // "number:" style lead-in right before it, if there is one — otherwise
+  // the note reads like a sentence missing its object ("his number is .").
+  const cleaned = raw
+    .replace(new RegExp(`(?:\\b(?:his|her|my|the|contact|phone|number)\\b[^.]{0,20})?${m[0].replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`, "i"), "")
+    .replace(/\s{2,}/g, " ")
+    .replace(/\s+([.,!?])/g, "$1")
+    .replace(/^[\s.,-]+|[\s.,-]+$/g, "")
+    .trim();
+  return { phone: norm, text: cleaned };
+}
+
+// If the WA-sourced phone on a lead isn't a real, dialable number (a LID)
+// but the agent's forward note mentions one, that's a better phone for the
+// CRM than the LID — swap it in. Preleads keep the WA-identity phone as-is
+// (that's still the right key for matching future messages from this
+// contact); only the CRM-facing leads row gets the dialable number.
+export async function fixLeadPhoneFromNote(leadId: string, waPhone: string, phone: string | null): Promise<void> {
+  if (looksLikeRealPhone(waPhone) || !phone) return;
+  await sbPatch("leads", `id=eq.${encodeURIComponent(leadId)}`, { phone });
+}
+
+// The pre-forward WhatsApp conversation (preleads.message_logs) gets logged
+// onto the lead as one activity when it's forwarded, so whoever receives it
+// can see what the customer already said without needing chat access — the
+// CRM activity timeline, unlike Conversations, is open to every role.
+export async function logConversationHistory(leadId: string, companyId: string | null, phone: string, source: string): Promise<void> {
+  const tail = phone.replace(/\D/g, "").slice(-9);
+  if (tail.length < 8) return;
+  const rows = await sbSelect(`preleads?phone=like.*${encodeURIComponent(tail)}&select=message_logs&order=updated_at.desc&limit=1`);
+  const logs = rows?.[0]?.message_logs;
+  if (!Array.isArray(logs) || !logs.length) return;
+  const transcript = logs.map((m, i) => `${i + 1}. ${m}`).join("\n");
+  await logNoteActivity(leadId, companyId, `WhatsApp conversation before forward:\n${transcript}`, source);
 }
 
 // Writes the same shape the app's own NoteModal writes (aToR in src/lib/supabase.js)

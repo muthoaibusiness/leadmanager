@@ -1,4 +1,4 @@
-import { ROLES, normRole, isNiHandler, STATUS_LABELS, SRC_LABELS, PAST_CONTACT, OFFER_MAX } from './constants.js';
+import { ROLES, normRole, isNiHandler, canSelfForward, STATUS_LABELS, SRC_LABELS, PAST_CONTACT, OFFER_MAX } from './constants.js';
 import { setOfferResolver } from './offerRegistry.js';
 import { uid, now_, fmtBDT, fmtDT, curMonth, startOfMonth, rlabel } from './helpers.js';
 import { leadFilterParam, ORDER } from './leadQuery.js';
@@ -1681,6 +1681,29 @@ export function bulkTransferLeads(leadIds, target, user) {
     });
   });
   return leadIds.length;
+}
+
+// Self-forward: while nurturing a lead, claim it for yourself instead of
+// waiting on a Management transfer. Meeting Agents always have this; anyone
+// else needs the 'self_forward' feature grant (see canSelfForward() /
+// FEATURE_KEYS in constants.js). Permission lives here (not just the button
+// that calls it) since bulkTransferLeads above trusts its caller completely.
+export function claimLeadForSelf(leadId, user) {
+  if (!leadId || !canSelfForward(user)) return false;
+  updLead(leadId, {
+    teamId: user.teamId,
+    assignedTo: user.id,
+    assignedToName: user.name,
+    assignedRole: user.role,
+  });
+  addAct(leadId, {
+    type: 'NOTE',
+    description: `Lead forwarded to self by ${user.name} (${rlabel(user.role)})`,
+    userId: user.id,
+    userName: user.name,
+    durationSeconds: 0,
+  });
+  return true;
 }
 
 // Remove duplicate leads from the DB (keep newest per phone / name+email). Used

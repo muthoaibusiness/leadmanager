@@ -21,6 +21,7 @@ import { eq } from '../../lib/leadQuery.js';
 
 const ROLE_OPTS = [
   { v: ROLES.AGENT, l: 'Agent' },
+  { v: ROLES.MA, l: 'Meeting Agent' },
   { v: ROLES.TL, l: 'Team Lead' },
   { v: ROLES.MGMT, l: 'Management' },
 ];
@@ -28,7 +29,7 @@ const ROLE_FILTER_OPTS = [...ROLE_OPTS, { v: ROLES.EXEC, l: 'Executive' }];
 const PAGE = 10;
 const blankRow = () => ({ name: '', email: '', phone: '', role: ROLES.AGENT, password: '', teamId: '' });
 // Role pill, one colour per role; Management carries the bolt.
-const ROLE_TONE = { MANAGEMENT: 'mgmt', TEAM_LEAD: 'tl', AGENT: 'agent', EXECUTIVE: 'exec' };
+const ROLE_TONE = { MANAGEMENT: 'mgmt', TEAM_LEAD: 'tl', AGENT: 'agent', MEETING_AGENT: 'agent', EXECUTIVE: 'exec' };
 const RoleBadge = ({ role }) => (
   <span className={`uct-role t-${ROLE_TONE[role] || 'agent'}`}>
     {role === ROLES.MGMT ? <Mi aria-hidden="true">bolt</Mi> : <i aria-hidden="true" />}
@@ -40,7 +41,7 @@ const nAccounts = (n) => `${n} account${n === 1 ? '' : 's'}`;
 const nRows = (n) => `${n} row${n === 1 ? '' : 's'}`;
 // Team Lead first, then Agent, Executive, Management, so a team
 // reads top-down when the table is sorted by team.
-const ROLE_ORDER = { TEAM_LEAD: 0, AGENT: 1, EXECUTIVE: 2, MANAGEMENT: 3 };
+const ROLE_ORDER = { TEAM_LEAD: 0, AGENT: 1, MEETING_AGENT: 1, EXECUTIVE: 2, MANAGEMENT: 3 };
 const toggleIn = (set, id) => { const n = new Set(set); if (n.has(id)) n.delete(id); else n.add(id); return n; };
 
 // Roster orders. 'team' is the default: teams A–Z, each read top-down by
@@ -51,7 +52,7 @@ const SORT_OPTS = [
   { v: 'name-desc', l: 'Name (Z–A)' },
   { v: 'role', l: 'Role' },
 ];
-const SENIORITY = { MANAGEMENT: 0, TEAM_LEAD: 1, AGENT: 2, EXECUTIVE: 3 };
+const SENIORITY = { MANAGEMENT: 0, TEAM_LEAD: 1, AGENT: 2, MEETING_AGENT: 2, EXECUTIVE: 3 };
 const byName = (a, b) => (a.name || '').localeCompare(b.name || '');
 
 // Export: the filtered roster, every page. Passwords are never exported.

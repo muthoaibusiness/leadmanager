@@ -45,7 +45,7 @@ function FollowUpCell({ leadId, fromServer, pending }) {
 //                      and produce a wrong page, so both are skipped and the
 //                      pager reports up to the caller.
 export default function LeadTable({ leads, total = null, page: pageProp, onPage, loading = false, lastFu = {}, fuPending = false }) {
-  const { setPanLead, setChatTarget, user, refreshDB, showToast, sortBy } = useApp();
+  const { setPanLead, setChatTarget, chatOk, user, refreshDB, showToast, sortBy } = useApp();
   const server = total != null;
   const [ownPage, setOwnPage] = useState(0);
   const page = server ? (pageProp || 0) : ownPage;
@@ -177,7 +177,7 @@ export default function LeadTable({ leads, total = null, page: pageProp, onPage,
                 <div className="lt-n">{l.name}</div>
                 <div className="lt-sub">{l.phone}</div>
               </div>
-              {l.phone && (
+              {l.phone && chatOk && (
                 <button
                   type="button"
                   className="lt-wa-btn"

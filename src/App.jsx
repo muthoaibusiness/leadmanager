@@ -296,7 +296,7 @@ function PageHero() {
   // Executives are created by a Team Lead, alongside Agents, so they land
   // in that Team Lead's team (createUserFn stamps the creator's teamId). Management only
   // creates Team Leads, each of which starts a team of its own.
-  if (view === 'team' && user.role === ROLES.TL) actions.push(<button key="add-agent" className="btn btn-p" onClick={() => { setCreateUserRoles([ROLES.AGENT, ROLES.EXEC]); openModal('create-user'); }}><Mi>person_add</Mi>Add Agent</button>);
+  if (view === 'team' && user.role === ROLES.TL) actions.push(<button key="add-agent" className="btn btn-p" onClick={() => { setCreateUserRoles([ROLES.AGENT, ROLES.MA, ROLES.EXEC]); openModal('create-user'); }}><Mi>person_add</Mi>Add Agent</button>);
   // Projects: two tabs, the list and Available Units. Management's actions sit
   // in one Manage menu: here on the list; on Available Units in its toolbar,
   // where the project and floor in view are known (AvailableUnitsView).
