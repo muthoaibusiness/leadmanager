@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import Mi from '../Mi.jsx';
 import { useApp } from '../../context/AppContext.jsx';
 import { isChatAdmin } from '../../lib/wa.js';
-import { sbGet, sbUpsert, sbDelete } from '../../lib/supabase.js';
+import { sbGet, sbUpsert, sbDelete, sbCount } from '../../lib/supabase.js';
 
 // Supabase Edge Functions (wa-send, wa-webhook, wa-bot-eyad, wa-bot-dubai)
 // hold the Wasender token, run the two bots, and answer customer questions
@@ -574,6 +574,48 @@ function KnowledgeManager({ showToast }) {
   );
 }
 
+// Headline numbers for the Training section — how much the AI is actually
+// carrying, and how often it needed a human correction.
+function TrainingStats() {
+  const [stats, setStats] = useState(null);
+
+  useEffect(() => {
+    let live = true;
+    (async () => {
+      const todayISO = new Date(new Date().toDateString()).toISOString();
+      const [total, today, eyad, dubai, corrections] = await Promise.all([
+        sbCount('wa_messages?sender_name=eq.AI Agent&direction=eq.OUT&type=eq.text'),
+        sbCount(`wa_messages?sender_name=eq.AI Agent&direction=eq.OUT&type=eq.text&wa_timestamp=gte.${encodeURIComponent(todayISO)}`),
+        sbCount('wa_messages?sender_name=eq.AI Agent&direction=eq.OUT&type=eq.text&conversation_id=like.eyad:*'),
+        sbCount('wa_messages?sender_name=eq.AI Agent&direction=eq.OUT&type=eq.text&conversation_id=like.dubai:*'),
+        sbCount('wa_message_corrections?is_active=eq.true'),
+      ]);
+      if (!live) return;
+      setStats({ total, today, eyad, dubai, corrections });
+    })();
+    return () => { live = false; };
+  }, []);
+
+  if (!stats) return null;
+  const items = [
+    { label: 'Replies today', value: stats.today },
+    { label: 'Replies total', value: stats.total },
+    { label: 'Eyad bot', value: stats.eyad },
+    { label: 'Dubai bot', value: stats.dubai },
+    { label: 'Corrections made', value: stats.corrections },
+  ];
+  return (
+    <div className="ea-row" style={{ gap: '12px', flexWrap: 'wrap', margin: '0 0 16px' }}>
+      {items.map(it => (
+        <div key={it.label} className="analytics-card" style={{ padding: '10px 16px', minWidth: '120px' }}>
+          <div style={{ fontSize: '22px', fontWeight: 700 }}>{it.value}</div>
+          <div className="ea-count">{it.label}</div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 // One past AI reply, with an inline editor to mark it wrong and save the fix.
 function TrainingRow({ item, onCorrected, showToast }) {
   const [editing, setEditing] = useState(false);
@@ -662,6 +704,8 @@ function TrainingManager({ showToast }) {
       <p className="ea-count" style={{ margin: '0 0 12px' }}>
         Recent AI replies to customers. Wrong one? Fix it here — the correction feeds back into future replies.
       </p>
+
+      <TrainingStats />
 
       {items === null ? (
         <div className="ea-count">Loading…</div>

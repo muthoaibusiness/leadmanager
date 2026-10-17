@@ -46,7 +46,7 @@ export default function BottomNav({ inert }) {
   const actions = [
     canSee(user, 'add_customer') && { key: 'add-lead', ico: 'person_add', lbl: 'Add Customer', run: () => openModal('add-lead') },
     canSee(user, 'add_customer') && { key: 'import', ico: 'upload', lbl: 'Import', run: () => openModal('import') },
-    user.role === ROLES.TL && { key: 'add-agent', ico: 'group_add', lbl: 'Add Agent', run: () => { setCreateUserRoles([ROLES.AGENT, ROLES.EXEC]); openModal('create-user'); } },
+    user.role === ROLES.TL && { key: 'add-agent', ico: 'group_add', lbl: 'Add Agent', run: () => { setCreateUserRoles([ROLES.AGENT, ROLES.MA, ROLES.EXEC]); openModal('create-user'); } },
     chatOk && { key: 'chat', ico: 'forum', lbl: 'New Chat', run: () => nav('conversations') },
     canSee(user, 'profile') && { key: 'profile', ico: 'settings', lbl: 'Settings', run: () => nav('profile') },
   ].filter(Boolean);

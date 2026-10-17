@@ -39,7 +39,8 @@
 import {
   CORS, json, SUPABASE_URL, SERVICE_KEY, WASENDER_BASE,
   claimEvent, getCredentials, getActiveProjects, getRecentHistory, sendWaMessageMirrored, getKnowledge, getCorrections,
-  findLeadForNote, logNoteActivity, getBotSettings, fillWelcomeTemplate,
+  findLeadForNote, logNoteActivity, getBotSettings, fillWelcomeTemplate, fixLeadPhoneFromNote, splitPhoneFromNote,
+  logConversationHistory,
 } from "../_shared/wa.ts";
 import { askAgent, resolveMedia, fixGrammar } from "../_shared/ai.ts";
 
@@ -238,8 +239,8 @@ function parseWasenderEvent(payload: any): ParsedEvent {
     kind = "ignore"; // no sender / group chat
   } else if (fromMe && text.startsWith("/")) {
     kind = "command"; // agent typed a bot command
-  } else if (!fromMe && event !== "messages.upsert") {
-    kind = "inbound"; // genuine customer message, not an upsert echo
+  } else if (!fromMe) {
+    kind = "inbound"; // genuine customer message
   }
 
   return {
@@ -507,11 +508,16 @@ async function handleCommand(evt: ParsedEvent): Promise<void> {
     }
 
     // "/fdh note ..." — log the trailing note against whichever lead this
-    // command just touched, new or already existing.
+    // command just touched, new or already existing. A phone number mentioned
+    // in it moves to the lead's own phone field (if the WA one is a LID) and
+    // is stripped out of the note text — it has a home of its own now.
     const trailingNote = extractTrailingNote(evt.text);
     if (trailingNote && result.lead_id) {
-      await writeNoteForLead(String(result.lead_id), trailingNote, `Dubai Bot (WhatsApp ${evt.command})`);
+      const { phone: notedPhone, text: noteText } = splitPhoneFromNote(trailingNote);
+      await writeNoteForLead(String(result.lead_id), noteText || trailingNote, `Dubai Bot (WhatsApp ${evt.command})`);
+      await fixLeadPhoneFromNote(String(result.lead_id), evt.phone, notedPhone);
     }
+    if (result.lead_id) await logConversationHistory(String(result.lead_id), "c1", evt.phone, `Dubai Bot (WhatsApp ${evt.command})`);
 
     // (B1) Lead CTWA?
     if (settings.metaCapiEnabled && result.status === "created" && (result.ctwa_clid || "") !== "") {

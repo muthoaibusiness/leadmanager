@@ -1,28 +1,31 @@
 export const ROLES = {
   AGENT: 'AGENT',          // front-line agent — owns a lead from New to Site Visit Done
+  MA: 'MEETING_AGENT',     // nurtures a lead toward a meeting; may self-forward a lead to itself
   TL: 'TEAM_LEAD',
   MGMT: 'MANAGEMENT',
   MASTER: 'MASTER',        // super-admin above Management — oversees all companies
   EXEC: 'EXECUTIVE',       // blank-canvas role — zero default access, admin grants features
 };
 
-// Initial Agent and Meeting Agent were merged into the single AGENT role
-// (migration 0020). Rows written before it still carry the old values, so
-// every loader passes roles through normRole() to read them as AGENT.
-export const LEGACY_AGENT_ROLES = ['INITIAL_AGENT', 'MEETING_AGENT'];
+// Initial Agent was merged into the single AGENT role (migration 0020).
+// Meeting Agent was reintroduced as its own role — rows already carrying
+// that value now read back as MEETING_AGENT again, not AGENT. Rows written
+// before migration 0020 still carry INITIAL_AGENT, so that one stays
+// normalized.
+export const LEGACY_AGENT_ROLES = ['INITIAL_AGENT'];
 export const normRole = (r) => (LEGACY_AGENT_ROLES.includes(r) ? ROLES.AGENT : r);
 
 // Role-scoped navigation (mirrors Muthoclo admin can(role, scope)).
-const ALL_ROLES = ['AGENT', 'TEAM_LEAD', 'MANAGEMENT'];
+const ALL_ROLES = ['AGENT', 'MEETING_AGENT', 'TEAM_LEAD', 'MANAGEMENT'];
 export const NAV_SCOPES = {
   dashboard: ALL_ROLES,
   leads: ALL_ROLES,
-  add_customer: ['AGENT', 'TEAM_LEAD'],
+  add_customer: ['AGENT', 'MEETING_AGENT', 'TEAM_LEAD'],
   // WhatsApp chat is never granted by role — access comes from the allow-list in
   // wa_settings (or an explicit allowedFeatures grant). See waCanChat() in wa.js.
   conversations: [],
-  calendar: ['AGENT', 'TEAM_LEAD', 'MANAGEMENT'],
-  meeting: ['AGENT', 'TEAM_LEAD'],
+  calendar: ['AGENT', 'MEETING_AGENT', 'TEAM_LEAD', 'MANAGEMENT'],
+  meeting: ['AGENT', 'MEETING_AGENT', 'TEAM_LEAD'],
   pipeline: ALL_ROLES,
   properties: ALL_ROLES,
   // Management's Reports charts now live on their Home dashboard — the
@@ -58,13 +61,16 @@ export const DRAWER_MQ = '(max-width: 1023px)';
 
 // Behavioural role — decides which dashboard and which lead-action set a user
 // gets. EXECUTIVE is a blank-canvas role with no dashboard/actions of its own, so
-// it operates as a front-line Agent. It never resolves to a supervisory role, so
-// an Executive can't gain TL/MGMT-only powers (deal-closing, transfer, delete)
-// by accident. Every other role is itself.
+// it operates as a front-line Agent. MEETING_AGENT works the same lead-action
+// set and dashboard as AGENT too — it stays a distinct literal role (see ROLES,
+// and the self-forward check in db.js) only for the one thing that needs to
+// tell it apart: forwarding a lead to itself while nurturing it. Neither ever
+// resolves to a supervisory role, so niether can gain TL/MGMT-only powers
+// (deal-closing, transfer, delete) by accident. Every other role is itself.
 export const effectiveRole = (user) => {
   if (!user) return null;
-  if (user.role !== ROLES.EXEC) return normRole(user.role);
-  return ROLES.AGENT;
+  if (user.role === ROLES.EXEC || user.role === ROLES.MA) return ROLES.AGENT;
+  return normRole(user.role);
 };
 
 // Marker kept in allowedFeatures (not a nav feature): the account is the
@@ -81,18 +87,26 @@ export const isNiHandler = (user) => !!user && Array.isArray(user.allowedFeature
 // people created (without it, only their own) and add corrections to finance
 // history. Checked again server-side by the finance Edge Function, which reads
 // the same allowed_features column.
-export const FEATURE_KEYS = ['dashboard', 'leads', 'add_customer', 'conversations', 'calendar', 'meeting', 'pipeline', 'properties', 'reports', 'agentperf', 'requests', 'inventory', 'finance_approve', 'team', 'accounts', 'relay'];
+export const FEATURE_KEYS = ['dashboard', 'leads', 'add_customer', 'conversations', 'calendar', 'meeting', 'pipeline', 'properties', 'reports', 'agentperf', 'requests', 'inventory', 'finance_approve', 'team', 'accounts', 'relay', 'self_forward'];
 export const FEATURE_LABELS = {
   dashboard: 'Home', leads: 'Leads', add_customer: 'Add Customer', conversations: 'Conversations', calendar: 'Calendar', meeting: 'Meeting', pipeline: 'Pipeline', properties: 'Projects',
   reports: 'Reports', agentperf: 'Performance', requests: 'Requests', inventory: 'Inventory', finance_approve: 'Manage all budgets', team: 'Team',
-  accounts: 'Users & Accounts', relay: 'WhatsApp Relay',
+  accounts: 'Users & Accounts', relay: 'WhatsApp Relay', self_forward: 'Self-forward leads',
 };
 // What a grant does when its label alone doesn't say it.
 export const FEATURE_HINTS = {
   finance_approve: 'Manage all budgets: can edit, archive and restore budgets other people created, and add corrections to finance history. Without it, Inventory users change only their own budgets.',
+  self_forward: 'Can forward a lead to themselves from the lead panel, without going through a Team Lead or Management. Meeting Agents always have this; grant it to anyone else who should too.',
 };
 // Default features for a standard role (from NAV_SCOPES). Executive resolves to none.
 export const defaultFeatures = (role) => FEATURE_KEYS.filter(k => (NAV_SCOPES[k] || []).includes(role));
+
+// Meeting Agent always has this, role-wise — same reasoning as effectiveRole()
+// folding it back to AGENT everywhere else. 'self_forward' in FEATURE_KEYS is
+// the grant path for anyone else who should have it too, same as any other
+// admin-toggled feature.
+export const canSelfForward = (user) =>
+  !!user && (user.role === ROLES.MA || (Array.isArray(user.allowedFeatures) && user.allowedFeatures.includes('self_forward')));
 
 // Properties catalog
 export const PROPERTY_TYPES = ['Apartment', 'Duplex', 'Penthouse', 'Plot', 'Commercial', 'Villa'];

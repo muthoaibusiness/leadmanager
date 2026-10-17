@@ -173,9 +173,15 @@ export function isChatAdmin(user) {
   return !!user && (user.role === 'MANAGEMENT' || user.role === 'MASTER');
 }
 
-// Requirement 1: every agent can send messages in whatsapp
+// Front-line agents are off by default — turned back on by flipping this one
+// line (or re-adding 'AGENT'/'EXECUTIVE' here) when the team is ready for
+// them to read/write WhatsApp chat themselves. Team Lead/Management/Master
+// keep access to monitor and reply.
+const CHAT_DENIED_ROLES = ['AGENT', 'EXECUTIVE'];
+
 export function waCanChat(user, settings) {
   if (!user) return false;
+  if (CHAT_DENIED_ROLES.includes(user.role)) return false;
   if (settings && settings.enabled === false) return false;
   return true;
 }

@@ -4,14 +4,18 @@
 // ask the bot to follow up with a photo, floor plan, or brochure.
 //
 // Deploy: npx supabase secrets set OPENROUTER_API_KEY=...
+// Optional: npx supabase secrets set OPENROUTER_MODEL=anthropic/claude-sonnet-5.5
+//   (switches the model without a redeploy; unset = Haiku default below)
 //
 // Kept deliberately separate from wa.ts: this file is "what the model says",
 // wa.ts is "how a message physically gets delivered and mirrored".
 
 const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
-// Cheap, fast, good at following a strict-JSON instruction. Swap here if a
-// different quality/cost balance is wanted — nothing else needs to change.
-const MODEL = "anthropic/claude-haiku-5.5";
+// Cheap, fast, good at following a strict-JSON instruction. Override with the
+// OPENROUTER_MODEL secret for a different quality/cost balance — read per
+// request, so a secret change takes effect without redeploying.
+const DEFAULT_MODEL = "anthropic/claude-haiku-5.5";
+const model = () => Deno.env.get("OPENROUTER_MODEL")?.trim() || DEFAULT_MODEL;
 
 // Cleans up an agent's /n note or a /f* forward note before it lands in the
 // CRM activity log — grammar/spelling only, never a rewrite. Falls back to
@@ -32,7 +36,7 @@ export async function fixGrammar(text: string): Promise<string> {
         "X-Title": "WEPRO WhatsApp Agent",
       },
       body: JSON.stringify({
-        model: MODEL,
+        model: model(),
         temperature: 0,
         messages: [
           {
@@ -199,7 +203,7 @@ export async function askAgent(
         "HTTP-Referer": "https://wepro.app",
         "X-Title": "WEPRO WhatsApp Agent",
       },
-      body: JSON.stringify({ model: MODEL, messages, temperature: 0.4 }),
+      body: JSON.stringify({ model: model(), messages, temperature: 0.4 }),
     });
     if (!res.ok) {
       console.error("askAgent: OpenRouter error", res.status, await res.text());

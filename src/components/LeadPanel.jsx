@@ -3,18 +3,18 @@ import Mi from './Mi.jsx';
 import { LoadingBlock } from './Spinner.jsx';
 import { useApp } from '../context/AppContext.jsx';
 import LogCall from './LogCall.jsx';
-import { getLead, getActs, ensureLead, ensureLeadActs, hasFullActs, changeStatus, doneVisit, deleteLead, logNoAnswer, noAnswerLock, attendMeeting, userNameById } from '../lib/db.js';
+import { getLead, getActs, ensureLead, ensureLeadActs, hasFullActs, changeStatus, doneVisit, deleteLead, logNoAnswer, noAnswerLock, attendMeeting, userNameById, claimLeadForSelf } from '../lib/db.js';
 import { fmtD, fmtDT, fmtBDT, rlabel, scoreLead, scoreLabel, leadDisplayStatus, fmtDateTimeAP } from '../lib/helpers.js';
 import ActivityTimeline from './ActivityTimeline.jsx';
-import { ROLES, SRC_LABELS, effectiveRole, isNiHandler, DRAWER_MQ, canSee } from '../lib/constants.js';
+import { ROLES, SRC_LABELS, effectiveRole, isNiHandler, canSelfForward, DRAWER_MQ, canSee } from '../lib/constants.js';
 import useMediaQuery from '../hooks/useMediaQuery.js';
 import useChanged from '../hooks/useChanged.js';
 
 const leadCode = (l) => l.externalId || ('#' + String(l.id || '').slice(-6).toUpperCase());
-const SHARED_LABEL = { price: 'Price idea', brochure: 'Brochure', video: 'Video', image: 'Image' };
+const SHARED_LABEL = { price: 'Price idea', brochure: 'Brochure', floor_plan: 'Floor Plan', video: 'Video', image: 'Image' };
 
 function LeadInfo({ l }) {
-  const { user, setChatTarget } = useApp();
+  const { user, setChatTarget, chatOk } = useApp();
   const phones = (l.phones?.length ? l.phones : [l.phone]).filter(Boolean);
   const emails = (l.emails?.length ? l.emails : l.email ? [l.email] : []).filter(Boolean);
 
@@ -78,17 +78,19 @@ function LeadInfo({ l }) {
             <div key={'p' + i} className="ld-crow">
               <Mi>call</Mi>
               <a href={`tel:${p}`}>{p}{i === 0 && phones.length > 1 ? ' · primary' : ''}</a>
-              <button
-                type="button"
-                className="ld-wa"
-                title="Chat on WhatsApp"
-                onClick={(e) => {
-                  e.preventDefault();
-                  setChatTarget({ ...l, phone: p });
-                }}
-              >
-                <Mi>chat</Mi>
-              </button>
+              {chatOk && (
+                <button
+                  type="button"
+                  className="ld-wa"
+                  title="Chat on WhatsApp"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    setChatTarget({ ...l, phone: p });
+                  }}
+                >
+                  <Mi>chat</Mi>
+                </button>
+              )}
             </div>
           ))}
           {emails.map((e, i) => (
@@ -283,7 +285,9 @@ function Actions({ l }) {
     );
     // Hand the lead to another agent on the team, at any open stage up to the
     // Team Lead hand-off. Status is kept; the new agent picks up where it is.
-    if (l.assignedTo === user.id && !['NEGOTIATING', 'DEAL_CLOSED_WON', 'DEAL_CLOSED_LOST', 'NOT_INTERESTED'].includes(l.status)) btns.push(
+    // Raw role, not `r`: a Meeting Agent gets its own one-click "Forward to
+    // Myself" below instead of this teammate picker.
+    if (user.role !== ROLES.MA && l.assignedTo === user.id && !['NEGOTIATING', 'DEAL_CLOSED_WON', 'DEAL_CLOSED_LOST', 'NOT_INTERESTED'].includes(l.status)) btns.push(
       <button key="fwd-agent" className="btn btn-g btn-full" onClick={() => openModal('forward-agent')}>
         <Mi>swap_horiz</Mi>Forward to Agent
       </button>
@@ -344,6 +348,22 @@ function Actions({ l }) {
     btns.push(
       <button key="transfer" className="btn btn-purple btn-full" onClick={() => openModal('transfer-lead')}>
         <Mi>swap_horiz</Mi>Transfer Lead
+      </button>
+    );
+  }
+
+  // canSelfForward, not `r` — effectiveRole() folds Meeting Agent back to
+  // Agent for every other action above; self-forward (role, or the
+  // 'self_forward' feature grant) is the one thing that has to tell apart
+  // who may claim a lead for themselves outside the usual Management transfer.
+  if (canSelfForward(user) && l.assignedTo !== user.id) {
+    btns.push(
+      <button key="self-forward" className="btn btn-purple btn-full" onClick={() => {
+        claimLeadForSelf(l.id, user);
+        refreshDB();
+        showToast('Lead forwarded to you', 'ok');
+      }}>
+        <Mi>swap_horiz</Mi>Forward to Myself
       </button>
     );
   }

@@ -12,6 +12,7 @@ import useLeadBook from '../../hooks/useLeadBook.js';
 const SHARED_OPTS = [
   { key: 'price', label: 'Price idea', icon: 'sell' },
   { key: 'brochure', label: 'Brochure', icon: 'description' },
+  { key: 'floor_plan', label: 'Floor Plan', icon: 'architecture' },
   { key: 'video', label: 'Video', icon: 'videocam' },
   { key: 'image', label: 'Image', icon: 'image' },
 ];
@@ -94,18 +95,26 @@ export default function ForwardModal() {
   // than the submit, so the number on screen is the number that gets sent.
   const onRate = (set) => (e) => { const v = e.target.value; if (v === '' || (/^\d{1,5}(\.\d*)?$/.test(v) && parseFloat(v) <= OFFER_MAX)) set(v); };
 
+  // Shared by Set Meeting and Forward to Agent (which books the meeting
+  // before the hand-off) — validates the working-hour window and, for an
+  // online meeting, that a join link was given.
+  const buildMeetingData = () => {
+    if (!meetingAt) { showToast('Pick a meeting date & time', 'err'); return null; }
+    const d = new Date(meetingAt);
+    const h = d.getHours() + d.getMinutes() / 60;
+    const w = HOURS[meetingType];
+    if (h < w.min || h > w.max) { showToast(`${meetingType === 'ONLINE' ? 'Online' : 'Offline'} meetings must be within ${w.label}`, 'err'); return null; }
+    if (meetingType === 'ONLINE' && !meetingLink.trim()) { showToast('Add the online meeting link', 'err'); return null; }
+    return { meetingType, meetingAt: d.toISOString(), meetingLink: meetingType === 'ONLINE' ? meetingLink.trim() : '', meetingShared: shared };
+  };
+
   const submit = () => {
     if (!panLead) return;
 
-    // Set Meeting: require a meeting time inside the working-hour window for the type.
     if (isMA) {
-      if (!meetingAt) { showToast('Pick a meeting date & time', 'err'); return; }
-      const d = new Date(meetingAt);
-      const h = d.getHours() + d.getMinutes() / 60;
-      const w = HOURS[meetingType];
-      if (h < w.min || h > w.max) { showToast(`${meetingType === 'ONLINE' ? 'Online' : 'Offline'} meetings must be within ${w.label}`, 'err'); return; }
-      if (meetingType === 'ONLINE' && !meetingLink.trim()) { showToast('Add the online meeting link', 'err'); return; }
-      setMeeting(panLead, { meetingType, meetingAt: d.toISOString(), meetingLink: meetingType === 'ONLINE' ? meetingLink.trim() : '', meetingShared: shared }, user);
+      const meetingData = buildMeetingData();
+      if (!meetingData) return;
+      setMeeting(panLead, meetingData, user);
       closeModal();
       refreshDB();
       showToast('Meeting set', 'ok');
@@ -114,6 +123,14 @@ export default function ForwardModal() {
 
     const toUser = selected ? targets.find(u => u.id === selected) : null;
     if (!toUser) return;
+
+    // Forward to Agent also books the meeting first, same as Set Meeting —
+    // the lead moves to Meeting Set, then hands off.
+    if (isAG) {
+      const meetingData = buildMeetingData();
+      if (!meetingData) return;
+      setMeeting(panLead, meetingData, user);
+    }
 
     const offerData = isTL ? {
       ourOffer: parseFloat(ourOffer) || 0,
@@ -186,9 +203,7 @@ export default function ForwardModal() {
             </div>
             <div className="m-ft">
               <button className="btn btn-g" onClick={closeModal}>Cancel</button>
-              {isAG
-                ? <button className="btn btn-p" disabled={!selected} onClick={submit}><Mi>swap_horiz</Mi>Forward</button>
-                : <button className="btn btn-p" disabled={!selected} onClick={() => setStep(2)}>Next</button>}
+              <button className="btn btn-p" disabled={!selected} onClick={() => setStep(2)}>Next</button>
             </div>
           </>
         )}
@@ -252,12 +267,15 @@ export default function ForwardModal() {
           </>
         )}
 
-        {/* Step 2 — meeting details (MA only) */}
-        {step === 2 && isMA && (
+        {/* Step 2 — meeting + already-shared details (Set Meeting, and Forward to Agent before the hand-off) */}
+        {step === 2 && (isMA || isAG) && (
           <>
             <div className="m-body">
               <div className="m-hint" style={{ marginBottom: '14px' }}>
-                <Mi>event</Mi>Book the client meeting. The lead stays with you and moves to Meeting Set.
+                <Mi>event</Mi>
+                {isMA
+                  ? 'Book the client meeting. The lead stays with you and moves to Meeting Set.'
+                  : `Book the client meeting before handing off — it moves to Meeting Set, then over to ${selectedUser?.name}.`}
               </div>
 
               {/* Meeting type */}
@@ -303,8 +321,12 @@ export default function ForwardModal() {
               </div>
             </div>
             <div className="m-ft">
-              <button className="btn btn-g" onClick={closeModal}>Cancel</button>
-              <button className="btn btn-p" onClick={submit}><Mi>event_available</Mi>Set Meeting</button>
+              {isAG
+                ? <button className="btn btn-g" onClick={() => setStep(1)}>Back</button>
+                : <button className="btn btn-g" onClick={closeModal}>Cancel</button>}
+              <button className="btn btn-p" onClick={submit}>
+                <Mi>{isAG ? 'swap_horiz' : 'event_available'}</Mi>{isAG ? 'Set Meeting & Forward' : 'Set Meeting'}
+              </button>
             </div>
           </>
         )}

@@ -38,7 +38,7 @@ function queueReason(lead, touched, todayStart, todayEnd) {
 // Agent and Meeting Agent dashboards).
 export default function AgentDash() {
   useActWindow(); // pull the recent-activity window; activities are not in the boot load
-  const { user, dbVersion, setPanLead, setChatTarget, nav, refreshDB, showToast, dateRange } = useApp();
+  const { user, dbVersion, setPanLead, setChatTarget, chatOk, nav, refreshDB, showToast, dateRange } = useApp();
   const [detail, setDetail] = useState(null);
   void dbVersion; // re-render when DB changes
   const db = getDB();
@@ -313,7 +313,7 @@ export default function AgentDash() {
                       <span className={`iad-rs ${r.cls}`}>{r.label}</span>
                       <span className="iad-q-score" style={{ color: sl.color }}>{sl.label}</span>
                       <a className="iad-q-call" href={`tel:${l.phone}`} title="Call" onClick={e => e.stopPropagation()}><Mi>call</Mi></a>
-                      {l.phone && (
+                      {l.phone && chatOk && (
                         <button className="iad-q-wa" title="WhatsApp Chat" onClick={e => { e.stopPropagation(); setChatTarget(l); }}><Mi>chat</Mi></button>
                       )}
                     </div>
