@@ -244,3 +244,206 @@ export function buildHistory(rows: Turn[], limit = 20): Turn[] {
   return rows.filter((r) => r.text && r.text.trim() && !(r.role === "agent" && r.text.trim().startsWith("/")))
     .slice(-limit);
 }
+
+// ── prompt ──────────────────────────────────────────────────────────────────
+export type ModelOut = {
+  intent: string; project_ref: string | null; language: "bn" | "banglish" | "en"; reply: string;
+  media: { type: "photo" | "floorplan" | "brochure" | "map"; project_ref: string; floor?: string }[];
+  handoff: boolean; asked: string[]; used_item_ids: string[]; clarify: boolean;
+};
+
+const LANG_NAME = { bn: "Bangla in Bangla script", banglish: "Banglish (Bengali written in Latin letters)", en: "English" };
+
+function projectLine(p: ItemRow): string {
+  const b = p.body;
+  const m = b.media || {};
+  const floors = (m.floor_plans || []).map((f: any) => f.label || "unlabelled");
+  const bits = [b.region && `region: ${b.region}`, b.type && `type: ${b.type}`, b.size_text && `size: ${b.size_text}`,
+    b.address && `address: ${b.address}`, b.tags?.length && `tags: ${b.tags.join(", ")}`].filter(Boolean);
+  const media = [m.photos?.length && "photos", floors.length && `floor plans: ${floors.join(", ")}`, m.brochure && "brochure",
+    m.map_image && "map"].filter(Boolean);
+  return `- [${p.id}] ${b.name} (${bits.join(" · ")})${media.length ? ` media: ${media.join(", ")}` : " media: none"}`;
+}
+
+export function buildPrompt(
+  c: SnapshotContent, bot: Bot, history: Turn[], text: string, state: ConvState, resolved: string[], lang: string,
+): { system: string; messages: { role: "user" | "assistant"; content: string }[] } {
+  const scoped = c.items.filter((i) => itemApplies(i, bot, resolved));
+  const of = (k: Kind) => scoped.filter((i) => i.kind === k);
+  const resolvedProjects = c.projects.filter((p) => resolved.includes(p.id));
+  const examples = of("example").slice(0, 6);
+  const system = [
+    "You are WECON Properties' WhatsApp sales consultant. Use ONLY the facts below. Never invent a project, price, size, availability or action.",
+    "",
+    "Catalog (names and regions):",
+    ...c.projects.map((p) => `- [${p.id}] ${p.body.name}${p.body.region ? ` (${p.body.region})` : ""}`),
+    "",
+    resolvedProjects.length ? "Projects in this conversation:\n" + resolvedProjects.map(projectLine).join("\n") : "No project is resolved yet. If the customer's question needs one, ask which project or area they mean.",
+    "",
+    "Business rules (always follow):",
+    ...of("rule").map((r) => `- [${r.id}] ${r.body.name}: when ${r.body.when}; must ${r.body.must}${r.body.must_not ? `; must not ${r.body.must_not}` : ""}${r.body.parameters ? `; parameters ${JSON.stringify(r.body.parameters)}` : ""}`),
+    "",
+    "Behaviour:",
+    ...of("behaviour").map((b) => `- [${b.id}] ${b.body.aspect}: ${b.body.instruction}`),
+    "",
+    "Facts:",
+    ...of("fact").map((f) => `- [${f.id}] ${f.body.topic}: ${f.body.text}`),
+    "",
+    examples.length ? "Examples of good replies:\n" + examples.map((e) => `- [${e.id}] customer: "${e.body.conversation.at(-1)?.text ?? ""}" -> ideal: "${e.body.ideal_reply}"`).join("\n") : "",
+    "",
+    `Conversation state: ${JSON.stringify({ active_project: state.active_project, first_price_given_for: Object.keys(state.first_price_at), already_asked: state.asked })}`,
+    `Reply in ${LANG_NAME[lang as keyof typeof LANG_NAME] ?? "English"}. Short, friendly, no emoji. Do not ask again for anything in already_asked.`,
+    "Never say you cannot answer and stop. Never say a person has been informed or that anything was booked or sent.",
+    "Only request media that the project lists. Use project ids from the catalog.",
+    'Return STRICT JSON only: {"intent": string, "project_ref": string|null, "language": "bn"|"banglish"|"en", "reply": string, "media": [{"type": "photo"|"floorplan"|"brochure"|"map", "project_ref": string, "floor"?: string}], "handoff": boolean, "asked": [string], "used_item_ids": [string], "clarify": boolean}',
+  ].join("\n");
+  const messages = [
+    ...history.map((h) => ({ role: (h.role === "customer" ? "user" : "assistant") as "user" | "assistant",
+      content: h.role === "agent" ? `[sales agent] ${h.text}` : h.text })),
+    { role: "user" as const, content: `<customer_message>\n${text}\n</customer_message>` },
+  ];
+  return { system, messages };
+}
+
+// ── output parsing and guards ───────────────────────────────────────────────
+export function parseModelOutput(raw: string): ModelOut | null {
+  const t = String(raw || "").trim().replace(/^```(?:json)?/i, "").replace(/```$/, "").trim();
+  const s = t.indexOf("{"), e = t.lastIndexOf("}");
+  if (s === -1 || e <= s) return null;
+  try {
+    const o = JSON.parse(t.slice(s, e + 1));
+    if (typeof o?.reply !== "string" || !["bn", "banglish", "en"].includes(o.language)) return null;
+    return {
+      intent: String(o.intent || ""), project_ref: typeof o.project_ref === "string" ? o.project_ref : null,
+      language: o.language, reply: o.reply, handoff: o.handoff === true, clarify: o.clarify === true,
+      media: Array.isArray(o.media) ? o.media.filter((m: any) => m && ["photo", "floorplan", "brochure", "map"].includes(m.type) && typeof m.project_ref === "string") : [],
+      asked: Array.isArray(o.asked) ? o.asked.filter(isStr) : [],
+      used_item_ids: Array.isArray(o.used_item_ids) ? o.used_item_ids.filter(isStr) : [],
+    };
+  } catch { return null; }
+}
+
+const REFUSAL = [/parbo\s*na/i, /bolte\s*parbo/i, /confirm\s*korte\s*parbo/i, /can'?t\s+(tell|discuss|share|say)/i,
+  /cannot\s+(tell|discuss|share|say)/i, /বলতে\s*পারব\s*না/, /পারব\s*না/];
+const CLAIM = [/\binformed\b/i, /\bnotified\b/i, /jaanie\s*dichi/i, /janiye\s*dichi/i, /\bbooked\b/i, /have\s+sent/i,
+  /জানিয়ে\s*দিয়েছি/];
+
+export function guardReply(out: ModelOut, c: SnapshotContent, resolved: string[], evidenceText: string): string[] {
+  const errs: string[] = [];
+  const r = out.reply;
+  if (REFUSAL.some((x) => x.test(r))) errs.push("refusal");
+  if (CLAIM.some((x) => x.test(r))) errs.push("claim");
+  const nums = r.match(/\d+(?:[.,]\d+)?/g) || [];
+  if (nums.some((n) => !evidenceText.includes(n))) errs.push("number");
+  const ids = new Set(c.projects.map((p) => p.id));
+  if ((out.project_ref && !ids.has(out.project_ref)) || out.media.some((m) => !resolved.includes(m.project_ref))) errs.push("project");
+  if (r.trim()) {
+    const scriptBn = /[ঀ-৿]/.test(r);
+    if (out.language === "bn" && !scriptBn) errs.push("script");
+    if (out.language !== "bn" && scriptBn) errs.push("script");
+  }
+  return errs;
+}
+
+// ── media ───────────────────────────────────────────────────────────────────
+export type MediaAction = { type: "image" | "document"; url: string; caption: string; kind: string; project_ref: string; floor?: string };
+
+export function resolveMedia(out: ModelOut, c: SnapshotContent): { actions: MediaAction[]; missing: string[]; clarify: string | null } {
+  const actions: MediaAction[] = []; const missing: string[] = []; let clarify: string | null = null;
+  for (const m of out.media) {
+    const p = c.projects.find((x) => x.id === m.project_ref);
+    if (!p) { missing.push(m.type); continue; }
+    const md = p.body.media || {}; const name = p.body.name;
+    if (m.type === "photo") {
+      if (md.photos?.length) md.photos.slice(0, 3).forEach((u: string) => actions.push({ type: "image", url: u, caption: name, kind: "photo", project_ref: p.id }));
+      else missing.push("photo");
+    } else if (m.type === "map") {
+      if (md.map_image) actions.push({ type: "image", url: md.map_image, caption: `${name} location`, kind: "map", project_ref: p.id });
+      else missing.push("map");
+    } else if (m.type === "brochure") {
+      if (md.brochure) actions.push({ type: "document", url: md.brochure, caption: `${name} brochure`, kind: "brochure", project_ref: p.id });
+      else missing.push("brochure");
+    } else {
+      const plans: { url: string; label?: string }[] = md.floor_plans || [];
+      if (!plans.length) { missing.push("floorplan"); continue; }
+      const want = norm(m.floor || "");
+      if (want === "all" || want === "sob" || want === "shob") {
+        plans.slice(0, 10).forEach((f) => actions.push({ type: "image", url: f.url, caption: `${name} ${f.label || "floor plan"}`, kind: "floorplan", project_ref: p.id, floor: f.label }));
+        continue;
+      }
+      const hit = want ? plans.find((f) => f.label && (norm(f.label) === want || norm(f.label).startsWith(want) || want.startsWith(norm(f.label)))) : undefined;
+      if (hit) actions.push({ type: "image", url: hit.url, caption: `${name} ${hit.label}`, kind: "floorplan", project_ref: p.id, floor: hit.label });
+      else clarify = `Which floor plan would you like for ${name}: ${plans.map((f) => f.label || "unlabelled").join(", ")}?`;
+    }
+  }
+  return { actions, missing, clarify };
+}
+
+// ── turn ────────────────────────────────────────────────────────────────────
+export type Ports = {
+  callModel: (req: { model: string; max_tokens: number; system: string; messages: { role: "user" | "assistant"; content: string }[] }) =>
+    Promise<{ ok: true; text: string; cost_usd: number } | { ok: false; error: string }>;
+};
+export type TurnResult = { reply: string; media: MediaAction[]; handoff: boolean; stateNext: ConvState; outcome: string; trace: Record<string, unknown> };
+
+export const FALLBACK = {
+  bn: "ধন্যবাদ। আমাদের একজন কনসালট্যান্ট শিগগিরই আপনার সাথে যোগাযোগ করবেন।",
+  banglish: "Dhonnobad. Amader ekjon consultant khub shiggiri apnar sathe jogajog korben.",
+  en: "Thank you. One of our consultants will get back to you shortly.",
+};
+const GREETING = [/^(hi|hello|hey|salam|assalamu ?alaikum|as-?salamu ?alaikum|good (morning|evening|afternoon)|kemon achen)[\s!.?]*$/i,
+  /^(আসসালামু আলাইকুম|সালাম|হাই|হ্যালো|কেমন আছেন)[\s!.?।]*$/];
+const WANTS_PERSON = [/(agent|manush|human|person|consultant).*(kotha|talk|speak)/i, /(kotha|talk|speak).*(agent|manush|human|person)/i,
+  /(এজেন্ট|মানুষ).*কথা/];
+
+export async function runTurn(a: {
+  content: SnapshotContent; bot: Bot; text: string; history: Turn[]; state: ConvState;
+  ad: { isAd: boolean; adText?: string }; returning: boolean; ports: Ports;
+}): Promise<TurnResult> {
+  const lang = detectLanguage(a.text);
+  const trace: Record<string, unknown> = { core_version: CORE_VERSION, language: lang };
+  const base = { ...a.state, language: lang };
+  const t = norm(a.text);
+  if (GREETING.some((g) => g.test(t))) {
+    trace.pre = "greeting";
+    return { reply: "", media: [], handoff: false, stateNext: base, outcome: a.returning ? "skipped_greeting" : "skipped_greeting_new", trace };
+  }
+  if (WANTS_PERSON.some((g) => g.test(a.text))) {
+    trace.pre = "wants_person";
+    return { reply: FALLBACK[lang], media: [], handoff: true, stateNext: { ...base, paused: true }, outcome: "handoff_requested", trace };
+  }
+  const res = resolveProject(a.text, a.state, a.ad, a.content.projects);
+  trace.project = res;
+  const history = buildHistory(a.history);
+  const prompt = buildPrompt(a.content, a.bot, history, a.text, a.state, res.projects, lang);
+  const scoped = a.content.items.filter((i) => itemApplies(i, a.bot, res.projects));
+  trace.items_in_scope = scoped.map((i) => `${i.id}@${i.revision}`);
+  const evidence = [...scoped.map((i) => JSON.stringify(i.body)), ...a.content.projects.filter((p) => res.projects.includes(p.id)).map((p) => JSON.stringify(p.body)), ...history.map((h) => h.text), a.text].join("\n");
+  const req = { model: a.content.model_config.reply_model, max_tokens: a.content.model_config.max_tokens, system: prompt.system, messages: prompt.messages };
+  let cost = 0; let errors: string[] = []; let parsed: ModelOut | null = null;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const msgs = attempt === 0 ? req.messages : [...req.messages, { role: "user" as const, content: `Your previous answer was rejected (${errors.join(", ")}). Return corrected STRICT JSON only.` }];
+    const r = await a.ports.callModel({ ...req, messages: msgs });
+    if (!r.ok) { trace.model_error = r.error; trace.cost_usd = cost; return { reply: FALLBACK[lang], media: [], handoff: true, stateNext: { ...base, paused: true }, outcome: "fallback_model_error", trace }; }
+    cost += r.cost_usd;
+    parsed = parseModelOutput(r.text);
+    errors = parsed ? guardReply(parsed, a.content, res.projects, evidence) : ["schema"];
+    if (!errors.length) break;
+  }
+  trace.cost_usd = cost; trace.guard_errors = errors;
+  if (!parsed || errors.length) {
+    return { reply: FALLBACK[lang], media: [], handoff: true, stateNext: { ...base, paused: true }, outcome: "fallback_invalid_output", trace };
+  }
+  const media = resolveMedia(parsed, a.content);
+  trace.media_missing = media.missing; trace.used_item_ids = parsed.used_item_ids; trace.intent = parsed.intent;
+  const reply = media.clarify ? `${parsed.reply}${parsed.reply ? "\n" : ""}${media.clarify}` : parsed.reply;
+  const active = res.projects.length === 1 ? res.projects[0] : (parsed.project_ref && res.projects.includes(parsed.project_ref) ? parsed.project_ref : a.state.active_project);
+  const stateNext: ConvState = {
+    ...base, active_project: active, active_source: res.projects.length ? res.source : a.state.active_source,
+    asked: [...new Set([...a.state.asked, ...parsed.asked])].slice(-20),
+    first_price_at: parsed.intent === "price" && active && !a.state.first_price_at[active]
+      ? { ...a.state.first_price_at, [active]: "now" } : a.state.first_price_at,
+    paused: parsed.handoff ? true : a.state.paused,
+  };
+  return { reply, media: media.actions, handoff: parsed.handoff, stateNext, outcome: "ok", trace };
+}
