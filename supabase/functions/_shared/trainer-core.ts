@@ -447,3 +447,140 @@ export async function runTurn(a: {
   };
   return { reply, media: media.actions, handoff: parsed.handoff, stateNext, outcome: "ok", trace };
 }
+
+// ── tests and verdicts ──────────────────────────────────────────────────────
+export type Check = { type: string; value?: unknown };
+export type TestSpec = {
+  title: string; setup: { isAd: boolean; adText?: string; returning: boolean; state?: Partial<ConvState> };
+  conversation: Turn[]; target: string; checks: Check[]; ideal_reply: string; judge: "rubric" | "none";
+  exact_required?: string; samples?: number;
+};
+const CHECK_TYPES = ["language_is", "no_reply", "project_resolved_is", "asks_clarification", "media_action", "no_media",
+  "handoff", "must_contain_exact", "must_not_contain", "uses_item", "max_length"];
+
+export function validateTestSpec(s: unknown): string[] {
+  const e: string[] = [];
+  const t = s as TestSpec;
+  if (!t || typeof t !== "object") return ["spec must be an object"];
+  if (!isStr(t.title) || !t.title.trim()) e.push("title is required");
+  if (!isStr(t.target) || !t.target.trim()) e.push("target is required");
+  if (!t.setup || typeof t.setup.isAd !== "boolean" || typeof t.setup.returning !== "boolean") e.push("setup.isAd and setup.returning are required");
+  if (!Array.isArray(t.conversation) || !t.conversation.every((x) => x && ["customer", "bot", "agent"].includes(x.role) && isStr(x.text))) e.push("conversation is invalid");
+  if (!Array.isArray(t.checks)) e.push("checks must be a list");
+  else for (const c of t.checks) {
+    if (!CHECK_TYPES.includes(c?.type)) e.push(`unknown check: ${c?.type}`);
+    if (c?.type === "must_contain_exact" && !(isStr(t.exact_required) && t.exact_required.trim())) e.push("must_contain_exact needs exact_required with a reason");
+  }
+  if (!["rubric", "none"].includes(t.judge)) e.push("judge must be rubric or none");
+  if (t.judge === "rubric" && !(isStr(t.ideal_reply) && t.ideal_reply.trim())) e.push("ideal_reply is required for the judge");
+  if (t.samples !== undefined && ![1, 3].includes(t.samples)) e.push("samples must be 1 or 3");
+  return e;
+}
+
+export function runChecks(spec: TestSpec, r: TurnResult): { type: string; pass: boolean; detail?: string }[] {
+  const out: { type: string; pass: boolean; detail?: string }[] = [];
+  const lang = (r.trace.language as string) || detectLanguage(r.reply);
+  out.push({ type: "mandatory:refusal", pass: !REFUSAL.some((x) => x.test(r.reply)) });
+  out.push({ type: "mandatory:claim", pass: !CLAIM.some((x) => x.test(r.reply)) });
+  out.push({ type: "mandatory:outcome", pass: !["fallback_invalid_output"].includes(r.outcome), detail: r.outcome });
+  const resolved = ((r.trace.project as any)?.projects as string[]) || [];
+  for (const c of spec.checks) {
+    const v = c.value as any;
+    switch (c.type) {
+      case "language_is": out.push({ type: c.type, pass: lang === v, detail: lang }); break;
+      case "no_reply": out.push({ type: c.type, pass: !r.reply.trim() }); break;
+      case "project_resolved_is": out.push({ type: c.type, pass: v === null ? resolved.length === 0 : resolved.length === 1 && resolved[0] === v, detail: resolved.join(",") }); break;
+      case "asks_clarification": out.push({ type: c.type, pass: /\?|？|কি\b/.test(r.reply) }); break;
+      case "media_action": out.push({ type: c.type, pass: r.media.filter((m) => m.kind === v.kind && (!v.project_ref || m.project_ref === v.project_ref) && (!v.floor || m.floor === v.floor)).length >= (v.count ?? 1) }); break;
+      case "no_media": out.push({ type: c.type, pass: r.media.length === 0 }); break;
+      case "handoff": out.push({ type: c.type, pass: r.handoff === v }); break;
+      case "must_contain_exact": out.push({ type: c.type, pass: r.reply.includes(String(v)) }); break;
+      case "must_not_contain": out.push({ type: c.type, pass: !norm(r.reply).includes(norm(String(v))) }); break;
+      case "uses_item": out.push({ type: c.type, pass: ((r.trace.used_item_ids as string[]) || []).includes(String(v)) }); break;
+      case "max_length": out.push({ type: c.type, pass: r.reply.length <= Number(v) }); break;
+    }
+  }
+  return out;
+}
+
+export type JudgeAttempt = { verdict: "pass" | "fail" | "inconclusive"; rationale: string; error?: string };
+
+export function judgeVerdict(attempts: JudgeAttempt[]): "pass" | "fail" | "inconclusive" {
+  if (attempts.length === 1) return attempts[0].verdict === "pass" ? "pass" : "inconclusive";
+  const n = (v: string) => attempts.filter((a) => a.verdict === v).length;
+  if (n("pass") >= 2) return "pass";
+  if (n("fail") >= 2) return "fail";
+  return "inconclusive";
+}
+
+export function finalVerdict(checks: { pass: boolean }[], judge: "none" | "pass" | "fail" | "inconclusive" | "skipped"): "PASS" | "FAIL" | "INCONCLUSIVE" {
+  if (checks.some((c) => !c.pass)) return "FAIL";
+  if (judge === "none" || judge === "pass") return "PASS";
+  if (judge === "fail") return "FAIL";
+  return "INCONCLUSIVE";
+}
+
+export const RUBRIC_V1 = `Rubric sales-default v1. Score each 1-5:
+answered: the reply answers the customer's actual question.
+context: uses earlier turns; does not re-ask what is known.
+correct: every statement is supported by the facts given; nothing invented.
+tone: natural, short, friendly, in the customer's language.
+sales: moves the sale forward (discovery question or meeting offer) when appropriate.
+verdict "pass" only if no criterion is below 3 and "correct" is at least 4. "inconclusive" if you cannot tell.`;
+
+export function buildJudgePrompt(spec: TestSpec, r: TurnResult, rubric: string) {
+  return {
+    system: `You grade one WhatsApp sales reply. ${rubric}\nReturn STRICT JSON only: {"verdict": "pass"|"fail"|"inconclusive", "criteria": {"answered": n, "context": n, "correct": n, "tone": n, "sales": n}, "rationale": string}`,
+    messages: [{ role: "user" as const, content: JSON.stringify({
+      conversation: spec.conversation, customer_message: spec.target, reply: r.reply,
+      media_sent: r.media.map((m) => ({ kind: m.kind, floor: m.floor })), ideal_reply: spec.ideal_reply }) }],
+  };
+}
+
+export function parseJudge(raw: string): JudgeAttempt {
+  const t = String(raw || "").trim().replace(/^```(?:json)?/i, "").replace(/```$/, "").trim();
+  const s = t.indexOf("{"), e = t.lastIndexOf("}");
+  try {
+    const o = JSON.parse(t.slice(s, e + 1));
+    if (["pass", "fail", "inconclusive"].includes(o.verdict) && isStr(o.rationale)) return { verdict: o.verdict, rationale: o.rationale };
+  } catch { /* fall through */ }
+  return { verdict: "inconclusive", rationale: "", error: "invalid judge output" };
+}
+
+export function publishGate(a: {
+  snapshot: { id: string; checksum: string };
+  run: { snapshot_checksum: string; status: string; core_version: string; bot: string } | null;
+  results: { test_id: string; test_revision: number; verdict: string }[];
+  activeTests: { id: string; revision: number; bots: Bot[] }[]; bot: Bot; coreVersion: string;
+}): { ok: boolean; reasons: string[] } {
+  const reasons: string[] = [];
+  if (!a.run) return { ok: false, reasons: ["no test run for this snapshot"] };
+  if (a.run.status !== "complete") reasons.push(`run is ${a.run.status}`);
+  if (a.run.snapshot_checksum !== a.snapshot.checksum) reasons.push("run was for different content");
+  if (a.run.bot !== a.bot) reasons.push("run was for the other bot");
+  if (a.run.core_version !== a.coreVersion) reasons.push(`run used core ${a.run.core_version}, current is ${a.coreVersion}`);
+  for (const t of a.activeTests.filter((x) => x.bots.includes(a.bot))) {
+    const r = a.results.find((x) => x.test_id === t.id && x.test_revision === t.revision);
+    if (!r) reasons.push(`test ${t.id} rev ${t.revision} not run`);
+    else if (r.verdict !== "PASS") reasons.push(`test ${t.id} is ${r.verdict}`);
+  }
+  return { ok: reasons.length === 0, reasons };
+}
+
+// ── redaction for real conversations ───────────────────────────────────────
+const PHONE = /\+?\d[\d\s-]{6,}\d/g;
+const EMAIL = /[\w.+-]+@[\w-]+\.[\w.]+/g;
+const URL_RE = /https?:\/\/\S+/g;
+
+export function redactTurns(turns: Turn[], names: string[]): { turns: Turn[]; rejected: boolean } {
+  const ns = names.filter((n) => n && n.trim().length >= 2).map((n) => n.trim());
+  const out = buildHistory(turns, 6).map((t) => {
+    let x = t.text.replace(EMAIL, "{email}").replace(URL_RE, "{link}").replace(PHONE, "{phone}");
+    for (const n of ns) x = x.split(n).join("{customer}");
+    return { ...t, text: x };
+  });
+  // A fresh, non-global pattern: .test() on the shared global EMAIL would
+  // carry lastIndex from one turn to the next and skip matches.
+  const rejected = out.some((t) => /\d{7,}/.test(t.text.replace(/\s|-/g, "")) || /[\w.+-]+@[\w-]+\.[\w.]+/.test(t.text));
+  return { turns: out, rejected };
+}

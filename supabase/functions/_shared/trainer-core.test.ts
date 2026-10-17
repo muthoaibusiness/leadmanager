@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   CORE_VERSION, canonicalJson, checksumOf, validateItem, validateScope, contentHash, itemApplies,
 } from "./trainer-core.ts";
+import { validateTestSpec, runChecks, judgeVerdict, finalVerdict, parseJudge, publishGate, redactTurns, type TestSpec, type TurnResult } from "./trainer-core.ts";
 import { buildPrompt, parseModelOutput, guardReply, resolveMedia, runTurn, FALLBACK, type SnapshotContent } from "./trainer-core.ts";
 import { freezeContent, detectLanguage, resolveProject, buildHistory, emptyState, type ItemRow } from "./trainer-core.ts";
 
@@ -241,4 +242,74 @@ test("runTurn: guard failure re-asks, then accepts a clean reply", async () => {
   const r = await runTurn({ content: CONTENT, bot: "eyad", text: "nuznan er dam koto?", history: [], state: emptyState(), ad: { isAd: false }, returning: false, ports: s.ports });
   assert.equal(r.outcome, "ok"); assert.equal(r.reply, "Ami ekta meeting set korte pari");
   assert.ok((s.calls[1].messages.at(-1).content as string).includes("refusal"));
+});
+
+
+const SPEC: TestSpec = { title: "price", setup: { isAd: false, returning: false }, conversation: [], target: "nuznan er dam koto?",
+  checks: [{ type: "language_is", value: "banglish" }, { type: "handoff", value: false }, { type: "no_media" }], ideal_reply: "meeting", judge: "rubric" };
+const TR = (o: Partial<TurnResult>): TurnResult => ({ reply: "Ami ekta meeting set korte pari", media: [], handoff: false, stateNext: emptyState(), outcome: "ok", trace: { language: "banglish", project: { projects: ["p-nuz"] }, used_item_ids: [] }, ...o });
+
+test("validateTestSpec", () => {
+  assert.deepEqual(validateTestSpec(SPEC), []);
+  assert.ok(validateTestSpec({ ...SPEC, checks: [{ type: "bogus" }] }).length > 0);
+  assert.ok(validateTestSpec({ ...SPEC, checks: [{ type: "must_contain_exact", value: "x" }] }).some((e) => e.includes("exact_required")));
+});
+
+test("runChecks: media checks read actions, not text", () => {
+  const media = (xs: { type: string; pass: boolean }[]) => xs.find((c) => c.type === "media_action")!.pass;
+  const r = runChecks({ ...SPEC, checks: [{ type: "media_action", value: { kind: "brochure", project_ref: "p-nuz" } }] }, TR({ reply: "brochure pathacchi" }));
+  assert.equal(media(r), false);
+  const r2 = runChecks({ ...SPEC, checks: [{ type: "media_action", value: { kind: "brochure", project_ref: "p-nuz" } }] },
+    TR({ media: [{ type: "document", url: "u", caption: "c", kind: "brochure", project_ref: "p-nuz" }] }));
+  assert.equal(media(r2), true);
+});
+
+test("runChecks: mandatory checks always run", () => {
+  const r = runChecks({ ...SPEC, checks: [] }, TR({ reply: "ami bolte parbo na" }));
+  assert.ok(r.some((c) => c.type === "mandatory:refusal" && !c.pass));
+});
+
+test("verdict table", () => {
+  const P1 = [{ pass: true }], F1 = [{ pass: false }];
+  assert.equal(finalVerdict(F1, "skipped"), "FAIL");
+  assert.equal(finalVerdict(P1, "none"), "PASS");
+  assert.equal(finalVerdict(P1, "pass"), "PASS");
+  assert.equal(finalVerdict(P1, "fail"), "FAIL");
+  assert.equal(finalVerdict(P1, "inconclusive"), "INCONCLUSIVE");
+});
+
+test("judge majority over attempts", () => {
+  const a = (v: any) => ({ verdict: v, rationale: "" });
+  assert.equal(judgeVerdict([a("pass")]), "pass");
+  assert.equal(judgeVerdict([a("fail"), a("pass"), a("pass")]), "pass");
+  assert.equal(judgeVerdict([a("fail"), a("fail"), a("pass")]), "fail");
+  assert.equal(judgeVerdict([a("inconclusive"), a("pass"), a("fail")]), "inconclusive");
+  assert.equal(judgeVerdict([a("fail")]), "inconclusive");
+});
+
+test("parseJudge: invalid output is inconclusive", () => {
+  assert.equal(parseJudge("nonsense").verdict, "inconclusive");
+  assert.equal(parseJudge('{"verdict":"pass","rationale":"ok","criteria":{}}').verdict, "pass");
+});
+
+test("publishGate", () => {
+  const base = { snapshot: { id: "s", checksum: "c" }, bot: "eyad" as const, coreVersion: "1.0.0",
+    activeTests: [{ id: "t1", revision: 2, bots: ["eyad"] as any }, { id: "t2", revision: 1, bots: ["dubai"] as any }],
+    run: { snapshot_checksum: "c", status: "complete", core_version: "1.0.0", bot: "eyad" },
+    results: [{ test_id: "t1", test_revision: 2, verdict: "PASS" }] };
+  assert.deepEqual(publishGate(base), { ok: true, reasons: [] });
+  assert.equal(publishGate({ ...base, results: [{ test_id: "t1", test_revision: 2, verdict: "INCONCLUSIVE" }] }).ok, false);
+  assert.equal(publishGate({ ...base, results: [{ test_id: "t1", test_revision: 1, verdict: "PASS" }] }).ok, false);
+  assert.equal(publishGate({ ...base, run: { ...base.run, snapshot_checksum: "x" } }).ok, false);
+  assert.equal(publishGate({ ...base, run: { ...base.run, status: "incomplete" } }).ok, false);
+  assert.equal(publishGate({ ...base, run: null }).ok, false);
+  assert.equal(publishGate({ ...base, coreVersion: "2.0.0" }).ok, false);
+});
+
+test("redactTurns", () => {
+  const r = redactTurns([{ role: "customer", text: "ami Rahim, number +880 1712-345678, mail a@b.com" }, { role: "agent", text: "/fdh note" }], ["Rahim"]);
+  assert.equal(r.rejected, false);
+  assert.equal(r.turns.length, 1);
+  assert.ok(!/1712|a@b|Rahim/.test(r.turns[0].text));
+  assert.ok(r.turns[0].text.includes("{customer}"));
 });
