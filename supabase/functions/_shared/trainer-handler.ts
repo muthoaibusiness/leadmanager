@@ -253,9 +253,149 @@ export async function handleTrainer(req: { method: string; headers: Headers; ip:
   }
 }
 
-// Implemented in Task 7.
-async function handleRunsAndPublish(action: string, _p: any, _actor: string, _deps: Deps): Promise<Res> {
-  return fail(400, "unknown_action", `Unknown action: ${action}`);
+const STEP_SIZE = 5;
+
+async function freeze(deps: Deps, actor: string): Promise<Res> {
+  const { content, errors } = freezeContent(await loadDrafts(deps.db), { reply_model: deps.env.replyModel, max_tokens: 600, rubric_version: 1 });
+  if (errors.length) return fail(422, "freeze", "Drafts have errors. Fix them first.", errors);
+  const checksum = await checksumOf(content);
+  const prev = await deps.db.select("ai_snapshots?select=id,checksum,version_no");
+  const same = prev.find((s) => s.checksum === checksum);
+  if (same) return ok({ id: same.id, version_no: same.version_no, checksum, reused: true });
+  const version_no = prev.reduce((m, s) => Math.max(m, s.version_no), 0) + 1;
+  const row = await deps.db.insert("ai_snapshots", { version_no, content, checksum, core_version_frozen: CORE_VERSION, created_by_claimed: actor });
+  await deps.db.insert("ai_trainer_audit", { entity: "snapshot", entity_id: row.id, action: "freeze", after: { version_no, checksum }, actor_claimed: actor });
+  return ok({ id: row.id, version_no, checksum, reused: false });
+}
+
+async function startRun(deps: Deps, p: any, actor: string): Promise<Res> {
+  if (!["eyad", "dubai"].includes(p.bot)) return fail(422, "schema", "bot must be eyad or dubai");
+  const { checksum } = await contentFor(deps, "snapshot", p.snapshot_id);
+  const tests = (await deps.db.select("ai_tests?status=eq.active&select=id,bots")).filter((t) => t.bots.includes(p.bot));
+  const row = await deps.db.insert("ai_test_runs", {
+    snapshot_id: p.snapshot_id, snapshot_checksum: checksum, bot: p.bot, core_version: CORE_VERSION,
+    reply_model: deps.env.replyModel, judge_model: deps.env.judgeModel, prompt_version: "p1", rubric_version: "sales-default@1",
+    status: "running", test_ids: tests.map((t) => t.id), counts: {}, cost_usd: 0, started_by_claimed: actor,
+  });
+  return ok({ id: row.id, total: tests.length });
+}
+
+// Judge with retries: one attempt, and two more only if the first is not a pass.
+async function judge(deps: Deps, spec: TestSpec, r: any): Promise<{ verdict: string; attempts: any[] }> {
+  const prompt = buildJudgePrompt(spec, r, RUBRIC_V1);
+  const attempts: any[] = [];
+  const once = async () => {
+    for (let i = 0; i < 2; i++) {
+      const x = await portsFor(deps).callModel({ model: deps.env.judgeModel, max_tokens: 400, system: prompt.system, messages: prompt.messages });
+      if (x.ok) { const a = parseJudge(x.text); if (!a.error) return a; if (i === 1) return a; }
+      else if (i === 1) return { verdict: "inconclusive" as const, rationale: "", error: x.error };
+    }
+    return { verdict: "inconclusive" as const, rationale: "", error: "unreachable" };
+  };
+  attempts.push(await once());
+  if (attempts[0].verdict !== "pass") { attempts.push(await once()); attempts.push(await once()); }
+  return { verdict: judgeVerdict(attempts), attempts };
+}
+
+async function stepRun(deps: Deps, p: any): Promise<Res> {
+  const run = (await deps.db.select(`ai_test_runs?id=eq.${encodeURIComponent(p.run_id)}&select=*`))[0];
+  if (!run) return fail(404, "not_found", "Run not found.");
+  if (run.status !== "running") return ok({ status: run.status });
+  const { content, checksum } = await contentFor(deps, "snapshot", run.snapshot_id);
+  if (checksum !== run.snapshot_checksum) return fail(409, "checksum", "Snapshot content changed under this run.");
+  const done = new Set((await deps.db.select(`ai_test_results?run_id=eq.${encodeURIComponent(run.id)}&select=test_id`)).map((r) => r.test_id));
+  const todo = run.test_ids.filter((id: string) => !done.has(id)).slice(0, STEP_SIZE);
+  for (const tid of todo) {
+    const t = (await deps.db.select(`ai_tests?id=eq.${encodeURIComponent(tid)}&select=*`))[0];
+    const spec: TestSpec = t.spec;
+    const samples = spec.samples === 3 ? 3 : 1;
+    let verdict: "PASS" | "FAIL" | "INCONCLUSIVE" = "PASS"; let last: any = null; let lastChecks: any[] = []; let lastJudge: any = { verdict: "none" };
+    for (let i = 0; i < samples && verdict === "PASS"; i++) {
+      const r = await runTurn({ content, bot: run.bot, text: spec.target, history: spec.conversation, state: { ...emptyState(), ...(spec.setup.state || {}) },
+        ad: { isAd: spec.setup.isAd, adText: spec.setup.adText }, returning: spec.setup.returning, ports: portsFor(deps) });
+      const checks = runChecks(spec, r);
+      const failed = checks.some((c) => !c.pass);
+      const j = failed ? { verdict: "skipped", attempts: [] } : spec.judge === "none" ? { verdict: "none", attempts: [] } : await judge(deps, spec, r);
+      verdict = finalVerdict(checks, j.verdict as any);
+      last = r; lastChecks = checks; lastJudge = j;
+    }
+    await deps.db.insert("ai_test_results", { run_id: run.id, test_id: t.id, test_revision: t.revision,
+      reply: { reply: last.reply, media: last.media, handoff: last.handoff, outcome: last.outcome, trace: last.trace },
+      checks: lastChecks, judge: lastJudge, verdict });
+  }
+  const results = await deps.db.select(`ai_test_results?run_id=eq.${encodeURIComponent(run.id)}&select=verdict`);
+  if (results.length >= run.test_ids.length) {
+    const counts = { PASS: 0, FAIL: 0, INCONCLUSIVE: 0 } as Record<string, number>;
+    results.forEach((r) => counts[r.verdict]++);
+    await deps.db.patch("ai_test_runs", `id=eq.${run.id}`, { status: "complete", counts, finished_at: new Date().toISOString() });
+    return ok({ status: "complete", counts });
+  }
+  return ok({ status: "running", done: results.length, total: run.test_ids.length });
+}
+
+async function gateFor(deps: Deps, snapshotId: string, bot: Bot) {
+  const snap = (await deps.db.select(`ai_snapshots?id=eq.${encodeURIComponent(snapshotId)}&select=*`))[0];
+  if (!snap) return { snap: null, gate: { ok: false, reasons: ["snapshot not found"] } };
+  if (await checksumOf(snap.content) !== snap.checksum) return { snap, gate: { ok: false, reasons: ["snapshot checksum mismatch"] } };
+  const runs = (await deps.db.select(`ai_test_runs?snapshot_id=eq.${encodeURIComponent(snapshotId)}&select=*`))
+    .filter((r) => r.bot === bot && r.status === "complete").sort((a, b) => String(b.finished_at).localeCompare(String(a.finished_at)));
+  const run = runs[0] || null;
+  const results = run ? await deps.db.select(`ai_test_results?run_id=eq.${encodeURIComponent(run.id)}&select=*`) : [];
+  const activeTests = await deps.db.select("ai_tests?status=eq.active&select=id,revision,bots");
+  return { snap, run, gate: publishGate({ snapshot: snap, run, results, activeTests, bot, coreVersion: CORE_VERSION }) };
+}
+
+async function publish(deps: Deps, p: any, actor: string): Promise<Res> {
+  if (!["eyad", "dubai"].includes(p.bot)) return fail(422, "schema", "bot must be eyad or dubai");
+  const { snap, gate } = await gateFor(deps, p.snapshot_id, p.bot);
+  if (!gate.ok) return fail(409, "gate", "Publish is blocked.", gate.reasons);
+  if (snap.status !== "published") {
+    await deps.db.patch("ai_snapshots", `id=eq.${snap.id}`, { status: "published", published_at: new Date().toISOString(), published_by_claimed: actor });
+  }
+  const before = (await deps.db.select(`ai_bot_pointers?bot=eq.${p.bot}&select=*`))[0];
+  await deps.db.patch("ai_bot_pointers", `bot=eq.${p.bot}`, { mode: "snapshot", snapshot_id: snap.id, changed_at: new Date().toISOString(), changed_by_claimed: actor, reason: "publish" });
+  await deps.db.insert("ai_trainer_audit", { entity: "pointer", entity_id: p.bot, action: "publish", before, after: { snapshot_id: snap.id, version_no: snap.version_no }, actor_claimed: actor });
+  return ok({ bot: p.bot, snapshot_id: snap.id, version_no: snap.version_no });
+}
+
+async function rollback(deps: Deps, p: any, actor: string): Promise<Res> {
+  if (!["eyad", "dubai"].includes(p.bot)) return fail(422, "schema", "bot must be eyad or dubai");
+  if (!String(p.reason || "").trim()) return fail(422, "reason_required", "A reason is required to roll back.");
+  const before = (await deps.db.select(`ai_bot_pointers?bot=eq.${p.bot}&select=*`))[0];
+  if (p.legacy) {
+    await deps.db.patch("ai_bot_pointers", `bot=eq.${p.bot}`, { mode: "legacy", snapshot_id: null, changed_at: new Date().toISOString(), changed_by_claimed: actor, reason: p.reason });
+  } else {
+    const snap = (await deps.db.select(`ai_snapshots?id=eq.${encodeURIComponent(p.snapshot_id)}&select=*`))[0];
+    if (!snap || snap.status !== "published") return fail(422, "schema", "Only a published snapshot can be rolled back to.");
+    const { gate } = await gateFor(deps, snap.id, p.bot);
+    if (!gate.ok) return fail(409, "gate", "That version is not certified for the current core. Run its tests first.", gate.reasons);
+    await deps.db.patch("ai_bot_pointers", `bot=eq.${p.bot}`, { mode: "snapshot", snapshot_id: snap.id, changed_at: new Date().toISOString(), changed_by_claimed: actor, reason: p.reason });
+  }
+  await deps.db.insert("ai_trainer_audit", { entity: "pointer", entity_id: p.bot, action: "rollback", before, after: { legacy: !!p.legacy, snapshot_id: p.snapshot_id ?? null }, reason: p.reason, actor_claimed: actor });
+  return ok({ bot: p.bot });
+}
+
+async function handleRunsAndPublish(action: string, p: any, actor: string, deps: Deps): Promise<Res> {
+  switch (action) {
+    case "snapshot.freeze": return await freeze(deps, actor);
+    case "snapshot.list": return ok((await deps.db.select("ai_snapshots?select=id,version_no,status,checksum,core_version_frozen,created_at,created_by_claimed,published_at,published_by_claimed"))
+      .sort((a, b) => b.version_no - a.version_no));
+    case "runs.start": return await startRun(deps, p, actor);
+    case "runs.step": return await stepRun(deps, p);
+    case "runs.get": {
+      const run = (await deps.db.select(`ai_test_runs?id=eq.${encodeURIComponent(p.run_id)}&select=*`))[0];
+      if (!run) return fail(404, "not_found", "Run not found.");
+      return ok({ ...run, results: await deps.db.select(`ai_test_results?run_id=eq.${encodeURIComponent(run.id)}&select=*`) });
+    }
+    case "publish": return await publish(deps, p, actor);
+    case "rollback": return await rollback(deps, p, actor);
+    case "status": return ok({
+      core_version: CORE_VERSION,
+      pointers: await deps.db.select("ai_bot_pointers?select=*"),
+      budget: await deps.db.select("ai_budget_days?pool=eq.trainer&select=*"),
+    });
+    default: return fail(400, "unknown_action", `Unknown action: ${action}`);
+  }
 }
 
 export const _internals = { contentFor, portsFor, withBudget, saveItem, canonicalJson, buildJudgePrompt, parseJudge,

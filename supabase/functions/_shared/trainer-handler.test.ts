@@ -118,3 +118,71 @@ test("import.preview classifies legacy rows and reports duplicates", async () =>
   assert.equal(r.body.data.rows.find((x: any) => x.source === "wa_projects").proposed.kind, "project");
   assert.equal(r.body.data.rows.find((x: any) => x.source === "wa_knowledge").proposed.kind, "rule");
 });
+
+const OUT = (o: any = {}) => JSON.stringify({ intent: "info", project_ref: null, language: "en", reply: "Which project are you interested in?", media: [], handoff: false, asked: [], used_item_ids: [], clarify: true, ...o });
+const JPASS = JSON.stringify({ verdict: "pass", criteria: {}, rationale: "good" });
+const JFAIL = JSON.stringify({ verdict: "fail", criteria: {}, rationale: "bad" });
+const SPEC1 = { title: "price no project", setup: { isAd: false, returning: false }, conversation: [], target: "What is the price?", checks: [{ type: "handoff", value: false }], ideal_reply: "ask which project", judge: "rubric" };
+
+async function setup(llmTexts: string[]) {
+  const db = memDb();
+  const deps = { db, llm: llm(...llmTexts), env: ENV };
+  await call(deps, "items.create", { kind: "fact", bots: ["eyad"], project_ref: null, body: { topic: "a", text: "b" } });
+  await call(deps, "tests.create", { bots: ["eyad"], origin: "handwritten", spec: SPEC1 });
+  const s = await call(deps, "snapshot.freeze", {});
+  return { db, deps, snapId: s.body.data.id };
+}
+
+test("full flow: freeze, run, publish allowed on all PASS", async () => {
+  const { deps, snapId } = await setup([OUT(), JPASS]);
+  const run = await call(deps, "runs.start", { snapshot_id: snapId, bot: "eyad" });
+  assert.equal(run.status, 200);
+  const step = await call(deps, "runs.step", { run_id: run.body.data.id });
+  assert.equal(step.body.data.status, "complete");
+  const pub = await call(deps, "publish", { snapshot_id: snapId, bot: "eyad" });
+  assert.equal(pub.status, 200);
+  const st = await call(deps, "status", {});
+  assert.equal(st.body.data.pointers.find((x: any) => x.bot === "eyad").mode, "snapshot");
+});
+
+test("publish refused on FAIL", async () => {
+  const { deps, snapId } = await setup([OUT(), JFAIL, JFAIL, JFAIL]);
+  const run = await call(deps, "runs.start", { snapshot_id: snapId, bot: "eyad" });
+  await call(deps, "runs.step", { run_id: run.body.data.id });
+  const pub = await call(deps, "publish", { snapshot_id: snapId, bot: "eyad" });
+  assert.equal(pub.status, 409); assert.ok(pub.body.error.details.some((r: string) => r.includes("FAIL")));
+});
+
+test("publish refused on INCONCLUSIVE when the judge is down", async () => {
+  const { deps, snapId } = await setup([OUT()]);
+  const run = await call(deps, "runs.start", { snapshot_id: snapId, bot: "eyad" });
+  await call(deps, "runs.step", { run_id: run.body.data.id });
+  const r = await call(deps, "runs.get", { run_id: run.body.data.id });
+  assert.equal(r.body.data.results[0].verdict, "INCONCLUSIVE");
+  assert.equal((await call(deps, "publish", { snapshot_id: snapId, bot: "eyad" })).status, 409);
+});
+
+test("deterministic failure skips judge and fails", async () => {
+  const { deps, snapId } = await setup([OUT({ handoff: true })]);
+  const run = await call(deps, "runs.start", { snapshot_id: snapId, bot: "eyad" });
+  await call(deps, "runs.step", { run_id: run.body.data.id });
+  const r = await call(deps, "runs.get", { run_id: run.body.data.id });
+  assert.equal(r.body.data.results[0].verdict, "FAIL");
+  assert.equal(r.body.data.results[0].judge.verdict, "skipped");
+});
+
+test("rollback to legacy needs a reason", async () => {
+  const { deps, snapId } = await setup([OUT(), JPASS]);
+  const run = await call(deps, "runs.start", { snapshot_id: snapId, bot: "eyad" });
+  await call(deps, "runs.step", { run_id: run.body.data.id });
+  await call(deps, "publish", { snapshot_id: snapId, bot: "eyad" });
+  assert.equal((await call(deps, "rollback", { bot: "eyad", legacy: true, reason: "" })).status, 422);
+  assert.equal((await call(deps, "rollback", { bot: "eyad", legacy: true, reason: "test" })).status, 200);
+});
+
+test("freeze refuses when drafts have errors", async () => {
+  const db = memDb();
+  const deps = { db, llm: llm(), env: ENV };
+  db.t.ai_trainer_items.push({ id: "x", kind: "fact", revision: 1, status: "active", bots: ["eyad"], project_ref: "missing", body: { topic: "a", text: "b" } });
+  assert.equal((await call(deps, "snapshot.freeze", {})).status, 422);
+});
