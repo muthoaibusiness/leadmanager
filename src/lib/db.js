@@ -2,7 +2,8 @@ import { ROLES, normRole, isNiHandler, canSelfForward, STATUS_LABELS, SRC_LABELS
 import { setOfferResolver } from './offerRegistry.js';
 import { uid, now_, fmtBDT, fmtDT, curMonth, startOfMonth, rlabel } from './helpers.js';
 import { leadFilterParam, ORDER } from './leadQuery.js';
-import { sbGet, sbGetAll, sbCount, sbPage, hasColumn, sbRpc, sbUpdate, sbInsert, sbUpsert, sbMarkRead, sbDelete, sbDeleteLeads, sbEmailsInUse, sbUserIdsByRole, sbActsForLead, sbLoadActWindow, ACT_WINDOW_DAYS, lToR, rToL, uToR, rToU, tToR, rToT, aToR, rToA, rToN, tgToR, rToTg, pToR, rToP, bkToR, rToBk, cToR, rToC, hrToR, rToHr, sbUpsertNotifs } from './supabase.js';
+import { COUNTED } from './contactPerf.js';
+import { sbGet, sbGetAll, sbCount, sbPage, hasColumn, sbRpc, sbUpdate, sbInsert, sbUpsert, sbMarkRead, sbDelete, sbDeleteLeads, sbEmailsInUse, sbUserIdsByRole, sbActsForLead, sbLoadActWindow, sbLoadLeadUpdates, sbLoadLeadsSince, ACT_WINDOW_DAYS, lToR, rToL, uToR, rToU, tToR, rToT, aToR, rToA, rToN, tgToR, rToTg, pToR, rToP, bkToR, rToBk, cToR, rToC, hrToR, rToHr, sbUpsertNotifs } from './supabase.js';
 // Bumped from propcrm_v1 when the cloud load became tenant-scoped: every
 // existing browser is carrying a full multi-tenant snapshot under the old key,
 // and mergeDB would happily fold it back in on top of the scoped one. A new key
@@ -1053,6 +1054,24 @@ export function ensureActWindow(user, days = ACT_WINDOW_DAYS) {
     .catch(e => { console.warn('activity window load failed:', e); return false; });
   _actWindow = { key, promise };
   return promise;
+}
+
+// The updates Home's contact tracker counts (lib/contactPerf.js COUNTED:
+// status changes and follow-ups) since `since` (ISO), straight from the cloud.
+// Shaped like updatesFromActs' output; null when the load fails. Nothing is
+// cached in _DB: the rows are a count source, and db.activities keeps feeding
+// the tracker live updates through realtime.
+export async function loadLeadUpdates(user, since) {
+  const rows = await sbLoadLeadUpdates(user, since, [...COUNTED]);
+  return rows && rows.map(r => ({ id: r.id, leadId: r.lead_id, type: r.type, userId: r.user_id, timestamp: r.timestamp, companyId: r.company_id ?? null }));
+}
+// Leads created since `since` (ISO), straight from the cloud, for Home's
+// lead-source card (lib/sourceMix.js): { id, source, createdAt, companyId }
+// only; null when the load fails. Not cached in _DB (the lead book owns
+// db.leads; realtime keeps feeding the card new leads through it).
+export async function loadNewLeads(user, since) {
+  const rows = await sbLoadLeadsSince(user, since);
+  return rows && rows.map(r => ({ id: r.id, source: r.source, createdAt: r.created_at, companyId: r.company_id ?? null }));
 }
 
 // Forget that a lead's history was fully loaded. Must be called wherever

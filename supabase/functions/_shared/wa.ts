@@ -263,8 +263,10 @@ export function fillWelcomeTemplate(text: string, name: string): string {
 
 // /send<code> → project name, admin-editable via wa_projects.send_code
 // (was a hardcoded CODE_TO_PROJECT map in wa-bot-eyad).
-export async function getProjectBySendCode(code: string): Promise<{ name: string } | null> {
-  const rows = await sbSelect(`wa_projects?send_code=eq.${encodeURIComponent(code)}&is_active=eq.true&select=name&limit=1`);
+export async function getProjectBySendCode(code: string): Promise<any | null> {
+  const rows = await sbSelect(
+    `wa_projects?send_code=eq.${encodeURIComponent(code)}&is_active=eq.true&select=name,keywords,region,nature,sft,address,brochure_url,photos,floor_plans,floor_plan_labels,video_url,google_map_url,map_image_url&limit=1`,
+  );
   return rows?.[0] ?? null;
 }
 

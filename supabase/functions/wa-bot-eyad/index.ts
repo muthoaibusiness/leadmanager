@@ -8,7 +8,6 @@
 //
 // Deploy:  npx supabase functions deploy wa-bot-eyad --no-verify-jwt
 // Secrets: npx supabase secrets set META_CAPI_ACCESS_TOKEN=...
-//          npx supabase secrets set WA_DRIP_WEBHOOK_URL_EYAD=...   (optional, see triggerDrip below)
 //          npx supabase secrets set OPENROUTER_API_KEY=...         (FAQ agent — see runFaqAgent / _shared/ai.ts)
 //          (WASENDER_API_TOKEN / WASENDER_WEBHOOK_SECRET are already shared
 //          with wa-send/wa-webhook via wa_secrets / env, see _shared/wa.ts)
@@ -18,7 +17,7 @@
 //   Parse Event → Route → either the inbound branch (upsert prelead, welcome
 //   message, forward-eligibility bookkeeping) or the command branch
 //   (/t takeover, /f* create lead + Meta CAPI + assigned messages, /send*
-//   drip-doc push).
+//   project brochure/photo push).
 
 import {
   CORS, json, SUPABASE_URL, SERVICE_KEY, WASENDER_BASE,
@@ -141,38 +140,14 @@ async function sendWaText(to: string, text: string): Promise<boolean> {
   });
 }
 
-// Fire-and-forget hand-off to the "Wecon WA Drip" sub-workflow (n8n id
-// sNh2UJeQboG70nJW). That sub-workflow's own node graph was not included in
-// the export this port is based on (see spec §4.4 / open question #4), so
-// its document-sending logic cannot be reproduced here. WA_DRIP_WEBHOOK_URL_EYAD
-// is an escape hatch: if set, this forwards the same {phone, name, project}
-// contract n8n's executeWorkflow call used, so the existing n8n sub-workflow
-// (or whatever eventually replaces it) can still be triggered unchanged.
-// Without that secret configured, this logs and no-ops rather than silently
-// pretending to have sent anything.
-async function triggerDrip(phone: string, name: string, project: string): Promise<void> {
-  const url = Deno.env.get("WA_DRIP_WEBHOOK_URL_EYAD");
-  if (!url) {
-    console.warn("triggerDrip: WA_DRIP_WEBHOOK_URL_EYAD not configured — drip not sent", { phone, project });
-    return;
-  }
-  try {
-    await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ phone, name, project }),
-    });
-  } catch (e) {
-    console.error("triggerDrip failed", e);
-  }
-}
-
 // ── Parse Event, ported field-for-field ──────────────────────────────────
 interface ParsedEvent {
   kind: "ignore" | "command" | "inbound";
   event: string;
   phone: string;
   remote: string;
+  hasRealPhone: boolean;
+  target: string;
   fromMe: boolean;
   name: string;
   text: string;
@@ -196,7 +171,14 @@ function parseEvent(payload: any): ParsedEvent {
     (m.extendedTextMessage || m.imageMessage || m.audioMessage || m.videoMessage || {})
       ?.contextInfo?.externalAdReply || null;
 
+  const hasRealPhone = !!key?.cleanedSenderPn;
   const phone = String(key?.cleanedSenderPn || remote).replace(/@.*$/, "").replace(/\D/g, "");
+  // Someone with WhatsApp's "hide my number" privacy on never exposes a real
+  // phone — key.cleanedSenderPn is absent and `phone` above is just the @lid
+  // id's digits, not dialable. Wasender still accepts the raw `remote` JID
+  // (e.g. "123456@lid") as a send target, so `target` is what every outbound
+  // send should use instead of `phone`.
+  const target = hasRealPhone ? phone : remote;
   const fromMe = key?.fromMe === true;
   // || not ?? — the source falls through on an empty string too (WaSender can
   // send messageBody: "" while the real text sits in a different field).
@@ -221,6 +203,8 @@ function parseEvent(payload: any): ParsedEvent {
     event,
     phone,
     remote,
+    hasRealPhone,
+    target,
     fromMe,
     name: String(msg?.pushName || "").trim(),
     text,
@@ -236,7 +220,7 @@ function parseEvent(payload: any): ParsedEvent {
 // ── FAQ agent (OpenRouter) — answers general questions about WECON projects
 // and, on request, follows up with a photo / floor plan / brochure. See
 // _shared/ai.ts for the prompt and _shared/wa.ts for send+mirror.
-async function runFaqAgent(account: string, phone: string, remote: string, text: string, adProject?: string, allowMedia = true): Promise<void> {
+async function runFaqAgent(account: string, phone: string, target: string, remote: string, text: string, adProject?: string, allowMedia = true): Promise<void> {
   try {
     const convId = `${account}:${remote}`;
     const [projects, history, knowledge, corrections] = await Promise.all([
@@ -244,7 +228,7 @@ async function runFaqAgent(account: string, phone: string, remote: string, text:
     ]);
     const result = await askAgent(history, text, projects, adProject, knowledge, corrections);
     if (result.reply) {
-      await sendWaMessageMirrored(account, phone, convId, phone, { type: "text", text: result.reply });
+      await sendWaMessageMirrored(account, target, convId, phone, { type: "text", text: result.reply });
       // Wasender's account-protection rate limit is 1 message per 5s — a
       // media send right behind the text reply gets a 429 and is dropped.
       if (allowMedia && result.send) await new Promise((r) => setTimeout(r, 5500));
@@ -253,7 +237,7 @@ async function runFaqAgent(account: string, phone: string, remote: string, text:
       const mediaList = resolveMedia(result.send, projects);
       for (let i = 0; i < mediaList.length; i++) {
         const media = mediaList[i];
-        await sendWaMessageMirrored(account, phone, convId, phone, {
+        await sendWaMessageMirrored(account, target, convId, phone, {
           type: media.type, mediaUrl: media.url, fileName: media.fileName, text: media.caption,
         });
         // Rate limit is 1 message per 5s — needed between every item, not
@@ -299,7 +283,7 @@ async function handleInbound(p: ParsedEvent): Promise<void> {
   // of is_new. Welcome only fires via the FALSE branch → New Contact? (true).
   const shouldDrip = upsert.should_drip === true && upsert.takeover !== true;
   if (settings.welcomeEnabled && !shouldDrip && upsert.is_new === true) {
-    await sendWaText(p.phone, settings.welcomeMessage ? fillWelcomeTemplate(settings.welcomeMessage, p.name) : welcomeText(p.name));
+    await sendWaText(p.target, settings.welcomeMessage ? fillWelcomeTemplate(settings.welcomeMessage, p.name) : welcomeText(p.name));
   }
 
   // ── FAQ agent — not part of the n8n port, an addition on top of it.
@@ -311,7 +295,7 @@ async function handleInbound(p: ParsedEvent): Promise<void> {
     takeover: upsert.takeover, remote: p.remote,
   });
   if (settings.faqAgentEnabled && p.text && upsert.takeover !== true && p.remote) {
-    await runFaqAgent("eyad", p.phone, p.remote, p.text, upsert.property_interest || undefined, settings.aiMediaEnabled);
+    await runFaqAgent("eyad", p.phone, p.target, p.remote, p.text, upsert.property_interest || undefined, settings.aiMediaEnabled);
   }
 
   // ── Get Prelead Status → Get Projects → Compute Forward ────────────────
@@ -374,7 +358,7 @@ async function handleTakeover(p: ParsedEvent): Promise<void> {
   // "there". Using the inbound command's own pushName instead is a
   // deliberate judgment call (more useful, and the original's behavior was
   // very likely an accident) — see the summary returned with this file.
-  await sendWaText(p.phone, handoverText(p.name));
+  await sendWaText(p.target, handoverText(p.name));
 }
 
 // A command line can carry trailing free text as a note, e.g.
@@ -440,9 +424,9 @@ async function handleCreateLead(p: ParsedEvent, settings: BotSettings): Promise<
   if (!settings.customerNotifyEnabled) {
     // admin turned off the customer-facing "expert assigned" messages
   } else if (lead.status === "created" && lead.notify === true) {
-    await sendWaText(p.phone, assignedText(lead.first_name, lead.agent_name, lead.agent_phone));
+    await sendWaText(p.target, assignedText(lead.first_name, lead.agent_name, lead.agent_phone));
   } else if (lead.status === "exists") {
-    await sendWaText(p.phone, alreadyAssignedText(lead.first_name, lead.agent_name, lead.agent_phone));
+    await sendWaText(p.target, alreadyAssignedText(lead.first_name, lead.agent_name, lead.agent_phone));
   }
   // status === 'error' | 'unknown_command' | 'no_agent_available', or
   // 'created' with notify !== true: no customer message, no agent feedback
@@ -520,7 +504,20 @@ async function handleSendDocs(p: ParsedEvent): Promise<void> {
   // replacing the old hardcoded CODE_TO_PROJECT map.
   const project = await getProjectBySendCode(p.command);
   if (!project) return; // unrecognized /send... code — silent no-op, matches source
-  await triggerDrip(p.phone, p.name, project.name);
+
+  const convId = `eyad:${p.remote}`;
+  const items: { type: "document" | "image"; url: string; fileName?: string; caption: string }[] = [];
+  if (project.brochure_url) items.push({ type: "document", url: project.brochure_url, fileName: `${project.name} Brochure.pdf`, caption: `${project.name} — Brochure` });
+  for (const url of (project.photos || []).slice(0, 3)) items.push({ type: "image", url, caption: project.name });
+
+  for (let i = 0; i < items.length; i++) {
+    const item = items[i];
+    await sendWaMessageMirrored("eyad", p.target, convId, p.phone, {
+      type: item.type, mediaUrl: item.url, fileName: item.fileName, text: item.caption,
+    });
+    // Wasender's account-protection rate limit is 1 message per 5s.
+    if (i < items.length - 1) await new Promise((r) => setTimeout(r, 5500));
+  }
 }
 
 // ── entry point ────────────────────────────────────────────────────────────

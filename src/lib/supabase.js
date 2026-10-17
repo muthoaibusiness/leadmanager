@@ -1085,6 +1085,30 @@ export async function sbLoadActWindow(user, leadIds, days = ACT_WINDOW_DAYS) {
   } catch (e) { console.warn('Supabase activity window load failed:', e); return null; }
 }
 
+// Activities of the given `types` only (Home's contact tracker passes the ones
+// it counts: status changes and follow-ups) since `since`, with just the columns
+// it counts by. Far lighter than the activity window above (a few types, six
+// columns), so the tracker never waits on that load. Scoped like the window for
+// MANAGEMENT (company) and MASTER (everything); the tracker lives on the
+// Management dashboard only.
+// Leads created since `since`, with just the columns Home's lead-source card
+// counts by. Light (four columns, one period), so the card never waits on the
+// whole lead book; scoped by company like sbLoad (MASTER: everything). The
+// company clause keeps rows with no company_id, which realtime never streams,
+// so the card's minute re-load still picks them up.
+export async function sbLoadLeadsSince(user, since) {
+  try {
+    const co = !isUnscoped(user) && await hasCompanyCol('leads') ? `&${coFilter(user.companyId)}` : '';
+    return await sbGetAll(`leads?select=id,source,created_at,company_id&order=created_at.asc&created_at=gte.${encodeURIComponent(since)}${co}`);
+  } catch (e) { console.warn('Supabase new-lead load failed:', e); return null; }
+}
+
+export async function sbLoadLeadUpdates(user, since, types) {
+  try {
+    const co = !isUnscoped(user) && await hasCompanyCol('activities') ? `&${coFilter(user.companyId)}` : '';
+    return await sbGetAll(`activities?select=id,lead_id,type,user_id,timestamp,company_id&type=in.(${types.join(',')})&order=timestamp.asc&timestamp=gte.${encodeURIComponent(since)}${co}`);
+  } catch (e) { console.warn('Supabase lead-update load failed:', e); return null; }
+}
 // UNUSED — nothing in src/ calls this; every cloud write goes through
 // sbInsert/sbUpdate/sbUpsert per row. Do not wire it up: the local snapshot is
 // now one company's slice AND persistLocal() progressively trims it under

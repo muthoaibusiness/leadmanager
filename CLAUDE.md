@@ -55,6 +55,14 @@ Every team/user/lead/property carries a `companyId`. `sbLoad()` scopes reads by 
 - `isNiHandler()` — an account flagged `ni_only` sees only `NOT_INTERESTED` leads; such leads auto-transfer to it.
 - Lead lifecycle is the single `STATUS_FLOW` ladder; funnels and "reached stage X?" helpers (`reachedFrom`, `PAST_CONTACT`, etc.) all derive from it. Keep stage vocabulary in this one place.
 
+### Lead status changes — always logged
+
+A lead's status is only ever changed by the status writers in `db.js`: `changeStatus`, `setMeeting`, `schedVisit`, `doneVisit`, `closeDealFn`, `markLostFn` (`moveLead` and pipeline drag-and-drop go through `changeStatus` / `closeDealFn`). Each one writes an `activities` row: `STATUS_CHANGE`, or `DEAL` for won/lost. A new status path must go through one of these, or log the same row itself. Those rows are the only record of *when* and *by whom* a status moved, so a status write that skips them is invisible to the funnel and to the Home "Prospects contacted" card.
+
+- Anything outside the app that changes `leads.status` (WhatsApp bots, n8n, imports, Edge Functions) must insert the same row: `type = 'STATUS_CHANGE'`, the acting person's `user_id` (rows with `user_id = 'system'` are ignored), and `company_id` set (the tracker is tenant-scoped by it).
+- Don't rename the `STATUS_CHANGE` / `DEAL` / `FOLLOW_UP` activity types or the `NEW` status; the tracker matches them by name.
+- **Prospects contacted** (Management Home, `dashboards/ContactTracker.jsx`) counts **updates**, not prospects: every `STATUS_CHANGE`, `DEAL` and `FOLLOW_UP` row a person wrote in the window adds 1 (two updates on one prospect add 2), except on prospects that are `NEW` now, which are left out entirely. `FOLLOW_UP` rows come from `setFollowUpFn`, `setFollowUpAt`, `clearFollowup`, `rescheduleMeeting` and `logNoAnswer`'s scheduled retry. "No Answer" is not a status: `logNoAnswer` leaves the lead `NEW`, so a New lead's unanswered calls are not counted. The default window is the exact last 24 hours. The rule (and the `COUNTED` type list) lives in `src/lib/contactPerf.js` alone; its data comes from `loadLeadUpdates` → `sbLoadLeadUpdates` (only the counted types and six columns, so the card never waits on the 60-day `ensureActWindow` load), merged with `db.activities` for live updates.
+
 ### WhatsApp chat
 
 `src/lib/wa.js` mirrors supabase.js conventions (raw REST, row converters, own realtime socket). The client **never** holds the Wasender API token — outbound sends POST to a server-side relay (Supabase Edge Function `wa-send` or n8n) whose URL comes from the `wa_settings` row; the relay holds the credential. Chat access is granted by the `wa_settings` allow-list / an explicit `allowedFeatures` grant, **not** by role (`waCanChat()`), which is why `conversations: []` in `NAV_SCOPES` and the view is exempted from the role-based redirect in `App.jsx`.
