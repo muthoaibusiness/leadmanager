@@ -134,7 +134,7 @@ export type SnapshotContent = {
 };
 export const PROMPT_VERSION = "p1";
 
-const norm = (s: string) => s.normalize("NFC").replace(/[​-‍﻿]/g, "").toLowerCase().trim();
+const norm = (s: string) => s.normalize("NFC").replace(/[\u200B-\u200D\uFEFF]/g, "").toLowerCase().trim();
 
 function aliasesOf(p: ItemRow): string[] {
   const a = p.body?.aliases || {};

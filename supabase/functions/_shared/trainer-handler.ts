@@ -1,8 +1,7 @@
 // ai-trainer request handler. Deno-free: the Edge Function passes in real
 // database and OpenRouter ports, the Node tests pass in-memory ones. Every
-// privileged action requires the X-Trainer-Key header, compared in constant
-// time. The key is a temporary shared secret (spec §9): actor names in audit
-// rows are claimed, not verified.
+// action requires the acting CRM user to be an active Management or Master
+// account (see isManager). Actor names in audit rows are claimed, not verified.
 import {
   CORE_VERSION, KINDS, validateItem, validateScope, contentHash, freezeContent, checksumOf, canonicalJson,
   runTurn, emptyState, validateTestSpec, runChecks, buildJudgePrompt, parseJudge, judgeVerdict, finalVerdict,
@@ -20,7 +19,7 @@ export type Llm = {
   chat(req: { model: string; max_tokens: number; system: string; messages: { role: string; content: string }[] }):
     Promise<{ ok: true; text: string; prompt_tokens: number; completion_tokens: number } | { ok: false; error: string }>;
 };
-export type Env = { trainerKey: string; budgetUsd: number; replyModel: string; judgeModel: string; pricePerMTok: { in: number; out: number } };
+export type Env = { budgetUsd: number; replyModel: string; judgeModel: string; pricePerMTok: { in: number; out: number } };
 type Deps = { db: Db; llm: Llm; env: Env; now?: () => Date };
 type Res = { status: number; body: any };
 
@@ -28,16 +27,19 @@ const ok = (data: unknown): Res => ({ status: 200, body: { ok: true, data } });
 const fail = (status: number, code: string, message: string, details?: unknown): Res =>
   ({ status, body: { ok: false, error: { code, message, details } } });
 
-function safeEqual(a: string, b: string): boolean {
-  if (!a || !b || a.length !== b.length) return false;
-  let d = 0;
-  for (let i = 0; i < a.length; i++) d |= a.charCodeAt(i) ^ b.charCodeAt(i);
-  return d === 0;
+// The CRM has no Supabase Auth session, so access is the acting user's role in
+// the users table, the same check as wa-send (isAdminUser in wa.ts, which this
+// Deno-free file cannot import). The id is claimed by the browser: this stops
+// a non-Management account, not someone holding the anon key.
+async function isManager(db: Db, userId: unknown): Promise<boolean> {
+  if (typeof userId !== "string" || !userId) return false;
+  const u = (await db.select(`users?id=eq.${encodeURIComponent(userId)}&select=role,is_active`))[0];
+  return !!u && u.is_active !== false && (u.role === "MANAGEMENT" || u.role === "MASTER");
 }
 
-// Failed key attempts per IP: 10 in 10 minutes locks that IP out for 10 minutes.
+// Failed sign-ins per IP: 10 in 10 minutes locks that IP out for 10 minutes.
 // Kept in module memory, so it resets on a cold start; that only loosens the
-// limit briefly and never lets a wrong key through.
+// limit briefly and never lets a refused account through.
 const fails = new Map<string, number[]>();
 function limited(ip: string, now: number): boolean {
   const xs = (fails.get(ip) || []).filter((t) => now - t < 600_000);
@@ -222,13 +224,12 @@ async function playgroundTurn(deps: Deps, p: any): Promise<Res> {
 export async function handleTrainer(req: { method: string; headers: Headers; ip: string; body: any }, deps: Deps): Promise<Res> {
   if (req.method !== "POST") return fail(405, "method", "POST only");
   const now = (deps.now?.() ?? new Date()).getTime();
-  if (limited(req.ip, now)) return fail(429, "rate_limited", "Too many wrong keys. Try again in 10 minutes.");
-  const key = req.headers.get("x-trainer-key") || "";
-  if (!deps.env.trainerKey || !safeEqual(key, deps.env.trainerKey)) {
+  if (limited(req.ip, now)) return fail(429, "rate_limited", "Too many failed sign-ins. Try again in 10 minutes.");
+  const { action, payload: p = {}, actor_claimed, user_id } = req.body || {};
+  if (!(await isManager(deps.db, user_id))) {
     fails.set(req.ip, [...(fails.get(req.ip) || []), now]);
-    return fail(401, "unauthorized", "Trainer access key is missing or wrong.");
+    return fail(401, "unauthorized", "Only an active Management or Master account can use the AI Trainer.");
   }
-  const { action, payload: p = {}, actor_claimed } = req.body || {};
   const actor = String(actor_claimed || "unknown").slice(0, 120);
   try {
     switch (action) {

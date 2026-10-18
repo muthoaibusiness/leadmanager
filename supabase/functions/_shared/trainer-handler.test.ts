@@ -6,7 +6,8 @@ import { handleTrainer, type Db, type Llm } from "./trainer-handler.ts";
 // paths and RPCs the handler uses, including revision conflicts and the
 // atomic budget rule, so handler logic is tested without a database.
 function memDb() {
-  const t: Record<string, any[]> = { ai_trainer_items: [], ai_tests: [], ai_test_revisions: [], ai_snapshots: [], ai_bot_pointers: [{ bot: "eyad", mode: "legacy", snapshot_id: null }, { bot: "dubai", mode: "legacy", snapshot_id: null }], ai_test_runs: [], ai_test_results: [], ai_trainer_audit: [], ai_trainer_imports: [], wa_projects: [], wa_knowledge: [], wa_message_corrections: [], ai_budget_days: [] };
+  const t: Record<string, any[]> = { ai_trainer_items: [], ai_tests: [], ai_test_revisions: [], ai_snapshots: [], ai_bot_pointers: [{ bot: "eyad", mode: "legacy", snapshot_id: null }, { bot: "dubai", mode: "legacy", snapshot_id: null }], ai_test_runs: [], ai_test_results: [], ai_trainer_audit: [], ai_trainer_imports: [], wa_projects: [], wa_knowledge: [], wa_message_corrections: [], ai_budget_days: [],
+    users: [{ id: "mgr", role: "MANAGEMENT", is_active: true }, { id: "agent", role: "AGENT", is_active: true }, { id: "gone", role: "MASTER", is_active: false }] };
   const budget = { reserved: 0, spent: 0 }; const resv: Record<string, number> = {};
   let n = 0; const id = () => `id${++n}`;
   const db: Db & { t: typeof t } = {
@@ -50,23 +51,22 @@ const llm = (...texts: string[]): Llm & { calls: any[] } => {
   const calls: any[] = [];
   return { calls, async chat(req) { calls.push(req); const x = texts.shift(); return x === undefined ? { ok: false, error: "down" } : { ok: true, text: x, prompt_tokens: 100, completion_tokens: 50 }; } };
 };
-const ENV = { trainerKey: "k".repeat(43), budgetUsd: 1, replyModel: "m", judgeModel: "j", pricePerMTok: { in: 1, out: 5 } };
-// The failed-key counter is module state shared by every test in this file, so
-// the rate-limit test uses its own IP and cannot lock the others out.
-const call = (deps: any, action: string, payload: any = {}, key = ENV.trainerKey, ip = "1.1.1.1") =>
-  handleTrainer({ method: "POST", headers: new Headers({ "x-trainer-key": key }), ip, body: { action, payload, actor_claimed: "Asad" } }, deps);
+const ENV = { budgetUsd: 1, replyModel: "m", judgeModel: "j", pricePerMTok: { in: 1, out: 5 } };
+// The failed sign-in counter is module state shared by every test in this file,
+// so the rate-limit test uses its own IP and cannot lock the others out.
+const call = (deps: any, action: string, payload: any = {}, userId: any = "mgr", ip = "1.1.1.1") =>
+  handleTrainer({ method: "POST", headers: new Headers(), ip, body: { action, payload, actor_claimed: "Asad", user_id: userId } }, deps);
 
-test("rejects missing or wrong key, accepts right key", async () => {
+test("rejects missing, unknown, non-Management or inactive users; accepts Management", async () => {
   const deps = { db: memDb(), llm: llm(), env: ENV };
-  assert.equal((await call(deps, "items.list", {}, "")).status, 401);
-  assert.equal((await call(deps, "items.list", {}, "wrong")).status, 401);
+  for (const u of [null, "", "nobody", "agent", "gone"]) assert.equal((await call(deps, "items.list", {}, u)).status, 401, String(u));
   assert.equal((await call(deps, "items.list")).status, 200);
 });
 
-test("rate limits repeated bad keys per ip", async () => {
+test("rate limits repeated failed sign-ins per ip", async () => {
   const deps = { db: memDb(), llm: llm(), env: ENV };
-  for (let i = 0; i < 10; i++) await call(deps, "items.list", {}, "bad", "9.9.9.9");
-  assert.equal((await call(deps, "items.list", {}, ENV.trainerKey, "9.9.9.9")).status, 429);
+  for (let i = 0; i < 10; i++) await call(deps, "items.list", {}, "agent", "9.9.9.9");
+  assert.equal((await call(deps, "items.list", {}, "mgr", "9.9.9.9")).status, 429);
   assert.equal((await call(deps, "items.list")).status, 200);
 });
 

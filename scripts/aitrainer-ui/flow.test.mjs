@@ -15,7 +15,7 @@ const { createRoot } = await import(`${R}/node_modules/react-dom/client.js`);
 const { act } = React;
 const { handleTrainer } = await import(`${R}/supabase/functions/_shared/trainer-handler.ts`);
 
-const t = { ai_trainer_items: [], ai_tests: [], ai_test_revisions: [], ai_snapshots: [], ai_bot_pointers: [{ bot: "eyad", mode: "legacy", snapshot_id: null, changed_at: new Date().toISOString() }, { bot: "dubai", mode: "legacy", snapshot_id: null, changed_at: new Date().toISOString() }], ai_test_runs: [], ai_test_results: [], ai_trainer_audit: [], ai_trainer_imports: [], ai_budget_days: [], wa_projects: [], wa_knowledge: [], wa_message_corrections: [] };
+const t = { ai_trainer_items: [], ai_tests: [], ai_test_revisions: [], ai_snapshots: [], ai_bot_pointers: [{ bot: "eyad", mode: "legacy", snapshot_id: null, changed_at: new Date().toISOString() }, { bot: "dubai", mode: "legacy", snapshot_id: null, changed_at: new Date().toISOString() }], ai_test_runs: [], ai_test_results: [], ai_trainer_audit: [], ai_trainer_imports: [], ai_budget_days: [], wa_projects: [], wa_knowledge: [], wa_message_corrections: [], users: [{ id: "u", role: "MANAGEMENT", is_active: true }] };
 let n = 0; const id = () => `id${++n}`;
 const db = {
   async select(path) { const [table, q] = path.split("?"); let rows = [...(t[table] || [])]; for (const part of (q || "").split("&")) { const m = /^(\w+)=eq\.(.+)$/.exec(part); if (m) rows = rows.filter((r) => String(r[m[1]]) === decodeURIComponent(m[2])); } return rows; },
@@ -31,9 +31,9 @@ const db = {
 let judge = "fail";
 const reply = (o) => JSON.stringify({ intent: "info", project_ref: null, language: "en", reply: "Which project are you interested in?", media: [], handoff: false, asked: ["project"], used_item_ids: [], clarify: true, ...o });
 const llm = { async chat(req) { const isJudge = req.system.startsWith("You grade"); return { ok: true, text: isJudge ? JSON.stringify({ verdict: judge, criteria: {}, rationale: `judge says ${judge}` }) : reply({}), prompt_tokens: 10, completion_tokens: 5 }; } };
-const env = { trainerKey: "k", budgetUsd: 5, replyModel: "m", judgeModel: "j", pricePerMTok: { in: 1, out: 5 } };
+const env = { budgetUsd: 5, replyModel: "m", judgeModel: "j", pricePerMTok: { in: 1, out: 5 } };
 const api = async (action, payload) => {
-  const r = await handleTrainer({ method: "POST", headers: new Headers({ "x-trainer-key": "k" }), ip: "127.0.0.1", body: { action, payload, actor_claimed: "Test Manager" } }, { db, llm, env });
+  const r = await handleTrainer({ method: "POST", headers: new Headers(), ip: "127.0.0.1", body: { action, payload, actor_claimed: "Test Manager", user_id: "u" } }, { db, llm, env });
   if (!r.body.ok) throw Object.assign(new Error(r.body.error.message), { code: r.body.error.code, details: r.body.error.details, status: r.status });
   return r.body.data;
 };

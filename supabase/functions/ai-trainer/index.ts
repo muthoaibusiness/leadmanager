@@ -4,18 +4,18 @@
 // only wires real ports: PostgREST with the service role, and OpenRouter.
 //
 // Deploy (owner approval required):
-//   npx supabase secrets set AI_TRAINER_KEY=<32+ random bytes, base64> AI_TRAINER_DAILY_BUDGET_USD=2
 //   npx supabase functions deploy ai-trainer --no-verify-jwt
+// Optional secret: AI_TRAINER_DAILY_BUDGET_USD (default 2).
 //
-// --no-verify-jwt because the CRM mints no Supabase JWT; access is the
-// X-Trainer-Key header, a temporary shared secret (spec §9).
+// --no-verify-jwt because the CRM mints no Supabase JWT; access is the acting
+// user's Management/Master role in the users table (trainer-handler.ts).
 import { handleTrainer, type Db, type Llm } from "../_shared/trainer-handler.ts";
 import { SUPABASE_URL, SERVICE_KEY, sbSelect } from "../_shared/wa.ts";
 
 const H = { apikey: SERVICE_KEY, Authorization: `Bearer ${SERVICE_KEY}`, "Content-Type": "application/json" };
 const CORS = {
   "Access-Control-Allow-Origin": Deno.env.get("ALLOWED_ORIGIN") ?? "*",
-  "Access-Control-Allow-Headers": "content-type, x-trainer-key, apikey",
+  "Access-Control-Allow-Headers": "content-type, apikey",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
@@ -64,7 +64,6 @@ const llm: Llm = {
 };
 
 const env = {
-  trainerKey: Deno.env.get("AI_TRAINER_KEY") ?? "",
   budgetUsd: Number(Deno.env.get("AI_TRAINER_DAILY_BUDGET_USD") ?? "2"),
   replyModel: Deno.env.get("OPENROUTER_MODEL")?.trim() || "anthropic/claude-haiku-5.5",
   judgeModel: Deno.env.get("AI_TRAINER_JUDGE_MODEL")?.trim() || "anthropic/claude-sonnet-5.5",
