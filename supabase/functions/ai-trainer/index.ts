@@ -46,7 +46,8 @@ const llm: Llm = {
     const ctl = new AbortController();
     const timer = setTimeout(() => ctl.abort(), 30_000);
     try {
-      const r = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+      // Override only for a local dev stack (e.g. a stub model); unset in production.
+      const r = await fetch(Deno.env.get("AI_TRAINER_LLM_URL") || "https://openrouter.ai/api/v1/chat/completions", {
         method: "POST", signal: ctl.signal,
         headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json", "HTTP-Referer": "https://wepro.app", "X-Title": "WEPRO AI Trainer" },
         body: JSON.stringify({ model: req.model, max_tokens: req.max_tokens, messages: [{ role: "system", content: req.system }, ...req.messages] }),
