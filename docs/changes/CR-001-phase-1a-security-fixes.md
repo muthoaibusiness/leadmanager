@@ -75,7 +75,7 @@ Run the steps in order. Each one can be rolled back on its own (section 5). Stop
 
 **Step 3. Deploy the web app (CR-2, CR-3 client side).**
 - Through the normal git flow: `dev`, so the test site first, then `main` for the live site.
-- Chat Settings shows `https://sbqmougcvnplgjgihpwe.supabase.co/functions/v1/wa-send` read-only and no credential inputs.
+- Chat Settings shows `<SUPABASE_PROJECT_URL>/functions/v1/wa-send` read-only and no credential inputs.
 - An operator sends one message from the composer to an internal test number (CT-09). The browser's network panel shows the POST going to that URL, and the message reaches SENT. This is a real WhatsApp send, so it is approved as part of this record.
 
 **Step 4. Rotate the Wasender API tokens (runbook A).**
