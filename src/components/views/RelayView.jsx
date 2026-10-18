@@ -295,7 +295,7 @@ function BotPanel({ bot, name, blurb, showToast }) {
 }
 
 const EMPTY_PROJECT = {
-  id: null, name: '', is_active: true, region: '', nature: '', sft: '', address: '',
+  id: null, name: '', is_active: true, region: '', nature: '', sft: '', address: '', office_address: '',
   send_code: '', keywords: '', brochure_url: '', map_image_url: '', google_map_url: '', video_url: '',
   photos: '', floor_plans: '', floor_plan_labels: '',
 };
@@ -306,6 +306,7 @@ function rowToForm(r) {
   return {
     id: r.id, name: r.name || '', is_active: r.is_active !== false,
     region: r.region || '', nature: r.nature || '', sft: r.sft || '', address: r.address || '',
+    office_address: r.office_address || '',
     send_code: r.send_code || '', keywords: (r.keywords || []).join(', '),
     brochure_url: r.brochure_url || '', map_image_url: r.map_image_url || '',
     google_map_url: r.google_map_url || '', video_url: r.video_url || '',
@@ -319,7 +320,8 @@ function formToRow(f) {
   const row = {
     name: f.name.trim(), is_active: !!f.is_active,
     region: f.region.trim() || null, nature: f.nature.trim() || null, sft: f.sft.trim() || null,
-    address: f.address.trim() || null, send_code: f.send_code.trim() || null,
+    address: f.address.trim() || null, office_address: f.office_address.trim() || null,
+    send_code: f.send_code.trim() || null,
     keywords: f.keywords.split(',').map(s => s.trim()).filter(Boolean),
     brochure_url: f.brochure_url.trim() || null, map_image_url: f.map_image_url.trim() || null,
     google_map_url: f.google_map_url.trim() || null, video_url: f.video_url.trim() || null,
@@ -371,6 +373,7 @@ function ProjectModal({ initial, onClose, onSaved, showToast }) {
             <div className="fg"><label>/send code</label><input className="fi" value={f.send_code} onChange={set('send_code')} placeholder="/sendxy" /></div>
           </div>
           <div className="fg"><label>Address</label><input className="fi" value={f.address} onChange={set('address')} /></div>
+          <div className="fg"><label>WECON office for this project (the bot gives this when asked where the office is)</label><input className="fi" value={f.office_address} onChange={set('office_address')} placeholder="House 5A, Road 25A, Dhaka 1212" /></div>
           <div className="fg"><label>Keywords (comma-separated — matches the customer's own wording)</label><input className="fi" value={f.keywords} onChange={set('keywords')} placeholder="nuznan, jolshiri" /></div>
           <div className="fg"><label>Brochure URL</label><input className="fi" value={f.brochure_url} onChange={set('brochure_url')} /></div>
           <div className="fg"><label>Location map image URL</label><input className="fi" value={f.map_image_url} onChange={set('map_image_url')} /></div>

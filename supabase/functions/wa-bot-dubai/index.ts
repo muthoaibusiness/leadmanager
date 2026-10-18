@@ -42,7 +42,10 @@ import {
   findLeadForNote, logNoteActivity, getBotSettings, fillWelcomeTemplate, fixLeadPhoneFromNote, splitPhoneFromNote,
   logConversationHistory,
 } from "../_shared/wa.ts";
-import { askAgent, resolveMedia, fixGrammar } from "../_shared/ai.ts";
+import {
+  askAgent, resolveMedia, fixGrammar, matchJolshiriBundle, buildJolshiriBundle,
+  FLOW_AUTO_PROFILE_TEXT, FLOW_AGENT_YES_TEXT, GENERIC_WELCOME_TEXT, isAffirmative,
+} from "../_shared/ai.ts";
 
 // ── local REST helpers ───────────────────────────────────────────────────
 // _shared/wa.ts's sbRpc/sbPatch deliberately return only ok/not-ok (wa-send
@@ -71,6 +74,20 @@ async function sbRpcJson(fn: string, args: Record<string, unknown>): Promise<any
   } catch (e) {
     console.error(`sbRpcJson ${fn} error`, e);
     return null;
+  }
+}
+
+async function sbSelectJson(path: string): Promise<any[]> {
+  try {
+    const r = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, { headers: svcHeaders() });
+    if (!r.ok) {
+      console.error("sbSelectJson failed", path, r.status, await r.text());
+      return [];
+    }
+    return await r.json();
+  } catch (e) {
+    console.error("sbSelectJson error", path, e);
+    return [];
   }
 }
 
@@ -389,11 +406,50 @@ async function handleInbound(evt: ParsedEvent): Promise<void> {
   // (A1) Should Drip?
   const shouldDrip = prelead.should_drip === true;
   const takeover = prelead.takeover === true;
-  if (shouldDrip && !takeover) {
-    if (settings.docsCommandEnabled) await startDrip(evt.waTo, evt.name, prelead.property_interest ?? "");
-  } else if (settings.welcomeEnabled && prelead.is_new === true) {
-    // New Contact? → Send Welcome
-    await sendWaText(evt.waTo, settings.welcomeMessage ? fillWelcomeTemplate(settings.welcomeMessage, evt.name) : welcomeMessage(evt.name));
+  const flowRows = await sbSelectJson(`preleads?id=eq.${encodeURIComponent(prelead.id)}&select=message_logs,flow_stage`);
+  const flowStatus = flowRows?.[0] ?? {};
+  const msgCount = Array.isArray(flowStatus.message_logs) ? flowStatus.message_logs.length : 0;
+
+  if (shouldDrip && !takeover && settings.docsCommandEnabled) {
+    await startDrip(evt.waTo, evt.name, prelead.property_interest ?? "");
+  }
+  // Welcome is no longer an else-branch of the drip check: the n8n graph
+  // greeted nobody who came from an ad (should_drip true), and the drip
+  // webhook it relied on isn't configured, so ad leads got nothing at all.
+  if (settings.welcomeEnabled && !takeover && prelead.is_new === true) {
+    if (prelead.property_interest) {
+      // Came through an ad: the admin welcome and the follow-up clock —
+      // 5 minutes of silence asks about the profiles, an hour of silence
+      // after that asks about a dedicated agent. No auto-forward.
+      await sendWaText(evt.waTo, settings.welcomeMessage ? fillWelcomeTemplate(settings.welcomeMessage, evt.name) : welcomeMessage(evt.name));
+      await sbPatchFireAndForget("preleads", `id=eq.${encodeURIComponent(prelead.id)}`, {
+        flow_stage: "greeted", stage_at: new Date().toISOString(), stage_msg_count: msgCount,
+      });
+    } else {
+      // Direct knock, no ad: generic hello only, no Jolshiri flow.
+      await sendWaText(evt.waTo, GENERIC_WELCOME_TEXT);
+    }
+  }
+
+  // ── Follow-up flow stage 3 — "yes" to the stage 2a profile offer sends
+  // the bundle right away instead of waiting for the next cron tick.
+  if (flowStatus.flow_stage === "asked_profile" && !takeover && isAffirmative(evt.text)) {
+    const convId = `dubai:${evt.remote}`;
+    const bundle = buildJolshiriBundle(await getActiveProjects(), FLOW_AUTO_PROFILE_TEXT);
+    if (bundle) {
+      await sendWaMessageMirrored("dubai", evt.waTo, convId, evt.phone, { type: "text", text: bundle.message });
+      for (let i = 0; i < bundle.brochures.length; i++) {
+        await new Promise((r) => setTimeout(r, 5500));
+        const b = bundle.brochures[i];
+        await sendWaMessageMirrored("dubai", evt.waTo, convId, evt.phone, {
+          type: "document", mediaUrl: b.url, fileName: `${b.project.name} Brochure.pdf`, text: `${b.project.name} — Brochure`,
+        });
+      }
+      await sbPatchFireAndForget("preleads", `id=eq.${encodeURIComponent(prelead.id)}`, {
+        flow_stage: "profile_sent", stage_at: new Date().toISOString(), stage_msg_count: msgCount,
+      });
+      return;
+    }
   }
 
   // (A2) Ad Lead?
@@ -405,42 +461,86 @@ async function handleInbound(evt: ParsedEvent): Promise<void> {
   // Never runs once a human has taken over (/t), and only on real text (an
   // ad click with no message body, or a photo with no caption, has nothing
   // for the model to answer).
+  // ── Follow-up flow stage 4 — "yes" to the dedicated-agent question gets a
+  // one-line acknowledgement and closes the flow. Deliberately no auto
+  // lead/forward here: a human reads the thread and acts.
+  if (flowStatus.flow_stage === "asked_agent" && !takeover && isAffirmative(evt.text)) {
+    await sendWaMessageMirrored("dubai", evt.waTo, `dubai:${evt.remote}`, evt.phone, { type: "text", text: FLOW_AGENT_YES_TEXT });
+    await sbPatchFireAndForget("preleads", `id=eq.${encodeURIComponent(prelead.id)}`, {
+      flow_stage: "agent_ack", stage_at: new Date().toISOString(), stage_msg_count: msgCount,
+    });
+    return;
+  }
+
+  // Once the profiles are out (keyword, stage 2b or stage 3) the bundle is
+  // never sent again — the gated LLM answer still runs for other questions.
+  const profilesAlreadySent = ["profile_sent", "asked_agent", "agent_ack"].includes(flowStatus.flow_stage);
   if (settings.faqAgentEnabled && evt.text && !takeover && evt.remote) {
-    await runFaqAgent("dubai", evt.waTo, evt.remote, evt.text, prelead.property_interest || undefined, settings.aiMediaEnabled);
+    const sent = await runFaqAgent("dubai", evt.waTo, evt.remote, evt.text, {
+      adProject: prelead.property_interest || undefined, profilesAlreadySent, allowMedia: settings.aiMediaEnabled,
+    });
+    if (sent) {
+      await sbPatchFireAndForget("preleads", `id=eq.${encodeURIComponent(prelead.id)}`, {
+        flow_stage: "profile_sent", stage_at: new Date().toISOString(), stage_msg_count: msgCount,
+      });
+    }
   }
 }
 
-// ── FAQ agent (OpenRouter) — answers general questions about WECON projects
-// and, on request, follows up with a photo / floor plan / brochure. See
-// _shared/ai.ts for the prompt and _shared/wa.ts for send+mirror.
-async function runFaqAgent(account: string, to: string, remote: string, text: string, adProject?: string, allowMedia = true): Promise<void> {
+// ── FAQ agent: Jolshiri bundle on keyword, otherwise a tightly gated
+// OpenRouter answer. The model only speaks when it marks itself confident
+// AND the answer is grounded in wa_projects / wa_knowledge; anything else
+// (price it doesn't have, "book me a meeting", small talk) is silence, and a
+// human picks the thread up from Conversations. It never announces actions
+// — the wa-followup flow owns those. Returns true only when the bundle went
+// out, so the caller marks profile_sent and it is never sent twice.
+interface FaqOpts { adProject?: string; profilesAlreadySent: boolean; allowMedia: boolean }
+async function runFaqAgent(account: string, to: string, remote: string, text: string, opts: FaqOpts): Promise<boolean> {
   try {
     const convId = `${account}:${remote}`;
     const phone = to.replace(/@.*$/, "");
     const [projects, history, knowledge, corrections] = await Promise.all([
       getActiveProjects(), getRecentHistory(convId), getKnowledge(), getCorrections(),
     ]);
-    const result = await askAgent(history, text, projects, adProject, knowledge, corrections);
+
+    const bundle = opts.profilesAlreadySent ? null : matchJolshiriBundle(text, projects);
+    if (bundle) {
+      await sendWaMessageMirrored(account, to, convId, phone, { type: "text", text: bundle.message });
+      for (let i = 0; i < bundle.brochures.length; i++) {
+        await new Promise((r) => setTimeout(r, 5500));
+        const b = bundle.brochures[i];
+        await sendWaMessageMirrored(account, to, convId, phone, {
+          type: "document", mediaUrl: b.url, fileName: `${b.project.name} Brochure.pdf`, text: `${b.project.name} — Brochure`,
+        });
+      }
+      return true;
+    }
+
+    const result = await askAgent(history, text, projects, opts.adProject, knowledge, corrections);
+    if (!result.confident) return false; // out of knowledge → say nothing
+    // A brochure the flow already delivered is not sent again (no-repeat rule).
+    const send = result.send && !(result.send.type === "brochure" && opts.profilesAlreadySent) ? result.send : null;
+    if (!result.reply && !send) return false;
+
     if (result.reply) {
       await sendWaMessageMirrored(account, to, convId, phone, { type: "text", text: result.reply });
-      // Wasender's account-protection rate limit is 1 message per 5s — a
-      // media send right behind the text reply gets a 429 and is dropped.
-      if (allowMedia && result.send) await new Promise((r) => setTimeout(r, 5500));
+      // Wasender's account-protection rate limit is 1 message per 5s.
+      if (opts.allowMedia && send) await new Promise((r) => setTimeout(r, 5500));
     }
-    if (allowMedia && result.send) {
-      const mediaList = resolveMedia(result.send, projects);
+    if (opts.allowMedia && send) {
+      const mediaList = resolveMedia(send, projects);
       for (let i = 0; i < mediaList.length; i++) {
         const media = mediaList[i];
         await sendWaMessageMirrored(account, to, convId, phone, {
           type: media.type, mediaUrl: media.url, fileName: media.fileName, text: media.caption,
         });
-        // Rate limit is 1 message per 5s — needed between every item, not
-        // just before the first (a multi-floor "send all" is several sends).
         if (i < mediaList.length - 1) await new Promise((r) => setTimeout(r, 5500));
       }
     }
+    return false;
   } catch (e) {
     console.error("runFaqAgent error", e);
+    return false;
   }
 }
 

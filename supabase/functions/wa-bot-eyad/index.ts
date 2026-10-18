@@ -26,7 +26,10 @@ import {
   logConversationHistory,
 } from "../_shared/wa.ts";
 import type { BotSettings } from "../_shared/wa.ts";
-import { askAgent, resolveMedia, fixGrammar } from "../_shared/ai.ts";
+import {
+  askAgent, resolveMedia, fixGrammar, matchJolshiriBundle, buildJolshiriBundle,
+  FLOW_AUTO_PROFILE_TEXT, FLOW_AGENT_YES_TEXT, GENERIC_WELCOME_TEXT, isAffirmative,
+} from "../_shared/ai.ts";
 
 // ── fixed literals from the source workflow ──────────────────────────────
 // Hard-coded in the live n8n workflow for this one bot instance (Eyad /
@@ -217,36 +220,59 @@ function parseEvent(payload: any): ParsedEvent {
   };
 }
 
-// ── FAQ agent (OpenRouter) — answers general questions about WECON projects
-// and, on request, follows up with a photo / floor plan / brochure. See
-// _shared/ai.ts for the prompt and _shared/wa.ts for send+mirror.
-async function runFaqAgent(account: string, phone: string, target: string, remote: string, text: string, adProject?: string, allowMedia = true): Promise<void> {
+// ── FAQ agent: Jolshiri bundle on keyword, otherwise a tightly gated
+// OpenRouter answer. The model only speaks when it marks itself confident
+// AND the answer is grounded in wa_projects / wa_knowledge; anything else
+// (price it doesn't have, "book me a meeting", small talk) is silence, and a
+// human picks the thread up from Conversations. It never announces actions
+// — the wa-followup flow owns those. Returns true only when the bundle went
+// out, so the caller marks profile_sent and it is never sent twice.
+interface FaqOpts { adProject?: string; profilesAlreadySent: boolean; allowMedia: boolean }
+async function runFaqAgent(account: string, phone: string, target: string, remote: string, text: string, opts: FaqOpts): Promise<boolean> {
   try {
     const convId = `${account}:${remote}`;
     const [projects, history, knowledge, corrections] = await Promise.all([
       getActiveProjects(), getRecentHistory(convId), getKnowledge(), getCorrections(),
     ]);
-    const result = await askAgent(history, text, projects, adProject, knowledge, corrections);
+
+    const bundle = opts.profilesAlreadySent ? null : matchJolshiriBundle(text, projects);
+    if (bundle) {
+      await sendWaMessageMirrored(account, target, convId, phone, { type: "text", text: bundle.message });
+      for (let i = 0; i < bundle.brochures.length; i++) {
+        await new Promise((r) => setTimeout(r, 5500));
+        const b = bundle.brochures[i];
+        await sendWaMessageMirrored(account, target, convId, phone, {
+          type: "document", mediaUrl: b.url, fileName: `${b.project.name} Brochure.pdf`, text: `${b.project.name} — Brochure`,
+        });
+      }
+      return true;
+    }
+
+    const result = await askAgent(history, text, projects, opts.adProject, knowledge, corrections);
+    if (!result.confident) return false; // out of knowledge → say nothing
+    // A brochure the flow already delivered is not sent again (no-repeat rule).
+    const send = result.send && !(result.send.type === "brochure" && opts.profilesAlreadySent) ? result.send : null;
+    if (!result.reply && !send) return false;
+
     if (result.reply) {
       await sendWaMessageMirrored(account, target, convId, phone, { type: "text", text: result.reply });
-      // Wasender's account-protection rate limit is 1 message per 5s — a
-      // media send right behind the text reply gets a 429 and is dropped.
-      if (allowMedia && result.send) await new Promise((r) => setTimeout(r, 5500));
+      // Wasender's account-protection rate limit is 1 message per 5s.
+      if (opts.allowMedia && send) await new Promise((r) => setTimeout(r, 5500));
     }
-    if (allowMedia && result.send) {
-      const mediaList = resolveMedia(result.send, projects);
+    if (opts.allowMedia && send) {
+      const mediaList = resolveMedia(send, projects);
       for (let i = 0; i < mediaList.length; i++) {
         const media = mediaList[i];
         await sendWaMessageMirrored(account, target, convId, phone, {
           type: media.type, mediaUrl: media.url, fileName: media.fileName, text: media.caption,
         });
-        // Rate limit is 1 message per 5s — needed between every item, not
-        // just before the first (a multi-floor "send all" is several sends).
         if (i < mediaList.length - 1) await new Promise((r) => setTimeout(r, 5500));
       }
     }
+    return false;
   } catch (e) {
     console.error("runFaqAgent error", e);
+    return false;
   }
 }
 
@@ -276,36 +302,86 @@ async function handleInbound(p: ParsedEvent): Promise<void> {
     await sbPatchJson("preleads", `id=eq.${encodeURIComponent(preleadId)}`, { WA: WA_TAG }).catch(() => {});
   }
 
-  // ── Should Drip? / New Contact? ─────────────────────────────────────────
-  // Should Drip?'s TRUE branch (Start Drip → "Wecon WA Drip") is disabled in
-  // the live workflow, so it's a dead end there — meaning welcome is
-  // SUPPRESSED whenever should_drip is true and takeover is false, regardless
-  // of is_new. Welcome only fires via the FALSE branch → New Contact? (true).
-  const shouldDrip = upsert.should_drip === true && upsert.takeover !== true;
-  if (settings.welcomeEnabled && !shouldDrip && upsert.is_new === true) {
-    await sendWaText(p.target, settings.welcomeMessage ? fillWelcomeTemplate(settings.welcomeMessage, p.name) : welcomeText(p.name));
+  // ── Get Prelead Status → Get Projects (moved up — the follow-up flow
+  // below needs message_logs/flow_stage before deciding what to send) ────
+  if (!preleadId) return;
+  const [statusRows, projects] = await Promise.all([
+    sbSelectJson(`preleads?id=eq.${encodeURIComponent(preleadId)}&select=forwarded,message_logs,flow_stage`),
+    sbSelectJson("wa_projects?select=name,region,keywords,brochure_url"),
+  ]);
+  const status = statusRows?.[0] ?? {};
+  const msgCount = Array.isArray(status.message_logs) ? status.message_logs.length : 0;
+
+  // ── New Contact? → Welcome ──────────────────────────────────────────────
+  // The n8n graph suppressed the welcome whenever should_drip was true (an
+  // ad click with a project interest), because that branch went to a drip
+  // sub-workflow instead. That drip never existed here, so the port silently
+  // greeted nobody who came from an ad — the main audience. Welcome now
+  // fires for every genuinely new contact unless a human has taken over.
+  if (settings.welcomeEnabled && upsert.takeover !== true && upsert.is_new === true) {
+    if (upsert.property_interest) {
+      // Came through an ad: the admin welcome (Jolshiri) and the follow-up
+      // clock — 5 minutes of silence asks about the profiles, an hour of
+      // silence after that asks about a dedicated agent. No auto-forward.
+      await sendWaText(p.target, settings.welcomeMessage ? fillWelcomeTemplate(settings.welcomeMessage, p.name) : welcomeText(p.name));
+      await sbPatchJson("preleads", `id=eq.${encodeURIComponent(preleadId)}`, {
+        flow_stage: "greeted", stage_at: new Date().toISOString(), stage_msg_count: msgCount,
+      }).catch(() => {});
+    } else {
+      // Direct knock, no ad: generic hello only, no Jolshiri flow.
+      await sendWaText(p.target, GENERIC_WELCOME_TEXT);
+    }
+  }
+
+  // ── Follow-up flow stage 3 — "yes" to the stage 2a profile offer sends
+  // the bundle right away instead of waiting for the next cron tick.
+  if (status.flow_stage === "asked_profile" && upsert.takeover !== true && isAffirmative(p.text)) {
+    const convId = `eyad:${p.remote}`;
+    const bundle = buildJolshiriBundle(await getActiveProjects(), FLOW_AUTO_PROFILE_TEXT);
+    if (bundle) {
+      await sendWaMessageMirrored("eyad", p.target, convId, p.phone, { type: "text", text: bundle.message });
+      for (let i = 0; i < bundle.brochures.length; i++) {
+        await new Promise((r) => setTimeout(r, 5500));
+        const b = bundle.brochures[i];
+        await sendWaMessageMirrored("eyad", p.target, convId, p.phone, {
+          type: "document", mediaUrl: b.url, fileName: `${b.project.name} Brochure.pdf`, text: `${b.project.name} — Brochure`,
+        });
+      }
+      await sbPatchJson("preleads", `id=eq.${encodeURIComponent(preleadId)}`, {
+        flow_stage: "profile_sent", stage_at: new Date().toISOString(), stage_msg_count: msgCount,
+      }).catch(() => {});
+      return;
+    }
   }
 
   // ── FAQ agent — not part of the n8n port, an addition on top of it.
   // Never runs once a human has taken over (/t), and only on real text (an
   // ad click with no message body, or a photo with no caption, has nothing
   // for the model to answer).
-  console.log("faq-agent gate", {
-    phone: p.phone, faqAgentEnabled: settings.faqAgentEnabled, hasText: !!p.text,
-    takeover: upsert.takeover, remote: p.remote,
-  });
-  if (settings.faqAgentEnabled && p.text && upsert.takeover !== true && p.remote) {
-    await runFaqAgent("eyad", p.phone, p.target, p.remote, p.text, upsert.property_interest || undefined, settings.aiMediaEnabled);
+  // ── Follow-up flow stage 4 — "yes" to the dedicated-agent question gets a
+  // one-line acknowledgement and closes the flow. Deliberately no auto
+  // lead/forward here: a human reads the thread and acts.
+  if (status.flow_stage === "asked_agent" && upsert.takeover !== true && isAffirmative(p.text)) {
+    await sendWaMessageMirrored("eyad", p.target, `eyad:${p.remote}`, p.phone, { type: "text", text: FLOW_AGENT_YES_TEXT });
+    await sbPatchJson("preleads", `id=eq.${encodeURIComponent(preleadId)}`, {
+      flow_stage: "agent_ack", stage_at: new Date().toISOString(), stage_msg_count: msgCount,
+    }).catch(() => {});
+    return;
   }
 
-  // ── Get Prelead Status → Get Projects → Compute Forward ────────────────
-  if (!preleadId) return;
-  const [statusRows, projects] = await Promise.all([
-    sbSelectJson(`preleads?id=eq.${encodeURIComponent(preleadId)}&select=forwarded,message_logs`),
-    sbSelectJson("wa_projects?select=name,region"),
-  ]);
-  const status = statusRows?.[0] ?? {};
-  const msgCount = Array.isArray(status.message_logs) ? status.message_logs.length : 0;
+  // Once the profiles are out (keyword, stage 2b or stage 3) the bundle is
+  // never sent again — the gated LLM answer still runs for other questions.
+  const profilesAlreadySent = ["profile_sent", "asked_agent", "agent_ack"].includes(status.flow_stage);
+  if (settings.faqAgentEnabled && p.text && upsert.takeover !== true && p.remote) {
+    const sent = await runFaqAgent("eyad", p.phone, p.target, p.remote, p.text, {
+      adProject: upsert.property_interest || undefined, profilesAlreadySent, allowMedia: settings.aiMediaEnabled,
+    });
+    if (sent) {
+      await sbPatchJson("preleads", `id=eq.${encodeURIComponent(preleadId)}`, {
+        flow_stage: "profile_sent", stage_at: new Date().toISOString(), stage_msg_count: msgCount,
+      }).catch(() => {});
+    }
+  }
 
   const phoneDigits = p.phone.replace(/\D/g, "");
   const isBD = phoneDigits.startsWith("880");
