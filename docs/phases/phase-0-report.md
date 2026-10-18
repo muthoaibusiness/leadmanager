@@ -81,7 +81,7 @@ Aggregates only, from `supabase/ops/phase0/baseline_metrics.sql`. No names, numb
 | Security | `wa-media` bucket MIME allow-list | None |
 | Bots | Wasender API token stored for eyad, dubai, default | Yes, yes, yes (in `wa_secrets`, which the anon key cannot read) |
 | Bots | Webhook secret configured | None, in `wa_secrets` or in the function environment (Verified, names only) |
-| Bots | `wa_settings.relay_url` | Equals `https://sbqmougcvnplgjgihpwe.supabase.co/functions/v1/wa-send` |
+| Bots | `wa_settings.relay_url` | Equals `<SUPABASE_PROJECT_URL>/functions/v1/wa-send` |
 | Bots | FAQ agent for customers, eyad / dubai | Off / off. Test numbers: 2 per bot. |
 | Bots | Auto-forward, eyad / dubai | Off / on |
 | Traffic, 7 days | Inbound messages, eyad / dubai | 117 / 20 |
