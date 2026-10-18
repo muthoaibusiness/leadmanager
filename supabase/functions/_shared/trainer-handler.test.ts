@@ -186,3 +186,27 @@ test("freeze refuses when drafts have errors", async () => {
   db.t.ai_trainer_items.push({ id: "x", kind: "fact", revision: 1, status: "active", bots: ["eyad"], project_ref: "missing", body: { topic: "a", text: "b" } });
   assert.equal((await call(deps, "snapshot.freeze", {})).status, 422);
 });
+
+test("a test run replays the saved conversation state, so a context turn resolves its project", async () => {
+  const db = memDb();
+  const deps = { db, llm: llm(), env: ENV };
+  const proj = await call(deps, "items.create", { kind: "project", bots: ["eyad"], project_ref: null,
+    body: { name: "Wecon Nuznan", aliases: { banglish: ["nuznan"], en: ["nuznan"] }, media: { photos: [], floor_plans: [] } } });
+  const pid = proj.body.data.id;
+  const spec = { title: "location from context", setup: { isAd: false, returning: true, state: { active_project: pid, active_source: "explicit" } },
+    conversation: [{ role: "customer", text: "nuznan er dam koto?" }, { role: "bot", text: "Which floor?" }], target: "location?",
+    checks: [{ type: "project_resolved_is", value: pid }], ideal_reply: "", judge: "none" };
+  assert.equal((await call(deps, "tests.create", { bots: ["eyad"], origin: "playground", spec })).status, 200);
+  deps.llm = llm(OUT({ reply: "Sector 16, Jolshiri Abashon", project_ref: pid, clarify: false }));
+  const snap = (await call(deps, "snapshot.freeze", {})).body.data;
+  const run = (await call(deps, "runs.start", { snapshot_id: snap.id, bot: "eyad" })).body.data;
+  await call(deps, "runs.step", { run_id: run.id });
+  const got = (await call(deps, "runs.get", { run_id: run.id })).body.data.results[0];
+  assert.equal(got.verdict, "PASS", JSON.stringify(got.checks));
+});
+
+test("tests.create rejects a setup.state that is not an object", async () => {
+  const deps = { db: memDb(), llm: llm(), env: ENV };
+  const spec = { title: "t", setup: { isAd: false, returning: false, state: "x" }, conversation: [], target: "hi", checks: [], ideal_reply: "", judge: "none" };
+  assert.equal((await call(deps, "tests.create", { bots: ["eyad"], origin: "handwritten", spec })).status, 422);
+});

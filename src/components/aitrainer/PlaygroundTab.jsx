@@ -19,7 +19,9 @@ function MarkWrong({ turn, history, bot, api, showToast, onClose }) {
         body: { conversation, original_reply: turn.reply || undefined, ideal_reply: ideal, reason, source: 'playground' } });
       if (asTest) {
         await api('tests.create', { bots: [bot], origin: 'playground', spec: {
-          title: turn.customer.slice(0, 60), setup: turn.setup, conversation: history.map(h => ({ role: h.role, text: h.text })),
+          title: turn.customer.slice(0, 60),
+          setup: { isAd: !!turn.setup.isAd, adText: turn.setup.adText || undefined, returning: turn.returning, state: turn.stateBefore || undefined },
+          conversation: history.map(h => ({ role: h.role, text: h.text })),
           target: turn.customer, checks: [{ type: 'handoff', value: false }], ideal_reply: ideal, judge: 'rubric' } });
       }
       showToast(asTest ? 'Saved as an example and a test' : 'Saved as an example', 'ok');
@@ -69,7 +71,9 @@ export default function PlaygroundTab({ api, showToast }) {
     try {
       const d = await api('playground.turn', { bot, source: isSnap ? 'snapshot' : 'drafts', snapshot_id: isSnap ? source : undefined,
         text, history, state, setup: { ...setup, returning: setup.returning || turns.length > 0 } });
-      setTurns(v => [...v, { customer: text, setup, ...d.result, checksum: d.checksum }]);
+      // A saved test replays this exact turn, so keep what it started from.
+      const sent = { returning: setup.returning || turns.length > 0, stateBefore: state, historyBefore: history };
+      setTurns(v => [...v, { customer: text, setup, ...sent, ...d.result, checksum: d.checksum }]);
       setState(d.result.stateNext);
       setText('');
     } catch (x) {
@@ -93,7 +97,7 @@ export default function PlaygroundTab({ api, showToast }) {
                   {t.trace?.guard_errors?.length ? ` · guards: ${t.trace.guard_errors.join(', ')}` : ''}
                   {t.trace?.media_missing?.length ? ` · missing media: ${t.trace.media_missing.join(', ')}` : ''}
                 </div>
-                <button className="btn btn-g btn-sm" onClick={() => setWrong({ turn: t, history: history.slice(0, n * 2) })}><Mi>edit</Mi>Mark wrong</button>
+                <button className="btn btn-g btn-sm" onClick={() => setWrong({ turn: t, history: t.historyBefore })}><Mi>edit</Mi>Mark wrong</button>
               </div>
             </div>
           ))}

@@ -465,6 +465,7 @@ export function validateTestSpec(s: unknown): string[] {
   if (!isStr(t.title) || !t.title.trim()) e.push("title is required");
   if (!isStr(t.target) || !t.target.trim()) e.push("target is required");
   if (!t.setup || typeof t.setup.isAd !== "boolean" || typeof t.setup.returning !== "boolean") e.push("setup.isAd and setup.returning are required");
+  else if (t.setup.state !== undefined && (!t.setup.state || typeof t.setup.state !== "object" || Array.isArray(t.setup.state))) e.push("setup.state must be an object");
   if (!Array.isArray(t.conversation) || !t.conversation.every((x) => x && ["customer", "bot", "agent"].includes(x.role) && isStr(x.text))) e.push("conversation is invalid");
   if (!Array.isArray(t.checks)) e.push("checks must be a list");
   else for (const c of t.checks) {

@@ -78,12 +78,17 @@ ok(document.body.textContent.includes("Which project are you interested in?"), "
 ok(document.body.textContent.includes("used:"), "trace shown");
 await type($('input[aria-label="Customer message"]'), "Jolshiri"); await click(btn("Send")); await tick(50);
 ok($$(".ait-msg.bot").length === 2, "Playground turn 2 replied (multi-turn)");
-await click($$("button").filter((b) => b.textContent.includes("Mark wrong"))[0]);
+await click($$("button").filter((b) => b.textContent.includes("Mark wrong"))[1]);
 const tas = $$(".analytics-card textarea");
 await type(tas[0], "Which area or project are you looking at? I can share details."); await type(tas[1], "Should ask area first");
 await click($$("button").find((b) => b.textContent.trim() === "Save"));
 ok(t.ai_trainer_items.some((i) => i.kind === "example" && i.body.source === "playground"), "correction saved as example");
 ok(t.ai_tests.length === 1, "correction saved as regression test");
+const saved = t.ai_tests[0]?.spec;
+ok(saved?.setup?.state && "active_project" in saved.setup.state && saved.setup.returning === true,
+  "saved test carries the state from before the corrected turn");
+ok(saved?.target === "Jolshiri" && saved?.conversation?.length === 2 && saved.conversation[0].text === "What is the price?",
+  "saved test replays turn 2 with turn 1 as its history");
 root.unmount();
 
 // 3. Quality: freeze, run (judge fails), publish blocked; then judge passes, new run, publish works.
