@@ -147,4 +147,54 @@ await ok('0041/0042: renumbered migrations apply twice and never overwrite an of
   assert.equal(c.rows[0].n, 3);
 });
 
+// 0043 Playground model config. PGlite has no supabase_vault, so a minimal
+// stand-in with the same function signatures stores secrets in a plain table.
+await db.exec(`create schema vault;
+  create table vault.secrets (id uuid primary key default gen_random_uuid(), name text unique, description text, secret text);
+  create view vault.decrypted_secrets as select id, name, secret as decrypted_secret from vault.secrets;
+  create function vault.create_secret(s text, n text, d text) returns uuid language sql as $$ insert into vault.secrets (secret, name, description) values (s, n, d) returning id $$;
+  create function vault.update_secret(i uuid, s text) returns void language sql as $$ update vault.secrets set secret = s where id = i $$;`);
+await db.exec(readFileSync('supabase/migrations/0043_ai_model_config.sql', 'utf8'));
+await db.exec(readFileSync('supabase/migrations/0043_ai_model_config.sql', 'utf8'));
+
+await ok('0043: settings table refuses bad scope, provider, protocol and model ids', async () => {
+  await rejects(`insert into ai_model_configs (scope, provider, base_url, model, updated_by_claimed) values ('live','openrouter','https://openrouter.ai/api/v1','m','t')`);
+  await rejects(`insert into ai_model_configs (scope, provider, base_url, model, updated_by_claimed) values ('playground','anthropic','https://x.example/v1','m','t')`);
+  await rejects(`insert into ai_model_configs (scope, provider, base_url, model, updated_by_claimed) values ('playground','custom','http://x.example/v1','m','t')`);
+  await rejects(`insert into ai_model_configs (scope, provider, base_url, model, updated_by_claimed) values ('playground','custom','https://x.example/v1','bad model','t')`);
+});
+
+await ok('0043: the key goes to the vault, the row keeps only its id and last 4, rotation reuses the secret', async () => {
+  await rejects(`select ai_model_key_set('playground', 'sk-0000-1111', 't')`);
+  await db.exec(`insert into ai_model_configs (scope, provider, base_url, model, updated_by_claimed) values ('playground','custom','https://x.example/v1','acme/m','t')`);
+  await rejects(`select ai_model_key_set('playground', 'short', 't')`);
+  await db.query(`select ai_model_key_set('playground', 'sk-first-KEY-1111', 'Asad')`);
+  const row = (await db.query(`select to_jsonb(c) as j from ai_model_configs c`)).rows[0].j;
+  assert.equal(row.key_last4, '1111');
+  assert.ok(!JSON.stringify(row).includes('first-KEY'), 'plaintext key in the settings row');
+  await db.query(`select ai_model_key_set('playground', 'sk-second-KEY-2222', 'Asad')`);
+  assert.equal((await db.query(`select ai_model_key_get('playground') as k`)).rows[0].k, 'sk-second-KEY-2222');
+  assert.equal((await db.query(`select count(*)::int as n from vault.secrets`)).rows[0].n, 1, 'rotation updates in place');
+  assert.equal((await db.query(`select key_host from ai_model_configs`)).rows[0].key_host, 'x.example');
+  await rejects(`select ai_model_key_set('playground', 'has a space in it', 't')`);
+  // A deleted row leaves its vault secret; a new row reuses it by name instead of failing on the unique name.
+  await db.exec(`delete from ai_model_configs; insert into ai_model_configs (scope, provider, base_url, model, updated_by_claimed) values ('playground','custom','https://[2606:4700::1111]/v1','acme/m','t')`);
+  await db.query(`select ai_model_key_set('playground', 'sk-third-KEY-3333', 'Asad')`);
+  assert.equal((await db.query(`select count(*)::int as n from vault.secrets`)).rows[0].n, 1);
+  assert.equal((await db.query(`select key_host from ai_model_configs`)).rows[0].key_host, '[2606:4700::1111]');
+  assert.equal((await db.query(`select ai_model_key_get('playground') as k`)).rows[0].k, 'sk-third-KEY-3333');
+});
+
+await ok('0043: anon and authenticated cannot read the table or call the key functions', async () => {
+  const g = await db.query(`select count(*)::int as n from information_schema.role_table_grants where grantee in ('anon','authenticated') and table_name = 'ai_model_configs'`);
+  assert.equal(g.rows[0].n, 0);
+  for (const role of ['anon', 'authenticated']) {
+    for (const fn of ['ai_model_key_set(text,text,text)', 'ai_model_key_get(text)']) {
+      assert.equal((await db.query(`select has_function_privilege('${role}', '${fn}', 'execute') as x`)).rows[0].x, false, `${role} ${fn}`);
+    }
+  }
+  assert.equal((await db.query(`select has_function_privilege('service_role', 'ai_model_key_get(text)', 'execute') as x`)).rows[0].x, true);
+  assert.equal((await db.query(`select relrowsecurity as r from pg_class where relname = 'ai_model_configs'`)).rows[0].r, true);
+});
+
 console.log(`\n${pass} passed`);

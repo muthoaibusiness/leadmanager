@@ -6,6 +6,7 @@ import { _internals, type Db, type Llm } from "./trainer-handler.ts";
 import { runTestTurn, type LiveResult } from "./trainer-live.ts";
 import type { Bot } from "./trainer-core.ts";
 import { SUPABASE_URL, SERVICE_KEY, sbSelect, sbUpsert, sendWaMessageMirroredId } from "./wa.ts";
+import { chatCompletion, type ModelConfig } from "./trainer-model.ts";
 
 const H = { apikey: SERVICE_KEY, Authorization: `Bearer ${SERVICE_KEY}`, "Content-Type": "application/json" };
 
@@ -52,6 +53,22 @@ export const llm: Llm = {
     }
   },
 };
+
+// The Playground's configured provider (migration 0043). Every call resolves
+// the host first so a name pointing at a private address is refused.
+export const modelLlm = (cfg: ModelConfig, key: string): Llm => ({
+  chat: (req) => chatCompletion(cfg, key, req, {
+    fetch: (url, init) => fetch(url, init),
+    // No records is an empty list; a resolver that is unavailable throws, so
+    // the call is refused rather than sent unchecked.
+    resolve: async (host) => {
+      const rs = await Promise.allSettled([Deno.resolveDns(host, "A"), Deno.resolveDns(host, "AAAA")]);
+      const addrs = rs.flatMap((r) => (r.status === "fulfilled" ? r.value : []));
+      if (!addrs.length && rs.some((r) => r.status === "rejected" && !(r.reason instanceof Deno.errors.NotFound))) throw new Error("dns unavailable");
+      return addrs;
+    },
+  }),
+});
 
 export const env = {
   budgetUsd: Number(Deno.env.get("AI_TRAINER_DAILY_BUDGET_USD") ?? "2"),
