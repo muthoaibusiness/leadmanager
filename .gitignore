@@ -31,3 +31,6 @@ dist-ssr
 # ruflo / claude-flow agent data
 .claude-flow/
 **/.claude-flow/
+
+# graft's local graph cache — regenerable, not committed (run `graft build`).
+/graft/
