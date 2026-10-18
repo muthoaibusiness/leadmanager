@@ -1,3 +1,8 @@
+-- Renumbered from 0037_wa_followup_flow.sql, which shared 0037 with
+-- 0037_ai_trainer.sql. Already applied to production by hand (not recorded in
+-- supabase_migrations.schema_migrations); every statement is idempotent, so
+-- running it again is a no-op.
+
 -- Staged post-greeting follow-up flow (greeting -> ask/auto profile -> ask agent).
 -- flow_stage: null | 'greeted' | 'asked_profile' | 'profile_sent' | 'asked_agent'.
 -- stage_at: when the current stage was entered (the cron job's wait clock).

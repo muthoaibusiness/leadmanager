@@ -1,3 +1,8 @@
+-- Renumbered from 0038_wa_projects_office_address.sql, which shared 0038 with
+-- 0038_wa_trainer_test_mode.sql. Already applied to production by hand (not
+-- recorded in supabase_migrations.schema_migrations). Idempotent: the column
+-- add is `if not exists` and the backfill only fills NULL office_address.
+
 -- Which WECON office serves a project. The WhatsApp bot gives this address
 -- when a customer interested in the project asks where to come / where the
 -- office is, instead of a company-wide list.
