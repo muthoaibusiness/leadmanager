@@ -15,8 +15,9 @@ const { createRoot } = await import(`${R}/node_modules/react-dom/client.js`);
 const { act } = React;
 const { handleTrainer } = await import(`${R}/supabase/functions/_shared/trainer-handler.ts`);
 
-const t = { ai_trainer_items: [], ai_tests: [], ai_test_revisions: [], ai_snapshots: [], ai_bot_pointers: [{ bot: "eyad", mode: "legacy", snapshot_id: null, changed_at: new Date().toISOString() }, { bot: "dubai", mode: "legacy", snapshot_id: null, changed_at: new Date().toISOString() }], ai_test_runs: [], ai_test_results: [], ai_trainer_audit: [], ai_trainer_imports: [], ai_budget_days: [], wa_projects: [], wa_knowledge: [], wa_message_corrections: [], ai_playground_conversations: [], ai_playground_turns: [], users: [{ id: "u", role: "MANAGEMENT", is_active: true }] };
+const t = { ai_trainer_items: [], ai_tests: [], ai_test_revisions: [], ai_snapshots: [], ai_bot_pointers: [{ bot: "eyad", mode: "legacy", snapshot_id: null, changed_at: new Date().toISOString() }, { bot: "dubai", mode: "legacy", snapshot_id: null, changed_at: new Date().toISOString() }], ai_test_runs: [], ai_test_results: [], ai_trainer_audit: [], ai_trainer_imports: [], ai_budget_days: [], wa_projects: [], wa_knowledge: [], wa_message_corrections: [], ai_playground_conversations: [], ai_playground_turns: [], ai_model_configs: [], users: [{ id: "u", role: "MANAGEMENT", is_active: true }] };
 let n = 0; const id = () => `id${++n}`;
+let vaultKey = null;
 const db = {
   async select(path) { const [table, q] = path.split("?"); let rows = [...(t[table] || [])]; const ord = /order=(\w+)\.(asc|desc)/.exec(q || ""); if (ord) rows.sort((a, b) => (String(a[ord[1]]) < String(b[ord[1]]) ? -1 : 1) * (ord[2] === "asc" ? 1 : -1)); for (const part of (q || "").split("&")) { const m = /^(\w+)=eq\.(.+)$/.exec(part); if (m) rows = rows.filter((r) => String(r[m[1]]) === decodeURIComponent(m[2])); } return rows; },
   async insert(table, row) { const r = { id: id(), ...row }; t[table].push(r); return r; },
@@ -24,6 +25,8 @@ const db = {
   async rpc(fn, a) {
     if (fn === "ai_item_save") { const it = a.p_item; if (t.ai_trainer_items.some((x) => x.status === "active" && x.kind === it.kind && x.content_hash === it.content_hash && x.id !== it.id)) return { ok: false, error: "duplicate_content" }; if (a.p_expected_revision === 0) { const r = { ...it, id: id(), revision: 1, status: it.status || "active" }; t.ai_trainer_items.push(r); return { ok: true, data: { id: r.id, revision: 1 } }; } const c = t.ai_trainer_items.find((x) => x.id === it.id); if (c.revision !== a.p_expected_revision) return { ok: false, error: "revision_conflict" }; Object.assign(c, it, { revision: c.revision + 1 }); return { ok: true, data: { id: c.id, revision: c.revision } }; }
     if (fn === "ai_budget_reserve") return { ok: true, data: id() };
+    if (fn === "ai_model_key_set") { const r = t.ai_model_configs.find((x) => x.scope === a.p_scope); vaultKey = a.p_key; Object.assign(r, { key_last4: a.p_key.slice(-4), key_host: new URL(r.base_url).hostname, key_set_at: new Date().toISOString(), last_test: null }); return { ok: true }; }
+    if (fn === "ai_model_key_get") return { ok: true, data: vaultKey };
     return { ok: true };
   },
 };
@@ -32,8 +35,11 @@ let judge = "fail";
 const reply = (o) => JSON.stringify({ intent: "info", project_ref: null, language: "en", reply: "Which project are you interested in?", media: [], handoff: false, asked: ["project"], used_item_ids: [], clarify: true, ...o });
 const llm = { async chat(req) { const isJudge = req.system.startsWith("You grade"); return { ok: true, text: isJudge ? JSON.stringify({ verdict: judge, criteria: {}, rationale: `judge says ${judge}` }) : reply({}), prompt_tokens: 10, completion_tokens: 5 }; } };
 const env = { budgetUsd: 5, replyModel: "m", judgeModel: "j", pricePerMTok: { in: 1, out: 5 } };
+// Scripted configured provider for the Model & API tab: the first test fails auth, the next succeeds.
+const modelCalls = []; const modelOut = [{ ok: false, code: "auth", error: "Provider rejected the API key (HTTP 401)" }, { ok: true, text: "OK", prompt_tokens: 1, completion_tokens: 1 }];
+const modelLlm = (cfg, key) => ({ async chat(req) { modelCalls.push({ cfg, key, model: req.model }); return modelOut.shift(); } });
 const api = async (action, payload) => {
-  const r = await handleTrainer({ method: "POST", headers: new Headers(), ip: "127.0.0.1", body: { action, payload, actor_claimed: "Test Manager", user_id: "u" } }, { db, llm, env });
+  const r = await handleTrainer({ method: "POST", headers: new Headers(), ip: "127.0.0.1", body: { action, payload, actor_claimed: "Test Manager", user_id: "u" } }, { db, llm, env, modelLlm });
   if (!r.body.ok) throw Object.assign(new Error(r.body.error.message), { code: r.body.error.code, details: r.body.error.details, status: r.status });
   return r.body.data;
 };
@@ -166,4 +172,27 @@ ok(t.wa_bot_settings[0].trainer_test_mode === true, "switch turns test mode on t
 ok(t.ai_trainer_audit.some((a) => a.entity === "test_mode" && a.action === "enable"), "test mode change audited");
 ok(t.wa_bot_settings[1].trainer_test_mode === false, "dubai test mode untouched");
 root.unmount();
-console.log("toasts:", toasts.filter((x) => x.startsWith("err")).join(" | ") || "no error toasts");
+// 5. Model & API: validation, save with a key, masked key, failed then successful test.
+root = await mount("ModelTab");
+ok(document.body.textContent.includes("Used by the Playground only"), "model tab says it is Playground only");
+const mi = (label) => $$("label").find((l) => l.textContent.startsWith(label)).querySelector("input, select");
+await pick(mi("Provider"), "custom");
+await type(mi("API base URL"), "http://api.example.com/v1"); await type(mi("Model ID"), "acme/chat-1");
+await click(btn("Save"));
+ok(document.body.textContent.includes("must start with https://"), "http base URL refused in the form");
+ok(t.ai_model_configs.length === 0, "nothing saved on a validation error");
+await type(mi("API base URL"), "https://api.example.com/v1"); await click(btn("Save"));
+ok(document.body.textContent.includes("required the first time"), "first save needs a key");
+await type(mi("API key"), "sk-ui-SECRET-4321"); await click(btn("Save")); await tick(30);
+ok(vaultKey === "sk-ui-SECRET-4321", "key stored through the vault RPC");
+ok(document.body.textContent.includes("••••4321") && !document.body.innerHTML.includes("SECRET"), "only the masked key is shown");
+ok(mi("API key").value === "", "key field cleared after save");
+await click(btn("Test connection")); await tick(30);
+ok(document.body.textContent.includes("Provider rejected the API key"), "failed test shows a safe error");
+ok(!document.body.textContent.includes("connected"), "failed test is not reported as connected");
+await click(btn("Test connection")); await tick(30);
+ok(document.body.textContent.includes("connected"), "successful test reported only after the provider answered");
+ok(modelCalls.every((c) => c.key === "sk-ui-SECRET-4321" && c.cfg.base_url === "https://api.example.com/v1" && c.model === "acme/chat-1"), "test used the saved config and key");
+ok(t.ai_model_configs.length === 1 && t.ai_model_configs[0].scope === "playground", "settings saved for the Playground scope only");
+root.unmount();
+console.log("toasts:", toasts.filter((x) => x.startsWith("err") && !x.includes("Connection failed")).join(" | ") || "no error toasts");

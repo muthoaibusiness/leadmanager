@@ -8,6 +8,7 @@ import {
   publishGate, redactTurns, RUBRIC_V1, type ItemRow, type Kind, type Bot, type SnapshotContent, type TestSpec,
   type Ports, type ConvState,
 } from "./trainer-core.ts";
+import { PROVIDERS, validateConfig, validKey, maskKey, hostOf, type ModelConfig } from "./trainer-model.ts";
 
 export type Db = {
   select(path: string): Promise<any[]>;
@@ -20,7 +21,9 @@ export type Llm = {
     Promise<{ ok: true; text: string; prompt_tokens: number; completion_tokens: number } | { ok: false; error: string }>;
 };
 export type Env = { budgetUsd: number; replyModel: string; judgeModel: string; pricePerMTok: { in: number; out: number } };
-type Deps = { db: Db; llm: Llm; env: Env; now?: () => Date };
+// modelLlm builds an Llm for a stored Playground model config and its key. It
+// is optional: without it, or without a saved config, the Playground uses llm.
+type Deps = { db: Db; llm: Llm; env: Env; now?: () => Date; modelLlm?: (cfg: ModelConfig, key: string) => Llm };
 type Res = { status: number; body: any };
 
 const ok = (data: unknown): Res => ({ status: 200, body: { ok: true, data } });
@@ -67,12 +70,12 @@ const cost = (env: Env, pin: number, pout: number) => (pin * env.pricePerMTok.in
 const estimate = (env: Env, chars: number, maxTokens: number) => cost(env, Math.ceil(chars / 3) + 200, maxTokens);
 
 // One budgeted model call shaped as trainer-core's Ports.callModel.
-function portsFor(deps: Deps): Ports {
+function portsFor(deps: Deps, llm: Llm = deps.llm): Ports {
   return {
     callModel: async (req) => {
       const chars = req.system.length + req.messages.reduce((n, m) => n + m.content.length, 0);
       const r = await withBudget(deps, estimate(deps.env, chars, req.max_tokens), async () => {
-        const x = await deps.llm.chat(req);
+        const x = await llm.chat(req);
         if (!x.ok) return { value: x, actualUsd: null };
         return { value: x, actualUsd: cost(deps.env, x.prompt_tokens, x.completion_tokens) };
       });
@@ -275,8 +278,13 @@ async function playgroundTurn(deps: Deps, p: any, actor: string): Promise<Res> {
     if (done) return ok({ conversation_id: conv.id, conversation: conv, turn: done, duplicate: true });
   }
 
-  const { content, checksum, errors } = await contentFor(deps, source, snapshotId ?? undefined);
+  const { content: frozen, checksum, errors } = await contentFor(deps, source, snapshotId ?? undefined);
   if (errors.length) return fail(422, "freeze", "Drafts have errors. Fix them first.", errors);
+  const pm = await playgroundModel(deps);
+  if ("error" in pm) return pm.error;
+  // The configured model replaces the content's model for this call only; the
+  // snapshot and its checksum are unchanged.
+  const content = pm.cfg ? { ...frozen, model_config: { ...frozen.model_config, reply_model: pm.cfg.model } } : frozen;
 
   const setup = conv ? conv.setup : { isAd: !!p.setup?.isAd, adText: p.setup?.isAd ? String(p.setup?.adText || "").slice(0, 500) : "", returning: !!p.setup?.returning };
   if (!conv) {
@@ -288,7 +296,9 @@ async function playgroundTurn(deps: Deps, p: any, actor: string): Promise<Res> {
   const returning = !!setup.returning || prev.length > 0;
   const startedAt = new Date().toISOString();
   const result = await runTurn({ content, bot: p.bot, text: p.text, history: pgHistory(prev), state: stateBefore,
-    ad: { isAd: !!setup.isAd, adText: setup.adText || undefined }, returning, ports: portsFor(deps) });
+    ad: { isAd: !!setup.isAd, adText: setup.adText || undefined }, returning, ports: portsFor(deps, pm.llm) });
+  result.trace.model = content.model_config.reply_model;
+  result.trace.model_source = pm.cfg ? `playground config (${pm.cfg.provider})` : "server default";
   const now = new Date().toISOString();
   let saved: any;
   try {
@@ -307,6 +317,85 @@ async function playgroundTurn(deps: Deps, p: any, actor: string): Promise<Res> {
   await deps.db.patch("ai_playground_conversations", `id=eq.${encodeURIComponent(conv.id)}`, { state: result.stateNext, turn_count: prev.length + 1, last_activity_at: now });
   return ok({ conversation_id: conv.id, conversation: { ...conv, state: result.stateNext, turn_count: prev.length + 1, last_activity_at: now },
     turn: saved, result, checksum, core_version: CORE_VERSION });
+}
+
+// ── Playground model configuration (migration 0043) ─────────────────────────
+// Non-secret settings live in ai_model_configs; the key is a Vault secret
+// reached only through the ai_model_key_set / ai_model_key_get RPCs. No action
+// returns the key: the browser sees only whether one is set and its last 4.
+const MC_COLS = "scope,provider,base_url,model,key_host,key_last4,key_set_at,last_test,updated_at,updated_by_claimed";
+const mcRow = async (db: Db) => (await db.select(`ai_model_configs?scope=eq.playground&select=${MC_COLS}`))[0] || null;
+const mcView = (row: any) => row && { provider: row.provider, base_url: row.base_url, model: row.model,
+  key: row.key_last4 ? { set: true, masked: maskKey(row.key_last4), set_at: row.key_set_at } : { set: false, masked: null, set_at: null },
+  last_test: row.last_test, updated_at: row.updated_at, updated_by: row.updated_by_claimed };
+
+async function mcKey(db: Db): Promise<string | null> {
+  const r = await db.rpc("ai_model_key_get", { p_scope: "playground" });
+  return r.ok && typeof r.data === "string" && r.data ? r.data : null;
+}
+
+// The model the Playground calls: the saved config with its key, or the
+// server default when nothing is saved. A saved config without a usable key
+// is an error, never a silent fall back to the server key.
+async function playgroundModel(deps: Deps): Promise<{ cfg: ModelConfig | null; llm: Llm } | { error: Res }> {
+  const row = await mcRow(deps.db);
+  if (!row) return { cfg: null, llm: deps.llm };
+  const v = validateConfig(row);
+  if (!v.ok) return { error: fail(422, "model_config", `The saved Playground model settings are invalid: ${v.errors.join("; ")}`) };
+  if (!deps.modelLlm) return { error: fail(500, "model_config", "This server cannot use a custom Playground model.") };
+  if (!row.key_last4) return { error: fail(422, "model_config", "The Playground model settings have no API key. Add one in Model & API.") };
+  // The key is bound to the host it was entered for (key_host, set by
+  // ai_model_key_set). A row pointing anywhere else never receives it.
+  if (!row.key_host || row.key_host !== hostOf(v.value.base_url)) {
+    return { error: fail(422, "model_config", "The stored API key was entered for a different host. Enter the key again in Model & API.") };
+  }
+  const key = await mcKey(deps.db);
+  if (!key) return { error: fail(422, "model_config", "The Playground model settings have no API key. Add one in Model & API.") };
+  return { cfg: v.value, llm: deps.modelLlm(v.value, key) };
+}
+
+async function modelConfigGet(deps: Deps): Promise<Res> {
+  return ok({ config: mcView(await mcRow(deps.db)), providers: PROVIDERS,
+    server_default: { provider: "openrouter", model: deps.env.replyModel } });
+}
+
+async function modelConfigSave(deps: Deps, p: any, actor: string): Promise<Res> {
+  const v = validateConfig(p);
+  if (!v.ok) return fail(422, "schema", v.errors.join("; "), v.errors);
+  if (p.api_key !== undefined && p.api_key !== "" && !validKey(p.api_key)) return fail(422, "schema", "api_key must be 8-512 printable characters with no spaces");
+  const before = await mcRow(deps.db);
+  if (!before && !p.api_key) return fail(422, "schema", "An API key is required the first time.");
+  if (before && !p.api_key && hostOf(before.base_url) !== hostOf(v.value.base_url)) {
+    return fail(422, "key_required", "Enter the API key again: a stored key is never sent to a different host.");
+  }
+  const row = { ...v.value, updated_at: new Date().toISOString(), updated_by_claimed: actor,
+    // A changed endpoint or model invalidates the last test result.
+    ...(before && (before.provider !== v.value.provider || before.base_url !== v.value.base_url || before.model !== v.value.model) ? { last_test: null } : {}) };
+  if (before) await deps.db.patch("ai_model_configs", "scope=eq.playground", row);
+  else await deps.db.insert("ai_model_configs", { scope: "playground", ...row });
+  if (p.api_key) {
+    const r = await deps.db.rpc("ai_model_key_set", { p_scope: "playground", p_key: p.api_key, p_actor: actor });
+    if (!r.ok) return fail(500, "secret", "Settings were saved, but the API key could not be stored. Try saving the key again.");
+  }
+  await deps.db.insert("ai_trainer_audit", { entity: "model_config", entity_id: "playground", action: before ? "update" : "create",
+    before: before && { provider: before.provider, base_url: before.base_url, model: before.model, key_last4: before.key_last4 },
+    after: { ...v.value, key_rotated: !!p.api_key }, actor_claimed: actor });
+  return ok({ config: mcView(await mcRow(deps.db)) });
+}
+
+// Sends one tiny real request with the saved config and key. Reports success
+// only when the provider answered with a completion. Never touches WhatsApp.
+async function modelConfigTest(deps: Deps, actor: string): Promise<Res> {
+  const pm = await playgroundModel(deps);
+  if ("error" in pm) return pm.error;
+  if (!pm.cfg) return fail(422, "model_config", "Save the Playground model settings before testing.");
+  const started = Date.now();
+  const x = await pm.llm.chat({ model: pm.cfg.model, max_tokens: 5, system: "Reply with the single word OK.", messages: [{ role: "user", content: "ping" }] });
+  const result = { ok: x.ok, at: new Date().toISOString(), ms: Date.now() - started, provider: pm.cfg.provider, model: pm.cfg.model,
+    ...(x.ok ? {} : { code: (x as any).code || "provider", error: x.error }) };
+  await deps.db.patch("ai_model_configs", "scope=eq.playground", { last_test: result });
+  await deps.db.insert("ai_trainer_audit", { entity: "model_config", entity_id: "playground", action: "test", after: result, actor_claimed: actor });
+  return ok(result);
 }
 
 // Newest first. Search matches the title and any customer message or reply;
@@ -360,6 +449,9 @@ export async function handleTrainer(req: { method: string; headers: Headers; ip:
       case "playground.turn": return await playgroundTurn(deps, p, actor);
       case "playground.list": return await playgroundList(deps, p);
       case "playground.get": return await playgroundGet(deps, p);
+      case "modelconfig.get": return await modelConfigGet(deps);
+      case "modelconfig.save": return await modelConfigSave(deps, p, actor);
+      case "modelconfig.test": return await modelConfigTest(deps, actor);
       default: return await handleRunsAndPublish(action, p, actor, deps);
     }
   } catch (e) {

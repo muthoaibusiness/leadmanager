@@ -6,12 +6,13 @@ import { handleTrainer, type Db, type Llm } from "./trainer-handler.ts";
 // paths and RPCs the handler uses, including revision conflicts and the
 // atomic budget rule, so handler logic is tested without a database.
 function memDb() {
-  const t: Record<string, any[]> = { ai_trainer_items: [], ai_tests: [], ai_test_revisions: [], ai_snapshots: [], ai_bot_pointers: [{ bot: "eyad", mode: "legacy", snapshot_id: null }, { bot: "dubai", mode: "legacy", snapshot_id: null }], ai_test_runs: [], ai_test_results: [], ai_trainer_audit: [], ai_trainer_imports: [], wa_projects: [], wa_knowledge: [], wa_message_corrections: [], ai_budget_days: [], ai_playground_conversations: [], ai_playground_turns: [], wa_messages: [], ai_turns: [],
+  const t: Record<string, any[]> = { ai_trainer_items: [], ai_tests: [], ai_test_revisions: [], ai_snapshots: [], ai_bot_pointers: [{ bot: "eyad", mode: "legacy", snapshot_id: null }, { bot: "dubai", mode: "legacy", snapshot_id: null }], ai_test_runs: [], ai_test_results: [], ai_trainer_audit: [], ai_trainer_imports: [], wa_projects: [], wa_knowledge: [], wa_message_corrections: [], ai_budget_days: [], ai_playground_conversations: [], ai_playground_turns: [], wa_messages: [], ai_turns: [], ai_model_configs: [],
     users: [{ id: "mgr", role: "MANAGEMENT", is_active: true }, { id: "agent", role: "AGENT", is_active: true }, { id: "gone", role: "MASTER", is_active: false }] };
   const budget = { reserved: 0, spent: 0 }; const resv: Record<string, number> = {};
   let n = 0; const id = () => `id${++n}`;
-  const db: Db & { t: typeof t } = {
-    t,
+  const vault: Record<string, string> = {};
+  const db: Db & { t: typeof t; vault: typeof vault } = {
+    t, vault,
     async select(path) {
       const [table, q] = path.split("?");
       let rows = [...(t[table] || [])];
@@ -46,6 +47,9 @@ function memDb() {
         Object.assign(cur, it, { revision: cur.revision + 1 }); t.ai_trainer_audit.push({ actor_claimed: a.p_actor });
         return { ok: true, data: { id: cur.id, revision: cur.revision } };
       }
+      // Stand-in for the Vault-backed key functions (migration 0043).
+      if (fn === "ai_model_key_set") { const r = t.ai_model_configs.find((x) => x.scope === a.p_scope); if (!r) return { ok: false, error: "no_config" }; vault[a.p_scope] = a.p_key; Object.assign(r, { key_secret_id: "v1", key_last4: a.p_key.slice(-4), key_host: new URL(r.base_url).hostname.toLowerCase().replace(/\.+$/, ""), key_set_at: "now", last_test: null }); return { ok: true }; }
+      if (fn === "ai_model_key_get") return { ok: true, data: vault[a.p_scope] ?? null };
       return { ok: false, error: "unknown rpc" };
     },
   };
@@ -327,4 +331,132 @@ test("playground: an unknown conversation id or a mismatched bot is refused, not
   const cid = (await turn(deps, { text: "price?", client_turn_id: "c-0002-aaaa" })).body.data.conversation_id;
   assert.equal((await turn(deps, { conversation_id: cid, bot: "dubai", text: "x y z", client_turn_id: "c-0003-aaaa" })).status, 409);
   assert.equal((await turn(deps, { text: "price?", client_turn_id: "short" })).status, 422);
+});
+
+// ── Playground model configuration (migration 0043) ────────────────────────
+const KEY = "sk-live-TOPSECRET-9876";
+const CFG = { provider: "custom", base_url: "https://api.example.com/v1", model: "acme/chat-1" };
+// A scripted provider: records which config and key each call used.
+const modelLlm = (out: any[]) => { const used: any[] = []; return { used, make: (cfg: any, key: string): Llm => ({ async chat(req) { used.push({ cfg, key, model: req.model }); const x = out.shift(); return x ?? { ok: false, code: "provider", error: "Provider error (HTTP 503)" }; } }) }; };
+const okRes = (text: string) => ({ ok: true, text, prompt_tokens: 10, completion_tokens: 5 });
+
+test("modelconfig: every action needs an active Management account", async () => {
+  const deps = { db: memDb(), llm: llm(), env: ENV };
+  let ip = 0; // ten refusals from one IP trip the lockout, so each check gets its own
+  for (const action of ["modelconfig.get", "modelconfig.save", "modelconfig.test"]) {
+    for (const who of ["agent", "gone", null, "nobody"]) {
+      const r = await call(deps, action, { ...CFG, api_key: KEY }, who, `10.43.0.${++ip}`);
+      assert.equal(r.status, 401, `${action} as ${who}`);
+    }
+  }
+  assert.equal(deps.db.t.ai_model_configs.length, 0);
+  assert.deepEqual(deps.db.vault, {});
+});
+
+test("modelconfig: save validates input and refuses private targets", async () => {
+  const deps = { db: memDb(), llm: llm(), env: ENV };
+  assert.equal((await call(deps, "modelconfig.save", CFG)).status, 422, "first save needs a key");
+  assert.equal((await call(deps, "modelconfig.save", { ...CFG, base_url: "http://api.example.com/v1", api_key: KEY })).status, 422);
+  assert.equal((await call(deps, "modelconfig.save", { ...CFG, base_url: "https://169.254.169.254/latest", api_key: KEY })).status, 422);
+  assert.equal((await call(deps, "modelconfig.save", { ...CFG, model: "bad model", api_key: KEY })).status, 422);
+  assert.equal((await call(deps, "modelconfig.save", { ...CFG, api_key: "short" })).status, 422);
+  assert.equal(deps.db.t.ai_model_configs.length, 0);
+});
+
+test("modelconfig: the key is stored only through the vault RPC and never returned, listed or audited", async () => {
+  const deps = { db: memDb(), llm: llm(), env: ENV };
+  const s = await call(deps, "modelconfig.save", { ...CFG, api_key: KEY });
+  assert.equal(s.status, 200);
+  assert.equal(deps.db.vault.playground, KEY);
+  assert.equal(s.body.data.config.key.masked, "••••9876");
+  const g = await call(deps, "modelconfig.get");
+  for (const out of [s.body, g.body, deps.db.t.ai_model_configs, deps.db.t.ai_trainer_audit]) {
+    assert.ok(!JSON.stringify(out).includes("TOPSECRET"), "key leaked");
+  }
+  // Rotation replaces the key; saving without a key keeps it.
+  await call(deps, "modelconfig.save", { ...CFG, api_key: "sk-new-ROTATED-5555" });
+  assert.equal(deps.db.vault.playground, "sk-new-ROTATED-5555");
+  await call(deps, "modelconfig.save", { ...CFG, model: "acme/chat-2" });
+  assert.equal(deps.db.vault.playground, "sk-new-ROTATED-5555");
+  assert.equal((await call(deps, "modelconfig.get")).body.data.config.key.masked, "••••5555");
+});
+
+test("modelconfig.test: reports success only when the provider answered, and safe failures otherwise", async () => {
+  const m = modelLlm([okRes("OK"), { ok: false, code: "auth", error: "Provider rejected the API key (HTTP 401)" },
+    { ok: false, code: "rate_limited", error: "Provider rate limit reached (HTTP 429)" }, { ok: false, code: "timeout", error: "Provider did not answer within 30s" }]);
+  const deps = { db: memDb(), llm: llm(), env: ENV, modelLlm: m.make };
+  assert.equal((await call(deps, "modelconfig.test")).status, 422, "nothing saved yet");
+  await call(deps, "modelconfig.save", { ...CFG, api_key: KEY });
+  const a = await call(deps, "modelconfig.test");
+  assert.equal(a.body.data.ok, true);
+  assert.deepEqual(m.used[0], { cfg: { provider: "custom", base_url: CFG.base_url, model: CFG.model }, key: KEY, model: CFG.model });
+  for (const code of ["auth", "rate_limited", "timeout"]) {
+    const r = await call(deps, "modelconfig.test");
+    assert.equal(r.status, 200); assert.equal(r.body.data.ok, false); assert.equal(r.body.data.code, code);
+  }
+  assert.equal(deps.db.t.ai_model_configs[0].last_test.code, "timeout");
+  assert.ok(!JSON.stringify([deps.db.t.ai_model_configs, deps.db.t.ai_trainer_audit]).includes("TOPSECRET"));
+  assert.equal(deps.db.t.wa_messages.length, 0, "a connection test sends nothing on WhatsApp");
+});
+
+test("modelconfig: Playground turns use the saved config; without one they use the server default", async () => {
+  const deps: any = { db: memDb(), llm: llm(REPLY("from server default")), env: ENV };
+  const a = await turn(deps, { text: "price?", client_turn_id: "c-0001-mmmm" });
+  assert.equal(a.body.data.turn.reply, "from server default");
+  assert.equal(a.body.data.turn.trace.model_source, "server default");
+  const m = modelLlm([okRes(REPLY("from configured model"))]);
+  deps.modelLlm = m.make;
+  await call(deps, "modelconfig.save", { ...CFG, api_key: KEY });
+  const b = await turn(deps, { text: "price?", client_turn_id: "c-0002-mmmm" });
+  assert.equal(b.body.data.turn.reply, "from configured model");
+  assert.equal(m.used[0].model, "acme/chat-1"); assert.equal(m.used[0].key, KEY);
+  assert.equal(b.body.data.turn.trace.model, "acme/chat-1");
+  assert.ok(!JSON.stringify(deps.db.t.ai_playground_turns).includes("TOPSECRET"));
+});
+
+test("modelconfig: a saved config with no usable key fails the turn instead of falling back to the server key", async () => {
+  const deps: any = { db: memDb(), llm: llm(REPLY("server")), env: ENV, modelLlm: modelLlm([]).make };
+  await call(deps, "modelconfig.save", { ...CFG, api_key: KEY });
+  delete deps.db.vault.playground;
+  const r = await turn(deps, { text: "price?", client_turn_id: "c-0003-mmmm" });
+  assert.equal(r.status, 422); assert.equal(r.body.error.code, "model_config");
+  assert.equal(deps.llm.calls.length, 0, "server key not used");
+});
+
+test("modelconfig: Playground settings do not change live bots, pointers, snapshots, test runs or test numbers", async () => {
+  const m = modelLlm([]);
+  const deps: any = { db: memDb(), llm: llm(REPLY("live default")), env: ENV, modelLlm: m.make };
+  deps.db.t.wa_bot_settings = [{ bot: "eyad", trainer_test_mode: false }];
+  const pointers = JSON.stringify(deps.db.t.ai_bot_pointers);
+  await call(deps, "modelconfig.save", { ...CFG, api_key: KEY });
+  assert.equal(JSON.stringify(deps.db.t.ai_bot_pointers), pointers, "pointers untouched");
+  assert.deepEqual(deps.db.t.wa_bot_settings, [{ bot: "eyad", trainer_test_mode: false }], "test mode untouched");
+  assert.equal(deps.db.t.ai_snapshots.length, 0, "no snapshot frozen or published");
+  // The live test-number path and test runs build ports from the env model, not the Playground config.
+  const { callModel } = (await import("./trainer-handler.ts"))._internals.portsFor(deps);
+  await callModel({ model: ENV.replyModel, max_tokens: 5, system: "s", messages: [{ role: "user", content: "hi" }] });
+  assert.equal(deps.llm.calls.at(-1).model, "m");
+  assert.equal(m.used.length, 0, "configured provider not called by live paths");
+});
+
+test("modelconfig: a stored key is bound to its host and never sent to a different one", async () => {
+  const m = modelLlm([okRes(REPLY("from new host"))]);
+  const deps: any = { db: memDb(), llm: llm(), env: ENV, modelLlm: m.make };
+  await call(deps, "modelconfig.save", { ...CFG, api_key: KEY });
+  // Same host, new path: the key is kept.
+  assert.equal((await call(deps, "modelconfig.save", { ...CFG, base_url: "https://api.example.com/v2" })).status, 200);
+  // Different host without a new key: refused, nothing changes.
+  const r = await call(deps, "modelconfig.save", { ...CFG, base_url: "https://attacker.example.net/v1" });
+  assert.equal(r.status, 422); assert.equal(r.body.error.code, "key_required");
+  assert.equal(deps.db.t.ai_model_configs[0].base_url, "https://api.example.com/v2");
+  // A row changed behind the handler's back is refused before any call.
+  deps.db.t.ai_model_configs[0].base_url = "https://attacker.example.net/v1";
+  const t1 = await turn(deps, { text: "price?", client_turn_id: "c-0004-mmmm" });
+  assert.equal(t1.status, 422); assert.equal(m.used.length, 0, "key not sent to the other host");
+  assert.equal((await call(deps, "modelconfig.test")).status, 422);
+  // A new key for the new host binds to it.
+  await call(deps, "modelconfig.save", { ...CFG, base_url: "https://attacker.example.net/v1", api_key: "sk-other-HOSTKEY-7777" });
+  assert.equal(deps.db.t.ai_model_configs[0].key_host, "attacker.example.net");
+  const t2 = await turn(deps, { text: "price?", client_turn_id: "c-0005-mmmm" });
+  assert.equal(t2.status, 200); assert.equal(m.used[0].key, "sk-other-HOSTKEY-7777");
 });
