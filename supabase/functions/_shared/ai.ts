@@ -70,6 +70,7 @@ export interface ProjectRow {
   nature?: string;
   sft?: string;
   address?: string;
+  office_address?: string;
   brochure_url?: string;
   photos?: string[];
   floor_plans?: string[];
@@ -82,6 +83,9 @@ export interface ProjectRow {
 export interface AgentReply {
   reply: string;
   send: { type: "photo" | "floorplan" | "brochure" | "map"; project: string; floor?: string } | null;
+  // false = the model could not ground the answer in the catalog/rules.
+  // Callers treat that as "say nothing" — silence beats a wrong answer.
+  confident: boolean;
 }
 
 function projectsBlock(projects: ProjectRow[]): string {
@@ -92,6 +96,7 @@ function projectsBlock(projects: ProjectRow[]): string {
         p.nature && `type: ${p.nature}`,
         p.sft && `size: ${p.sft} sft`,
         p.address && `address: ${p.address}`,
+        p.office_address && `WECON office for this project: ${p.office_address}`,
         p.keywords?.length && `keywords: ${p.keywords.join(", ")}`,
       ].filter(Boolean);
       const media = [
@@ -146,16 +151,31 @@ Reply style (match the brand's existing WhatsApp templates):
   floor plan dao"), set "floor" to "all" — every image is sent. If they ask
   for "the floor plan" without naming one and without asking for all, ask
   briefly which floor they want instead of guessing (don't set "send" yet).
-- For anything not covered by the catalog or the rules below, say briefly
-  that a sales consultant will follow up with those details — never guess.
 ${knowledgeBlock(knowledge)}${correctionsBlock(corrections)}
-Never deflect with a bare refusal and stop there — things like "ami ekhane
-bolte parbo na", "seta ami confirm korte parbo na", "I can't tell you that
-here", "I can't discuss this": every one of those gaps always ends in one of
-the scripted replies above — never a plain no with nothing after it.
+HARD LIMITS — these matter more than being helpful:
+- Answer ONLY what the catalog above or the admin rules state outright. If
+  the answer is not literally there (price per sft, payment plan, discounts,
+  availability, handover date, loan terms, legal/land questions, anything
+  else), set "confident": false and "reply": "". Do NOT guess, estimate,
+  generalise, or say a consultant will follow up — SAY NOTHING. A human
+  reads every silent thread and answers; a wrong number from you cannot be
+  taken back.
+- Never announce or promise an action: no "setting up a meeting", "assigning
+  an agent", "someone will call you", "I'll arrange", "I've noted". You
+  cannot do any of those. If the customer asks for a call, meeting, visit
+  or an agent, "confident": false, "reply": "".
+- Never repeat yourself unprompted: don't re-send a document already in
+  the history, and don't restate something the customer didn't ask about
+  again. But if the customer asks the same question again, answer it again
+  — briefly — a repeated question is a request, not a repeat by you.
+- "confident": true ONLY when every statement in "reply" can be pointed to
+  a line in the catalog or the admin rules. An admin rule that tells you
+  what to say for a question (e.g. a price range to give once) IS grounded
+  knowledge — follow it and set "confident": true; the silence rule above
+  is for questions no catalog line and no admin rule covers.
 
 Respond with STRICT JSON only, no markdown fences, exactly this shape:
-{"reply": "<short text, or \\"\\" for no reply needed>", "send": null | {"type": "photo"|"floorplan"|"brochure"|"map", "project": "<exact project name from the catalog>", "floor": "<exact label from floor_plan_labels, only for type floorplan on a project that has labels>"}}`;
+{"confident": true|false, "reply": "<short text, or \\"\\" for no reply>", "send": null | {"type": "photo"|"floorplan"|"brochure"|"map", "project": "<exact project name from the catalog>", "floor": "<exact label from floor_plan_labels, only for type floorplan on a project that has labels>"}}`;
 
 function extractJson(raw: string): AgentReply | null {
   const text = raw.trim().replace(/^```(?:json)?/i, "").replace(/```$/, "").trim();
@@ -168,7 +188,8 @@ function extractJson(raw: string): AgentReply | null {
   try {
     const parsed = JSON.parse(text.slice(start, end + 1));
     if (typeof parsed?.reply === "string") {
-      return { reply: parsed.reply, send: parsed.send ?? null };
+      // A missing "confident" counts as not confident — the gate fails closed.
+      return { reply: parsed.reply, send: parsed.send ?? null, confident: parsed.confident === true };
     }
   } catch { /* fall through */ }
   return null;
@@ -185,7 +206,7 @@ export async function askAgent(
   const apiKey = Deno.env.get("OPENROUTER_API_KEY") ?? "";
   if (!apiKey) {
     console.error("askAgent: OPENROUTER_API_KEY not configured");
-    return { reply: "", send: null };
+    return { reply: "", send: null, confident: false };
   }
 
   const messages = [
@@ -203,11 +224,11 @@ export async function askAgent(
         "HTTP-Referer": "https://wepro.app",
         "X-Title": "WEPRO WhatsApp Agent",
       },
-      body: JSON.stringify({ model: model(), messages, temperature: 0.4 }),
+      body: JSON.stringify({ model: model(), messages, temperature: 0.2 }),
     });
     if (!res.ok) {
       console.error("askAgent: OpenRouter error", res.status, await res.text());
-      return { reply: "", send: null };
+      return { reply: "", send: null, confident: false };
     }
     const body = await res.json();
     const content = String(body?.choices?.[0]?.message?.content ?? "");
@@ -217,12 +238,14 @@ export async function askAgent(
       // went off-script. Log it, but never forward unparsed content (it may
       // be raw JSON or a stray preamble, not something to show a customer).
       console.error("askAgent: could not extract JSON from model output", content.slice(0, 500));
-      return { reply: "", send: null };
+      return { reply: "", send: null, confident: false };
     }
+    // One line per decision so a silent thread can be audited from the logs.
+    console.log("askAgent", { confident: parsed.confident, reply: parsed.reply.slice(0, 120), send: parsed.send });
     return parsed;
   } catch (e) {
     console.error("askAgent: request failed", e);
-    return { reply: "", send: null };
+    return { reply: "", send: null, confident: false };
   }
 }
 
@@ -231,6 +254,93 @@ export interface ResolvedMedia {
   url: string;
   fileName?: string;
   caption: string;
+}
+
+// These three Jolshiri projects are commonly asked about interchangeably, so
+// a customer naming any one of them gets all three brochures bundled with a
+// single explanatory line, instead of the model picking just the one it
+// matched. Deliberately code, not a wa_knowledge rule — it needs to send
+// three documents in one turn, which AgentReply.send (one project at a time)
+// can't express.
+const JOLSHIRI_BUNDLE_NAMES = ["Wecon Osman Bellevue", "Wecon Nuznan", "Wecon Dakshinayan"];
+const JOLSHIRI_BUNDLE_MESSAGE =
+  "জলসিঁড়িতে আমাদের ৩টি প্রজেক্ট আছে। আপনার সুবিধার্থে আমি ৩টি প্রজেক্টের ব্রোশিওর শেয়ার করলাম।";
+
+// wa-followup stage copy (see FLOW.md-equivalent summary in that function's
+// header comment). Exported so both bots' inbound handler (stage 3's "yes"
+// path) and the follow-up cron job (stages 2a/2b/4) use identical wording.
+export const FLOW_ASK_PROFILE_TEXT =
+  "জলসিঁড়িতে আমাদের ৩টি প্রজেক্ট আছে। আপনার সুবিধার্থে আমি ৩টি প্রজেক্টের ব্রোশিওর শেয়ার করে রাখবো?";
+export const FLOW_AUTO_PROFILE_TEXT =
+  "জলসিঁড়িতে আমাদের ৩টি প্রজেক্ট আছে। আপনার সুবিধার্থে আমি ৩টি প্রজেক্টের ব্রোশিওর শেয়ার করে রাখলাম।";
+export const FLOW_ASK_AGENT_TEXT =
+  "আপনার জন্য কি একজন ডেডিকেটেড এজেন্ট নিয়োগ করে দিব, যিনি সরাসরি কল করে আপনাকে সহায়তা করবেন?";
+// "yes" to the agent question: acknowledge and hand the thread to a human —
+// no lead/forward is created automatically (user's rule).
+export const FLOW_AGENT_YES_TEXT = "জি, বলুন কিভাবে হেল্প করতে পারি।";
+// A direct knock with no ad behind it: nothing is known about what they
+// want, so no Jolshiri line and no Jolshiri follow-up flow — just this.
+export const GENERIC_WELCOME_TEXT = "Assalamu Alaikum. I'm Eyad from Wecon Properties. How can I help you today?";
+
+// Loose yes/no detector for the stage-3 "do you want the profile?" reply —
+// Bangla, Banglish and English all show up in real chats.
+// A "yes" is a SHORT message made of yes-words — "পেমেন্ট প্ল্যান জানতে চাই"
+// contains চাই but is a question, not consent, and once got the agent ack
+// by mistake. So: strip punctuation, cap at 4 words, and every word must be
+// on the list. Two lists because `\b` is ASCII-only in JS and never matches
+// at the edge of a Bangla word.
+const YES_WORDS = new Set([
+  "hae", "ha", "haan", "ji", "jee", "jii", "hmm", "hm", "ok", "okay", "oky", "sure", "yes", "yeah", "yep", "please", "pls", "plz",
+  "dao", "den", "dibo", "din", "accha", "acha", "thik", "ache",
+  "জি", "জ্বি", "জ্বী", "হ্যাঁ", "হ্যা", "হুম", "আচ্ছা", "ঠিক", "আছে", "দিন", "দেন", "দাও", "পাঠান", "পাঠাও",
+]);
+export const isAffirmative = (text: string): boolean => {
+  // \p{M} keeps Bangla vowel signs / virama ("জি" is জ + ি) — without it the
+  // word collapses to "জ" and never matches.
+  const words = text.toLowerCase().replace(/[^\p{L}\p{M}\p{N}\s]/gu, " ").trim().split(/\s+/).filter(Boolean);
+  if (!words.length || words.length > 4) return false;
+  return words.every((w) => YES_WORDS.has(w));
+};
+
+export interface JolshiriBundle {
+  message: string;
+  brochures: { project: ProjectRow; url: string }[];
+}
+
+function jolshiriBundleProjects(projects: ProjectRow[]): ProjectRow[] | null {
+  const bundleProjects = JOLSHIRI_BUNDLE_NAMES
+    .map((n) => projects.find((p) => p.name.toLowerCase() === n.toLowerCase()))
+    .filter((p): p is ProjectRow => !!p);
+  return bundleProjects.length === JOLSHIRI_BUNDLE_NAMES.length ? bundleProjects : null;
+}
+
+// Returns the bundle (message + brochure URLs) when the customer's text
+// names one of the three projects, or null when none matched / the catalog
+// doesn't have all three seeded yet (fail safe — falls through to the
+// normal single-project flow).
+export function matchJolshiriBundle(text: string, projects: ProjectRow[]): JolshiriBundle | null {
+  const bundleProjects = jolshiriBundleProjects(projects);
+  if (!bundleProjects) return null;
+
+  const lower = text.toLowerCase();
+  const hit = bundleProjects.some(
+    (p) => lower.includes(p.name.toLowerCase()) || (p.keywords || []).some((k) => lower.includes(k.toLowerCase())),
+  );
+  if (!hit) return null;
+
+  const brochures = bundleProjects.filter((p) => p.brochure_url).map((p) => ({ project: p, url: p.brochure_url! }));
+  return brochures.length ? { message: JOLSHIRI_BUNDLE_MESSAGE, brochures } : null;
+}
+
+// Unconditional variant for the post-greeting follow-up flow (wa-followup):
+// no text to match against, just "give me the bundle with this message" —
+// used for the stage 2b auto-send and the stage 3 "yes" confirmation, each
+// with their own wording.
+export function buildJolshiriBundle(projects: ProjectRow[], message: string): JolshiriBundle | null {
+  const bundleProjects = jolshiriBundleProjects(projects);
+  if (!bundleProjects) return null;
+  const brochures = bundleProjects.filter((p) => p.brochure_url).map((p) => ({ project: p, url: p.brochure_url! }));
+  return brochures.length ? { message, brochures } : null;
 }
 
 // Resolve the model's chosen media into one or more actual catalog URLs.

@@ -107,18 +107,21 @@ export async function getCredentials(account = "eyad"): Promise<{ token: string;
 // building a vector index for it.
 export async function getActiveProjects(): Promise<any[]> {
   return sbSelect(
-    "wa_projects?is_active=eq.true&select=name,keywords,region,nature,sft,address,brochure_url,photos,floor_plans,floor_plan_labels,video_url,google_map_url,map_image_url",
+    "wa_projects?is_active=eq.true&select=name,keywords,region,nature,sft,address,office_address,brochure_url,photos,floor_plans,floor_plan_labels,video_url,google_map_url,map_image_url",
   );
 }
 
 // Last few turns of this thread, oldest first, as plain {role, text} so the
 // model sees the conversation the way it actually happened.
+// The model must always read the thread before answering (user's rule), so
+// the window is generous. Ordered by created_at: manually relayed rows can
+// carry a null wa_timestamp and would otherwise float to the wrong end.
 export async function getRecentHistory(
   convId: string,
-  limit = 10,
+  limit = 30,
 ): Promise<{ role: "user" | "assistant"; text: string }[]> {
   const rows = await sbSelect(
-    `wa_messages?conversation_id=eq.${encodeURIComponent(convId)}&select=direction,body,caption,type&order=wa_timestamp.desc&limit=${limit}`,
+    `wa_messages?conversation_id=eq.${encodeURIComponent(convId)}&select=direction,body,caption,type&order=created_at.desc&limit=${limit}`,
   );
   return (rows || [])
     .reverse()
@@ -171,23 +174,36 @@ export async function sendWaMessageMirroredId(
     msg.type === "document" ? { to, text: msg.text || (msg.fileName || "Document"), documentUrl: msg.mediaUrl, fileName: msg.fileName || "document" } :
     { to, text: msg.text || "" };
 
+  // Wasender's account protection allows 1 send per 5s per session. Two
+  // code paths (e.g. the follow-up cron and an inbound reply) can collide,
+  // so a 429 is retried after the window instead of dropping the message.
   let ok = false;
   let waId = "";
-  try {
-    const res = await fetch(`${WASENDER_BASE}/send-message`, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
-    ok = res.ok;
-    if (!ok) console.error("sendWaMessageMirrored: send-message failed", res.status, await res.text());
-    else {
-      // Same id lookup as wa-send: Wasender has moved this field between versions.
-      const j = await res.json().catch(() => ({}));
-      waId = String(j?.data?.msgId ?? j?.data?.id ?? j?.data?.key?.id ?? j?.msgId ?? j?.id ?? "");
+  for (let attempt = 0; attempt < 3 && !ok; attempt++) {
+    try {
+      const res = await fetch(`${WASENDER_BASE}/send-message`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      ok = res.ok;
+      if (ok) {
+        // Same id lookup as wa-send: Wasender has moved this field between versions.
+        const j = await res.json().catch(() => ({}));
+        waId = String(j?.data?.msgId ?? j?.data?.id ?? j?.data?.key?.id ?? j?.msgId ?? j?.id ?? "");
+        break;
+      }
+      const text = await res.text();
+      if (res.status === 429 && attempt < 2) {
+        let wait = 5500;
+        try { wait = Math.max(1000, (JSON.parse(text)?.retry_after ?? 5) * 1000 + 500); } catch { /* keep default */ }
+        await new Promise((r) => setTimeout(r, wait));
+        continue;
+      }
+      console.error("sendWaMessageMirrored: send-message failed", res.status, text);
+    } catch (e) {
+      console.error("sendWaMessageMirrored: send-message error", e);
     }
-  } catch (e) {
-    console.error("sendWaMessageMirrored: send-message error", e);
   }
   if (!ok) return null;
 
@@ -297,7 +313,7 @@ export function fillWelcomeTemplate(text: string, name: string): string {
 // (was a hardcoded CODE_TO_PROJECT map in wa-bot-eyad).
 export async function getProjectBySendCode(code: string): Promise<any | null> {
   const rows = await sbSelect(
-    `wa_projects?send_code=eq.${encodeURIComponent(code)}&is_active=eq.true&select=name,keywords,region,nature,sft,address,brochure_url,photos,floor_plans,floor_plan_labels,video_url,google_map_url,map_image_url&limit=1`,
+    `wa_projects?send_code=eq.${encodeURIComponent(code)}&is_active=eq.true&select=name,keywords,region,nature,sft,address,office_address,brochure_url,photos,floor_plans,floor_plan_labels,video_url,google_map_url,map_image_url&limit=1`,
   );
   return rows?.[0] ?? null;
 }
