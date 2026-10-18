@@ -92,6 +92,9 @@ export async function chatCompletion(cfg: ModelConfig, key: string, req: ChatReq
   if (!v.ok) return { ok: false, code: "config", error: v.errors.join("; ") };
   // OpenRouter and OpenAI are pinned to their public hosts; only a custom host
   // is resolved, so a public name pointing at a private address is refused.
+  // Residual risk: fetch resolves the name again, so a host that changes its
+  // DNS answer in between (rebinding) can still reach a private address. Only
+  // an egress proxy or dialling the checked address closes that.
   if (!PROVIDERS[v.value.provider].fixedHost) {
     let addrs: string[];
     try { addrs = await io.resolve(hostOf(v.value.base_url)); } catch { return { ok: false, code: "dns", error: "Could not resolve the base_url host" }; }

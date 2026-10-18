@@ -48,7 +48,13 @@ function memDb() {
         return { ok: true, data: { id: cur.id, revision: cur.revision } };
       }
       // Stand-in for the Vault-backed key functions (migration 0043).
-      if (fn === "ai_model_key_set") { const r = t.ai_model_configs.find((x) => x.scope === a.p_scope); if (!r) return { ok: false, error: "no_config" }; vault[a.p_scope] = a.p_key; Object.assign(r, { key_secret_id: "v1", key_last4: a.p_key.slice(-4), key_host: new URL(r.base_url).hostname.toLowerCase().replace(/\.+$/, ""), key_set_at: "now", last_test: null }); return { ok: true }; }
+      if (fn === "ai_model_key_set") {
+        const host = (u: string) => new URL(u).hostname.toLowerCase().replace(/\.+$/, "");
+        const r = t.ai_model_configs.find((x) => x.scope === a.p_scope); if (!r) return { ok: false, error: "no_config" };
+        if (!a.p_expected_base_url) return { ok: false, error: "expected_base_url_required" };
+        if (host(r.base_url) !== host(a.p_expected_base_url)) return { ok: false, error: '{"message":"host_mismatch"}' };
+        vault[a.p_scope] = a.p_key; Object.assign(r, { key_secret_id: "v1", key_last4: a.p_key.slice(-4), key_host: host(a.p_expected_base_url), key_set_at: "now", last_test: null }); return { ok: true };
+      }
       if (fn === "ai_model_key_get") return { ok: true, data: vault[a.p_scope] ?? null };
       return { ok: false, error: "unknown rpc" };
     },
@@ -459,4 +465,34 @@ test("modelconfig: a stored key is bound to its host and never sent to a differe
   assert.equal(deps.db.t.ai_model_configs[0].key_host, "attacker.example.net");
   const t2 = await turn(deps, { text: "price?", client_turn_id: "c-0005-mmmm" });
   assert.equal(t2.status, 200); assert.equal(m.used[0].key, "sk-other-HOSTKEY-7777");
+});
+
+test("modelconfig: a key is refused when another save changed the host between the settings write and the key write", async () => {
+  const m = modelLlm([]);
+  const deps: any = { db: memDb(), llm: llm(), env: ENV, modelLlm: m.make };
+  await call(deps, "modelconfig.save", { ...CFG, api_key: KEY });
+  // Interleave: our settings patch lands, then a concurrent save moves the row to another host before our key RPC runs.
+  const realPatch = deps.db.patch.bind(deps.db);
+  deps.db.patch = async (table: string, f: string, patch: any) => {
+    const r = await realPatch(table, f, patch);
+    if (table === "ai_model_configs" && patch.base_url === "https://api.example.com/v3") await realPatch(table, f, { base_url: "https://attacker.example.net/v1" });
+    return r;
+  };
+  const r = await call(deps, "modelconfig.save", { ...CFG, base_url: "https://api.example.com/v3", api_key: "sk-rotated-VICTIM-4242" });
+  assert.equal(r.status, 409); assert.equal(r.body.error.code, "conflict");
+  assert.ok(!JSON.stringify(r.body).includes("VICTIM"), "key in the response");
+  assert.equal(deps.db.vault.playground, KEY, "the rotated key was not stored");
+  assert.equal(deps.db.t.ai_model_configs[0].key_host, "api.example.com", "binding still points at the original host");
+  // The row now points at the other host with a key bound elsewhere: no call reaches it.
+  const t1 = await turn(deps, { text: "price?", client_turn_id: "c-0006-mmmm" });
+  assert.equal(t1.status, 422); assert.equal(m.used.length, 0);
+  assert.ok(!JSON.stringify(deps.db.t.ai_trainer_audit).includes("VICTIM"));
+});
+
+test("modelconfig: the key RPC always receives the base URL the caller saved", async () => {
+  const deps: any = { db: memDb(), llm: llm(), env: ENV };
+  const seen: any[] = []; const realRpc = deps.db.rpc.bind(deps.db);
+  deps.db.rpc = async (fn: string, a: any) => { if (fn === "ai_model_key_set") seen.push(a.p_expected_base_url); return realRpc(fn, a); };
+  await call(deps, "modelconfig.save", { ...CFG, base_url: "https://API.Example.com/v1/", api_key: KEY });
+  assert.deepEqual(seen, ["https://api.example.com/v1"]);
 });

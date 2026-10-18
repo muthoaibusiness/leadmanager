@@ -40,22 +40,32 @@ alter table ai_model_configs add column if not exists key_host text;
 alter table ai_model_configs enable row level security;
 revoke all on ai_model_configs from anon, authenticated;
 
+-- An earlier draft took no expected base URL; drop it so it cannot linger as
+-- an overload.
+drop function if exists ai_model_key_set(text, text, text);
+
 -- Creates or rotates the scope's key and records its id, last 4 and host on
--- the row. The row must already exist (the handler saves the settings first).
--- Errors never include the key.
-create or replace function ai_model_key_set(p_scope text, p_key text, p_actor text)
+-- the row. The caller passes the base URL it just saved; the row is locked and
+-- the key is refused unless the row still has that host, so a concurrent save
+-- to another host can never receive this key. Errors never include the key.
+create or replace function ai_model_key_set(p_scope text, p_key text, p_actor text, p_expected_base_url text)
 returns void
 language plpgsql
 security definer
 set search_path = ''
 as $$
-declare sid uuid; base text;
+declare sid uuid; base text; want text;
 begin
   if p_key is null or length(p_key) < 8 or length(p_key) > 512 or p_key ~ '[^\x21-\x7e]' then
     raise exception 'invalid_key';
   end if;
+  want := rtrim(lower(substring(p_expected_base_url from '^https://(\[[^]]+\]|[^/:?#]+)')), '.');
+  if want is null or want = '' then raise exception 'expected_base_url_required'; end if;
   select key_secret_id, base_url into sid, base from public.ai_model_configs where scope = p_scope for update;
   if not found then raise exception 'no_config'; end if;
+  if rtrim(lower(substring(base from '^https://(\[[^]]+\]|[^/:?#]+)')), '.') is distinct from want then
+    raise exception 'host_mismatch';
+  end if;
   -- Vault secret names are unique, so a secret left by a deleted row is reused.
   if sid is null or not exists (select 1 from vault.secrets where id = sid) then
     select id into sid from vault.secrets where name = 'ai_model_key_' || p_scope;
@@ -67,7 +77,7 @@ begin
   end if;
   update public.ai_model_configs
      set key_secret_id = sid, key_last4 = right(p_key, 4), key_set_at = now(), last_test = null,
-         key_host = rtrim(lower(substring(base from '^https://(\[[^]]+\]|[^/:?#]+)')), '.'),
+         key_host = want,
          updated_at = now(), updated_by_claimed = left(coalesce(p_actor, 'unknown'), 120)
    where scope = p_scope;
 end $$;
@@ -86,9 +96,9 @@ as $$
    where c.scope = p_scope
 $$;
 
-revoke all on function ai_model_key_set(text, text, text) from public, anon, authenticated;
+revoke all on function ai_model_key_set(text, text, text, text) from public, anon, authenticated;
 revoke all on function ai_model_key_get(text) from public, anon, authenticated;
-grant execute on function ai_model_key_set(text, text, text) to service_role;
+grant execute on function ai_model_key_set(text, text, text, text) to service_role;
 grant execute on function ai_model_key_get(text) to service_role;
 
 notify pgrst, 'reload schema';

@@ -54,8 +54,9 @@ export const llm: Llm = {
   },
 };
 
-// The Playground's configured provider (migration 0043). Every call resolves
-// the host first so a name pointing at a private address is refused.
+// The Playground's configured provider (migration 0043). Every custom-host call
+// resolves the host first so a name pointing at a private address is refused.
+// This does not stop DNS rebinding: fetch does its own lookup afterwards.
 export const modelLlm = (cfg: ModelConfig, key: string): Llm => ({
   chat: (req) => chatCompletion(cfg, key, req, {
     fetch: (url, init) => fetch(url, init),

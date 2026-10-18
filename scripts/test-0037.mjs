@@ -165,31 +165,39 @@ await ok('0043: settings table refuses bad scope, provider, protocol and model i
 });
 
 await ok('0043: the key goes to the vault, the row keeps only its id and last 4, rotation reuses the secret', async () => {
-  await rejects(`select ai_model_key_set('playground', 'sk-0000-1111', 't')`);
+  await rejects(`select ai_model_key_set('playground', 'sk-0000-1111', 't', 'https://x.example/v1')`);
   await db.exec(`insert into ai_model_configs (scope, provider, base_url, model, updated_by_claimed) values ('playground','custom','https://x.example/v1','acme/m','t')`);
-  await rejects(`select ai_model_key_set('playground', 'short', 't')`);
-  await db.query(`select ai_model_key_set('playground', 'sk-first-KEY-1111', 'Asad')`);
+  await rejects(`select ai_model_key_set('playground', 'short', 't', 'https://x.example/v1')`);
+  await db.query(`select ai_model_key_set('playground', 'sk-first-KEY-1111', 'Asad', 'https://x.example/v1')`);
   const row = (await db.query(`select to_jsonb(c) as j from ai_model_configs c`)).rows[0].j;
   assert.equal(row.key_last4, '1111');
   assert.ok(!JSON.stringify(row).includes('first-KEY'), 'plaintext key in the settings row');
-  await db.query(`select ai_model_key_set('playground', 'sk-second-KEY-2222', 'Asad')`);
+  await db.query(`select ai_model_key_set('playground', 'sk-second-KEY-2222', 'Asad', 'https://x.example/v2')`);
   assert.equal((await db.query(`select ai_model_key_get('playground') as k`)).rows[0].k, 'sk-second-KEY-2222');
   assert.equal((await db.query(`select count(*)::int as n from vault.secrets`)).rows[0].n, 1, 'rotation updates in place');
   assert.equal((await db.query(`select key_host from ai_model_configs`)).rows[0].key_host, 'x.example');
-  await rejects(`select ai_model_key_set('playground', 'has a space in it', 't')`);
+  await rejects(`select ai_model_key_set('playground', 'has a space in it', 't', 'https://x.example/v1')`);
   // A deleted row leaves its vault secret; a new row reuses it by name instead of failing on the unique name.
   await db.exec(`delete from ai_model_configs; insert into ai_model_configs (scope, provider, base_url, model, updated_by_claimed) values ('playground','custom','https://[2606:4700::1111]/v1','acme/m','t')`);
-  await db.query(`select ai_model_key_set('playground', 'sk-third-KEY-3333', 'Asad')`);
+  await db.query(`select ai_model_key_set('playground', 'sk-third-KEY-3333', 'Asad', 'https://[2606:4700::1111]/v1')`);
   assert.equal((await db.query(`select count(*)::int as n from vault.secrets`)).rows[0].n, 1);
   assert.equal((await db.query(`select key_host from ai_model_configs`)).rows[0].key_host, '[2606:4700::1111]');
   assert.equal((await db.query(`select ai_model_key_get('playground') as k`)).rows[0].k, 'sk-third-KEY-3333');
+});
+
+await ok('0043: the key is refused unless the locked row still has the caller\'s host', async () => {
+  await rejects(`select ai_model_key_set('playground', 'sk-other-HOST-4444', 't', 'https://attacker.example/v1')`);
+  await rejects(`select ai_model_key_set('playground', 'sk-other-HOST-4444', 't', null)`);
+  await rejects(`select ai_model_key_set('playground', 'sk-other-HOST-4444', 't', 'http://[2606:4700::1111]/v1')`);
+  assert.equal((await db.query(`select ai_model_key_get('playground') as k`)).rows[0].k, 'sk-third-KEY-3333', 'refused calls stored nothing');
+  assert.equal((await db.query(`select count(*)::int as n from pg_proc where proname = 'ai_model_key_set'`)).rows[0].n, 1, 'no 3-argument overload left');
 });
 
 await ok('0043: anon and authenticated cannot read the table or call the key functions', async () => {
   const g = await db.query(`select count(*)::int as n from information_schema.role_table_grants where grantee in ('anon','authenticated') and table_name = 'ai_model_configs'`);
   assert.equal(g.rows[0].n, 0);
   for (const role of ['anon', 'authenticated']) {
-    for (const fn of ['ai_model_key_set(text,text,text)', 'ai_model_key_get(text)']) {
+    for (const fn of ['ai_model_key_set(text,text,text,text)', 'ai_model_key_get(text)']) {
       assert.equal((await db.query(`select has_function_privilege('${role}', '${fn}', 'execute') as x`)).rows[0].x, false, `${role} ${fn}`);
     }
   }
