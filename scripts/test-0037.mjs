@@ -131,4 +131,20 @@ await ok('0040: anon has no grants on the playground tables', async () => {
   assert.equal(rls.rows[0].n, 2);
 });
 
+// 0041/0042 were renumbered from duplicate 0037/0038 files. Production already
+// has them (applied by hand), so they must stay no-ops when run again.
+await ok('0041/0042: renumbered migrations apply twice and never overwrite an office address', async () => {
+  await db.exec(`create table wa_projects (id text primary key, region text)`);
+  await db.exec(`insert into wa_projects values ('d1','Dhaka'), ('c1','Chattogram'), ('x1','Sylhet')`);
+  for (let i = 0; i < 2; i++) {
+    await db.exec(readFileSync('supabase/migrations/0041_wa_followup_flow.sql', 'utf8'));
+    await db.exec(readFileSync('supabase/migrations/0042_wa_projects_office_address.sql', 'utf8'));
+    if (i === 0) await db.exec(`update wa_projects set office_address = 'custom' where id = 'd1'`);
+  }
+  const r = await db.query(`select id, office_address from wa_projects order by id`);
+  assert.deepEqual(r.rows, [{ id: 'c1', office_address: '687 Mehedibag, Chattogram 4203' }, { id: 'd1', office_address: 'custom' }, { id: 'x1', office_address: null }]);
+  const c = await db.query(`select count(*)::int as n from information_schema.columns where table_name = 'preleads' and column_name in ('flow_stage','stage_at','stage_msg_count')`);
+  assert.equal(c.rows[0].n, 3);
+});
+
 console.log(`\n${pass} passed`);
