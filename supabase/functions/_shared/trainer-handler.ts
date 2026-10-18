@@ -87,8 +87,27 @@ class BudgetError extends Error { constructor() { super("over_budget"); } }
 const activeProjectIds = async (db: Db) =>
   new Set((await db.select("ai_trainer_items?kind=eq.project&status=eq.active&select=id")).map((r) => r.id));
 
+// An example taken from a real chat (a corrected live reply) is redacted here,
+// on the server, the same way importPreview redacts legacy corrections, so no
+// caller can store a customer's phone, email or link. A handwritten or
+// Playground example is the author's own text and is kept as written.
+function redactRealExample(body: any): { body: any; rejected: boolean } {
+  if (!body || body.source !== "real" || !Array.isArray(body.conversation)) return { body, rejected: false };
+  const one = (s: unknown) => (typeof s === "string" && s ? redactTurns([{ role: "customer", text: s }], []).turns[0]?.text ?? "" : s);
+  const conv = redactTurns(body.conversation, []);
+  const out = { ...body, conversation: conv.turns.length ? conv.turns : [{ role: "customer", text: "(no text)" }],
+    ideal_reply: one(body.ideal_reply), ...(body.original_reply !== undefined ? { original_reply: one(body.original_reply) } : {}) };
+  const left = redactTurns([{ role: "customer", text: [out.ideal_reply, out.original_reply].filter(Boolean).join(" ") || "-" }], []);
+  return { body: out, rejected: conv.rejected || left.rejected };
+}
+
 async function saveItem(deps: Deps, p: any, actor: string, expected: number, reason: string | null): Promise<Res> {
   if (!KINDS.includes(p.kind)) return fail(422, "schema", "unknown kind");
+  if (p.kind === "example") {
+    const red = redactRealExample(p.body);
+    if (red.rejected) return fail(422, "redaction", "This example still contains personal data after redaction. Edit it out first.");
+    p = { ...p, body: red.body };
+  }
   const errs = [...validateItem(p.kind as Kind, p.body), ...validateScope(p.kind, p.bots, p.project_ref ?? null, await activeProjectIds(deps.db))];
   if (errs.length) return fail(422, "schema", "invalid item", errs);
   const item = { id: p.id, kind: p.kind, bots: p.bots, project_ref: p.project_ref ?? null, body: p.body,

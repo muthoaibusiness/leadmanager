@@ -210,3 +210,22 @@ test("tests.create rejects a setup.state that is not an object", async () => {
   const spec = { title: "t", setup: { isAd: false, returning: false, state: "x" }, conversation: [], target: "hi", checks: [], ideal_reply: "", judge: "none" };
   assert.equal((await call(deps, "tests.create", { bots: ["eyad"], origin: "handwritten", spec })).status, 422);
 });
+
+test("a real-conversation example is redacted on save, replies included; a handwritten one is kept as written", async () => {
+  const deps = { db: memDb(), llm: llm(), env: ENV };
+  const ex = (text: string, ideal = "Happy to help, which project?") => ({ kind: "example", bots: ["eyad"], project_ref: null,
+    body: { conversation: [{ role: "customer", text }], original_reply: "Hi Rahim, call 01711000001", ideal_reply: ideal, reason: "live reply corrected", source: "real" } });
+  const r = await call(deps, "items.create", ex("I am Rahim, mail rahim@x.com or call +880 1711-000001, see https://x.test/a"));
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  const saved = deps.db.t.ai_trainer_items.at(-1).body;
+  const all = JSON.stringify(saved);
+  assert.ok(!all.includes("rahim@x.com") && !all.includes("1711") && !all.includes("https://x.test"), all);
+  assert.ok(saved.conversation[0].text.includes("{email}") && saved.conversation[0].text.includes("{phone}"), all);
+  const bad = await call(deps, "items.create", ex("hi", "Call our agent at 01711000001"));
+  assert.equal(bad.status, 200, "ideal reply phone is redacted too");
+  assert.ok(!JSON.stringify(deps.db.t.ai_trainer_items.at(-1).body).includes("01711000001"));
+  // a handwritten example is the author's own text and is not rewritten
+  const hw = await call(deps, "items.create", { ...ex("Land Team number?"), body: { ...ex("Land Team number?").body, source: "handwritten", ideal_reply: "Land Team: 01335142002" } });
+  assert.equal(hw.status, 200);
+  assert.ok(JSON.stringify(deps.db.t.ai_trainer_items.at(-1).body).includes("01335142002"));
+});
