@@ -229,15 +229,108 @@ async function retireTest(deps: Deps, p: any, actor: string): Promise<Res> {
   return ok({ id: cur.id, revision: cur.revision + 1 });
 }
 
-async function playgroundTurn(deps: Deps, p: any): Promise<Res> {
+// ── Playground history (migration 0040) ─────────────────────────────────────
+// Every Playground turn is saved to ai_playground_turns under one
+// ai_playground_conversations row, kept apart from WhatsApp (wa_messages) and
+// the live trainer path (ai_turns). A continued conversation is rebuilt from
+// what was saved: the history and the state the model sees come from the
+// database, never from the browser. client_turn_id makes a retry return the
+// saved turn instead of running the model a second time.
+const PG_TURN_COLS = "id,conversation_id,seq,client_turn_id,customer_text,setup,returning_contact,state_before,state_after,reply,media,handoff,outcome,trace,error,checksum,core_version,created_at,finished_at";
+
+async function pgTurns(db: Db, conversationId: string): Promise<any[]> {
+  const rows = await db.select(`ai_playground_turns?conversation_id=eq.${encodeURIComponent(conversationId)}&select=${PG_TURN_COLS}&order=seq.asc`);
+  return [...rows].sort((a, b) => a.seq - b.seq);
+}
+
+const pgHistory = (turns: any[]) => turns.flatMap((t) => [{ role: "customer", text: t.customer_text }, ...(t.reply ? [{ role: "bot", text: t.reply }] : [])]);
+
+async function playgroundTurn(deps: Deps, p: any, actor: string): Promise<Res> {
   if (!["eyad", "dubai"].includes(p.bot)) return fail(422, "schema", "bot must be eyad or dubai");
   if (typeof p.text !== "string" || !p.text.trim() || p.text.length > 2000) return fail(422, "schema", "text is required (max 2000 characters)");
-  const { content, checksum, errors } = await contentFor(deps, p.source || "drafts", p.snapshot_id);
+  // The browser sends one id per send so a retry is recognised. An older
+  // caller without one still works, it just gets no retry protection.
+  if (p.client_turn_id === undefined) p = { ...p, client_turn_id: crypto.randomUUID() };
+  if (typeof p.client_turn_id !== "string" || !/^[A-Za-z0-9_-]{8,64}$/.test(p.client_turn_id)) return fail(422, "schema", "client_turn_id must be 8-64 letters, digits, - or _");
+  const source = p.source === "snapshot" ? "snapshot" : "drafts";
+  const snapshotId = source === "snapshot" ? String(p.snapshot_id || "") : null;
+  if (source === "snapshot" && !snapshotId) return fail(422, "schema", "snapshot_id is required for a snapshot");
+
+  // Continue a saved conversation, or start one. An unknown id is an error,
+  // never a silent new conversation.
+  let conv: any = null;
+  if (p.conversation_id) {
+    conv = (await deps.db.select(`ai_playground_conversations?id=eq.${encodeURIComponent(String(p.conversation_id))}&select=*`))[0];
+    if (!conv) return fail(404, "not_found", "That Playground conversation no longer exists. Start a new one.");
+    if (conv.bot !== p.bot || conv.source !== source || (conv.snapshot_id ?? null) !== snapshotId) {
+      return fail(409, "mismatch", "This conversation was started with another bot or version. Start a new conversation to switch.");
+    }
+  } else {
+    // A retried first turn: find the conversation its earlier attempt created.
+    const prior = (await deps.db.select(`ai_playground_turns?client_turn_id=eq.${encodeURIComponent(p.client_turn_id)}&seq=eq.1&select=conversation_id`))[0];
+    if (prior) conv = (await deps.db.select(`ai_playground_conversations?id=eq.${encodeURIComponent(prior.conversation_id)}&select=*`))[0] || null;
+  }
+  if (conv) {
+    const done = (await pgTurns(deps.db, conv.id)).find((t) => t.client_turn_id === p.client_turn_id);
+    if (done) return ok({ conversation_id: conv.id, conversation: conv, turn: done, duplicate: true });
+  }
+
+  const { content, checksum, errors } = await contentFor(deps, source, snapshotId ?? undefined);
   if (errors.length) return fail(422, "freeze", "Drafts have errors. Fix them first.", errors);
-  const state: ConvState = { ...emptyState(), ...(p.state || {}) };
-  const result = await runTurn({ content, bot: p.bot, text: p.text, history: Array.isArray(p.history) ? p.history : [], state,
-    ad: { isAd: !!p.setup?.isAd, adText: p.setup?.adText }, returning: !!p.setup?.returning, ports: portsFor(deps) });
-  return ok({ result, checksum, core_version: CORE_VERSION });
+
+  const setup = conv ? conv.setup : { isAd: !!p.setup?.isAd, adText: p.setup?.isAd ? String(p.setup?.adText || "").slice(0, 500) : "", returning: !!p.setup?.returning };
+  if (!conv) {
+    conv = await deps.db.insert("ai_playground_conversations", { bot: p.bot, source, snapshot_id: snapshotId, setup, state: null,
+      title: p.text.trim().slice(0, 80), turn_count: 0, created_by_claimed: actor });
+  }
+  const prev = await pgTurns(deps.db, conv.id);
+  const stateBefore: ConvState = { ...emptyState(), ...(prev.at(-1)?.state_after || {}) };
+  const returning = !!setup.returning || prev.length > 0;
+  const startedAt = new Date().toISOString();
+  const result = await runTurn({ content, bot: p.bot, text: p.text, history: pgHistory(prev), state: stateBefore,
+    ad: { isAd: !!setup.isAd, adText: setup.adText || undefined }, returning, ports: portsFor(deps) });
+  const now = new Date().toISOString();
+  let saved: any;
+  try {
+    saved = await deps.db.insert("ai_playground_turns", {
+      conversation_id: conv.id, seq: prev.length + 1, client_turn_id: p.client_turn_id, customer_text: p.text,
+      setup, returning_contact: returning, state_before: prev.length ? stateBefore : null, state_after: result.stateNext,
+      reply: result.reply || null, media: result.media, handoff: result.handoff, outcome: result.outcome, trace: result.trace,
+      error: (result.trace.model_error as string) || null, checksum, core_version: CORE_VERSION, created_at: startedAt, finished_at: now,
+    });
+  } catch (e) {
+    // Two requests raced on the same turn: the other one saved it first.
+    const done = (await pgTurns(deps.db, conv.id)).find((t) => t.client_turn_id === p.client_turn_id);
+    if (done) return ok({ conversation_id: conv.id, conversation: conv, turn: done, duplicate: true });
+    throw e;
+  }
+  await deps.db.patch("ai_playground_conversations", `id=eq.${encodeURIComponent(conv.id)}`, { state: result.stateNext, turn_count: prev.length + 1, last_activity_at: now });
+  return ok({ conversation_id: conv.id, conversation: { ...conv, state: result.stateNext, turn_count: prev.length + 1, last_activity_at: now },
+    turn: saved, result, checksum, core_version: CORE_VERSION });
+}
+
+// Newest first. Search matches the title and any customer message or reply;
+// bot narrows to one bot.
+async function playgroundList(deps: Deps, p: any): Promise<Res> {
+  let convs = await deps.db.select("ai_playground_conversations?select=id,bot,source,snapshot_id,title,turn_count,created_at,last_activity_at,state&order=last_activity_at.desc&limit=200");
+  if (["eyad", "dubai"].includes(p.bot)) convs = convs.filter((c) => c.bot === p.bot);
+  const q = typeof p.q === "string" ? p.q.trim().toLowerCase().slice(0, 200) : "";
+  if (q) {
+    const hits = new Set<string>();
+    for (const c of convs) {
+      if (String(c.title || "").toLowerCase().includes(q)) { hits.add(c.id); continue; }
+      const ts = await pgTurns(deps.db, c.id);
+      if (ts.some((t) => `${t.customer_text} ${t.reply || ""}`.toLowerCase().includes(q))) hits.add(c.id);
+    }
+    convs = convs.filter((c) => hits.has(c.id));
+  }
+  return ok([...convs].sort((a, b) => String(b.last_activity_at).localeCompare(String(a.last_activity_at))).slice(0, 100));
+}
+
+async function playgroundGet(deps: Deps, p: any): Promise<Res> {
+  const conv = (await deps.db.select(`ai_playground_conversations?id=eq.${encodeURIComponent(String(p.id || ""))}&select=*`))[0];
+  if (!conv) return fail(404, "not_found", "Playground conversation not found.");
+  return ok({ conversation: conv, turns: await pgTurns(deps.db, conv.id) });
 }
 
 export async function handleTrainer(req: { method: string; headers: Headers; ip: string; body: any }, deps: Deps): Promise<Res> {
@@ -264,7 +357,9 @@ export async function handleTrainer(req: { method: string; headers: Headers; ip:
       case "tests.create": return await saveTest(deps, p, actor, true);
       case "tests.update": return await saveTest(deps, p, actor, false);
       case "tests.retire": return await retireTest(deps, p, actor);
-      case "playground.turn": return await playgroundTurn(deps, p);
+      case "playground.turn": return await playgroundTurn(deps, p, actor);
+      case "playground.list": return await playgroundList(deps, p);
+      case "playground.get": return await playgroundGet(deps, p);
       default: return await handleRunsAndPublish(action, p, actor, deps);
     }
   } catch (e) {

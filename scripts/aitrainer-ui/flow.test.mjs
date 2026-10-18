@@ -15,10 +15,10 @@ const { createRoot } = await import(`${R}/node_modules/react-dom/client.js`);
 const { act } = React;
 const { handleTrainer } = await import(`${R}/supabase/functions/_shared/trainer-handler.ts`);
 
-const t = { ai_trainer_items: [], ai_tests: [], ai_test_revisions: [], ai_snapshots: [], ai_bot_pointers: [{ bot: "eyad", mode: "legacy", snapshot_id: null, changed_at: new Date().toISOString() }, { bot: "dubai", mode: "legacy", snapshot_id: null, changed_at: new Date().toISOString() }], ai_test_runs: [], ai_test_results: [], ai_trainer_audit: [], ai_trainer_imports: [], ai_budget_days: [], wa_projects: [], wa_knowledge: [], wa_message_corrections: [], users: [{ id: "u", role: "MANAGEMENT", is_active: true }] };
+const t = { ai_trainer_items: [], ai_tests: [], ai_test_revisions: [], ai_snapshots: [], ai_bot_pointers: [{ bot: "eyad", mode: "legacy", snapshot_id: null, changed_at: new Date().toISOString() }, { bot: "dubai", mode: "legacy", snapshot_id: null, changed_at: new Date().toISOString() }], ai_test_runs: [], ai_test_results: [], ai_trainer_audit: [], ai_trainer_imports: [], ai_budget_days: [], wa_projects: [], wa_knowledge: [], wa_message_corrections: [], ai_playground_conversations: [], ai_playground_turns: [], users: [{ id: "u", role: "MANAGEMENT", is_active: true }] };
 let n = 0; const id = () => `id${++n}`;
 const db = {
-  async select(path) { const [table, q] = path.split("?"); let rows = [...(t[table] || [])]; for (const part of (q || "").split("&")) { const m = /^(\w+)=eq\.(.+)$/.exec(part); if (m) rows = rows.filter((r) => String(r[m[1]]) === decodeURIComponent(m[2])); } return rows; },
+  async select(path) { const [table, q] = path.split("?"); let rows = [...(t[table] || [])]; const ord = /order=(\w+)\.(asc|desc)/.exec(q || ""); if (ord) rows.sort((a, b) => (String(a[ord[1]]) < String(b[ord[1]]) ? -1 : 1) * (ord[2] === "asc" ? 1 : -1)); for (const part of (q || "").split("&")) { const m = /^(\w+)=eq\.(.+)$/.exec(part); if (m) rows = rows.filter((r) => String(r[m[1]]) === decodeURIComponent(m[2])); } return rows; },
   async insert(table, row) { const r = { id: id(), ...row }; t[table].push(r); return r; },
   async patch(table, filter, patch) { const [k, v] = filter.split("=eq."); const r = t[table].find((x) => String(x[k]) === decodeURIComponent(v)); if (r) Object.assign(r, patch); return !!r; },
   async rpc(fn, a) {
@@ -75,7 +75,8 @@ root = await mount("PlaygroundTab");
 const input = $('input[aria-label="Customer message"]');
 await type(input, "What is the price?"); await click(btn("Send")); await tick(50);
 ok(document.body.textContent.includes("Which project are you interested in?"), "Playground turn 1 replied from the core");
-ok(document.body.textContent.includes("used:"), "trace shown");
+ok(document.body.textContent.includes("sources the model reports using:"), "trace shown, worded as model-reported");
+ok(document.body.textContent.includes("saved exactly as typed"), "storage notice shown");
 await type($('input[aria-label="Customer message"]'), "Jolshiri"); await click(btn("Send")); await tick(50);
 ok($$(".ait-msg.bot").length === 2, "Playground turn 2 replied (multi-turn)");
 await click($$("button").filter((b) => b.textContent.includes("Mark wrong"))[1]);
@@ -89,6 +90,26 @@ ok(saved?.setup?.state && "active_project" in saved.setup.state && saved.setup.r
   "saved test carries the state from before the corrected turn");
 ok(saved?.target === "Jolshiri" && saved?.conversation?.length === 2 && saved.conversation[0].text === "What is the price?",
   "saved test replays turn 2 with turn 1 as its history");
+// History: both turns were saved under one conversation, listed in History.
+ok(t.ai_playground_conversations.length === 1 && t.ai_playground_turns.length === 2, "both turns saved under one Playground conversation");
+ok(t.ai_playground_turns.map((x) => x.seq).join(",") === "1,2", "turns saved in order");
+await tick(400);
+ok(document.body.textContent.includes("What is the price?") && /2 turns/.test(document.body.textContent), "History lists the conversation with its turn count");
+root.unmount();
+
+// 2b. Reload: a fresh mount has no conversation open; opening it from History
+// loads the saved turns, and the next message continues it.
+root = await mount("PlaygroundTab");
+await tick(400);
+ok($$(".ait-msg.bot").length === 0, "after reload, a new conversation is shown until one is opened");
+const item = $$('[aria-label="Saved Playground conversations"] button')[0];
+await click(item); await tick(100);
+ok($$(".ait-msg.bot").length === 2 && document.body.textContent.includes("Jolshiri"), "opening it from History loads its full history");
+ok($('select').disabled === true, "bot/version are fixed for a saved conversation");
+await type($('input[aria-label="Customer message"]'), "parking?"); await click(btn("Send")); await tick(80);
+ok(t.ai_playground_conversations.length === 1 && t.ai_playground_turns.length === 3 && t.ai_playground_turns[2].seq === 3, "continuing adds turn 3 to the same conversation");
+await click(btn("New conversation")); await tick(50);
+ok($$(".ait-msg.bot").length === 0 && $('select').disabled === false, "New conversation clears the chat and unlocks settings");
 root.unmount();
 
 // 3. Quality: freeze, run (judge fails), publish blocked; then judge passes, new run, publish works.

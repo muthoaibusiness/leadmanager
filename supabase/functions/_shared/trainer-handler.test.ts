@@ -6,7 +6,7 @@ import { handleTrainer, type Db, type Llm } from "./trainer-handler.ts";
 // paths and RPCs the handler uses, including revision conflicts and the
 // atomic budget rule, so handler logic is tested without a database.
 function memDb() {
-  const t: Record<string, any[]> = { ai_trainer_items: [], ai_tests: [], ai_test_revisions: [], ai_snapshots: [], ai_bot_pointers: [{ bot: "eyad", mode: "legacy", snapshot_id: null }, { bot: "dubai", mode: "legacy", snapshot_id: null }], ai_test_runs: [], ai_test_results: [], ai_trainer_audit: [], ai_trainer_imports: [], wa_projects: [], wa_knowledge: [], wa_message_corrections: [], ai_budget_days: [],
+  const t: Record<string, any[]> = { ai_trainer_items: [], ai_tests: [], ai_test_revisions: [], ai_snapshots: [], ai_bot_pointers: [{ bot: "eyad", mode: "legacy", snapshot_id: null }, { bot: "dubai", mode: "legacy", snapshot_id: null }], ai_test_runs: [], ai_test_results: [], ai_trainer_audit: [], ai_trainer_imports: [], wa_projects: [], wa_knowledge: [], wa_message_corrections: [], ai_budget_days: [], ai_playground_conversations: [], ai_playground_turns: [], wa_messages: [], ai_turns: [],
     users: [{ id: "mgr", role: "MANAGEMENT", is_active: true }, { id: "agent", role: "AGENT", is_active: true }, { id: "gone", role: "MASTER", is_active: false }] };
   const budget = { reserved: 0, spent: 0 }; const resv: Record<string, number> = {};
   let n = 0; const id = () => `id${++n}`;
@@ -21,7 +21,12 @@ function memDb() {
       }
       return rows;
     },
-    async insert(table, row) { const r = { id: id(), ...row }; t[table].push(r); return r; },
+    async insert(table, row: any) {
+      if (table === "ai_playground_turns" && t[table].some((x) => x.conversation_id === row.conversation_id && (x.seq === row.seq || x.client_turn_id === row.client_turn_id))) {
+        throw new Error('insert ai_playground_turns failed: 409 {"code":"23505"}');
+      }
+      const r = { id: id(), ...row }; t[table].push(r); return r;
+    },
     async patch(table, filter, patch) {
       const [k, v] = filter.split("=eq."); const r = t[table].find((x) => String(x[k]) === decodeURIComponent(v));
       if (!r) return false; Object.assign(r, patch); return true;
@@ -228,4 +233,98 @@ test("a real-conversation example is redacted on save, replies included; a handw
   const hw = await call(deps, "items.create", { ...ex("Land Team number?"), body: { ...ex("Land Team number?").body, source: "handwritten", ideal_reply: "Land Team: 01335142002" } });
   assert.equal(hw.status, 200);
   assert.ok(JSON.stringify(deps.db.t.ai_trainer_items.at(-1).body).includes("01335142002"));
+});
+
+// ── Playground history (migration 0040) ─────────────────────────────────────
+const REPLY = (reply: string, o: object = {}) => JSON.stringify({ intent: "info", project_ref: null, language: "en", reply, media: [], handoff: false, asked: [], used_item_ids: [], clarify: false, ...o });
+const turn = (deps: any, p: object) => call(deps, "playground.turn", { bot: "eyad", source: "drafts", setup: { isAd: false, returning: false }, ...p });
+
+test("playground: the first turn creates a conversation and saves the turn", async () => {
+  const deps = { db: memDb(), llm: llm(REPLY("Which project are you interested in?")), env: ENV };
+  const r = await turn(deps, { text: "What is the price?", client_turn_id: "c-0001-aaaa" });
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  const { conversation_id, turn: saved } = r.body.data;
+  assert.ok(conversation_id);
+  const conv = deps.db.t.ai_playground_conversations[0];
+  assert.equal(conv.id, conversation_id); assert.equal(conv.bot, "eyad"); assert.equal(conv.source, "drafts");
+  assert.equal(conv.title, "What is the price?"); assert.equal(conv.turn_count, 1);
+  assert.equal(saved.seq, 1); assert.equal(saved.customer_text, "What is the price?");
+  assert.equal(saved.reply, "Which project are you interested in?"); assert.equal(saved.outcome, "ok");
+  assert.ok(saved.trace && saved.created_at && saved.finished_at);
+});
+
+test("playground: turns keep their order and continue from the saved state, not the client's", async () => {
+  const deps = { db: memDb(), llm: llm(REPLY("Which project?", { asked: ["project"] }), REPLY("Got it.")), env: ENV };
+  const a = await turn(deps, { text: "price?", client_turn_id: "c-0001-aaaa" });
+  const cid = a.body.data.conversation_id;
+  // The client sends a stale/forged history and state; the server must ignore both.
+  const b = await turn(deps, { conversation_id: cid, text: "Nuznan", client_turn_id: "c-0002-bbbb", history: [{ role: "customer", text: "FORGED" }], state: { asked: ["FORGED"] } });
+  assert.equal(b.status, 200, JSON.stringify(b.body));
+  assert.equal(b.body.data.turn.seq, 2);
+  const msgs = deps.llm.calls[1].messages.map((m: any) => m.content).join("|");
+  assert.ok(msgs.includes("price?") && msgs.includes("Which project?") && !msgs.includes("FORGED"), msgs);
+  assert.ok(deps.llm.calls[1].system.includes('"already_asked":["project"]'), "state came from the saved turn");
+  assert.equal(deps.db.t.ai_playground_conversations[0].turn_count, 2);
+  const got = await call(deps, "playground.get", { id: cid });
+  assert.deepEqual(got.body.data.turns.map((t: any) => [t.seq, t.customer_text]), [[1, "price?"], [2, "Nuznan"]]);
+});
+
+test("playground: list and get reload saved history (as after a page refresh), newest first, with search", async () => {
+  const deps = { db: memDb(), llm: llm(REPLY("A"), REPLY("B"), REPLY("C")), env: ENV };
+  const c1 = (await turn(deps, { text: "Jolshiri plots?", client_turn_id: "c-0001-aaaa" })).body.data.conversation_id;
+  await turn(deps, { conversation_id: c1, text: "and parking?", client_turn_id: "c-0002-aaaa" });
+  const c2 = (await turn(deps, { bot: "dubai", text: "Dubai visa help", client_turn_id: "c-0003-aaaa" })).body.data.conversation_id;
+  deps.db.t.ai_playground_conversations.find((c: any) => c.id === c2).last_activity_at = "2099-01-01T00:00:00Z";
+  const all = await call(deps, "playground.list", {});
+  assert.equal(all.status, 200);
+  assert.deepEqual(all.body.data.map((c: any) => [c.id, c.turn_count]), [[c2, 1], [c1, 2]]);
+  assert.deepEqual((await call(deps, "playground.list", { q: "parking" })).body.data.map((c: any) => c.id), [c1]);
+  assert.deepEqual((await call(deps, "playground.list", { bot: "dubai" })).body.data.map((c: any) => c.id), [c2]);
+  const g = await call(deps, "playground.get", { id: c1 });
+  assert.equal(g.body.data.conversation.id, c1); assert.equal(g.body.data.turns.length, 2);
+});
+
+test("playground: a retried request returns the saved turn without a second model call or row", async () => {
+  const deps = { db: memDb(), llm: llm(REPLY("Once"), REPLY("Twice")), env: ENV };
+  const a = await turn(deps, { text: "price?", client_turn_id: "c-0001-aaaa" });
+  const cid = a.body.data.conversation_id;
+  const again = await turn(deps, { conversation_id: cid, text: "price?", client_turn_id: "c-0001-aaaa" });
+  assert.equal(again.status, 200);
+  assert.equal(again.body.data.turn.reply, "Once"); assert.equal(again.body.data.duplicate, true);
+  assert.equal(deps.llm.calls.length, 1); assert.equal(deps.db.t.ai_playground_turns.length, 1);
+  // A retry of a first turn (no conversation id yet) finds the same turn too.
+  const firstRetry = await turn(deps, { text: "price?", client_turn_id: "c-0001-aaaa" });
+  assert.equal(firstRetry.body.data.conversation_id, cid); assert.equal(deps.db.t.ai_playground_conversations.length, 1);
+});
+
+test("playground: history is isolated from WhatsApp tables and stores no client-sent secrets", async () => {
+  const deps = { db: memDb(), llm: llm(REPLY("ok")), env: ENV };
+  deps.db.t.wa_messages.push({ conversation_id: "eyad:880@s.whatsapp.net", direction: "IN", body: "real customer" });
+  const r = await turn(deps, { text: "hello there friend", client_turn_id: "c-0001-aaaa", apikey: "SECRET-KEY", service_role: "SECRET" });
+  assert.equal(r.status, 200);
+  assert.equal(deps.db.t.wa_messages.length, 1, "no wa_messages row written");
+  assert.equal(deps.db.t.ai_turns.length, 0, "no live ai_turns row written");
+  assert.ok(!JSON.stringify([deps.db.t.ai_playground_conversations, deps.db.t.ai_playground_turns]).includes("SECRET"));
+  const g = await call(deps, "playground.get", { id: "eyad:880@s.whatsapp.net" });
+  assert.equal(g.status, 404, "a WhatsApp conversation id is not a Playground conversation");
+  assert.ok(!JSON.stringify((await call(deps, "playground.list", {})).body.data).includes("real customer"));
+});
+
+test("playground: a failed model call is saved and shown, empty history lists nothing", async () => {
+  const deps = { db: memDb(), llm: llm(), env: ENV };
+  assert.deepEqual((await call(deps, "playground.list", {})).body.data, []);
+  const r = await turn(deps, { text: "price?", client_turn_id: "c-0001-aaaa" });
+  assert.equal(r.status, 200);
+  const t = r.body.data.turn;
+  assert.equal(t.outcome, "fallback_model_error"); assert.equal(t.trace.model_error, "down");
+  assert.equal(deps.db.t.ai_playground_turns[0].outcome, "fallback_model_error");
+});
+
+test("playground: an unknown conversation id or a mismatched bot is refused, not silently replaced", async () => {
+  const deps = { db: memDb(), llm: llm(REPLY("a")), env: ENV };
+  assert.equal((await turn(deps, { conversation_id: "nope", text: "hi there", client_turn_id: "c-0001-aaaa" })).status, 404);
+  assert.equal(deps.db.t.ai_playground_conversations.length, 0);
+  const cid = (await turn(deps, { text: "price?", client_turn_id: "c-0002-aaaa" })).body.data.conversation_id;
+  assert.equal((await turn(deps, { conversation_id: cid, bot: "dubai", text: "x y z", client_turn_id: "c-0003-aaaa" })).status, 409);
+  assert.equal((await turn(deps, { text: "price?", client_turn_id: "short" })).status, 422);
 });

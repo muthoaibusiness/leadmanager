@@ -107,4 +107,28 @@ await ok('rollback drops everything', async () => {
   await db.exec(readFileSync('supabase/migrations/0037_ai_trainer.sql', 'utf8'));
 });
 
+// 0040 Playground history: applied on top of 0037, twice (idempotent).
+await db.exec(readFileSync('supabase/migrations/0040_ai_playground_history.sql', 'utf8'));
+await db.exec(readFileSync('supabase/migrations/0040_ai_playground_history.sql', 'utf8'));
+
+await ok('0040: playground turns are unique per conversation by seq and by client_turn_id', async () => {
+  const c = (await db.query(`insert into ai_playground_conversations (bot, source, created_by_claimed) values ('eyad','drafts','t') returning id`)).rows[0].id;
+  await db.query(`insert into ai_playground_turns (conversation_id, seq, client_turn_id, customer_text, outcome) values ($1, 1, 'turn-0001', 'hi', 'ok')`, [c]);
+  await rejects(`insert into ai_playground_turns (conversation_id, seq, client_turn_id, customer_text, outcome) values ($1, 1, 'turn-0002', 'x', 'ok')`, [c]);
+  await rejects(`insert into ai_playground_turns (conversation_id, seq, client_turn_id, customer_text, outcome) values ($1, 2, 'turn-0001', 'x', 'ok')`, [c]);
+  await rejects(`insert into ai_playground_turns (conversation_id, seq, client_turn_id, customer_text, outcome) values ($1, 2, 'short', 'x', 'ok')`, [c]);
+});
+
+await ok('0040: a snapshot conversation needs a snapshot id; drafts must not have one', async () => {
+  await rejects(`insert into ai_playground_conversations (bot, source, created_by_claimed) values ('eyad','snapshot','t')`);
+  await rejects(`insert into ai_playground_conversations (bot, source, created_by_claimed) values ('both','drafts','t')`);
+});
+
+await ok('0040: anon has no grants on the playground tables', async () => {
+  const r = await db.query(`select count(*)::int as n from information_schema.role_table_grants where grantee in ('anon','authenticated') and table_name like 'ai_playground_%'`);
+  assert.equal(r.rows[0].n, 0);
+  const rls = await db.query(`select count(*)::int as n from pg_class where relname like 'ai_playground_%' and relkind = 'r' and relrowsecurity`);
+  assert.equal(rls.rows[0].n, 2);
+});
+
 console.log(`\n${pass} passed`);
