@@ -3,16 +3,22 @@
 .ait { display: flex; flex-direction: column; gap: 16px; }
 .ait-err { color: var(--red); font-size: 13px; }
 .ait-list { display: flex; flex-direction: column; gap: 8px; }
-.ait-row { display: flex; gap: 12px; align-items: flex-start; justify-content: space-between; padding: 10px 12px; border-radius: 10px; background: var(--card); }
+.ait-row { display: flex; gap: 12px; align-items: flex-start; justify-content: space-between; padding: 10px 12px; border-radius: 10px; background: var(--surf2); }
 .ait-row .meta { font-size: 12px; opacity: .7; }
-.ait-badge { display: inline-flex; gap: 4px; align-items: center; padding: 2px 8px; border-radius: 999px; font-size: 12px; background: var(--bg2); }
+/* History rows are buttons, which do not inherit the page text colour or font.
+   --surf2 / --bd are the app surface tokens (index.css); --card and --bg2
+   were never defined, so rows fell back to the browser button colours. */
+button.ait-row { color: inherit; font: inherit; }
+button.ait-row:hover { background: var(--bd); }
+button.ait-row:focus-visible { outline: 2px solid var(--green); outline-offset: 2px; }
+.ait-badge { display: inline-flex; gap: 4px; align-items: center; padding: 2px 8px; border-radius: 999px; font-size: 12px; background: var(--bd); }
 .ait-badge.pass { color: var(--green); }
 .ait-badge.fail { color: var(--red); }
 .ait-badge.inc { color: var(--amber, #c80); }
 .ait-chat { display: flex; flex-direction: column; gap: 8px; min-height: 240px; }
 .ait-msg { max-width: 80%; padding: 8px 12px; border-radius: 12px; white-space: pre-wrap; }
-.ait-msg.customer { align-self: flex-end; background: var(--bg2); }
-.ait-msg.bot { align-self: flex-start; background: var(--card); }
+.ait-msg.customer { align-self: flex-end; background: var(--bd); }
+.ait-msg.bot { align-self: flex-start; background: var(--surf2); }
 .ait-trace { font-size: 12px; opacity: .8; margin-top: 4px; }
 .ait-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 320px); gap: 16px; }
 @media (max-width: 900px) { .ait-grid { grid-template-columns: minmax(0, 1fr); } }
