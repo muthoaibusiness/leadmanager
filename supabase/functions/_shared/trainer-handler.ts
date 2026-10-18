@@ -376,6 +376,43 @@ async function rollback(deps: Deps, p: any, actor: string): Promise<Res> {
   return ok({ bot: p.bot });
 }
 
+// ── test numbers (migration 0038) ───────────────────────────────────────────
+// The switch and the allow-list live on wa_bot_settings (the same row and
+// test_numbers column WA Relay edits). ai_turns is service-role only, so the
+// per-number conversation and turn traces are read through this function.
+const phoneTail = (v: unknown) => String(v ?? "").replace(/\D/g, "").slice(-10);
+
+async function testNumbersGet(deps: Deps, p: any): Promise<Res> {
+  if (!["eyad", "dubai"].includes(p.bot)) return fail(422, "schema", "bot must be eyad or dubai");
+  const row = (await deps.db.select(`wa_bot_settings?bot=eq.${p.bot}&select=trainer_test_mode,test_numbers`))[0] || { trainer_test_mode: false, test_numbers: [] };
+  const numbers: string[] = row.test_numbers || [];
+  const out = [];
+  for (const n of numbers) {
+    const tail = phoneTail(n);
+    // Every thread of this bot whose phone ends in the number: the JID may be a
+    // phone or a LID, so the conversation id alone cannot be predicted.
+    const convs = tail.length === 10 ? await deps.db.select(`wa_conversations?account=eq.${p.bot}&phone=like.*${tail}&select=id,phone,name,last_message_at`) : [];
+    const threads = [];
+    for (const c of convs) {
+      const messages = await deps.db.select(`wa_messages?conversation_id=eq.${encodeURIComponent(c.id)}&select=id,direction,type,body,caption,status,error,sender_name,wa_id,wa_timestamp&order=wa_timestamp.desc&limit=30`);
+      const turns = await deps.db.select(`ai_turns?conversation_id=eq.${encodeURIComponent(c.id)}&select=id,outcome,trace,started_at,finished_at,snapshot_checksum,core_version,model&order=started_at.desc&limit=10`);
+      threads.push({ ...c, messages: messages.reverse(), turns });
+    }
+    out.push({ number: n, threads });
+  }
+  return ok({ bot: p.bot, trainer_test_mode: row.trainer_test_mode === true, numbers: out });
+}
+
+async function testNumbersSet(deps: Deps, p: any, actor: string): Promise<Res> {
+  if (!["eyad", "dubai"].includes(p.bot)) return fail(422, "schema", "bot must be eyad or dubai");
+  if (typeof p.trainer_test_mode !== "boolean") return fail(422, "schema", "trainer_test_mode must be true or false");
+  const before = (await deps.db.select(`wa_bot_settings?bot=eq.${p.bot}&select=trainer_test_mode`))[0];
+  if (!before) return fail(404, "not_found", "This bot has no settings row. Open WA Relay once, or run migration 0034.");
+  await deps.db.patch("wa_bot_settings", `bot=eq.${p.bot}`, { trainer_test_mode: p.trainer_test_mode });
+  await deps.db.insert("ai_trainer_audit", { entity: "test_mode", entity_id: p.bot, action: p.trainer_test_mode ? "enable" : "disable", before, after: { trainer_test_mode: p.trainer_test_mode }, actor_claimed: actor });
+  return ok({ bot: p.bot, trainer_test_mode: p.trainer_test_mode });
+}
+
 async function handleRunsAndPublish(action: string, p: any, actor: string, deps: Deps): Promise<Res> {
   switch (action) {
     case "snapshot.freeze": return await freeze(deps, actor);
@@ -395,10 +432,12 @@ async function handleRunsAndPublish(action: string, p: any, actor: string, deps:
       pointers: await deps.db.select("ai_bot_pointers?select=*"),
       budget: await deps.db.select("ai_budget_days?pool=eq.trainer&select=*"),
     });
+    case "testnumbers.get": return await testNumbersGet(deps, p);
+    case "testnumbers.set": return await testNumbersSet(deps, p, actor);
     default: return fail(400, "unknown_action", `Unknown action: ${action}`);
   }
 }
 
-export const _internals = { contentFor, portsFor, withBudget, saveItem, canonicalJson, buildJudgePrompt, parseJudge,
+export const _internals = { contentFor, portsFor: (deps: Deps) => portsFor(deps), withBudget, saveItem, canonicalJson, buildJudgePrompt, parseJudge,
   judgeVerdict, finalVerdict, runChecks, publishGate, RUBRIC_V1, freezeContent, checksumOf };
 export type { Bot, TestSpec };

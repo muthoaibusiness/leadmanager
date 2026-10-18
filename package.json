@@ -11,7 +11,8 @@
     "test:commands": "node --test scripts/command-compat/routing.test.ts",
     "test:trainer": "node --test supabase/functions/_shared/trainer-core.test.ts supabase/functions/_shared/trainer-handler.test.ts",
     "test:0037": "node scripts/test-0037.mjs",
-    "test:ui": "vite-node scripts/aitrainer-ui/flow.test.mjs"
+    "test:ui": "vite-node scripts/aitrainer-ui/flow.test.mjs",
+    "test:live": "node --test supabase/functions/_shared/trainer-live.test.ts"
   },
   "dependencies": {
     "@ark-ui/react": "^5.37.2",

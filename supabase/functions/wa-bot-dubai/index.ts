@@ -43,6 +43,7 @@ import {
   logConversationHistory,
 } from "../_shared/wa.ts";
 import { askAgent, resolveMedia, fixGrammar } from "../_shared/ai.ts";
+import { runTrainerTestTurn } from "../_shared/trainer-deno.ts";
 
 // ── local REST helpers ───────────────────────────────────────────────────
 // _shared/wa.ts's sbRpc/sbPatch deliberately return only ok/not-ok (wa-send
@@ -406,7 +407,15 @@ async function handleInbound(evt: ParsedEvent): Promise<void> {
   // ad click with no message body, or a photo with no caption, has nothing
   // for the model to answer).
   if (settings.faqAgentEnabled && evt.text && !takeover && evt.remote) {
-    await runFaqAgent("dubai", evt.waTo, evt.remote, evt.text, prelead.property_interest || undefined, settings.aiMediaEnabled);
+    // Test mode on and an allow-listed number (getBotSettings): the AI Trainer
+    // core answers instead of the legacy agent. Everything else runs unchanged.
+    if (settings.trainerTest) {
+      const r = await runTrainerTestTurn({ bot: "dubai", convId: `dubai:${evt.remote}`, phone: evt.phone, to: evt.waTo, text: evt.text,
+        ad: { isAd: evt.isAd, adText: evt.adText }, allowMedia: settings.aiMediaEnabled });
+      console.log("trainer test turn", { phone: evt.phone, outcome: r.outcome, sent: r.sent, turnId: r.turnId });
+    } else {
+      await runFaqAgent("dubai", evt.waTo, evt.remote, evt.text, prelead.property_interest || undefined, settings.aiMediaEnabled);
+    }
   }
 }
 

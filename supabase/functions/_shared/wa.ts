@@ -3,7 +3,8 @@
 // Everything that touches a credential lives on this side of the wire. The
 // browser bundle never imports this file.
 
-export const WASENDER_BASE = "https://wasenderapi.com/api";
+// Override only for a local dev stack (a fake Wasender); unset in production.
+export const WASENDER_BASE = Deno.env.get("WASENDER_BASE") || "https://wasenderapi.com/api";
 
 export const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 export const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
@@ -139,10 +140,27 @@ export async function sendWaMessageMirrored(
   phone: string,
   msg: { type: "text" | "image" | "document"; text?: string; mediaUrl?: string; fileName?: string },
 ): Promise<boolean> {
+  return (await sendWaMessageMirroredId(account, to, convId, phone, msg, { senderName: "AI Agent", storeWaId: false })) !== null;
+}
+
+// Same as sendWaMessageMirrored, returning the Wasender message id ("" when
+// Wasender sent none) or null on failure. With storeWaId the id is kept as
+// wa_id, so wa-webhook's delivery receipts update this row (and its fromMe
+// echo of the send, which carries the same id, is refused by the unique
+// wa_id index instead of showing twice). The legacy FAQ agent keeps its
+// original row shape (no wa_id).
+export async function sendWaMessageMirroredId(
+  account: string,
+  to: string,
+  convId: string,
+  phone: string,
+  msg: { type: "text" | "image" | "document"; text?: string; mediaUrl?: string; fileName?: string },
+  opts: { senderName: string; storeWaId: boolean },
+): Promise<string | null> {
   const { token } = await getCredentials(account);
   if (!token) {
     console.error("sendWaMessageMirrored: no Wasender token configured for", account);
-    return false;
+    return null;
   }
   // Wasender rejects image/document sends with an empty "text" — its
   // validator treats "" as missing, not as a string (confirmed directly
@@ -154,6 +172,7 @@ export async function sendWaMessageMirrored(
     { to, text: msg.text || "" };
 
   let ok = false;
+  let waId = "";
   try {
     const res = await fetch(`${WASENDER_BASE}/send-message`, {
       method: "POST",
@@ -162,10 +181,15 @@ export async function sendWaMessageMirrored(
     });
     ok = res.ok;
     if (!ok) console.error("sendWaMessageMirrored: send-message failed", res.status, await res.text());
+    else {
+      // Same id lookup as wa-send: Wasender has moved this field between versions.
+      const j = await res.json().catch(() => ({}));
+      waId = String(j?.data?.msgId ?? j?.data?.id ?? j?.data?.key?.id ?? j?.msgId ?? j?.id ?? "");
+    }
   } catch (e) {
     console.error("sendWaMessageMirrored: send-message error", e);
   }
-  if (!ok) return false;
+  if (!ok) return null;
 
   const now = new Date().toISOString();
   await sbUpsert("wa_conversations", [{
@@ -176,6 +200,7 @@ export async function sendWaMessageMirrored(
   }]);
   await sbUpsert("wa_messages", [{
     id: crypto.randomUUID(),
+    ...(opts.storeWaId && waId ? { wa_id: waId } : {}),
     conversation_id: convId,
     phone,
     account,
@@ -186,12 +211,13 @@ export async function sendWaMessageMirrored(
     media_url: msg.mediaUrl || "",
     media_name: msg.fileName || "",
     status: "SENT",
-    // Tags this row as FAQ-agent-authored (not a template send, not a human
-    // agent's own typed reply) so the Training UI can find and correct it.
-    sender_name: "AI Agent",
+    // Tags this row as bot-authored (not a template send, not a human agent's
+    // own typed reply): "AI Agent" for the legacy FAQ agent, which the Training
+    // UI lists, "AI Trainer" for a test-number reply.
+    sender_name: opts.senderName,
     wa_timestamp: now,
   }]);
-  return true;
+  return waId;
 }
 
 // ── admin-configurable automation toggles (WA Relay tab) ───────────────────
@@ -203,6 +229,10 @@ export interface BotSettings {
   manualForwardEnabled: boolean; docsCommandEnabled: boolean;
   takeoverEnabled: boolean; notesEnabled: boolean;
   customerNotifyEnabled: boolean; metaCapiEnabled: boolean;
+  // True only when the bot's trainer_test_mode is on (migration 0038) AND this
+  // chat's number is in its test_numbers: the AI Trainer answers instead of
+  // the legacy FAQ agent. Always false for every other chat.
+  trainerTest: boolean;
 }
 
 // Last 10 digits of a phone: 8801XXXXXXXXX, 01XXXXXXXXX and +880 1XXX… all agree.
@@ -237,6 +267,7 @@ export async function getBotSettings(bot: BotName, phone?: string): Promise<BotS
       faqAgentEnabled: true, aiMediaEnabled: true, welcomeEnabled: true, welcomeMessage: src.welcome_message || "",
       manualForwardEnabled: true, docsCommandEnabled: true, takeoverEnabled: true, notesEnabled: true,
       customerNotifyEnabled: true, metaCapiEnabled: true,
+      trainerTest: row?.trainer_test_mode === true,
     };
   }
   return {
@@ -252,6 +283,7 @@ export async function getBotSettings(bot: BotName, phone?: string): Promise<BotS
     notesEnabled: on(src.notes_enabled),
     customerNotifyEnabled: on(src.customer_notify_enabled),
     metaCapiEnabled: on(src.meta_capi_enabled),
+    trainerTest: false,
   };
 }
 

@@ -8,6 +8,8 @@ import KnowledgeTab from '../aitrainer/KnowledgeTab.jsx';
 import BehaviourTab from '../aitrainer/BehaviourTab.jsx';
 import PlaygroundTab from '../aitrainer/PlaygroundTab.jsx';
 import QualityTab from '../aitrainer/QualityTab.jsx';
+import BotsTab from '../aitrainer/BotsTab.jsx';
+import TestNumbersTab from '../aitrainer/TestNumbersTab.jsx';
 import '../aitrainer/aitrainer.css';
 
 // AI Trainer: Management trains the WhatsApp bot here. Edits are drafts; the
@@ -19,6 +21,8 @@ const TABS = [
   ['behaviour', 'Behaviour', 'psychology'],
   ['playground', 'Playground', 'chat'],
   ['quality', 'Quality & Publish', 'fact_check'],
+  ['bots', 'Bots', 'tune'],
+  ['testnumbers', 'Test numbers', 'phone_iphone'],
 ];
 
 export default function AiTrainerView() {
@@ -42,6 +46,8 @@ export default function AiTrainerView() {
       {tab === 'behaviour' && <BehaviourTab {...props} />}
       {tab === 'playground' && <PlaygroundTab {...props} />}
       {tab === 'quality' && <QualityTab {...props} />}
+      {tab === 'bots' && <BotsTab {...props} />}
+      {tab === 'testnumbers' && <TestNumbersTab {...props} />}
     </div>
   );
 }

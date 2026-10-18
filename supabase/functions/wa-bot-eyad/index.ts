@@ -27,6 +27,7 @@ import {
 } from "../_shared/wa.ts";
 import type { BotSettings } from "../_shared/wa.ts";
 import { askAgent, resolveMedia, fixGrammar } from "../_shared/ai.ts";
+import { runTrainerTestTurn } from "../_shared/trainer-deno.ts";
 
 // ── fixed literals from the source workflow ──────────────────────────────
 // Hard-coded in the live n8n workflow for this one bot instance (Eyad /
@@ -295,7 +296,16 @@ async function handleInbound(p: ParsedEvent): Promise<void> {
     takeover: upsert.takeover, remote: p.remote,
   });
   if (settings.faqAgentEnabled && p.text && upsert.takeover !== true && p.remote) {
-    await runFaqAgent("eyad", p.phone, p.target, p.remote, p.text, upsert.property_interest || undefined, settings.aiMediaEnabled);
+    // Test mode on and an allow-listed number (getBotSettings): the AI Trainer
+    // core answers instead of the legacy agent. Everything else above and
+    // below runs unchanged.
+    if (settings.trainerTest) {
+      const r = await runTrainerTestTurn({ bot: "eyad", convId: `eyad:${p.remote}`, phone: p.phone, to: p.target, text: p.text,
+        ad: { isAd: p.isAd, adText: p.adText }, allowMedia: settings.aiMediaEnabled });
+      console.log("trainer test turn", { phone: p.phone, outcome: r.outcome, sent: r.sent, turnId: r.turnId });
+    } else {
+      await runFaqAgent("eyad", p.phone, p.target, p.remote, p.text, upsert.property_interest || undefined, settings.aiMediaEnabled);
+    }
   }
 
   // ── Get Prelead Status → Get Projects → Compute Forward ────────────────

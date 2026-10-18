@@ -117,4 +117,32 @@ ok(t.ai_bot_pointers.find((p) => p.bot === "dubai").mode === "legacy", "dubai un
 await click(btn("Back to legacy")); await tick(80);
 ok(t.ai_bot_pointers.find((p) => p.bot === "eyad").mode === "legacy", "rollback to legacy works");
 root.unmount();
+
+// 4. Test numbers: switch defaults off, enabling goes through the audited
+// action, the allow-list shows, and a test thread renders with its turn trace.
+t.wa_bot_settings = [{ bot: "eyad", trainer_test_mode: false, test_numbers: ["8801711000001"] }, { bot: "dubai", trainer_test_mode: false, test_numbers: [] }];
+t.wa_conversations = [{ id: "eyad:8801711000001@s.whatsapp.net", account: "eyad", phone: "8801711000001", name: "Tester" }];
+t.wa_messages = [
+  { id: "m1", conversation_id: "eyad:8801711000001@s.whatsapp.net", direction: "IN", type: "text", body: "Nuznan location?", status: "DELIVERED", wa_timestamp: "2026-10-18T01:00:00Z" },
+  { id: "m2", conversation_id: "eyad:8801711000001@s.whatsapp.net", direction: "OUT", type: "text", body: "Wecon Nuznan is in Jolshiri.", status: "DELIVERED", sender_name: "AI Trainer", wa_id: "wa1", wa_timestamp: "2026-10-18T01:00:05Z" },
+];
+t.ai_turns = [{ id: "turn1", conversation_id: "eyad:8801711000001@s.whatsapp.net", outcome: "ok", core_version: "1.0.0", model: "m", started_at: "2026-10-18T01:00:01Z", trace: { reply: "Wecon Nuznan is in Jolshiri.", project: { projects: ["p1"], source: "explicit" }, used_item_ids: [] } }];
+const likeSelect = db.select;
+db.select = async (path) => {
+  const m = /^wa_conversations\?account=eq\.(\w+)&phone=like\.\*(\d+)/.exec(path);
+  if (m) return t.wa_conversations.filter((c) => c.account === m[1] && c.phone.endsWith(m[2]));
+  return likeSelect(path);
+};
+globalThis.window.confirm = () => true;
+root = await mount("TestNumbersTab");
+const sw = $('[aria-label="Trainer test mode for Eyad Bot"]');
+ok(sw && sw.getAttribute("aria-checked") === "false", "trainer test mode shows Off by default");
+ok(document.body.textContent.includes("+8801711000001"), "test number listed");
+ok(document.body.textContent.includes("Wecon Nuznan is in Jolshiri.") && document.body.textContent.includes("DELIVERED"), "test thread shows the reply and its delivery status");
+ok(document.body.textContent.includes("Trainer turns (1)"), "turn trace listed");
+await click(sw); await tick(50);
+ok(t.wa_bot_settings[0].trainer_test_mode === true, "switch turns test mode on through the trainer action");
+ok(t.ai_trainer_audit.some((a) => a.entity === "test_mode" && a.action === "enable"), "test mode change audited");
+ok(t.wa_bot_settings[1].trainer_test_mode === false, "dubai test mode untouched");
+root.unmount();
 console.log("toasts:", toasts.filter((x) => x.startsWith("err")).join(" | ") || "no error toasts");
