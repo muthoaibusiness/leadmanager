@@ -372,7 +372,7 @@ async function handleInbound(p: ParsedEvent): Promise<void> {
 
   // Once the profiles are out (keyword, stage 2b or stage 3) the bundle is
   // never sent again — the gated LLM answer still runs for other questions.
-  const profilesAlreadySent = ["profile_sent", "asked_agent", "agent_ack"].includes(status.flow_stage);
+  const profilesAlreadySent = ["profile_sent", "asked_agent", "agent_ack", "agent_assigned"].includes(status.flow_stage);
   if (settings.faqAgentEnabled && p.text && upsert.takeover !== true && p.remote && settings.trainerTest) {
     // Test mode on and an allow-listed number (getBotSettings): the AI Trainer
     // core answers instead of the legacy agent. Everything else above and
@@ -497,6 +497,11 @@ async function handleCreateLead(p: ParsedEvent, settings: BotSettings): Promise<
     await fixLeadPhoneFromNote(String(lead.lead_id), p.phone, notedPhone);
   }
   if (lead.lead_id) await logConversationHistory(String(lead.lead_id), COMPANY_ID, p.phone, `Eyad Bot (WhatsApp ${p.command})`);
+  // A human agent now owns this customer — the automated follow-up flow
+  // must not ask "want a dedicated agent?" after one was just assigned.
+  await sbPatchJson("preleads", `phone=eq.${encodeURIComponent(p.phone)}`, {
+    flow_stage: "agent_assigned", stage_at: new Date().toISOString(),
+  }).catch(() => {});
 
   // Branch 1 — Lead CTWA? → Send Meta CAPI Event → CAPI OK? → Mark CAPI Sent
   // Only a newly-created lead with a Meta click id goes to CAPI.

@@ -280,7 +280,7 @@ export const FLOW_ASK_AGENT_TEXT =
 export const FLOW_AGENT_YES_TEXT = "জি, বলুন কিভাবে হেল্প করতে পারি।";
 // A direct knock with no ad behind it: nothing is known about what they
 // want, so no Jolshiri line and no Jolshiri follow-up flow — just this.
-export const GENERIC_WELCOME_TEXT = "Assalamu Alaikum. I'm Eyad from Wecon Properties. How can I help you today?";
+export const GENERIC_WELCOME_TEXT = "Assalamu Alaikum.\nI'm Eyad from Wecon Properties. How can I help you today?";
 
 // Loose yes/no detector for the stage-3 "do you want the profile?" reply —
 // Bangla, Banglish and English all show up in real chats.
@@ -292,7 +292,7 @@ export const GENERIC_WELCOME_TEXT = "Assalamu Alaikum. I'm Eyad from Wecon Prope
 const YES_WORDS = new Set([
   "hae", "ha", "haan", "ji", "jee", "jii", "hmm", "hm", "ok", "okay", "oky", "sure", "yes", "yeah", "yep", "please", "pls", "plz",
   "dao", "den", "dibo", "din", "accha", "acha", "thik", "ache",
-  "জি", "জ্বি", "জ্বী", "হ্যাঁ", "হ্যা", "হুম", "আচ্ছা", "ঠিক", "আছে", "দিন", "দেন", "দাও", "পাঠান", "পাঠাও",
+  "জি", "জ্বি", "জ্বী", "হ্যাঁ", "হ্যা", "হুম", "আচ্ছা", "ঠিক", "আছে", "দিন", "দেন", "দাও", "পাঠান", "পাঠাও", "প্লিজ", "প্লীজ", "ওকে",
 ]);
 export const isAffirmative = (text: string): boolean => {
   // \p{M} keeps Bangla vowel signs / virama ("জি" is জ + ি) — without it the
