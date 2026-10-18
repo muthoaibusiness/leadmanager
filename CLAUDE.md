@@ -6,20 +6,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 WEPRO CRM — a real-estate lead/sales CRM. React 19 SPA (Vite), no backend of its own: it talks directly to Supabase over PostgREST with the anon key. The app lives in `leadmanager/` (this directory is the npm project root).
 
-## Commands
+## Setup
 
-```bash
-npm run dev       # Vite dev server (HMR)
-npm run build     # production build → dist/
-npm run preview   # serve the production build
-npm run lint      # eslint (flat config, eslint.config.js)
-```
+Frontend `src/` is plain `.jsx`/`.js` — no TypeScript.
 
-There is **no test suite** and no TypeScript — plain `.jsx`/`.js`. Lint is the only automated check.
+Requires a `.env` (copy `.env.example`): `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY`. Without them cloud sync is disabled (the app logs a config error and runs on the local cache only).
 
-Requires a `.env` (copy `.env.example`): `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY`. Without them cloud sync is disabled (the app logs a config error and runs on the local cache only). Deploy target is Netlify (`netlify.toml`, SPA redirect to `/index.html`, Node 22).
-
-Supabase schema changes live in `supabase/migrations/*.sql` (applied manually to the project). Edge Functions in `supabase/functions/` handle the WhatsApp relay (`wa-send`, `wa-webhook`) and the two WhatsApp bots (`wa-bot-eyad`, `wa-bot-dubai` — ported from the n8n "Wecon WA Bot" / "Wecon WA Bot Dubai" workflows). A Wasender session only accepts one webhook URL, so each bot IS that session's webhook target and forwards the untouched payload to `wa-webhook` itself (`forwardToMirror`, fire-and-forget, `?account=dubai|eyad`) so the CRM-chat mirror still runs. Each bot also runs a FAQ agent (`runFaqAgent`, `supabase/functions/_shared/ai.ts`) on real inbound text once a human hasn't taken over (`/t`): OpenRouter answers from the `wa_projects` catalog only, short replies matching the existing template tone, and can follow up with a photo/floor-plan/brochure. Its replies are mirrored into `wa_conversations`/`wa_messages` via `sendWaMessageMirrored` so they show in Conversations like a human agent's. Migration numbers are referenced by comments throughout `src/lib/` (e.g. "migration 0010 adds the `talked` flag") — when touching a feature gated on a column, check whether the code has a pre-migration fallback.
+Supabase schema changes live in `supabase/migrations/*.sql` (applied manually to the project). Edge Functions (WhatsApp relay and bots) are documented in `supabase/functions/CLAUDE.md`. Migration numbers are referenced by comments throughout `src/lib/` (e.g. "migration 0010 adds the `talked` flag") — when touching a feature gated on a column, check whether the code has a pre-migration fallback.
 
 ## First login
 
@@ -71,7 +64,6 @@ A lead's status is only ever changed by the status writers in `db.js`: `changeSt
 
 - `src/App.jsx` — root. `PageHero`/`PageBody` switch on `view`; `PageBody` picks the dashboard by `effectiveRole()`. Boot logic (warm-cache vs cold-fetch paths) lives in the mount effect — read the `needsBootFetch` / `enterApp` / `hydrateFromCloud` comments before touching login/boot.
 - `src/context/AppContext.jsx` — single global context (`useApp()`): current `user`, `view`, all filter state, modal routing (`openModal`/`modal`), `impersonate()` (admin account switch that never changes the stored session), and `dbVersion`/`refreshDB()` (bump a counter to force re-render after a mutation).
-- `src/components/` — `views/` (one per nav section), `dashboards/` (one per role), `modals/` (opened by name via `openModal`), `chat/`, `project/`, `charts/`, and `ui/` (generic primitives).
 - `src/lib/` holds all domain logic (agent performance, funnels, deals, quotas, rollups, projects, push). Keep business logic here, not in components.
 
 ### Navigation & history

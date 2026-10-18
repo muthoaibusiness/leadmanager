@@ -374,7 +374,10 @@ async function modelConfigSave(deps: Deps, p: any, actor: string): Promise<Res> 
   if (before) await deps.db.patch("ai_model_configs", "scope=eq.playground", row);
   else await deps.db.insert("ai_model_configs", { scope: "playground", ...row });
   if (p.api_key) {
-    const r = await deps.db.rpc("ai_model_key_set", { p_scope: "playground", p_key: p.api_key, p_actor: actor });
+    // The key is bound to the base URL saved just above. If another save
+    // changed the host in between, the RPC refuses and stores nothing.
+    const r = await deps.db.rpc("ai_model_key_set", { p_scope: "playground", p_key: p.api_key, p_actor: actor, p_expected_base_url: v.value.base_url });
+    if (!r.ok && /host_mismatch/.test(r.error || "")) return fail(409, "conflict", "The settings were changed by someone else while saving. The API key was not stored. Reload and try again.");
     if (!r.ok) return fail(500, "secret", "Settings were saved, but the API key could not be stored. Try saving the key again.");
   }
   await deps.db.insert("ai_trainer_audit", { entity: "model_config", entity_id: "playground", action: before ? "update" : "create",

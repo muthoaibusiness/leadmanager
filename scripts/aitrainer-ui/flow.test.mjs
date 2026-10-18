@@ -25,7 +25,7 @@ const db = {
   async rpc(fn, a) {
     if (fn === "ai_item_save") { const it = a.p_item; if (t.ai_trainer_items.some((x) => x.status === "active" && x.kind === it.kind && x.content_hash === it.content_hash && x.id !== it.id)) return { ok: false, error: "duplicate_content" }; if (a.p_expected_revision === 0) { const r = { ...it, id: id(), revision: 1, status: it.status || "active" }; t.ai_trainer_items.push(r); return { ok: true, data: { id: r.id, revision: 1 } }; } const c = t.ai_trainer_items.find((x) => x.id === it.id); if (c.revision !== a.p_expected_revision) return { ok: false, error: "revision_conflict" }; Object.assign(c, it, { revision: c.revision + 1 }); return { ok: true, data: { id: c.id, revision: c.revision } }; }
     if (fn === "ai_budget_reserve") return { ok: true, data: id() };
-    if (fn === "ai_model_key_set") { const r = t.ai_model_configs.find((x) => x.scope === a.p_scope); vaultKey = a.p_key; Object.assign(r, { key_last4: a.p_key.slice(-4), key_host: new URL(r.base_url).hostname, key_set_at: new Date().toISOString(), last_test: null }); return { ok: true }; }
+    if (fn === "ai_model_key_set") { const r = t.ai_model_configs.find((x) => x.scope === a.p_scope); vaultKey = a.p_key; if (new URL(r.base_url).hostname !== new URL(a.p_expected_base_url).hostname) return { ok: false, error: "host_mismatch" }; Object.assign(r, { key_last4: a.p_key.slice(-4), key_host: new URL(a.p_expected_base_url).hostname, key_set_at: new Date().toISOString(), last_test: null }); return { ok: true }; }
     if (fn === "ai_model_key_get") return { ok: true, data: vaultKey };
     return { ok: true };
   },
