@@ -1,0 +1,100 @@
+{
+  "label": "PRODUCTION SNAPSHOT - wa-bot-eyad v58 - read-only evidence, not deployable source",
+  "project_ref": "sbqmougcvnplgjgihpwe",
+  "function": {
+    "slug": "wa-bot-eyad",
+    "id": "f5d3c910-09cd-4598-88a6-ce98e40c7b91",
+    "version": 58,
+    "status": "ACTIVE",
+    "verify_jwt": false,
+    "import_map": false,
+    "entrypoint": "source/supabase/functions/wa-bot-eyad/index.ts",
+    "created_at": "2026-10-14T06:06:51.706Z",
+    "updated_at": "2026-10-19T15:14:29.390Z",
+    "ezbr_sha256": "23c4e8925caea776d0ce6a65457eb16610b91f878086161c2743ce63de0a5c80"
+  },
+  "previous_snapshot": "wa-bot-eyad-v57",
+  "retrieval": {
+    "downloaded_at": "2026-10-19T15:56:02Z",
+    "metadata_read_before_download": "2026-10-19T15:55:38Z",
+    "metadata_read_after_download": "2026-10-19T15:59:32Z",
+    "metadata_unchanged_across_download": true,
+    "method": "npx supabase functions download wa-bot-eyad --project-ref sbqmougcvnplgjgihpwe --use-api (CLI 2.121.0); metadata from supabase functions list -o json",
+    "read_only": true
+  },
+  "git_baseline": {
+    "closest_commit": "96661e92fedb7c6f48672f4e34375fca885210f0",
+    "note": "Deployment metadata records no git commit or deployer. Relationship established by source comparison only. The v58/v54 additions (isLandOffer, LAND_RE, brochure-on-details prompt rule) are in no git object. See docs/reports/legacy-bot-reconciliation.md section 12."
+  },
+  "integrity": {
+    "manifest": "SHA256SUMS",
+    "verify": "cd supabase/deployed/2026-10-19/wa-bot-eyad-v58 && sha256sum -c SHA256SUMS",
+    "gitattributes": "* -text (bytes stored as downloaded, CRLF preserved)"
+  },
+  "excluded": [],
+  "files": [
+    {
+      "path": "_shared/ai.ts",
+      "sha256": "d6eb7698fc9ddcf43bc1ab43940d0c15eb6ee36e6741e9c83136dbf2b65d6de3",
+      "bytes": 24941,
+      "line_endings": "CRLF",
+      "vs_previous_snapshot": "changed vs wa-bot-eyad-v57",
+      "closest_git_commit": "96661e9",
+      "git_match": "none: 96661e9 plus edits found in no git object"
+    },
+    {
+      "path": "_shared/trainer-core.ts",
+      "sha256": "01a80bb5c69a0dd0749548ed1033a9a3e591e10f277bdef2cb8f42e95ea80939",
+      "bytes": 37512,
+      "line_endings": "CRLF",
+      "vs_previous_snapshot": "byte-identical to wa-bot-eyad-v57",
+      "closest_git_commit": "1e1fc85",
+      "git_match": "exact (after stripping CR)"
+    },
+    {
+      "path": "_shared/trainer-deno.ts",
+      "sha256": "c381c8f0cb32ec602f2766b264916279734610026b3bb22cdaf42a5f0bf1ae50",
+      "bytes": 4340,
+      "line_endings": "CRLF",
+      "vs_previous_snapshot": "byte-identical to wa-bot-eyad-v57",
+      "closest_git_commit": "ab66552",
+      "git_match": "exact (after stripping CR)"
+    },
+    {
+      "path": "_shared/trainer-handler.ts",
+      "sha256": "f4a8b68825f85ea7e3e6d85c0c0da3842c4002ed488225b0ca4eef12a108a1fa",
+      "bytes": 38770,
+      "line_endings": "CRLF",
+      "vs_previous_snapshot": "byte-identical to wa-bot-eyad-v57",
+      "closest_git_commit": "91cb211",
+      "git_match": "exact (after stripping CR)"
+    },
+    {
+      "path": "_shared/trainer-live.ts",
+      "sha256": "1d32437fc0661592176af5cdbb18898eaeed087f0a78fcac867468873ff8ff23",
+      "bytes": 7412,
+      "line_endings": "CRLF",
+      "vs_previous_snapshot": "byte-identical to wa-bot-eyad-v57",
+      "closest_git_commit": "ab66552",
+      "git_match": "exact (after stripping CR)"
+    },
+    {
+      "path": "_shared/wa.ts",
+      "sha256": "3c6911a750998a2bbfcb6a3b73a53e7efd7f8d72e0b64f8849f5327608ae212b",
+      "bytes": 22705,
+      "line_endings": "CRLF",
+      "vs_previous_snapshot": "byte-identical to wa-bot-eyad-v57",
+      "closest_git_commit": "96661e9",
+      "git_match": "exact (after stripping CR)"
+    },
+    {
+      "path": "wa-bot-eyad/index.ts",
+      "sha256": "925c87ff7f2c7bf5baa5b863a0db70f014f60aa7d5c4652d8407a7985d7631d5",
+      "bytes": 36732,
+      "line_endings": "CRLF",
+      "vs_previous_snapshot": "changed vs wa-bot-eyad-v57",
+      "closest_git_commit": "96661e9",
+      "git_match": "none: 96661e9 plus edits found in no git object"
+    }
+  ]
+}
