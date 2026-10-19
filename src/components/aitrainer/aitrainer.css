@@ -22,3 +22,100 @@ button.ait-row:focus-visible { outline: 2px solid var(--green); outline-offset: 
 .ait-trace { font-size: 12px; opacity: .8; margin-top: 4px; }
 .ait-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 320px); gap: 16px; }
 @media (max-width: 900px) { .ait-grid { grid-template-columns: minmax(0, 1fr); } }
+
+/* Bots control (BotControl.jsx). Phone layout first; two cards side by side from 1100px. */
+.bc { display: flex; flex-direction: column; gap: 16px; }
+.bc-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.bc-pick { text-transform: none; letter-spacing: 0; font-size: 13px; }
+.bc-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; }
+@media (min-width: 1100px) { .bc-grid.two { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.bc-card { display: flex; flex-direction: column; padding: 20px; }
+.bc-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding-bottom: 16px; }
+.bc-title { margin: 0; font-size: 18px; font-weight: 700; color: var(--t1); }
+.bc-sub { margin-top: 4px; font-size: 13px; color: var(--t2); }
+.bc-sec { display: flex; flex-direction: column; gap: 10px; padding: 16px 0; border-top: 1px solid var(--bd); }
+.bc-label { font-size: 12px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--t2); }
+.bc-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.bc-grow { min-width: 0; flex: 1; }
+.bc-strong { font-size: 15px; font-weight: 600; color: var(--t1); }
+.bc-note { margin: 2px 0 0; font-size: 13px; line-height: 1.45; color: var(--t2); }
+.bc-inset { padding: 10px 12px; border-radius: var(--r-sm); background: var(--surf2); }
+.bc-actions { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; }
+@media (min-width: 560px) { .bc-actions { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+.bc-act { justify-content: center; min-height: 44px; border-radius: var(--r); }
+.bc-act:hover:not(:disabled), .bc-pick:hover { background: var(--surf2); }
+.bc-act:focus-visible, .bc-pick:focus-visible, .bc-switch:focus-visible { outline: 2px solid var(--green); outline-offset: 2px; }
+.bc-act:active:not(:disabled) { transform: translateY(1px); }
+.cot-badge.bad { background: var(--red-l); color: var(--red); }
+
+/* Customer-reply switch: role="switch", text label beside the knob so state is never colour alone. */
+.bc-switch { flex-shrink: 0; display: inline-flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 4px; border: 0; background: none; color: var(--t2); cursor: pointer; font: inherit; font-size: 13px; font-weight: 600; }
+.bc-switch .bc-knob { position: relative; width: 40px; height: 22px; border-radius: 999px; background: var(--surf2); border: 1px solid var(--bd2); transition: background var(--tr); }
+.bc-switch .bc-knob::after { content: ""; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: var(--t2); transition: transform var(--tr), background var(--tr); }
+.bc-switch.on { color: var(--green); }
+.bc-switch.on .bc-knob { background: var(--green-l); border-color: var(--green); }
+.bc-switch.on .bc-knob::after { transform: translateX(18px); background: var(--green); }
+.bc-switch:hover:not(:disabled) .bc-knob { border-color: var(--t2); }
+.bc-switch:disabled { opacity: .45; cursor: not-allowed; }
+@media (prefers-reduced-motion: reduce) { .bc-switch .bc-knob, .bc-switch .bc-knob::after { transition: none; } .bc-act:active:not(:disabled) { transform: none; } }
+/* The shared .cot-badge.off uses --t3 (3.8:1 on the card); on these cards it carries state, so it uses --t2. */
+.bc .cot-badge.off { color: var(--t2); }
+.bc-bar .btn { min-height: 44px; }
+/* What customers get leads the card; drafts sit in a dashed outline so they read as not live. */
+.bc-live { font-size: 20px; font-weight: 700; line-height: 1.25; color: var(--t1); }
+.bc .bc-inset { background: none; border: 1px dashed var(--bd2); display: flex; flex-direction: column; gap: 10px; }
+.bc .bc-inset.bc-row { flex-direction: row; }
+.bc-run { align-self: flex-start; }
+.bc-actions { grid-template-columns: minmax(0, 1fr); }
+@media (min-width: 560px) { .bc .bc-actions { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 559px) { .bc .bc-inset .bc-row, .bc .bc-inset.bc-row { flex-direction: column; align-items: flex-start; } .bc-run { align-self: stretch; } }
+
+/* System Prompt editor (PromptTab.jsx). */
+/* .analytics-card has no padding of its own. */
+.sp-edit { display: flex; flex-direction: column; gap: 10px; min-width: 0; padding: 20px; }
+.sp-edit textarea.sp-area { min-height: 360px; height: 360px; resize: vertical; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; line-height: 1.55; white-space: pre-wrap; }
+.sp-area[aria-invalid="true"] { border-color: var(--red); }
+.sp-meta { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.sp-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.sp-actions .btn { min-height: 44px; }
+.sp-try { display: flex; flex-direction: column; gap: 8px; padding-top: 14px; margin-top: 4px; border-top: 1px solid var(--bd); }
+.sp-try .btn, .sp-try .fi { min-height: 44px; }
+.sp-out { max-width: 100%; }
+.sp-side { display: flex; flex-direction: column; gap: 6px; min-width: 0; padding: 20px; align-self: start; }
+.sp-hist .btn { min-height: 36px; }
+
+/* Nine tabs do not fit a phone: the bar scrolls on its own, so clicking a tab
+   no longer scrolls the whole page sideways. */
+.ait > .fin-tabs { display: flex; max-width: 100%; overflow-x: auto; scrollbar-width: none; }
+.ait > .fin-tabs::-webkit-scrollbar { display: none; }
+.ait > .fin-tabs button { flex: 0 0 auto; white-space: nowrap; min-height: 44px; }
+
+/* Document import (DocumentImport.jsx). */
+.di { display: flex; flex-direction: column; gap: 12px; padding: 20px; }
+.di-review { display: flex; flex-direction: column; gap: 12px; }
+.di-bots { display: inline-flex; gap: 12px; align-items: center; border: 0; margin: 0; padding: 0; }
+.di-bots label { display: inline-flex; gap: 6px; align-items: center; min-height: 44px; }
+.di-row { align-items: flex-start; }
+.di-row > input[type="checkbox"] { width: 20px; height: 20px; margin-top: 12px; flex-shrink: 0; }
+.di-fields { display: flex; flex-direction: column; gap: 6px; flex: 1; min-width: 0; }
+.di-results { margin: 0; padding-left: 18px; font-size: 13px; }
+.di .btn { min-height: 44px; }
+
+/* Embedding model (EmbeddingModel.jsx). */
+.em-form { display: flex; flex-direction: column; gap: 10px; min-width: 0; padding: 20px; }
+.em-side { display: flex; flex-direction: column; gap: 6px; min-width: 0; padding: 20px; align-self: start; }
+.em-reuse { display: inline-flex; gap: 8px; align-items: center; min-height: 44px; }
+.em-form .btn { min-height: 44px; }
+
+/* Knowledge documents (DocumentsPanel.jsx). */
+.dp, .dp-edit { display: flex; flex-direction: column; gap: 12px; padding: 20px; }
+.dp-row { align-items: flex-start; }
+.dp-acts { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
+.dp-acts .btn { min-height: 36px; }
+.dp-edit textarea.dp-area { min-height: 360px; height: 360px; resize: vertical; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; line-height: 1.55; }
+.dp-edit .btn { min-height: 44px; }
+@media (max-width: 559px) { .dp-row { flex-direction: column; } .dp-acts { justify-content: flex-start; } }
+
+/* Shared --t3 text (select labels, the "off" badge, empty states) is 3.7:1 on
+   these cards; inside the trainer it uses --t2 (6.7:1). */
+.ait .sel-label, .ait .cot-badge.off, .ait .ea-count { color: var(--t2); }

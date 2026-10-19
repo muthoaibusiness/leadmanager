@@ -28,6 +28,7 @@ export async function fixGrammar(text: string): Promise<string> {
   if (!apiKey) return raw;
   try {
     const res = await fetch(OPENROUTER_URL, {
+      signal: AbortSignal.timeout(30_000),
       method: "POST",
       headers: {
         Authorization: `Bearer ${apiKey}`,
@@ -217,6 +218,7 @@ export async function askAgent(
 
   try {
     const res = await fetch(OPENROUTER_URL, {
+      signal: AbortSignal.timeout(30_000),
       method: "POST",
       headers: {
         Authorization: `Bearer ${apiKey}`,

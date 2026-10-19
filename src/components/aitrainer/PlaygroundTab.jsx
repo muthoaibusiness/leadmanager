@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Mi from '../Mi.jsx';
 import useNavState from '../../hooks/useNavState.js';
+import { Select as SelectRoot, SelectLabel, SelectTrigger, SelectValue, SelectPopover, SelectListBox, SelectItem } from '../ui/select.jsx';
 
 // Multi-turn chat against drafts or any snapshot, through the same core the
 // bots will run. Nothing is sent on WhatsApp. Each bot reply shows its trace,
@@ -108,6 +109,7 @@ export default function PlaygroundTab({ api, showToast }) {
   const [conv, setConv] = useState(null);
   const [bot, setBot] = useState('eyad');
   const [source, setSource] = useState('drafts');
+  const [promptSel, setPromptSel] = useState('published'); // which System Prompt drives a drafts turn
   const [snapshots, setSnapshots] = useState([]);
   const [setup, setSetup] = useState(SETUP);
   const [turns, setTurns] = useState([]);
@@ -159,7 +161,7 @@ export default function PlaygroundTab({ api, showToast }) {
     const isSnap = source !== 'drafts';
     try {
       const d = await api('playground.turn', { conversation_id: conv?.id, client_turn_id: clientTurnId, bot,
-        source: isSnap ? 'snapshot' : 'drafts', snapshot_id: isSnap ? source : undefined, text: msg, setup });
+        source: isSnap ? 'snapshot' : 'drafts', snapshot_id: isSnap ? source : undefined, text: msg, setup, prompt: isSnap ? undefined : promptSel });
       setConv(d.conversation);
       setTurns(v => (v.some(t => t.id === d.turn.id) ? v : [...v, fromRow(d.turn, history)]));
       if (!conv) { opening.current = d.conversation_id; setConvId(d.conversation_id); }
@@ -196,6 +198,7 @@ export default function PlaygroundTab({ api, showToast }) {
                   {/* used_item_ids is what the model says it used, not a retrieval log. */}
                   {' '}· sources the model reports using: {(t.trace?.used_item_ids || []).length ? t.trace.used_item_ids.map(id => names[id] || id).join(', ') : 'none'}
                   {t.trace?.guard_errors?.length ? ` · guards: ${t.trace.guard_errors.join(', ')}` : ''}
+                  {' '}· prompt: {t.trace?.system_prompt ? `v${t.trace.system_prompt.version_no}` : 'built-in'}{t.trace?.model ? ` · ${t.trace.model}` : ''}
                   {t.trace?.media_missing?.length ? ` · missing media: ${t.trace.media_missing.join(', ')}` : ''}
                   {t.error ? <span className="ait-err"> · error: {t.error}</span> : ''}
                 </div>
@@ -220,16 +223,37 @@ export default function PlaygroundTab({ api, showToast }) {
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 16, minWidth: 0 }}>
         <div className="analytics-card" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          <label>Bot <select className="fi" value={bot} disabled={locked} onChange={e => setBot(e.target.value)}><option value="eyad">eyad</option><option value="dubai">dubai</option></select></label>
-          <label>Version <select className="fi" value={source} disabled={locked} onChange={e => setSource(e.target.value)}>
-            <option value="drafts">Current drafts</option>
-            {snapshots.map(s => <option key={s.id} value={s.id}>v{s.version_no} ({s.status})</option>)}
-          </select></label>
+          <SelectRoot value={bot} onChange={setBot} disabled={locked}>
+            <SelectLabel>Bot</SelectLabel>
+            <SelectTrigger><SelectValue /></SelectTrigger>
+            <SelectPopover><SelectListBox>
+              <SelectItem value="eyad">eyad</SelectItem>
+              <SelectItem value="dubai">dubai</SelectItem>
+            </SelectListBox></SelectPopover>
+          </SelectRoot>
+          {source === 'drafts' && (
+            <SelectRoot value={promptSel} onChange={setPromptSel}>
+              <SelectLabel>System Prompt</SelectLabel>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectPopover><SelectListBox>
+                <SelectItem value="published">Published</SelectItem>
+                <SelectItem value="draft">Latest draft</SelectItem>
+              </SelectListBox></SelectPopover>
+            </SelectRoot>
+          )}
+          <SelectRoot value={source} onChange={setSource} disabled={locked}>
+            <SelectLabel>Version</SelectLabel>
+            <SelectTrigger><SelectValue /></SelectTrigger>
+            <SelectPopover><SelectListBox>
+              <SelectItem value="drafts">Current drafts</SelectItem>
+              {snapshots.map(s => <SelectItem key={s.id} value={s.id}>v{s.version_no} ({s.status})</SelectItem>)}
+            </SelectListBox></SelectPopover>
+          </SelectRoot>
           <label style={{ display: 'inline-flex', gap: 6 }}><input type="checkbox" disabled={locked} checked={setup.isAd} onChange={e => setSetup(v => ({ ...v, isAd: e.target.checked }))} />Came from an ad</label>
           {setup.isAd && <input className="fi" disabled={locked} placeholder="Ad text" value={setup.adText} onChange={e => setSetup(v => ({ ...v, adText: e.target.value }))} />}
           <label style={{ display: 'inline-flex', gap: 6 }}><input type="checkbox" disabled={locked} checked={setup.returning} onChange={e => setSetup(v => ({ ...v, returning: e.target.checked }))} />Returning contact</label>
           {locked && <div className="ait-trace">Bot, version and setup are fixed for this conversation. Start a new one to change them.</div>}
-          <div className="ait-trace">State: {state ? `project ${names[state.active_project] || state.active_project || 'none'}, language ${state.language || '—'}` : 'new conversation'}</div>
+          <div className="ait-trace">State: {state ? `project ${names[state.active_project] || state.active_project || 'none'}, language ${state.language || 'unknown'}` : 'new conversation'}</div>
         </div>
         <div className="analytics-card">
           <History api={api} bot={bot} current={conv} onOpen={choose} onNew={startNew} />

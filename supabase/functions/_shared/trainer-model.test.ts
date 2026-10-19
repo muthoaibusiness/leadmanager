@@ -107,3 +107,32 @@ test("key helpers: mask shows only the last 4, validation rejects whitespace and
   assert.equal(validKey("has space in it"), false);
   assert.equal(validKey(KEY), true);
 });
+
+import { embedRequest } from "./trainer-model.ts";
+test("embeddings: a 200 with a numeric vector is ok; errors are safe codes; the key never leaks", async () => {
+  let seen: any;
+  const f: any = async (url: string, init: any) => { seen = { url, init }; return res(200, { data: [{ embedding: [0.1, 0.2, 0.3] }], usage: { prompt_tokens: 4 } }); };
+  const r = await embedRequest("https://openrouter.ai/api/v1", KEY, "text-embedding-3-small", "Alpha has a pool", { fetch: f });
+  assert.deepEqual(r, { ok: true, vector: [0.1, 0.2, 0.3], tokens: 4 });
+  assert.equal(seen.url, "https://openrouter.ai/api/v1/embeddings"); assert.equal(seen.init.redirect, "manual");
+  for (const [status, code] of [[401, "auth"], [429, "rate_limited"], [503, "provider"]] as const) {
+    const e: any = await embedRequest("https://openrouter.ai/api/v1", KEY, "m", "x", { fetch: async () => res(status, { error: KEY }) });
+    assert.equal(e.ok, false); assert.match(e.error, new RegExp(String(status))); assert.ok(!JSON.stringify(e).includes(KEY));
+  }
+  const bad: any = await embedRequest("https://openrouter.ai/api/v1", KEY, "m", "x", { fetch: async () => res(200, { data: [{ embedding: ["a"] }] }) });
+  assert.equal(bad.ok, false);
+});
+
+import { embedWithConfig } from "./trainer-model.ts";
+test("embedWithConfig: custom hosts are resolved first; private targets are refused before any request", async () => {
+  let sent = false;
+  const io = (addrs: string[]) => ({ fetch: (async () => { sent = true; return res(200, { data: [{ embedding: [1, 2, 3] }] }); }) as any, resolve: async () => addrs });
+  const bad: any = await embedWithConfig({ provider: "custom", base_url: "https://rebind.example.com/v1", model: "e" }, KEY, "x", io(["10.0.0.5"]));
+  assert.equal(bad.ok, false); assert.match(bad.error, /private/); assert.equal(sent, false);
+  const invalid: any = await embedWithConfig({ provider: "custom", base_url: "http://api.example.com/v1", model: "e" }, KEY, "x", io(["8.8.8.8"]));
+  assert.equal(invalid.ok, false); assert.equal(sent, false);
+  const good: any = await embedWithConfig({ provider: "custom", base_url: "https://api.example.com/v1", model: "e" }, KEY, "x", io(["93.184.216.34"]));
+  assert.deepEqual(good, { ok: true, vector: [1, 2, 3], tokens: 0 });
+  const pinned: any = await embedWithConfig({ provider: "openai", base_url: "", model: "e" } as any, KEY, "x", { fetch: (async () => res(200, { data: [{ embedding: [1] }] })) as any, resolve: async () => { throw new Error("not called"); } });
+  assert.equal(pinned.ok, true, "fixed-host providers need no DNS lookup");
+});

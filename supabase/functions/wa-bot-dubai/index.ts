@@ -39,7 +39,7 @@
 import {
   CORS, json, SUPABASE_URL, SERVICE_KEY, WASENDER_BASE,
   claimEvent, getCredentials, getActiveProjects, getRecentHistory, sendWaMessageMirrored, getKnowledge, getCorrections,
-  findLeadForNote, logNoteActivity, getBotSettings, fillWelcomeTemplate, fixLeadPhoneFromNote, splitPhoneFromNote,
+  findLeadForNote, logNoteActivity, getBotSettings, aiStillOn, verifyWebhook, fillWelcomeTemplate, fixLeadPhoneFromNote, splitPhoneFromNote,
   logConversationHistory,
 } from "../_shared/wa.ts";
 import {
@@ -514,11 +514,13 @@ async function runFaqAgent(account: string, to: string, remote: string, text: st
 
     const bundle = opts.profilesAlreadySent ? null : matchJolshiriBundle(text, projects);
     if (bundle) {
+      if (!(await aiStillOn("dubai", phone))) return false;
       await sendWaMessageMirrored(account, to, convId, phone, { type: "text", text: bundle.message });
       for (let i = 0; i < bundle.brochures.length; i++) {
         await new Promise((r) => setTimeout(r, 5500));
         const b = bundle.brochures[i];
-        await sendWaMessageMirrored(account, to, convId, phone, {
+        if (!(await aiStillOn("dubai", phone))) return false;
+      await sendWaMessageMirrored(account, to, convId, phone, {
           type: "document", mediaUrl: b.url, fileName: `${b.project.name} Brochure.pdf`, text: `${b.project.name} — Brochure`,
         });
       }
@@ -532,6 +534,7 @@ async function runFaqAgent(account: string, to: string, remote: string, text: st
     if (!result.reply && !send) return false;
 
     if (result.reply) {
+      if (!(await aiStillOn("dubai", phone))) return false;
       await sendWaMessageMirrored(account, to, convId, phone, { type: "text", text: result.reply });
       // Wasender's account-protection rate limit is 1 message per 5s.
       if (opts.allowMedia && send) await new Promise((r) => setTimeout(r, 5500));
@@ -540,7 +543,8 @@ async function runFaqAgent(account: string, to: string, remote: string, text: st
       const mediaList = resolveMedia(send, projects);
       for (let i = 0; i < mediaList.length; i++) {
         const media = mediaList[i];
-        await sendWaMessageMirrored(account, to, convId, phone, {
+        if (!(await aiStillOn("dubai", phone))) return false;
+      await sendWaMessageMirrored(account, to, convId, phone, {
           type: media.type, mediaUrl: media.url, fileName: media.fileName, text: media.caption,
         });
         if (i < mediaList.length - 1) await new Promise((r) => setTimeout(r, 5500));
@@ -673,14 +677,15 @@ Deno.serve(async (req) => {
   if (req.method !== "POST") return json({ error: "Method not allowed" }, 405);
 
   const rawBody = await req.text();
-  forwardToMirror(rawBody, req.headers);
 
-  // No signature check here, deliberately — the source "WhatsApp Webhook"
-  // node has no auth at all and accepts any POST. Adding one would silently
-  // drop real traffic if Wasender's "dubai" subscription doesn't send a
-  // header matching wa_secrets.webhook_secret. Confirm that header actually
-  // arrives for this subscription before reintroducing the check wa-webhook
-  // uses (getCredentials + safeEqual).
+  // Same rule as wa-webhook (shared verifyWebhook): with a webhook secret configured the
+  // X-Webhook-Signature header must equal it. Unset secret → accepted with a warning.
+  const auth = await verifyWebhook("dubai", req.headers);
+  if (!auth.ok) {
+    console.warn("wa-bot-dubai: rejected webhook: bad signature");
+    return json({ error: "Invalid signature" }, 401);
+  }
+  forwardToMirror(rawBody, req.headers);
 
   let payload: any;
   try {
@@ -698,10 +703,10 @@ Deno.serve(async (req) => {
   // relies on — a stricter, not a weaker, guard than what it replaces. The
   // "dubai-bot:" prefix keeps this bot's claims in their own namespace,
   // independent of wa-webhook's own replay guard on the same delivery.
-  // x-replay: 1 bypasses the check entirely, same as the source (that header
+  // x-replay: 1 bypasses the check (verified requests only), same as the source (that header
   // is how a failed delivery gets safely redelivered without being swallowed
   // as a dup).
-  const isReplay = (req.headers.get("x-replay") ?? "") === "1";
+  const isReplay = auth.strong && (req.headers.get("x-replay") ?? "") === "1"; // only a verified sender may skip dedupe
   if (evt.messageId && evt.kind !== "ignore" && !isReplay) {
     const fresh = await claimEvent(`dubai-bot:${evt.messageId}`, evt.event);
     if (!fresh) return json({ ok: true, duplicate: true });

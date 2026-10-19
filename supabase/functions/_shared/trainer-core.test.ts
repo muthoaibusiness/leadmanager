@@ -313,3 +313,52 @@ test("redactTurns", () => {
   assert.ok(!/1712|a@b|Rahim/.test(r.turns[0].text));
   assert.ok(r.turns[0].text.includes("{customer}"));
 });
+
+// ── migration-readiness checks (behaviour, tone, verified facts, unknowns) ──
+const BEH = { id: "b1", kind: "behaviour", revision: 1, status: "active", bots: ["eyad", "dubai"], project_ref: null,
+  body: { aspect: "tone", instruction: "Short, warm, two sentences at most; never pushy." } } as ItemRow;
+const BEH_DUBAI = { id: "b2", kind: "behaviour", revision: 1, status: "active", bots: ["dubai"], project_ref: null,
+  body: { aspect: "language", instruction: "Answer in English." } } as ItemRow;
+const C2 = freezeContent([NUZM, RULE, FACT, BEH, BEH_DUBAI], { reply_model: "m", max_tokens: 600, rubric_version: 1 }).content;
+
+test("behaviour and tone items reach the prompt, scoped per bot", () => {
+  const e = buildPrompt(C2, "eyad", [], "dam koto?", emptyState(), ["p-nuz"], "banglish").system;
+  assert.ok(e.includes("[b1] tone: Short, warm"));
+  assert.ok(!e.includes("[b2]"), "dubai-only behaviour stays out of eyad");
+  assert.ok(buildPrompt(C2, "dubai", [], "price?", emptyState(), ["p-nuz"], "en").system.includes("[b2] language: Answer in English."));
+});
+
+test("a price, size or number not in the verified facts is rejected and never sent", async () => {
+  const s = stub(out({ reply: "Nuznan er dam 2.5 crore", project_ref: "p-nuz" }), out({ reply: "Nuznan 1850 sqft", project_ref: "p-nuz" }));
+  const r = await runTurn({ content: CONTENT, bot: "eyad", text: "nuznan er dam koto?", history: [], state: emptyState(), ad: { isAd: false }, returning: false, ports: s.ports });
+  assert.equal(r.outcome, "fallback_invalid_output"); assert.equal(r.handoff, true);
+  assert.ok(!/2\.5|1850/.test(r.reply), "unverified figure reached the customer");
+  assert.deepEqual(r.trace.guard_errors, ["number"]);
+});
+
+test("a figure that IS in the verified facts is allowed", async () => {
+  const s = stub(out({ reply: "Jolshiri te 3-4 crore er moddhe. Ekta meeting set korbo?", project_ref: "p-nuz", used_item_ids: ["r1"] }));
+  const r = await runTurn({ content: CONTENT, bot: "eyad", text: "nuznan er dam koto?", history: [], state: emptyState(), ad: { isAd: false }, returning: false, ports: s.ports });
+  assert.equal(r.outcome, "ok"); assert.match(r.reply, /3-4 crore/);
+});
+
+test("an unknown answer becomes the fallback with handoff, not an invented reply or silence", async () => {
+  const s = stub(out({ reply: "Ami eta bolte parbo na" }), out({ reply: "Eta confirm korte parbo na" }));
+  const r = await runTurn({ content: CONTENT, bot: "eyad", text: "parking koto ta?", history: [], state: emptyState(), ad: { isAd: false }, returning: false, ports: s.ports });
+  assert.equal(r.reply, FALLBACK.banglish); assert.equal(r.handoff, true); assert.equal(r.stateNext.paused, true);
+});
+
+test("an agent command in the history is never shown to the model as customer text", async () => {
+  const s = stub(out({ reply: "Sector 16, Jolshiri Abashon", project_ref: "p-nuz" }));
+  const history = [{ role: "customer", text: "nuznan kothay?" }, { role: "agent", text: "/fdh wants a morning call 01730078392" }, { role: "agent", text: "/sendnz" }];
+  await runTurn({ content: CONTENT, bot: "eyad", text: "location?", history, state: emptyState(), ad: { isAd: false }, returning: true, ports: s.ports });
+  const sent = JSON.stringify(s.calls[0]);
+  assert.ok(!sent.includes("/fdh") && !sent.includes("/sendnz") && !sent.includes("01730078392"));
+});
+
+test("project identity: a different project named mid-conversation replaces the remembered one", () => {
+  const OSM = P("p-osm", "Wecon Osman Bellevue", { banglish: ["osman"] });
+  const st = { ...emptyState(), active_project: "p-nuz", active_source: "explicit" as const };
+  const r = resolveProject("osman er kotha bolun", st, { isAd: false }, [NUZM, OSM].map((x) => ({ id: x.id, body: x.body })) as any);
+  assert.deepEqual(r.projects, ["p-osm"]);
+});

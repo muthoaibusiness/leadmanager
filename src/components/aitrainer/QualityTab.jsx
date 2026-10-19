@@ -45,18 +45,23 @@ export default function QualityTab({ api, showToast }) {
     finally { setBusy(false); }
   };
 
+  const expectedFor = (b) => status.pointers.find(p => p.bot === b)?.snapshot_id ?? null;
+  const conflictMsg = (e) => e.code === 'conflict' ? "Someone else changed this bot's version. Reload and try again." : e.message;
+  const activeOn = (id) => status.pointers.filter(p => p.mode === 'snapshot' && p.snapshot_id === id).map(p => p.bot);
+
   const publish = async () => {
+    if (!window.confirm(`Set ${bot} to v${snapById[snapId]?.version_no ?? '?'}? Customers still get the legacy bot: no bot reads published versions yet.`)) return;
     setBusy(true); setBlocked(null);
-    try { await api('publish', { snapshot_id: snapId, bot }); showToast(`Published to ${bot}`, 'ok'); reload(); }
-    catch (e) { if (e.code === 'gate') setBlocked(e.details || [e.message]); else showToast(e.message, 'err'); }
+    try { await api('publish', { snapshot_id: snapId, bot, expected_snapshot_id: expectedFor(bot) }); showToast(`${bot} is set to this version, but it is not live yet: customers still get the legacy bot.`, 'ok'); reload(); }
+    catch (e) { if (e.code === 'gate') setBlocked(e.details || [e.message]); else showToast(conflictMsg(e), 'err'); }
     finally { setBusy(false); }
   };
 
   const rollback = async (b, legacy, toId) => {
     const reason = window.prompt(legacy ? `Why move ${b} back to legacy? (required)` : `Why roll ${b} back? (required)`);
     if (!reason?.trim()) return;
-    try { await api('rollback', { bot: b, legacy, snapshot_id: toId, reason }); showToast('Done', 'ok'); reload(); }
-    catch (e) { showToast(e.details ? `${e.message} ${e.details.join('; ')}` : e.message, 'err'); }
+    try { await api('rollback', { bot: b, legacy, snapshot_id: toId, reason, expected_snapshot_id: expectedFor(b) }); showToast('Done', 'ok'); reload(); }
+    catch (e) { showToast(e.code === 'conflict' ? conflictMsg(e) : e.details ? `${e.message} ${e.details.join('; ')}` : e.message, 'err'); }
   };
 
   const retireTest = async (t) => {
@@ -77,6 +82,7 @@ export default function QualityTab({ api, showToast }) {
           <div key={p.bot} className="analytics-card" style={{ minWidth: 240 }}>
             <b>{p.bot}</b>
             <div>{p.mode === 'legacy' ? 'Legacy: unversioned live reads, not a published version' : `Snapshot v${snapById[p.snapshot_id]?.version_no ?? '?'} · ${snapById[p.snapshot_id]?.checksum?.slice(0, 12) ?? ''}`}</div>
+            <div className="meta">Customers still get the legacy bot: no bot reads published versions yet.</div>
             <div className="meta">changed {new Date(p.changed_at).toLocaleString()}{p.changed_by_claimed ? ` · claimed by ${p.changed_by_claimed}` : ''}</div>
             {p.mode === 'snapshot' && <button className="btn btn-g btn-sm" onClick={() => rollback(p.bot, true)}><Mi>undo</Mi>Back to legacy</button>}
           </div>
@@ -92,7 +98,7 @@ export default function QualityTab({ api, showToast }) {
           <button className="btn btn-g" disabled={busy} onClick={freeze}><Mi>science</Mi>Freeze drafts as candidate</button>
           <select className="fi" value={snapId} onChange={e => { setSnapId(e.target.value); setRun(null); setBlocked(null); }} aria-label="Snapshot">
             <option value="">Choose a version</option>
-            {snaps.map(s => <option key={s.id} value={s.id}>v{s.version_no} ({s.status})</option>)}
+            {snaps.map(s => <option key={s.id} value={s.id}>{`v${s.version_no} (${s.status}${activeOn(s.id).length ? `, active on ${activeOn(s.id).join(', ')}` : ''})`}</option>)}
           </select>
           <select className="fi" value={bot} onChange={e => setBot(e.target.value)} aria-label="Bot"><option value="eyad">eyad</option><option value="dubai">dubai</option></select>
           <button className="btn btn-g" disabled={busy || !snapId} onClick={runTests}><Mi>play_arrow</Mi>Run tests ({tests.filter(t => t.status === 'active' && t.bots.includes(bot)).length})</button>

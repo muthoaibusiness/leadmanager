@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import Mi from '../Mi.jsx';
+import EmbeddingModel from './EmbeddingModel.jsx';
 
 // Provider, base URL, model and API key for the Playground only (migration
 // 0043). The server never returns the key; the browser sees whether one is
@@ -66,6 +67,7 @@ export default function ModelTab({ api, showToast }) {
   const t = cfg?.last_test;
 
   return (
+    <div className="ait">
     <div className="ait-grid">
       <form className="analytics-card" onSubmit={save} noValidate style={{ display: 'flex', flexDirection: 'column', gap: 10, minWidth: 0 }}>
         <b>Playground model</b>
@@ -116,6 +118,8 @@ export default function ModelTab({ api, showToast }) {
           </div>
         ) : <div className="ait-trace">Not tested since the last change.</div>}
       </div>
+    </div>
+    <EmbeddingModel api={api} showToast={showToast} />
     </div>
   );
 }

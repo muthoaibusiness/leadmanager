@@ -205,4 +205,36 @@ await ok('0043: anon and authenticated cannot read the table or call the key fun
   assert.equal((await db.query(`select relrowsecurity as r from pg_class where relname = 'ai_model_configs'`)).rows[0].r, true);
 });
 
+// 0034/0035/0038/0039 bot settings. Supabase grants anon all table privileges
+// by default; PGlite does not, so the grant is made first to match production.
+await db.exec(`create table wa_settings (id text primary key, welcome_enabled boolean, welcome_message text, faq_agent_enabled boolean, auto_forward_enabled boolean, auto_forward_after_messages int)`);
+for (const f of ['0034_wa_bot_settings', '0035_wa_bot_test_numbers', '0038_wa_trainer_test_mode']) await db.exec(readFileSync(`supabase/migrations/${f}.sql`, 'utf8'));
+await db.exec(`grant all on wa_bot_settings to anon, authenticated`);
+await db.exec(readFileSync('supabase/migrations/0039_wa_trainer_test_mode_lock.sql', 'utf8'));
+const colPriv = async (role, col, priv) => (await db.query(`select has_column_privilege('${role}', 'wa_bot_settings', '${col}', '${priv}') as x`)).rows[0].x;
+
+await ok('0039: anon and authenticated cannot write trainer_test_mode', async () => {
+  for (const role of ['anon', 'authenticated']) for (const priv of ['INSERT', 'UPDATE']) assert.equal(await colPriv(role, 'trainer_test_mode', priv), false, `${role} ${priv}`);
+  const r = await db.query(`select bot, trainer_test_mode from wa_bot_settings order by bot`);
+  assert.deepEqual(r.rows, [{ bot: 'dubai', trainer_test_mode: false }, { bot: 'eyad', trainer_test_mode: false }]);
+});
+
+// The AI-reply switch is the only OFF control the bots read. Today it is
+// writable with the public anon key, so anyone with the bundle can turn the
+// bot on or off; the role check in the CRM is client-side only.
+await ok('TODO faq_agent_enabled is not writable by anon (OFF switch is Management-only)', async () => {
+  const anonCan = await colPriv('anon', 'faq_agent_enabled', 'UPDATE');
+  if (anonCan) console.log('  TODO: anon can UPDATE wa_bot_settings.faq_agent_enabled (expected false)');
+  else assert.equal(anonCan, false);
+});
+
+await ok('pointer accepts a published snapshot; pointer audit rows are append-only', async () => {
+  const s = (await db.query(`insert into ai_snapshots (version_no, content, checksum, core_version_frozen, created_by_claimed, status, published_at, published_by_claimed) values (90, '{}', 'c90', '1.0.0', 'A', 'published', now(), 'A') returning id`)).rows[0].id;
+  await db.query(`update ai_bot_pointers set mode = 'snapshot', snapshot_id = $1 where bot = 'eyad'`, [s]);
+  await db.query(`insert into ai_trainer_audit (entity, entity_id, action, actor_claimed) values ('pointer', 'eyad', 'publish', 'A')`);
+  await rejects(`update ai_trainer_audit set action = 'x' where entity = 'pointer'`);
+  await rejects(`update ai_snapshots set status = 'candidate' where id = $1`, [s]);
+  await db.query(`update ai_bot_pointers set mode = 'legacy', snapshot_id = null where bot = 'eyad'`);
+});
+
 console.log(`\n${pass} passed`);

@@ -47,6 +47,18 @@ function memDb() {
         Object.assign(cur, it, { revision: cur.revision + 1 }); t.ai_trainer_audit.push({ actor_claimed: a.p_actor });
         return { ok: true, data: { id: cur.id, revision: cur.revision } };
       }
+      // Stand-in for ai_pointer_set (migration 0044): all-or-nothing, expected check, one audit row.
+      if (fn === "ai_pointer_set") {
+        const ptr = t.ai_bot_pointers.find((x) => x.bot === a.p_bot); if (!ptr) return { ok: false, error: "not_found" };
+        if (a.p_check_expected && (ptr.snapshot_id ?? null) !== (a.p_expected_snapshot_id ?? null)) return { ok: false, error: "pointer_moved" };
+        const snap = a.p_snapshot_id ? t.ai_snapshots.find((x) => x.id === a.p_snapshot_id) : null;
+        if (a.p_mode === "snapshot" && !(snap && (snap.status === "published" || a.p_publish))) return { ok: false, error: "pointer must reference a published snapshot" };
+        const before = structuredClone(ptr);
+        if (a.p_publish && snap && snap.status !== "published") Object.assign(snap, { status: "published", published_at: "now", published_by_claimed: a.p_actor });
+        Object.assign(ptr, { mode: a.p_mode, snapshot_id: a.p_snapshot_id, changed_at: "now", changed_by_claimed: a.p_actor, reason: a.p_reason });
+        t.ai_trainer_audit.push({ entity: "pointer", entity_id: a.p_bot, action: a.p_action, before, after: { ...structuredClone(ptr), version_no: snap?.version_no ?? null }, reason: a.p_reason, actor_claimed: a.p_actor });
+        return { ok: true, data: structuredClone(ptr) };
+      }
       // Stand-in for the Vault-backed key functions (migration 0043).
       if (fn === "ai_model_key_set") {
         const host = (u: string) => new URL(u).hostname.toLowerCase().replace(/\.+$/, "");
@@ -495,4 +507,398 @@ test("modelconfig: the key RPC always receives the base URL the caller saved", a
   deps.db.rpc = async (fn: string, a: any) => { if (fn === "ai_model_key_set") seen.push(a.p_expected_base_url); return realRpc(fn, a); };
   await call(deps, "modelconfig.save", { ...CFG, base_url: "https://API.Example.com/v1/", api_key: KEY });
   assert.deepEqual(seen, ["https://api.example.com/v1"]);
+});
+
+// ── Publish / rollback safeguards ───────────────────────────────────────────
+const eyadPtr = (deps: any) => deps.db.t.ai_bot_pointers.find((x: any) => x.bot === "eyad");
+const passRun = async (deps: any, snapId: string) => {
+  const run = await call(deps, "runs.start", { snapshot_id: snapId, bot: "eyad" });
+  await call(deps, "runs.step", { run_id: run.body.data.id });
+};
+
+test("publish and rollback refuse a non-Management account and leave the pointer and audit untouched", async () => {
+  const { deps, snapId } = await setup([OUT(), JPASS]);
+  await passRun(deps, snapId);
+  const audits = deps.db.t.ai_trainer_audit.length;
+  assert.equal((await call(deps, "publish", { snapshot_id: snapId, bot: "eyad" }, "agent", "9.9.9.1")).status, 401);
+  assert.equal((await call(deps, "rollback", { bot: "eyad", legacy: true, reason: "x" }, "gone", "9.9.9.1")).status, 401);
+  assert.equal(eyadPtr(deps).mode, "legacy");
+  assert.equal(deps.db.t.ai_trainer_audit.length, audits);
+});
+
+test("publish refuses a snapshot whose stored content no longer matches its checksum", async () => {
+  const { deps, snapId } = await setup([OUT(), JPASS]);
+  await passRun(deps, snapId);
+  deps.db.t.ai_snapshots[0].content = { ...deps.db.t.ai_snapshots[0].content, tampered: true };
+  const r = await call(deps, "publish", { snapshot_id: snapId, bot: "eyad" });
+  assert.equal(r.status, 409); assert.ok(r.body.error.details.includes("snapshot checksum mismatch"));
+  assert.equal(eyadPtr(deps).mode, "legacy");
+});
+
+test("rollback refuses a candidate or unknown snapshot", async () => {
+  const { deps, snapId } = await setup([]);
+  assert.equal((await call(deps, "rollback", { bot: "eyad", snapshot_id: snapId, reason: "x" })).status, 422);
+  assert.equal((await call(deps, "rollback", { bot: "eyad", snapshot_id: "nope", reason: "x" })).status, 422);
+  assert.equal(eyadPtr(deps).mode, "legacy");
+});
+
+test("publish and rollback each write one pointer audit row with before, after and actor", async () => {
+  const { deps, snapId } = await setup([OUT(), JPASS]);
+  // memDb hands out live row objects; PostgREST returns copies.
+  const sel = deps.db.select.bind(deps.db); deps.db.select = async (q: string) => structuredClone(await sel(q));
+  await passRun(deps, snapId);
+  await call(deps, "publish", { snapshot_id: snapId, bot: "eyad" });
+  await call(deps, "rollback", { bot: "eyad", legacy: true, reason: "bad replies" });
+  const rows = deps.db.t.ai_trainer_audit.filter((a: any) => a.entity === "pointer");
+  assert.deepEqual(rows.map((a: any) => a.action), ["publish", "rollback"]);
+  assert.equal(rows[0].before.mode, "legacy"); assert.equal(rows[0].after.snapshot_id, snapId);
+  assert.equal(rows[1].before.snapshot_id, snapId); assert.equal(rows[1].reason, "bad replies");
+  assert.ok(rows.every((a: any) => a.actor_claimed === "Asad"));
+});
+
+test("editing drafts after publish changes neither the published snapshot nor the pointer", async () => {
+  const { deps, snapId } = await setup([OUT(), JPASS]);
+  await passRun(deps, snapId);
+  await call(deps, "publish", { snapshot_id: snapId, bot: "eyad" });
+  const frozen = JSON.stringify(deps.db.t.ai_snapshots[0].content);
+  const item = deps.db.t.ai_trainer_items[0];
+  assert.equal((await call(deps, "items.update", { ...item, body: { topic: "a", text: "changed" }, revision: item.revision })).status, 200);
+  assert.equal(JSON.stringify(deps.db.t.ai_snapshots[0].content), frozen);
+  assert.equal(eyadPtr(deps).snapshot_id, snapId);
+  const v2 = await call(deps, "snapshot.freeze", {});
+  assert.equal(v2.body.data.reused, false);
+  // memDb applies no column defaults, so a new row has no status (the DB sets 'candidate').
+  assert.notEqual(deps.db.t.ai_snapshots.find((s: any) => s.id === v2.body.data.id).status, "published");
+  assert.equal(eyadPtr(deps).snapshot_id, snapId, "a new candidate does not move the pointer");
+});
+
+// Publish and rollback are one ai_pointer_set call (migration 0044): the
+// snapshot status, pointer move and audit row commit or fail together.
+test("publish does not move the pointer when its audit row cannot be written", async () => {
+  const { deps, snapId } = await setup([OUT(), JPASS]);
+  await passRun(deps, snapId);
+  const real = deps.db.rpc.bind(deps.db);
+  // A failing audit insert inside the database rolls the whole call back.
+  deps.db.rpc = async (fn: string, a: any) => fn === "ai_pointer_set" ? { ok: false, error: "audit insert failed" } : real(fn, a);
+  const r = await call(deps, "publish", { snapshot_id: snapId, bot: "eyad" });
+  assert.equal(r.status, 500);
+  assert.equal(eyadPtr(deps).mode, "legacy", "pointer moved with no audit row");
+  assert.equal(deps.db.t.ai_trainer_audit.filter((a: any) => a.entity === "pointer").length, 0);
+});
+
+test("publish refuses when the pointer moved since the caller loaded it", async () => {
+  const { deps, snapId } = await setup([OUT(), JPASS, OUT(), JPASS]);
+  await passRun(deps, snapId);
+  await call(deps, "publish", { snapshot_id: snapId, bot: "eyad" });
+  await call(deps, "items.create", { kind: "fact", bots: ["eyad"], project_ref: null, body: { topic: "c", text: "d" } });
+  const v2 = (await call(deps, "snapshot.freeze", {})).body.data.id;
+  await passRun(deps, v2);
+  // A second manager's screen still shows eyad on legacy.
+  const r = await call(deps, "publish", { snapshot_id: v2, bot: "eyad", expected_snapshot_id: null });
+  assert.equal(r.status, 409);
+  assert.equal(r.body.error?.code ?? r.body.code, "conflict");
+  assert.equal(eyadPtr(deps).snapshot_id, snapId);
+  assert.equal(deps.db.t.ai_trainer_audit.filter((a: any) => a.entity === "pointer").length, 1);
+  assert.equal((await call(deps, "publish", { snapshot_id: v2, bot: "eyad", expected_snapshot_id: snapId })).status, 200);
+});
+
+test("rollback checks expected_snapshot_id only when the key is sent", async () => {
+  const { deps, snapId } = await setup([OUT(), JPASS]);
+  await passRun(deps, snapId);
+  await call(deps, "publish", { snapshot_id: snapId, bot: "eyad" });
+  const stale = await call(deps, "rollback", { bot: "eyad", legacy: true, reason: "x", expected_snapshot_id: null });
+  assert.equal(stale.status, 409);
+  assert.equal(eyadPtr(deps).snapshot_id, snapId);
+  assert.equal((await call(deps, "rollback", { bot: "eyad", legacy: true, reason: "x", expected_snapshot_id: snapId })).status, 200);
+  assert.equal(eyadPtr(deps).mode, "legacy");
+});
+
+test("runs.list returns run summaries only, newest first, and needs Management", async () => {
+  const deps: any = { db: memDb(), llm: llm(), env: ENV };
+  deps.db.t.ai_test_runs.push(
+    { id: "r1", snapshot_id: "s1", bot: "eyad", status: "complete", counts: { PASS: 2 }, started_at: "2026-10-19T01:00", finished_at: "2026-10-19T01:05", test_ids: ["t1"], cost_usd: 0.01 },
+    { id: "r2", snapshot_id: "s1", bot: "dubai", status: "running", counts: {}, started_at: "2026-10-19T02:00", finished_at: null, test_ids: ["t1"], cost_usd: 0 });
+  const r = await call(deps, "runs.list", {});
+  assert.equal(r.status, 200);
+  assert.deepEqual(r.body.data.map((x: any) => x.id), ["r2", "r1"]);
+  assert.deepEqual(Object.keys(r.body.data[0]).sort(), ["bot", "counts", "finished_at", "id", "snapshot_id", "started_at", "status"]);
+  assert.equal((await call(deps, "runs.list", {}, "agent", "10.44.0.1")).status, 401);
+});
+
+test("bots.set_replies: Management only, one bot's column, audited, nothing else touched", async () => {
+  const deps: any = { db: memDb(), llm: llm(), env: ENV };
+  deps.db.t.wa_bot_settings = [{ bot: "eyad", faq_agent_enabled: false, takeover_enabled: true, trainer_test_mode: false }, { bot: "dubai", faq_agent_enabled: false, takeover_enabled: true, trainer_test_mode: false }];
+  const pointers = JSON.stringify(deps.db.t.ai_bot_pointers);
+  assert.equal((await call(deps, "bots.set_replies", { bot: "dubai", enabled: true }, "agent", "10.45.0.1")).status, 401);
+  assert.equal(deps.db.t.wa_bot_settings[1].faq_agent_enabled, false, "refused call changed nothing");
+  assert.equal((await call(deps, "bots.set_replies", { bot: "all", enabled: true })).status, 422);
+  assert.equal((await call(deps, "bots.set_replies", { bot: "dubai", enabled: "yes" })).status, 422);
+  const r = await call(deps, "bots.set_replies", { bot: "dubai", enabled: true });
+  assert.equal(r.status, 200); assert.deepEqual(r.body.data, { bot: "dubai", faq_agent_enabled: true });
+  assert.deepEqual(deps.db.t.wa_bot_settings, [
+    { bot: "eyad", faq_agent_enabled: false, takeover_enabled: true, trainer_test_mode: false },
+    { bot: "dubai", faq_agent_enabled: true, takeover_enabled: true, trainer_test_mode: false }]);
+  const a = deps.db.t.ai_trainer_audit.at(-1);
+  assert.equal(a.entity, "bot_replies"); assert.equal(a.entity_id, "dubai"); assert.equal(a.action, "enable");
+  // memDb returns the live row object (no select=, no copy), so `before` is not checked here.
+  assert.deepEqual(a.after, { faq_agent_enabled: true }); assert.equal(a.actor_claimed, "Asad");
+  assert.equal(JSON.stringify(deps.db.t.ai_bot_pointers), pointers, "pointers untouched");
+  deps.db.t.wa_bot_settings = [];
+  assert.equal((await call(deps, "bots.set_replies", { bot: "eyad", enabled: true })).status, 404);
+});
+
+// ── System Prompt (migration 0046) ─────────────────────────────────────────
+const SP_REPLY = (reply: string) => JSON.stringify({ intent: "info", project_ref: null, language: "en", reply, media: [], handoff: false, asked: [], used_item_ids: [], clarify: false });
+const spDeps = (...texts: string[]) => {
+  const deps: any = { db: memDb(), llm: llm(...texts), env: ENV };
+  deps.db.t.ai_system_prompts = []; deps.db.t.ai_system_prompt_pointers = [{ bot: "eyad", company_id: "c1", prompt_id: null }, { bot: "dubai", company_id: "c1", prompt_id: null }];
+  return deps;
+};
+
+test("prompt: drafts save as new versions, publish moves the pointer, the draft never reaches published", async () => {
+  const deps = spDeps();
+  assert.equal((await call(deps, "prompt.save_draft", { bot: "eyad", body: "" })).status, 422);
+  assert.equal((await call(deps, "prompt.save_draft", { bot: "all", body: "x" })).status, 422);
+  assert.equal((await call(deps, "prompt.save_draft", { bot: "eyad", body: "x".repeat(12001) })).status, 422);
+  const d1 = await call(deps, "prompt.save_draft", { bot: "eyad", body: "You are Eyad v1." });
+  assert.equal(d1.status, 200); assert.equal(d1.body.data.version_no, 1); assert.equal(d1.body.data.status, "draft");
+  const d2 = await call(deps, "prompt.save_draft", { bot: "eyad", body: "You are Eyad v2." });
+  assert.equal(d2.body.data.version_no, 2);
+  let g = (await call(deps, "prompt.get", { bot: "eyad" })).body.data;
+  assert.equal(g.draft.body, "You are Eyad v2."); assert.equal(g.published, null, "nothing published yet");
+  assert.equal((await call(deps, "prompt.publish", { bot: "eyad", draft_id: d1.body.data.id })).status, 409, "only the newest draft can be published");
+  const p = await call(deps, "prompt.publish", { bot: "eyad", draft_id: d2.body.data.id });
+  assert.equal(p.status, 200); assert.equal(p.body.data.version_no, 3);
+  await call(deps, "prompt.save_draft", { bot: "eyad", body: "You are Eyad v4 unsaved idea." });
+  g = (await call(deps, "prompt.get", { bot: "eyad" })).body.data;
+  assert.equal(g.published.body, "You are Eyad v2.", "a newer draft does not change published");
+  assert.equal(g.draft.body, "You are Eyad v4 unsaved idea.");
+  assert.equal(deps.db.t.ai_system_prompt_pointers.find((x: any) => x.bot === "dubai").prompt_id, null, "dubai untouched");
+  assert.ok(deps.db.t.ai_trainer_audit.some((a: any) => a.entity === "system_prompt" && a.action === "publish"));
+});
+
+test("prompt: rollback restores an earlier published version and needs a reason", async () => {
+  const deps = spDeps();
+  const a = (await call(deps, "prompt.save_draft", { bot: "dubai", body: "Dubai A" })).body.data;
+  const pa = (await call(deps, "prompt.publish", { bot: "dubai", draft_id: a.id })).body.data;
+  const b = (await call(deps, "prompt.save_draft", { bot: "dubai", body: "Dubai B" })).body.data;
+  await call(deps, "prompt.publish", { bot: "dubai", draft_id: b.id });
+  assert.equal((await call(deps, "prompt.get", { bot: "dubai" })).body.data.published.body, "Dubai B");
+  assert.equal((await call(deps, "prompt.rollback", { bot: "dubai", prompt_id: pa.id })).status, 422, "reason required");
+  assert.equal((await call(deps, "prompt.rollback", { bot: "dubai", prompt_id: a.id, reason: "x" })).status, 422, "a draft is not a rollback target");
+  assert.equal((await call(deps, "prompt.rollback", { bot: "eyad", prompt_id: pa.id, reason: "x" })).status, 422, "another bot's version is refused");
+  assert.equal((await call(deps, "prompt.rollback", { bot: "dubai", prompt_id: pa.id, reason: "B was too pushy" })).status, 200);
+  assert.equal((await call(deps, "prompt.get", { bot: "dubai" })).body.data.published.body, "Dubai A");
+  const h = (await call(deps, "prompt.history", { bot: "dubai" })).body.data;
+  assert.deepEqual(h.map((x: any) => [x.version_no, x.status]), [[4, "published"], [3, "draft"], [2, "published"], [1, "draft"]]);
+  assert.ok(h.every((x: any) => typeof x.body === "string"));
+});
+
+test("prompt: Playground uses the published prompt by default and the draft only when asked; bot B never sees bot A's", async () => {
+  const deps = spDeps(SP_REPLY("a"), SP_REPLY("b"), SP_REPLY("c"), SP_REPLY("d"));
+  const d = (await call(deps, "prompt.save_draft", { bot: "eyad", body: "PUBLISHED-EYAD-RULE" })).body.data;
+  await call(deps, "prompt.publish", { bot: "eyad", draft_id: d.id });
+  await call(deps, "prompt.save_draft", { bot: "eyad", body: "DRAFT-EYAD-RULE" });
+  const t1 = await call(deps, "playground.turn", { bot: "eyad", source: "drafts", text: "hello there, price?", client_turn_id: "c-0001-pppp", setup: {} });
+  assert.equal(t1.status, 200);
+  assert.ok(deps.llm.calls[0].system.includes("PUBLISHED-EYAD-RULE") && !deps.llm.calls[0].system.includes("DRAFT-EYAD-RULE"));
+  assert.equal(t1.body.data.turn.trace.system_prompt.version_no, 2);
+  const t2 = await call(deps, "playground.turn", { bot: "eyad", source: "drafts", prompt: "draft", text: "hello there, price?", client_turn_id: "c-0002-pppp", setup: {} });
+  assert.ok(deps.llm.calls[1].system.includes("DRAFT-EYAD-RULE"));
+  assert.equal(t2.body.data.turn.trace.system_prompt.version_no, 3);
+  await call(deps, "playground.turn", { bot: "dubai", source: "drafts", text: "hello there, price?", client_turn_id: "c-0003-pppp", setup: {} });
+  assert.ok(!deps.llm.calls[2].system.includes("EYAD-RULE"), "dubai got eyad's prompt");
+  assert.ok(!JSON.stringify(deps.db.t.ai_playground_turns).includes("PUBLISHED-EYAD-RULE"), "prompt text not stored in turn traces");
+});
+
+test("prompt: test runs a draft in a one-off turn without saving a conversation", async () => {
+  const deps = spDeps(SP_REPLY("Assalamu Alaikum, ami Eyad."));
+  const r = await call(deps, "prompt.test", { bot: "eyad", body: "You are Eyad. Greet in Banglish.", text: "price koto?" });
+  assert.equal(r.status, 200);
+  assert.equal(r.body.data.reply, "Assalamu Alaikum, ami Eyad.");
+  assert.ok(deps.llm.calls[0].system.includes("You are Eyad. Greet in Banglish."));
+  assert.equal(deps.db.t.ai_system_prompts.length, 0, "test does not save a version");
+  assert.equal(deps.db.t.ai_playground_conversations.length, 0, "test does not create a conversation");
+  assert.equal((await call(deps, "prompt.test", { bot: "eyad", body: "x", text: "" })).status, 422);
+});
+
+test("prompt: every action needs Management", async () => {
+  const deps = spDeps();
+  let ip = 0;
+  for (const a of ["prompt.get", "prompt.save_draft", "prompt.publish", "prompt.rollback", "prompt.history", "prompt.test"]) {
+    assert.equal((await call(deps, a, { bot: "eyad", body: "x", text: "y" }, "agent", `10.46.0.${++ip}`)).status, 401, a);
+  }
+  assert.equal(deps.db.t.ai_system_prompts.length, 0);
+});
+
+test("prompt: a snapshot pins each bot's published System Prompt; a later prompt change gives a new snapshot", async () => {
+  const deps = spDeps();
+  const d = (await call(deps, "prompt.save_draft", { bot: "eyad", body: "PINNED-V1" })).body.data;
+  await call(deps, "prompt.publish", { bot: "eyad", draft_id: d.id });
+  const s1 = (await call(deps, "snapshot.freeze")).body.data;
+  const snap = deps.db.t.ai_snapshots.find((x: any) => x.id === s1.id);
+  assert.equal(snap.content.system_prompts.eyad.body, "PINNED-V1");
+  assert.equal(snap.content.system_prompts.dubai, undefined);
+  const d2 = (await call(deps, "prompt.save_draft", { bot: "eyad", body: "PINNED-V2" })).body.data;
+  assert.equal((await call(deps, "snapshot.freeze")).body.data.reused, true, "an unpublished draft does not change the snapshot");
+  await call(deps, "prompt.publish", { bot: "eyad", draft_id: d2.id });
+  const s2 = (await call(deps, "snapshot.freeze")).body.data;
+  assert.equal(s2.reused, false); assert.notEqual(s2.id, s1.id);
+});
+
+// ── vector index (task 5) ───────────────────────────────────────────────────
+test("index.build embeds active facts; freeze uses vector only when the index is complete, and says why not", async () => {
+  const deps: any = { db: memDb(), llm: llm(), env: { ...ENV, embeddingModel: "emb-1", embeddingDim: 3 } };
+  deps.db.t.ai_trainer_chunks = [];
+  let fail = true;
+  deps.embedder = async (_m: string, text: string) => (fail && text.includes("parking") ? { ok: false, error: "provider 503" } : { ok: true, vector: [1, 0, 0], tokens: 2 });
+  const save = (text: string) => call(deps, "items.create", { kind: "fact", bots: ["eyad"], project_ref: null, body: { topic: "t", text } });
+  await save("Alpha has a pool."); await save("Alpha has parking.");
+  const r1 = await call(deps, "index.build");
+  assert.equal(r1.status, 200); assert.equal(r1.body.data.ok, false); assert.equal(r1.body.data.failed.length, 1);
+  const s1 = (await call(deps, "snapshot.freeze")).body.data;
+  const snap1 = deps.db.t.ai_snapshots.find((x: any) => x.id === s1.id);
+  assert.equal(snap1.content.retrieval.mode, "full", "an incomplete index never freezes a vector snapshot");
+  assert.deepEqual(s1.retrieval, { mode: "full", reason: "index incomplete", missing: 1 });
+  fail = false;
+  const r2 = await call(deps, "index.build");
+  assert.equal(r2.body.data.ok, true); assert.equal(r2.body.data.reused, 1); assert.equal(r2.body.data.created, 1);
+  const s2 = (await call(deps, "snapshot.freeze")).body.data;
+  const snap2 = deps.db.t.ai_snapshots.find((x: any) => x.id === s2.id);
+  assert.equal(snap2.content.retrieval.mode, "vector"); assert.equal(snap2.content.retrieval.chunk_ids.length, 2);
+  assert.equal((await call(deps, "index.build", {}, "agent", "10.47.0.1")).status, 401);
+});
+
+test("without an embedding model configured, freeze stays on full and index.build says so", async () => {
+  const deps: any = { db: memDb(), llm: llm(), env: ENV };
+  const r = await call(deps, "index.build");
+  assert.equal(r.status, 422); assert.equal(r.body.error.code, "no_embedder");
+  const s = (await call(deps, "snapshot.freeze")).body.data;
+  assert.deepEqual(s.retrieval, { mode: "full", reason: "no embedding model configured" });
+});
+
+// ── Embedding model config and Markdown documents (migration 0047) ─────────
+const EMB = { provider: "openai", base_url: "https://api.openai.com/v1", model: "text-embedding-3-small", embedding_dim: 3 };
+const embDeps = (embed?: (cfg: any, key: string, text: string) => any) => {
+  const deps: any = { db: memDb(), llm: llm(), env: { ...ENV, companyId: "c1" } };
+  deps.db.t.ai_trainer_documents = []; deps.db.t.ai_trainer_chunks = [];
+  const calls: any[] = [];
+  deps.embedWith = (cfg: any, key: string) => async (text: string) => { calls.push({ cfg, key, text }); return embed ? embed(cfg, key, text) : { ok: true, vector: [1, 0, 0], tokens: 2 }; };
+  return { deps, calls };
+};
+const MDDOC = "# Wecon Nuznan\n## Location\nSector 16, Jolshiri Abashon.\n## Sizes\n| Type | Size |\n| --- | --- |\n| B | 1,850 sqft |";
+
+test("embedding config: saved separately from the chat model, key never returned, dimension required", async () => {
+  const { deps } = embDeps();
+  await call(deps, "modelconfig.save", { provider: "custom", base_url: "https://api.example.com/v1", model: "chat-1", api_key: "sk-chat-KEY-0001" });
+  assert.equal((await call(deps, "embedconfig.save", { ...EMB, embedding_dim: undefined, api_key: "sk-emb-KEY-0002" })).status, 422);
+  const s = await call(deps, "embedconfig.save", { ...EMB, api_key: "sk-emb-KEY-0002" });
+  assert.equal(s.status, 200);
+  assert.equal(deps.db.vault.embedding, "sk-emb-KEY-0002"); assert.equal(deps.db.vault.playground, "sk-chat-KEY-0001", "chat key untouched");
+  const g = (await call(deps, "embedconfig.get")).body.data;
+  assert.deepEqual([g.config.provider, g.config.model, g.config.embedding_dim, g.config.key.masked], ["openai", "text-embedding-3-small", 3, "••••0002"]);
+  assert.ok(!JSON.stringify([s.body, g, deps.db.t.ai_trainer_audit]).includes("sk-emb-KEY"));
+  assert.equal((await call(deps, "modelconfig.get")).body.data.config.model, "chat-1", "chat config intact");
+});
+
+test("embedding config: the chat key is reused only for the same provider and host, never across hosts", async () => {
+  const { deps } = embDeps();
+  await call(deps, "modelconfig.save", { provider: "openrouter", base_url: "", model: "anthropic/claude-haiku-5.5", api_key: "sk-or-CHAT-0009" });
+  assert.equal((await call(deps, "embedconfig.save", { ...EMB })).body.error.code, "key_required", "different host: chat key not reused");
+  const r = await call(deps, "embedconfig.save", { provider: "openrouter", base_url: "", model: "openai/text-embedding-3-small", embedding_dim: 3, reuse_chat_key: true });
+  assert.equal(r.status, 200); assert.equal(deps.db.vault.embedding, "sk-or-CHAT-0009");
+});
+
+test("embedconfig.test makes a real embedding request and reports dimension mismatches and provider errors", async () => {
+  let mode = "ok";
+  const { deps, calls } = embDeps(() => mode === "ok" ? { ok: true, vector: [0.1, 0.2, 0.3], tokens: 2 } : mode === "dim" ? { ok: true, vector: [1, 2], tokens: 2 } : { ok: false, error: "auth: Provider rejected the API key (HTTP 401)" });
+  assert.equal((await call(deps, "embedconfig.test")).status, 422, "nothing saved");
+  await call(deps, "embedconfig.save", { ...EMB, api_key: "sk-emb-KEY-0002" });
+  const a = (await call(deps, "embedconfig.test")).body.data;
+  assert.equal(a.ok, true); assert.equal(a.dimensions, 3); assert.equal(calls[0].key, "sk-emb-KEY-0002");
+  mode = "dim"; const b = (await call(deps, "embedconfig.test")).body.data;
+  assert.equal(b.ok, false); assert.match(b.error, /2 dimensions.*expect 3/);
+  mode = "err"; const c = (await call(deps, "embedconfig.test")).body.data;
+  assert.equal(c.ok, false); assert.match(c.error, /401/);
+  assert.ok(!JSON.stringify(deps.db.t.ai_model_configs).includes("sk-emb"));
+});
+
+test("documents: draft, review, index with the saved model; an edit needs re-review and re-index", async () => {
+  const { deps, calls } = embDeps();
+  await call(deps, "embedconfig.save", { ...EMB, api_key: "sk-emb-KEY-0002" });
+  const d = (await call(deps, "docs.save", { title: "Nuznan fact sheet", format: "markdown", body: MDDOC, bots: ["eyad"] })).body.data;
+  assert.equal(d.status, "draft"); assert.equal(d.version, 1);
+  assert.equal((await call(deps, "docs.index", { id: d.id })).status, 409, "a draft is not indexed");
+  await call(deps, "docs.review", { id: d.id, version: 1 });
+  const ix = (await call(deps, "docs.index", { id: d.id })).body.data;
+  // The top heading has no text of its own, so Location and Sizes are the 2 chunks.
+  assert.equal(ix.status, "indexed"); assert.equal(ix.chunks, 2); assert.equal(ix.index_model, "text-embedding-3-small"); assert.equal(ix.index_dim, 3);
+  assert.ok(deps.db.t.ai_trainer_chunks.every((c: any) => c.company_id === "c1" && c.document_version === 1 && c.embedding_model === "text-embedding-3-small"));
+  assert.ok(deps.db.t.ai_trainer_chunks.some((c: any) => c.section === "Wecon Nuznan > Sizes"));
+  assert.ok(calls.every((c) => c.key === "sk-emb-KEY-0002" && c.cfg.model === "text-embedding-3-small"));
+  const e = (await call(deps, "docs.save", { id: d.id, title: "Nuznan fact sheet", format: "markdown", body: MDDOC + "\n## Handover\nDecember 2027.", bots: ["eyad"] })).body.data;
+  assert.equal(e.version, 2); assert.equal(e.status, "draft", "an edit returns to draft for review");
+  assert.equal((await call(deps, "docs.index", { id: d.id })).status, 409);
+});
+
+test("documents: a failed embedding marks the document failed with the reason; nothing half-indexed answers", async () => {
+  const { deps } = embDeps((_c, _k, text) => text.includes("Sizes") ? { ok: false, error: "rate_limited: Provider rate limit reached (HTTP 429)" } : { ok: true, vector: [1, 0, 0], tokens: 1 });
+  await call(deps, "embedconfig.save", { ...EMB, api_key: "sk-emb-KEY-0002" });
+  const d = (await call(deps, "docs.save", { title: "T", format: "markdown", body: MDDOC, bots: ["eyad"] })).body.data;
+  await call(deps, "docs.review", { id: d.id, version: 1 });
+  const r = (await call(deps, "docs.index", { id: d.id })).body.data;
+  assert.equal(r.status, "failed"); assert.match(r.index_error, /429/);
+  assert.equal(deps.db.t.ai_trainer_documents[0].indexed_version ?? null, null);
+});
+
+test("an embedding model change marks indexed documents needs_reindex and keeps the old model out of retrieval", async () => {
+  const { deps } = embDeps();
+  await call(deps, "embedconfig.save", { ...EMB, api_key: "sk-emb-KEY-0002" });
+  const d = (await call(deps, "docs.save", { title: "T", format: "markdown", body: MDDOC, bots: ["eyad"] })).body.data;
+  await call(deps, "docs.review", { id: d.id, version: 1 }); await call(deps, "docs.index", { id: d.id });
+  const r = (await call(deps, "embedconfig.save", { ...EMB, model: "text-embedding-3-large", embedding_dim: 4 })).body.data;
+  assert.deepEqual(r.reindex, { documents: 1 });
+  assert.equal(deps.db.t.ai_trainer_documents[0].status, "needs_reindex");
+  const plan = (await call(deps, "docs.list")).body.data;
+  assert.equal(plan.needs_reindex, 1);
+});
+
+test("publish is refused while any reviewed document is not indexed for the current model", async () => {
+  const { deps } = embDeps();
+  await call(deps, "embedconfig.save", { ...EMB, api_key: "sk-emb-KEY-0002" });
+  const d = (await call(deps, "docs.save", { title: "T", format: "markdown", body: MDDOC, bots: ["eyad"] })).body.data;
+  await call(deps, "docs.review", { id: d.id, version: 1 });
+  const gate = (await call(deps, "docs.list")).body.data;
+  assert.equal(gate.publish_ready, false); assert.match(gate.blockers[0], /T.*not indexed/);
+  const p = await call(deps, "publish", { bot: "eyad", snapshot_id: "nope" });
+  assert.equal(p.status, 409); assert.equal(p.body.error.code, "documents_not_indexed");
+  await call(deps, "docs.index", { id: d.id });
+  assert.equal((await call(deps, "docs.list")).body.data.publish_ready, true);
+});
+
+test("Playground turns search indexed documents with the saved embedding model, scoped to the company", async () => {
+  const { deps } = embDeps();
+  deps.llm = llm(JSON.stringify({ intent: "info", project_ref: null, language: "en", reply: "Type B is 1,850 sqft.", media: [], handoff: false, asked: [], used_item_ids: [], clarify: false }));
+  deps.db.rpc = ((orig) => async (fn: string, a: any) => {
+    if (fn === "ai_match_doc_chunks") {
+      return { ok: true, data: deps.db.t.ai_trainer_chunks.filter((c: any) => c.company_id === a.p_company && c.embedding_model === a.p_model)
+        .map((c: any) => ({ id: c.id, document_id: c.document_id, document_version: c.document_version, chunk_no: c.chunk_no, section: c.section, chunk_text: c.chunk_text, title: "Nuznan fact sheet", score: 0.9 })) };
+    }
+    return orig(fn, a);
+  })(deps.db.rpc.bind(deps.db));
+  await call(deps, "embedconfig.save", { ...EMB, api_key: "sk-emb-KEY-0002" });
+  const d = (await call(deps, "docs.save", { title: "Nuznan fact sheet", format: "markdown", body: MDDOC, bots: ["eyad"] })).body.data;
+  await call(deps, "docs.review", { id: d.id, version: 1 }); await call(deps, "docs.index", { id: d.id });
+  const t = (await call(deps, "playground.turn", { bot: "eyad", source: "drafts", text: "how big are the flats", client_turn_id: "c-0001-dddd", setup: {} })).body.data.turn;
+  assert.equal(t.outcome, "ok"); assert.equal(t.reply, "Type B is 1,850 sqft.");
+  assert.ok(Array.isArray(t.trace.documents) && t.trace.documents.some((x: any) => x.section === "Wecon Nuznan > Sizes"));
+  assert.ok(deps.llm.calls[0].system.includes("[doc:"));
+});
+
+test("document actions need Management", async () => {
+  const { deps } = embDeps();
+  let ip = 0;
+  for (const a of ["embedconfig.get", "embedconfig.save", "embedconfig.test", "docs.list", "docs.save", "docs.review", "docs.index"]) {
+    assert.equal((await call(deps, a, {}, "agent", `10.48.0.${++ip}`)).status, 401, a);
+  }
 });

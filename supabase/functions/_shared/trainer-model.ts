@@ -19,6 +19,18 @@ export type Fetch = (url: string, init: { method: string; headers: Record<string
 // private address is refused too. Injected because DNS needs Deno.
 export type Resolve = (host: string) => Promise<string[]>;
 
+// Reasoning models spend hidden tokens before the answer. At 600 the real
+// model used them all and returned nothing (finish "length"), so every such
+// question fell back to a consultant. Low effort keeps the reply short and cheap.
+export const REPLY_LIMITS = { max_tokens: 2000, effort: "low" } as const;
+
+// The chat/completions body. `reasoning` is an OpenRouter field, so other
+// providers never receive it; tiny probes (the key test) skip it too.
+export function requestBody(req: ChatReq, provider: Provider = "openrouter") {
+  const reasoning = provider === "openrouter" && req.max_tokens >= 1024 ? { reasoning: { effort: REPLY_LIMITS.effort } } : {};
+  return { model: req.model, max_tokens: req.max_tokens, ...reasoning, messages: [{ role: "system", content: req.system }, ...req.messages] };
+}
+
 const MODEL_RE = /^[A-Za-z0-9][A-Za-z0-9._:\/@+-]{0,127}$/;
 const KEY_RE = /^[\x21-\x7e]{8,512}$/;
 
@@ -108,7 +120,7 @@ export async function chatCompletion(cfg: ModelConfig, key: string, req: ChatReq
   try {
     const r = await io.fetch(`${v.value.base_url}/chat/completions`, {
       method: "POST", headers, signal: ctl.signal, redirect: "manual",
-      body: JSON.stringify({ model: req.model, max_tokens: req.max_tokens, messages: [{ role: "system", content: req.system }, ...req.messages] }),
+      body: JSON.stringify(requestBody(req, v.value.provider)),
     });
     if (!r.ok) return { ok: false, ...providerError(r.status) };
     let j: any;
@@ -122,4 +134,44 @@ export async function chatCompletion(cfg: ModelConfig, key: string, req: ChatReq
   } finally {
     clearTimeout(timer);
   }
+}
+
+// One embedding from an OpenAI-compatible /embeddings endpoint (OpenRouter or
+// OpenAI, fixed hosts only; the base URL comes from the server env, never the
+// browser). Same safe error codes as chatCompletion; redirects not followed.
+export async function embedRequest(baseUrl: string, key: string, model: string, text: string, io: { fetch: Fetch; timeoutMs?: number }):
+  Promise<{ ok: true; vector: number[]; tokens: number } | { ok: false; error: string }> {
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), io.timeoutMs ?? 20_000);
+  try {
+    const r = await io.fetch(`${baseUrl.replace(/\/+$/, "")}/embeddings`, {
+      method: "POST", signal: ctl.signal, redirect: "manual",
+      headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ model, input: text }),
+    });
+    if (!r.ok) { const e = providerError(r.status); return { ok: false, error: `${e.code}: ${e.error}` }; }
+    const j = await r.json().catch(() => null);
+    const v = j?.data?.[0]?.embedding;
+    if (!Array.isArray(v) || !v.length || !v.every((x: unknown) => typeof x === "number" && Number.isFinite(x))) return { ok: false, error: "format: no numeric embedding in the response" };
+    return { ok: true, vector: v, tokens: Number(j?.usage?.prompt_tokens) || 0 };
+  } catch {
+    return { ok: false, error: ctl.signal.aborted ? "timeout: embedding provider did not answer" : "network: could not reach the embedding provider" };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+// An embedding call for a saved config (Model & API): the same URL rules and
+// private-address check as chatCompletion, then embedRequest.
+export async function embedWithConfig(cfg: ModelConfig, key: string, text: string, io: { fetch: Fetch; resolve: Resolve; timeoutMs?: number }):
+  Promise<{ ok: true; vector: number[]; tokens: number } | { ok: false; error: string }> {
+  const v = validateConfig(cfg);
+  if (!v.ok) return { ok: false, error: `config: ${v.errors.join("; ")}` };
+  if (!PROVIDERS[v.value.provider].fixedHost) {
+    let addrs: string[];
+    try { addrs = await io.resolve(hostOf(v.value.base_url)); } catch { return { ok: false, error: "dns: could not resolve the base URL host" }; }
+    if (!addrs.length) return { ok: false, error: "dns: the base URL host has no address records" };
+    if (addrs.some(isBlockedAddress)) return { ok: false, error: "config: base URL resolves to a local or private address" };
+  }
+  return embedRequest(v.value.base_url, key, v.value.model, text, io);
 }
