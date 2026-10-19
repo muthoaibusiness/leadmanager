@@ -29,7 +29,9 @@ export function botControlView({ bot, settings, pointer, snapshots, runs, pointe
     : !latestRun ? 'not_run'
       : latestRun.status === 'running' ? 'running'
         : latestRun.status !== 'complete' ? 'incomplete'
-          : (latestRun.counts?.FAIL || 0) + (latestRun.counts?.INCONCLUSIVE || 0) > 0 ? 'failing' : 'passing';
+          : (latestRun.counts?.FAIL || 0) + (latestRun.counts?.INCONCLUSIVE || 0) > 0 ? 'failing'
+            // A complete run over zero tests passed nothing; the server refuses to publish it.
+            : (latestRun.counts?.PASS || 0) === 0 ? 'no_tests' : 'passing';
 
   return {
     bot,

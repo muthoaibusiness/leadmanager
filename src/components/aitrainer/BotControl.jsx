@@ -12,7 +12,7 @@ import { BOT_FILTER_ALL, botControlView, filterBots } from '../../lib/botControl
 const fmt = (t) => (t ? new Date(t).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' }) : '');
 const TESTS = {
   not_run: ['warn', 'Not tested'], running: ['warn', 'Tests running'], incomplete: ['warn', 'Tests incomplete'],
-  unknown: ['off', 'Test status unavailable'],
+  unknown: ['off', 'Test status unavailable'], no_tests: ['warn', 'No tests to run'],
   failing: ['bad', 'Tests failing'], passing: ['ok', 'Tests passed'],
 };
 
@@ -27,7 +27,9 @@ function BotCard({ name, view, busy, onToggle, onRun, onPublish, onRollback }) {
   const v = view;
   const [testCls, testLabel] = v.tests ? TESTS[v.tests] : [];
   const [liveTitle, liveNote] = LIVE[v.live.kind](v);
-  const why = [!v.canPublish && v.candidate && 'Publish unlocks when the latest tests all pass.', !v.canRollback && 'Nothing published to roll back.'].filter(Boolean);
+  const why = [!v.canPublish && v.candidate && (v.tests === 'no_tests'
+    ? 'Publish needs at least one regression test. Add one with Mark wrong in the Playground, then run the tests.'
+    : 'Publish unlocks when the latest tests all pass.'), !v.canRollback && 'Nothing published to roll back.'].filter(Boolean);
   return (
     <article className="analytics-card bc-card" aria-labelledby={`bc-${v.bot}`}>
       <header className="bc-head">

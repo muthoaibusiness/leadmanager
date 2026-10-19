@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import Mi from '../Mi.jsx';
 import useNavState from '../../hooks/useNavState.js';
 import { Select as SelectRoot, SelectLabel, SelectTrigger, SelectValue, SelectPopover, SelectListBox, SelectItem } from '../ui/select.jsx';
+import { retrievedDocs } from '../../lib/traceDocs.js';
 
 // Multi-turn chat against drafts or any snapshot, through the same core the
 // bots will run. Nothing is sent on WhatsApp. Each bot reply shows its trace,
@@ -53,6 +54,23 @@ function MarkWrong({ turn, history, bot, api, showToast, onClose }) {
 }
 
 // A saved turn (server row) in the shape the chat and MarkWrong use.
+// The Knowledge sections retrieval put in the prompt for this reply, with
+// their similarity score. Collapsed so the chat stays readable.
+function RetrievedDocs({ docs }) {
+  const v = retrievedDocs(docs);
+  if (v.kind === 'none') return null;
+  if (v.kind === 'error') return <div className="ait-trace ait-err">Knowledge search failed: {v.error}</div>;
+  if (v.kind === 'empty') return <div className="ait-trace">Knowledge retrieved: none matched</div>;
+  return (
+    <details className="ait-docs">
+      <summary className="ait-trace">Knowledge retrieved ({v.hits.length})</summary>
+      <ul aria-label="Knowledge sections retrieved for this reply">
+        {v.hits.map((h) => <li key={h.key}><span>{h.label}</span><span className="ait-docs-score" title="Similarity to the message (0 to 1)">{h.score}</span></li>)}
+      </ul>
+    </details>
+  );
+}
+
 const fromRow = (r, history) => ({
   id: r.id, seq: r.seq, customer: r.customer_text, reply: r.reply || '', media: r.media || [], handoff: r.handoff,
   outcome: r.outcome, trace: r.trace || {}, error: r.error, checksum: r.checksum, at: r.created_at, finishedAt: r.finished_at,
@@ -202,6 +220,7 @@ export default function PlaygroundTab({ api, showToast }) {
                   {t.trace?.media_missing?.length ? ` · missing media: ${t.trace.media_missing.join(', ')}` : ''}
                   {t.error ? <span className="ait-err"> · error: {t.error}</span> : ''}
                 </div>
+                <RetrievedDocs docs={t.trace?.documents} />
                 <button className="btn btn-g btn-sm" onClick={() => setWrong({ turn: t, history: t.historyBefore })}><Mi>edit</Mi>Mark wrong</button>
               </div>
             </div>

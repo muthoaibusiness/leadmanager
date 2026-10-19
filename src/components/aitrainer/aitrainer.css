@@ -23,6 +23,15 @@ button.ait-row:focus-visible { outline: 2px solid var(--green); outline-offset: 
 .ait-msg.customer { align-self: flex-end; background: var(--bd); }
 .ait-msg.bot { align-self: flex-start; background: var(--surf2); }
 .ait-trace { font-size: 12px; opacity: .8; margin-top: 4px; }
+/* Knowledge sections a reply was retrieved with (Playground trace). */
+.ait-docs { margin-top: 4px; white-space: normal; }
+.ait-docs > summary { cursor: pointer; width: fit-content; border-radius: 4px; }
+.ait-docs > summary:hover { opacity: 1; }
+.ait-docs > summary:focus-visible { outline: 2px solid var(--green); outline-offset: 2px; }
+.ait-docs ul { list-style: none; margin: 4px 0 0; padding: 0; display: flex; flex-direction: column; gap: 2px; font-size: 12px; color: var(--t1); }
+.ait-docs li { display: flex; justify-content: space-between; gap: 12px; padding: 4px 8px; border-radius: 6px; background: var(--surf); border: 1px solid var(--bd); }
+.ait-docs li > span:first-child { min-width: 0; overflow-wrap: anywhere; }
+.ait-docs-score { flex-shrink: 0; font-variant-numeric: tabular-nums; }
 .ait-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 320px); gap: 16px; }
 @media (max-width: 900px) { .ait-grid { grid-template-columns: minmax(0, 1fr); } }
 

@@ -89,6 +89,11 @@ ok(!!dubaiItem, "dropdown lists the bots");
 if (dubaiItem) { await click(dubaiItem); }
 ok(cards().join(",") === "Dubai Bot", "choosing Dubai Bot shows only its card");
 
+// A complete run over zero tests (production today: no active tests) is not a pass.
+state.runs = [{ id: "r0", snapshot_id: "s1", bot: "dubai", status: "complete", counts: { PASS: 0, FAIL: 0, INCONCLUSIVE: 0 }, started_at: "2026-10-19T00:30:00Z" }];
+await click(btn("Refresh"));
+ok(btn("Publish v1").disabled && document.body.textContent.includes("No tests to run") && document.body.textContent.includes("Publish needs at least one regression test"),
+  "a run over zero tests leaves Publish off and says a regression test is needed");
 // A passing run enables Publish; a published pointer enables Rollback but stays "not live".
 state.runs = [{ id: "r1", snapshot_id: "s1", bot: "dubai", status: "complete", counts: { PASS: 3, FAIL: 0, INCONCLUSIVE: 0 }, started_at: "2026-10-19T01:00:00Z" }];
 await click(btn("Refresh"));

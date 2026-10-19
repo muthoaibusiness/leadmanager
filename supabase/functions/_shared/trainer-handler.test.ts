@@ -189,6 +189,20 @@ test("publish refused on INCONCLUSIVE when the judge is down", async () => {
   assert.equal((await call(deps, "publish", { snapshot_id: snapId, bot: "eyad" })).status, 409);
 });
 
+test("publish refused when there are no active tests, even after a complete run", async () => {
+  const db = memDb();
+  const deps = { db, llm: llm(), env: ENV };
+  await call(deps, "items.create", { kind: "fact", bots: ["eyad"], project_ref: null, body: { topic: "a", text: "b" } });
+  const snapId = (await call(deps, "snapshot.freeze", {})).body.data.id;
+  const run = await call(deps, "runs.start", { snapshot_id: snapId, bot: "eyad" });
+  assert.equal(run.body.data.total, 0);
+  assert.equal((await call(deps, "runs.step", { run_id: run.body.data.id })).body.data.status, "complete");
+  const pub = await call(deps, "publish", { snapshot_id: snapId, bot: "eyad" });
+  assert.equal(pub.status, 409);
+  assert.ok(pub.body.error.details.some((r: string) => r.includes("no active tests")));
+  assert.equal((await call(deps, "status", {})).body.data.pointers.find((x: any) => x.bot === "eyad").mode, "legacy");
+});
+
 test("deterministic failure skips judge and fails", async () => {
   const { deps, snapId } = await setup([OUT({ handoff: true })]);
   const run = await call(deps, "runs.start", { snapshot_id: snapId, bot: "eyad" });
