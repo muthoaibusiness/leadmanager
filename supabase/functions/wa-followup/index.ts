@@ -15,7 +15,7 @@
 //   $$);
 
 import { CORS, json, sbSelect, sbPatch, SUPABASE_URL, SERVICE_KEY, getActiveProjects, sendWaMessageMirrored } from "../_shared/wa.ts";
-import { buildJolshiriBundle, FLOW_ASK_PROFILE_TEXT, FLOW_AUTO_PROFILE_TEXT, FLOW_ASK_AGENT_TEXT } from "../_shared/ai.ts";
+import { buildJolshiriBundle, FLOW_ASK_PROFILE_TEXT, FLOW_AUTO_PROFILE_TEXT, FLOW_ASK_AGENT_TEXT, brochureCaption } from "../_shared/ai.ts";
 
 // The cron job runs every 1-2 minutes; a run can still be going (brochure
 // sends are rate-limited to 1 every 5.5s) when the next one fires. Claiming
@@ -68,7 +68,7 @@ async function resolveTarget(account: string, phone: string): Promise<{ to: stri
   return { to: remote.endsWith("@lid") ? remote : phone, remote };
 }
 
-async function sendBundle(account: string, phone: string, message: string, brochures: { project: { name: string }; url: string }[]): Promise<void> {
+async function sendBundle(account: string, phone: string, message: string, brochures: { project: { name: string; address?: string | null }; url: string }[]): Promise<void> {
   const target = await resolveTarget(account, phone);
   if (!target) return;
   const convId = `${account}:${target.remote}`;
@@ -77,7 +77,7 @@ async function sendBundle(account: string, phone: string, message: string, broch
     await new Promise((r) => setTimeout(r, 5500));
     const b = brochures[i];
     await sendWaMessageMirrored(account, target.to, convId, phone, {
-      type: "document", mediaUrl: b.url, fileName: `${b.project.name} Brochure.pdf`, text: `${b.project.name} — Brochure`,
+      type: "document", mediaUrl: b.url, fileName: `${b.project.name} Brochure.pdf`, text: brochureCaption(b.project),
     });
   }
 }

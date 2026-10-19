@@ -1,0 +1,56 @@
+{
+  "label": "PRODUCTION SNAPSHOT - wa-followup v10 - read-only evidence, not deployable source",
+  "project_ref": "sbqmougcvnplgjgihpwe",
+  "function": {
+    "slug": "wa-followup",
+    "id": "3221debb-987c-4446-9597-a66f118cdd5d",
+    "version": 10,
+    "status": "ACTIVE",
+    "verify_jwt": false,
+    "import_map": false,
+    "entrypoint": "source/supabase/functions/wa-followup/index.ts",
+    "created_at": "2026-10-18T08:40:18.487Z",
+    "updated_at": "2026-10-19T18:04:57.383Z",
+    "ezbr_sha256": "f397266626ae1681fc2bda12e90339a284fb0620a4364759384245b5a0863252"
+  },
+  "previous_snapshot": null,
+  "retrieval": {
+    "downloaded_at": "2026-10-19T18:14:54Z",
+    "metadata_read_before_download": "2026-10-19T18:14:23Z",
+    "metadata_read_after_download": "2026-10-19T18:15:00Z",
+    "metadata_unchanged_across_download": true,
+    "method": "npx supabase functions download wa-followup --project-ref sbqmougcvnplgjgihpwe --use-api (CLI 2.121.0); metadata from supabase functions list -o json",
+    "read_only": true
+  },
+  "git_baseline": {
+    "note": "Deployment metadata records no git commit or deployer. See docs/reports/legacy-bot-reconciliation.md section 13."
+  },
+  "integrity": {
+    "manifest": "SHA256SUMS",
+    "verify": "cd supabase/deployed/2026-10-19/wa-followup-v10 && sha256sum -c SHA256SUMS",
+    "gitattributes": "* -text (bytes stored as downloaded)"
+  },
+  "files": [
+    {
+      "path": "_shared/ai.ts",
+      "sha256": "96b287052f1df232f8a3b5a24de95e8bfa91f3b4e817d0070dc94bb8a4c2f3b6",
+      "bytes": 25423,
+      "line_endings": "CRLF",
+      "vs_previous_snapshot": "no earlier snapshot"
+    },
+    {
+      "path": "_shared/wa.ts",
+      "sha256": "3c6911a750998a2bbfcb6a3b73a53e7efd7f8d72e0b64f8849f5327608ae212b",
+      "bytes": 22705,
+      "line_endings": "CRLF",
+      "vs_previous_snapshot": "no earlier snapshot"
+    },
+    {
+      "path": "wa-followup/index.ts",
+      "sha256": "de654ca1eb2b8ddf84d94f2356b945cd6a885f2f07b1146cd664237d3e3eb3e4",
+      "bytes": 7696,
+      "line_endings": "LF",
+      "vs_previous_snapshot": "no earlier snapshot"
+    }
+  ]
+}

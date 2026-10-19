@@ -6,7 +6,9 @@
 | Production project | `sbqmougcvnplgjgihpwe` ("Wepro CRM") |
 | Functions | `wa-bot-eyad`, `wa-bot-dubai` |
 | Repository | `leadmanager/`. The comparison base is `feat/ai-trainer-mvp` HEAD `728e4c702c81821f2a8c0b5a90d7018af77ba9f7`. The evidence is committed on branch `reconcile/deployed-2026-10-19`, created from that HEAD. |
-| Mode | Read-only towards production. Nothing was deployed, changed or sent, and nothing was pushed. Bot source is unchanged. |
+| Mode | Read-only towards production. Nothing was deployed, changed or sent, and nothing was pushed. The reconciled bot source (section 13) exists only as uncommitted changes in the reconcile worktree. |
+
+> **Update, 2026-10-19 18:30 UTC.** Production moved again at 18:04 UTC: `wa-bot-eyad` v59, `wa-bot-dubai` v55 and `wa-followup` v10. Section 13 covers that drift, the deploy-freeze request, the reconciled code and its tests.
 
 > **Update, 16:04 UTC.** Sections 1 to 11 describe **v57 / v53**, which were live from 06:15 to 15:14 UTC. Both bots were redeployed at 15:14 UTC as **v58 / v54**, by someone other than this review. Section 12 documents that drift. The v57/v53 findings still hold for v58/v54, except for the additions listed there.
 >
@@ -398,3 +400,150 @@ So v58 is serving traffic. Its new land-offer paths (P6/P7) have no observed tri
 - **The deploy freeze (section 10, step 2) is now the first action,** ahead of any merge.
 - **The merge in section 10, step 3 must take v58/v54 as the baseline,** so P1-P8. Redeploying from HEAD would now also remove the land-offer guard. That would let a land seller who mentions a "rate" get the price-agent script and the Jolshiri brochure flow again.
 - **Before any merge, download the bundles again and compare them with the newest snapshot** (the `INDEX.md` verify loop). Add a new snapshot folder if the version moved again.
+
+---
+
+## 13. Second drift (v59/v55), deploy freeze, and the reconciled code
+
+### 13.1 Second drift (Confirmed)
+
+| Time (UTC) | Event | Source |
+|---|---|---|
+| 18:04:28 | `wa-bot-eyad` **v59** deployed | function metadata |
+| 18:04:46 | `wa-bot-dubai` **v55** deployed | function metadata |
+| 18:04:57 | `wa-followup` **v10** deployed | function metadata |
+| 18:14:23 | Metadata read | `functions list` |
+| 18:14:38 / 18:14:47 / 18:14:54 | All three downloaded, read-only | retrieval log |
+| 18:15:00 | Metadata read again: same versions and bundle hashes as at 18:14:23 | `functions list` |
+
+The three bundles are preserved in `supabase/deployed/2026-10-19/`:
+
+| Folder | Bundle `ezbr_sha256` |
+|---|---|
+| `wa-bot-eyad-v59/` | `90163b031b41dca1f2f77481139c2e286230631bd8aade044a8b8f6b0b5a03c6` |
+| `wa-bot-dubai-v55/` | `323fac96af923d1454af61974cd72dd01da1fe8748ac5ec8b256e58d6c07f62c` |
+| `wa-followup-v10/` | `f397266626ae1681fc2bda12e90339a284fb0620a4364759384245b5a0863252` |
+
+**What changed from v58/v54.** Five shared files are byte-identical. `_shared/ai.ts` adds `brochureCaption()`, which puts the sector in brochure captions, for example "Wecon Nuznan (Sector 16, Jolshiri Abashon) — Brochure". Both bots' `index.ts` and `wa-followup/index.ts` call it wherever a brochure is sent. `wa-followup` v10's `_shared/ai.ts` and `_shared/wa.ts` are byte-identical to `wa-bot-eyad` v59's. `brochureCaption` appears in no git commit outside the evidence branch (Confirmed: `git log --all -S`).
+
+### 13.2 Deploy freeze
+
+| Item | Status |
+|---|---|
+| Other Claude session on this machine (`leadmanager-83`) | **Asked and agreed** (cross-session message, 2026-10-19 ~18:20 UTC): it will not deploy `wa-bot-eyad`, `wa-bot-dubai` or `wa-followup` until the owner lifts the freeze. It states that none of the bot deploys v57-v59 or v53-v55, nor `wa-followup` v10, came from it. Its only deploy was `ai-trainer` v9 at 17:17 UTC, from `e38acba`, verified byte-identical. |
+| Human developers | **Not reachable from this environment.** The bot deploys came from a Windows checkout (CRLF; **Likely**). The owner must ask the team, starting with the author of `96661e9`. |
+
+### 13.3 The reconciled code (on `reconcile/deployed-2026-10-19`, in the worktree `/tmp/wt-reconcile`)
+
+**Method.**
+
+- The worktree starts from the evidence commit `479a47a`, whose parent is `728e4c7`.
+- `feat/ai-trainer-mvp` has since moved to `a3eb847`: the other session's brochure work, touching 15 files under `_shared/trainer-*`, `ai-trainer`, `PlaygroundTab.jsx`, `package.json` and `.gitignore`.
+  - None of those 15 files is a bot file, and no bot file imports them.
+  - They were applied to the worktree while testing, then **removed before commit**. That work belongs to `feat/ai-trainer-mvp` and is not part of this reconciliation.
+  - When this branch is later merged with `feat/ai-trainer-mvp`, the two change sets touch disjoint files, apart from `package.json`, where both add a test file to a different script.
+- Each bot file was then three-way merged with `git merge-file`:
+  - **base:** `96661e9`, the commit both lines split from;
+  - **live:** `v59` / `v55` / `v10`, carriage returns stripped;
+  - **ours:** git.
+
+| File | Live changes | Git-only changes | Conflicts | Result |
+|---|---|---|---|---|
+| `_shared/ai.ts` | price flow, land guard, named project, Jolshiri check, consent, English copy, `brochureCaption`, prompt rule | 30 s timeouts | 0 | merged |
+| `_shared/wa.ts` | none | webhook check, AI switch re-check, fail-closed settings, full-number test match | 0 | git version (production `wa.ts` equals `96661e9`) |
+| `wa-bot-eyad/index.ts` | as listed for `ai.ts` | `verifyWebhook`, `aiStillOn`, verified-only `x-replay` | 1 | resolved: kept the `aiStillOn` guard **and** the live `brochureCaption` caption |
+| `wa-bot-dubai/index.ts` | the same | the same | 1 | resolved the same way |
+| `wa-followup/index.ts` | `brochureCaption` | none | 0 | equals live v10 |
+
+**What the merged code keeps (Confirmed by symbol check).**
+
+- Every live behaviour: P1-P8 plus `brochureCaption`.
+- Every git safety fix: G1-G5 plus the timeouts.
+- `wa-followup/index.ts` is identical to live v10 apart from line endings.
+
+### 13.4 Edge-case fixes, each test-first
+
+New file `supabase/functions/_shared/ai-flow.test.ts`, 13 tests, added to `npm run test:live`.
+
+- **Before the fixes:** the 8 tests that pin live behaviour passed, and the 5 edge-case tests failed against the live code.
+- **After the fixes:** 13 of 13 pass.
+
+| Edge case (observed on live code) | Fix in `_shared/ai.ts` | Kept working |
+|---|---|---|
+| Size questions ("flat koto sft?", "nuznan er flat koto boro?") got the price-agent offer | `koto` and `sft` count only beside a money or rate word: `koto taka`, `per sft`, `sft taka`, `sft rate` | "dam koto?", "per sft koto?", "sft koto taka?", Bangla price words |
+| "who is the developer?" counted as a land offer and skipped the Jolshiri flow | `developer` and `develop` removed from `LAND_RE` | "jomi develop korte chai, joint venture" is still a land offer |
+| "summer", "orchid" and "arcade" alone reassigned `property_interest` | `GENERIC_KEYWORDS` are ignored as standalone matches | "Summer Breeze", "Iqbal Orchid", "Chowdhury Arcade" by name still match |
+| A merged legacy value "Wecon Osman Bellevue, P2P Helthcare" lost the Jolshiri flow | `isJolshiriProject` checks each comma-separated part | Single names, case-insensitive |
+| "thank you" or "you" alone counted as consent and sent the bundle | "thanks", "thank", "you", "tnx", "thnx" and "ধন্যবাদ" removed from `YES_WORDS` | "thank you" that **quotes** the profile question is still consent (`isProfileConsent`) |
+
+**Replay against real traffic.** The 8 customer messages that triggered the live price-agent offer were replayed through the fixed `isPriceQuestion`, read-only. The fixed code gives the **same result as live v59 on 8 of 8**.
+
+- Three of the eight are land offers, both live and fixed: "55 Gonda…", "corner plot price", and the third.
+- One is a supplier introduction, which is a price question in neither version.
+
+So the fixes change only the edge cases above, never a real price question seen so far.
+
+### 13.5 Checks run in the worktree
+
+| Check | Result |
+|---|---|
+| `npm run test:trainer` | 251 pass, 0 fail |
+| `npm run test:live`, now including `ai-flow.test.ts` | 56 pass, 0 fail |
+| `npm run test:commands` | 91 pass, 0 fail (1 added: the `/send` sector caption) |
+| `test:commands:deployed` against the **live** v59/v55 download | 17 pass, 0 fail |
+| `test:commands:deployed` against the **merged** worktree code | 17 pass, 0 fail |
+| `test:botcontrol`, `test:ingest`, `traceDocs` | 8, 9 and 5 pass |
+| `test:0037`, `0044`, `0045`, `0046`, `0047` (PGlite) | all pass |
+| `test:ui`, `ui:botcontrol`, `ui:prompt`, `ui:docs`, `ui:pillnav` | 54, 26, 21, 27 and 23 ok, 0 fail |
+| `deno check` (Deno 2.1.4, release checksum verified) | Merged `wa-bot-eyad`, `wa-bot-dubai`, `wa-followup`: **no new errors**. The same 6 / 6 / 1 errors exist in the live v59/v55/v10 bundles and in git (`728e4c7` and `a3eb847`). They are existing type errors in `trainer-core.ts`, `trainer-handler.ts` and `wa.ts:137`. Exact counts at commit time are in section 13.7. |
+| ESLint (`src`, `scripts`) | 1 error, 2 warnings, identical to the main tree's baseline. Not in any bot file (`LeadChatModal.jsx`, `ConversationsView.jsx`). |
+| `vite build` | built |
+| Snapshot manifests | all seven folders pass `sha256sum -c` |
+
+`scripts/command-compat/routing.ts` is the contract copy of the bots' command logic. It now uses `brochureCaption` to match v59, as its header requires when the deployed source changes.
+
+### 13.7 Commit review (2026-10-19, before committing)
+
+The team lead froze all deploys of `wa-bot-eyad`, `wa-bot-dubai` and `wa-followup` until they explicitly approve one, and authorised this commit on `reconcile/deployed-2026-10-19` only.
+
+**Live check at 18:39:58 UTC (read-only).** Production is `wa-bot-eyad` v59, `wa-bot-dubai` v55 and `wa-followup` v10. Their `ezbr_sha256` equal the snapshot values in 13.1, and all seven snapshot manifests pass `sha256sum -c`.
+
+**Commit scope.** Only the reconciliation set below: the 15 `a3eb847` files are excluded (13.3).
+
+- the three new snapshot folders and `INDEX.md`;
+- this report;
+- `_shared/ai.ts`, `_shared/ai-flow.test.ts`, the three bot `index.ts` files;
+- `scripts/command-compat/routing.ts` and `routing.test.ts`;
+- the `test:live` line in `package.json`.
+
+**Behaviour preserved (line-level check against base `96661e9`).**
+
+- **Live additions** (v59 / v55 / v10): every line is present in the merged `wa-bot-eyad/index.ts` (35), `wa-bot-dubai/index.ts` (32) and `wa-followup/index.ts` (3).
+- **`_shared/ai.ts`:** 62 of 67 live lines are present. The other 5 are the deliberate edge-case replacements in 13.4: `PRICE_RE`, `LAND_RE`, the `YES_WORDS` thanks line, the `isJolshiriProject` body and the `matchNamedProject` keyword line.
+- **Git safety additions** over `96661e9`: every line is present in `_shared/ai.ts` (1), `_shared/wa.ts` (31), `wa-bot-eyad/index.ts` (12) and `wa-bot-dubai/index.ts` (13).
+
+**Tests on the exact commit set.**
+
+| Check | Result |
+|---|---|
+| `npm run test:live` (includes `ai-flow.test.ts`) | 48 pass, 0 fail |
+| `ai-flow.test.ts` alone | 13 pass, 0 fail |
+| `npm run test:commands` | 91 pass, 0 fail |
+| `npm run test:trainer` | 208 pass, 0 fail |
+| `test:botcontrol`, `test:ingest`, `traceDocs` | 8, 9 and 5 pass |
+| `test:0037`, `0044`, `0045`, `0046`, `0047` | all exit 0 |
+| `test:ui`, `ui:botcontrol`, `ui:prompt`, `ui:docs`, `ui:pillnav` | 54, 26, 21, 27 and 23 ok, 0 fail |
+| deployed-parity, against the merged code and against live v59/v55 | 17 / 17 each |
+| `deno check` on the three merged bots | 6 / 6 / 1 errors, all already at `728e4c7`; 0 new |
+| ESLint | 1 error, 2 warnings, the existing baseline, not in bot files |
+| `vite build` | built |
+
+### 13.6 Not done (needs explicit approval)
+
+- **No commit of the reconciled code.** The worktree changes are uncommitted on `reconcile/deployed-2026-10-19`.
+- **No push, no deploy.** The merged bots must not be deployed until:
+  - the freeze is confirmed with the human team;
+  - the bundles are downloaded once more and compared with the newest snapshot;
+  - each bot is deployed alone, from a clean commit, and downloaded back to verify.
+- **The webhook check (G1) stays inert** while no secret is set. Configure secrets through log mode first (CR-001 runbook B).
+- **No WhatsApp message was sent,** and no production row was written.
