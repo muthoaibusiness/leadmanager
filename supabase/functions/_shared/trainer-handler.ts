@@ -13,6 +13,8 @@ import { withSystemPrompt, promptLimits, type SystemPrompt } from "./trainer-pro
 import { indexItems, vectorRetrieval } from "./trainer-index.ts";
 import { markdownChunks } from "./trainer-docs.ts";
 import { lookupInventory } from "./trainer-inventory.ts";
+import { brochureCatalog, verifyBrochure, type Probe } from "./trainer-brochure.ts";
+import { docAssociation, type ProjectName } from "./trainer-docs.ts";
 
 export type Db = {
   select(path: string): Promise<any[]>;
@@ -22,7 +24,7 @@ export type Db = {
 };
 export type Llm = {
   chat(req: { model: string; max_tokens: number; system: string; messages: { role: string; content: string }[] }):
-    Promise<{ ok: true; text: string; prompt_tokens: number; completion_tokens: number } | { ok: false; error: string }>;
+    Promise<{ ok: true; text: string; prompt_tokens: number; completion_tokens: number } | { ok: false; error: string; code?: string }>;
 };
 // companyId scopes the live inventory read; without it the trainer states no live stock.
 // embeddingModel/embeddingDim switch on vector indexing (task 5); unset keeps every snapshot on "full".
@@ -32,7 +34,8 @@ export type Env = { budgetUsd: number; replyModel: string; judgeModel: string; p
 // is optional: without it, or without a saved config, the Playground uses llm.
 // embedder enables vector retrieval; without it every turn uses "full".
 export type Embedder = (model: string, text: string) => Promise<{ ok: true; vector: number[]; tokens: number } | { ok: false; error: string }>;
-type Deps = { db: Db; llm: Llm; env: Env; now?: () => Date; modelLlm?: (cfg: ModelConfig, key: string) => Llm; embedder?: Embedder ; embedWith?: (cfg: ModelConfig & { dim: number }, key: string) => (text: string) => Promise<{ ok: true; vector: number[]; tokens: number } | { ok: false; error: string }> };
+// probe checks a brochure URL (first bytes only); without it no brochure is offered.
+type Deps = { db: Db; llm: Llm; env: Env; now?: () => Date; probe?: Probe; modelLlm?: (cfg: ModelConfig, key: string) => Llm; embedder?: Embedder ; embedWith?: (cfg: ModelConfig & { dim: number }, key: string) => (text: string) => Promise<{ ok: true; vector: number[]; tokens: number } | { ok: false; error: string }> };
 type Res = { status: number; body: any };
 
 const ok = (data: unknown): Res => ({ status: 200, body: { ok: true, data } });
@@ -89,11 +92,15 @@ function portsFor(deps: Deps, llm: Llm = deps.llm): Ports {
         return { value: x, actualUsd: cost(deps.env, x.prompt_tokens, x.completion_tokens) };
       });
       if (r === "over_budget") throw new BudgetError();
-      if (!r.ok) return { ok: false, error: r.error };
+      if (!r.ok) return { ok: false, error: r.error, code: r.code };
       return { ok: true, text: r.text, cost_usd: cost(deps.env, r.prompt_tokens, r.completion_tokens) };
     },
     inventory: async (propertyId) =>
       deps.env.companyId ? lookupInventory(deps.db, { propertyId, companyId: deps.env.companyId }, deps.now) : null,
+    // No sendDocument here: the Playground, prompt tests and test runs check
+    // brochure files but never send one.
+    // The same first-bytes check confirms a photo, plan or map is an image.
+    ...(deps.probe ? { probeDocument: deps.probe, probeImage: deps.probe } : {}),
     ...(deps.embedder ? vectorPorts(deps, deps.embedder) : {}),
   };
 }
@@ -555,11 +562,19 @@ async function docsGate(deps: Deps): Promise<{ ready: boolean; blockers: string[
   return { ready: blockers.length === 0, blockers, needs_reindex: docs.filter((d) => d.status === "needs_reindex").length };
 }
 
+const projectNames = async (db: Db): Promise<ProjectName[]> =>
+  (await db.select("ai_trainer_items?kind=eq.project&status=eq.active&select=id,body"))
+    .map((p) => ({ id: p.id, name: String(p.body?.name ?? ""), aliases: Object.values(p.body?.aliases || {}).flat().filter((x): x is string => typeof x === "string") }));
+
 async function docsList(deps: Deps): Promise<Res> {
-  const docs = (await deps.db.select(`ai_trainer_documents?company_id=eq.${DOC_COMPANY(deps)}&select=${DOC_COLS}&order=updated_at.desc`))
-    .map(({ body, ...d }) => ({ ...d, chars: [...String(body || "")].length }));
+  const rows = await deps.db.select(`ai_trainer_documents?company_id=eq.${DOC_COMPANY(deps)}&select=${DOC_COLS}&order=updated_at.desc`);
+  const docs = rows.map(({ body, ...d }) => ({ ...d, chars: [...String(body || "")].length }));
   const g = await docsGate(deps);
-  return ok({ documents: docs, publish_ready: g.ready, blockers: g.blockers, needs_reindex: g.needs_reindex });
+  // Documents whose title names a project they are not tagged with: retrieval
+  // cannot scope them, so another project's question can retrieve them.
+  const names = await projectNames(deps.db);
+  const association = rows.map((d) => ({ id: d.id, title: d.title, ...docAssociation(d.title, d.project_ref ?? null, names) })).filter((x) => x.problem);
+  return ok({ documents: docs, publish_ready: g.ready, blockers: g.blockers, needs_reindex: g.needs_reindex, association });
 }
 
 async function docsGet(deps: Deps, p: any): Promise<Res> {
@@ -577,6 +592,18 @@ async function docsSave(deps: Deps, p: any, actor: string): Promise<Res> {
   if (!bots.length) return fail(422, "schema", "Choose at least one bot.");
   const projectRef = p.project_ref || null;
   if (projectRef && !(await activeProjectIds(deps.db)).has(projectRef)) return fail(422, "schema", "Unknown project.");
+  const assoc = docAssociation(title, projectRef, await projectNames(deps.db));
+  if (assoc.problem === "mismatch") return fail(422, "project_mismatch", `The title names ${assoc.named}, but the document is tagged with another project. Tag it with ${assoc.named}, or rename it.`);
+  // The same text twice would be indexed twice and answer twice. Only a new
+  // document or a text change is checked, so an existing copy can still be
+  // retagged or renamed; the lookup is by the body's hash, not every body.
+  const cur0 = p.id ? await docGet(deps, p.id) : null;
+  if (!cur0 || String(cur0.body || "").trim() !== body) {
+    const h = await sha256Hex(body);
+    const sameText = (await deps.db.select(`ai_trainer_documents?company_id=eq.${DOC_COMPANY(deps)}&select=id,title,body`))
+      .find((d) => d.id !== p.id && String(d.body || "").trim().length === body.length && String(d.body || "").trim() === body);
+    if (sameText) return fail(409, "duplicate", `This text is already saved as "${sameText.title}" (${h.slice(0, 8)}). Edit that document instead.`);
+  }
   const now = new Date().toISOString();
   const fields = { title, format: p.format, body, bots, project_ref: projectRef, source_name: p.source_name ? String(p.source_name).slice(0, 200) : null, updated_at: now };
   if (!p.id) {
@@ -774,6 +801,17 @@ async function promptTest(deps: Deps, p: any): Promise<Res> {
   return ok({ reply: r.reply, outcome: r.outcome, handoff: r.handoff, media: r.media.map((m) => ({ kind: m.kind, caption: m.caption })), trace: r.trace });
 }
 
+// The brochure catalog: every active project's brochure, checked now. Read
+// only: it fetches the first bytes of each file and sends nothing.
+async function brochuresCheck(deps: Deps): Promise<Res> {
+  const rows = brochureCatalog(await loadDrafts(deps.db)).sort((a, b) => a.project.localeCompare(b.project));
+  // Four at a time: the catalog is small, but a slow host should not hold every slot.
+  const checked: typeof rows = [];
+  for (let i = 0; i < rows.length; i += 4) checked.push(...await Promise.all(rows.slice(i, i + 4).map((r) => verifyBrochure(r, deps.probe ?? null))));
+  const verified = checked.filter((r) => r.status === "verified").length;
+  return ok({ checked_at: (deps.now?.() ?? new Date()).toISOString(), rows: checked, counts: { total: checked.length, verified, problems: checked.length - verified } });
+}
+
 // Newest first. Search matches the title and any customer message or reply;
 // bot narrows to one bot.
 async function playgroundList(deps: Deps, p: any): Promise<Res> {
@@ -843,6 +881,7 @@ export async function handleTrainer(req: { method: string; headers: Headers; ip:
       case "modelconfig.get": return await modelConfigGet(deps);
       case "modelconfig.save": return await modelConfigSave(deps, p, actor);
       case "modelconfig.test": return await modelConfigTest(deps, actor);
+      case "brochures.check": return await brochuresCheck(deps);
       default: return await handleRunsAndPublish(action, p, actor, deps);
     }
   } catch (e) {

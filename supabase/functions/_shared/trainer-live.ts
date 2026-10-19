@@ -113,22 +113,41 @@ export async function runTestTurn(a: LiveInput, ports: LivePorts): Promise<LiveR
     }
     const st = await loadState(ports, key, a.convId);
     const state: ConvState = { ...emptyState(), ...(st?.state || {}) };
-    const r = await runTurn({ content, bot: a.bot, text: a.text, history: hist, state, ad: a.ad, returning: hist.length > 0 || !!st, ports });
-    await ports.upsert("ai_conversation_state", { conversation_id: key, bot: a.bot, state: r.stateNext, paused: r.stateNext.paused, updated_at: new Date().toISOString() });
     let sent = 0; const waIds: string[] = []; const sendErrors: string[] = [];
+    // Brochures go out inside the turn, through the checked path, under the
+    // same allow-list and pause checks as every other send. With media off
+    // there is no sender, so files are checked and the reply says "ready".
+    const sendDocument = a.allowMedia ? async (m: { type: "document"; text: string; mediaUrl: string; fileName: string }) => {
+      if (!(await stillAllowed(ports, a.bot, a.phone, a.to))) { sendErrors.push("recipient no longer allowed"); return null; }
+      if (await isPaused(ports, key, a.convId, a.phone)) { sendErrors.push("paused during the turn"); return null; }
+      if (sent) await ports.sleep(5500);
+      const id = await ports.send(a.to, m);
+      if (id) { sent++; waIds.push(id); } else sendErrors.push(`send ${sent + sendErrors.length + 1} failed`);
+      return id;
+    } : undefined;
+    const r = await runTurn({ content, bot: a.bot, text: a.text, history: hist, state, ad: a.ad, returning: hist.length > 0 || !!st, ports: { ...ports, sendDocument } });
+    // An unlisted recipient stops the turn: no reply goes out after a refused
+    // document, and the conversation is not paused for a handoff nobody saw.
+    const stopped = sendErrors.includes("recipient no longer allowed");
+    const stateNext = stopped ? state : r.stateNext;
+    await ports.upsert("ai_conversation_state", { conversation_id: key, bot: a.bot, state: stateNext, paused: stateNext.paused, updated_at: new Date().toISOString() });
     const out: { type: "text" | "image" | "document"; text: string; mediaUrl?: string; fileName?: string }[] = [];
-    if (r.reply.trim()) out.push({ type: "text", text: r.reply });
-    if (a.allowMedia) for (const m of r.media) out.push({ type: m.type, text: m.caption, mediaUrl: m.url, fileName: m.type === "document" ? `${m.caption}.pdf` : undefined });
+    if (r.reply.trim() && !stopped) out.push({ type: "text", text: r.reply });
+    // Brochures were already sent by the brochure path; only images remain here.
+    if (a.allowMedia && !stopped) for (const m of r.media) if (m.kind !== "brochure") out.push({ type: m.type, text: m.caption, mediaUrl: m.url, fileName: m.type === "document" ? `${m.caption}.pdf` : undefined });
     for (let i = 0; i < out.length; i++) {
       if (!(await stillAllowed(ports, a.bot, a.phone, a.to))) { sendErrors.push("recipient no longer allowed"); break; }
       if (await isPaused(ports, key, a.convId, a.phone) && !r.handoff) { sendErrors.push("paused during the turn"); break; }
+      // Wasender allows 1 message per 5s per session.
+      if (sent) await ports.sleep(5500);
       const id = await ports.send(a.to, out[i]);
       if (id) { sent++; waIds.push(id); } else sendErrors.push(`send ${i + 1} failed`);
-      // Wasender allows 1 message per 5s per session.
-      if (i < out.length - 1) await ports.sleep(5500);
     }
-    const outcome = sendErrors.length && !sent ? "send_failed" : r.outcome;
-    await finish(outcome, { ...r.trace, handoff: r.handoff, reply: r.reply, media: r.media.map((m) => ({ kind: m.kind, url: m.url, floor: m.floor })), wa_ids: waIds, send_errors: sendErrors },
+    // The turn's outcome is what reached the customer; the brochure path's own
+    // verdict (which files were checked and sent) is kept beside it.
+    const outcome = sendErrors.length ? (sent ? "send_partial" : "send_failed") : r.outcome;
+    const brochure = String(r.outcome).startsWith("brochure_") ? { brochure_outcome: r.outcome } : {};
+    await finish(outcome, { ...r.trace, ...brochure, handoff: r.handoff, reply: r.reply, media: r.media.map((m) => ({ kind: m.kind, url: m.url, floor: m.floor })), wa_ids: waIds, send_errors: sendErrors },
       { snapshot_checksum: checksum });
     return { outcome, turnId, sent };
   } catch (e) {

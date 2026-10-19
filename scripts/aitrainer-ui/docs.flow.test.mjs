@@ -149,4 +149,29 @@ ok((await api("docs.list")).blockers.length === 0 && (await api("docs.list")).pu
 const stillOld = await api("playground.turn", { bot: "eyad", source: "drafts", text: "nuznan er flat koto boro?", client_turn_id: "c-0003-docs", setup: {} });
 ok(!stillOld.turn.trace.documents?.length, "the edited (unreviewed) document stops answering until it is reviewed and indexed again");
 root.unmount();
+
+// 6. Project tag: a document is tagged with its project, an untagged project
+// document is flagged, and a title naming one project cannot carry another's tag.
+t.ai_trainer_items.push(
+  { id: "p-nuz", kind: "project", revision: 1, status: "active", bots: ["eyad", "dubai"], project_ref: null, body: { name: "Wecon Nuznan", aliases: { banglish: ["nuznan"] }, media: {} } },
+  { id: "p-osm", kind: "project", revision: 1, status: "active", bots: ["eyad", "dubai"], project_ref: null, body: { name: "Wecon Osman Bellevue", aliases: { banglish: ["osman"] }, media: {} } });
+root = await mount("DocumentsPanel");
+ok(body().includes("Names Wecon Nuznan but is not tagged with it"), "the untagged Nuznan document is flagged");
+await click(btn("New document"));
+const pick = $$("label").find((l) => l.textContent.startsWith("Project"))?.querySelector("select");
+ok(!!pick && [...pick.options].some((o) => o.textContent === "Wecon Osman Bellevue"), "the editor offers the active projects");
+await type(field("Title"), "Wecon Osman Bellevue fact sheet");
+await type($("#dp-body"), "# Wecon Osman Bellevue\n## Apartment sizes\nEach apartment is 2850 sqft.");
+await act(async () => { pick.value = "p-osm"; pick.dispatchEvent(new w.Event("change", { bubbles: true })); });
+await click(btn("Save draft"));
+ok(t.ai_trainer_documents.some((d) => d.title === "Wecon Osman Bellevue fact sheet" && d.project_ref === "p-osm"), "saved with its project");
+ok(body().includes("Wecon Osman Bellevue") && body().includes("v1"), "listed with its project name");
+await click(btn("New document"));
+await type(field("Title"), "Wecon Nuznan brochure");
+await type($("#dp-body"), "# Wecon Nuznan\nRooftop garden.");
+const pick2 = $$("label").find((l) => l.textContent.startsWith("Project"))?.querySelector("select");
+await act(async () => { pick2.value = "p-osm"; pick2.dispatchEvent(new w.Event("change", { bubbles: true })); });
+await click(btn("Save draft"));
+ok(body().includes("The title names Wecon Nuznan"), "a Nuznan document tagged with Osman is refused with a reason");
+root.unmount();
 console.log("toasts:", toasts.filter((x) => x.startsWith("err")).join(" | ") || "no error toasts");

@@ -17,11 +17,19 @@ const loadPdf = () => import('pdfjs-dist/legacy/build/pdf.min.mjs').then(async (
 });
 const fmt = (t) => (t ? new Date(t).toLocaleString(undefined, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '');
 
-function Editor({ api, showToast, doc, onDone }) {
+// A PDF's verdict from readDocument: how much of it can answer questions.
+const VERDICT = { usable: 'Most pages have text.', partial: 'Half the pages or fewer have text: facts that are only in pictures will not be found.' };
+
+function Editor({ api, showToast, doc, projects, projErr, onDone }) {
   const [title, setTitle] = useState(doc?.title || '');
   const [body, setBody] = useState(doc?.body || '');
   const [format, setFormat] = useState(doc?.format || 'markdown');
   const [bots, setBots] = useState(doc?.bots || ['eyad', 'dubai']);
+  // The project this document is about. Retrieval answers a project's
+  // questions only from its own documents and untagged general ones.
+  const [projectRef, setProjectRef] = useState(doc?.project_ref || '');
+  const [sourceName, setSourceName] = useState(doc?.source_name || '');
+  const [verdict, setVerdict] = useState(null);
   const [warnings, setWarnings] = useState([]);
   const [err, setErr] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -31,12 +39,15 @@ function Editor({ api, showToast, doc, onDone }) {
     const f = e.target.files?.[0]; e.target.value = '';
     if (!f) return;
     setErr(null);
-    try { const d = await readDocument(f, loadPdf); setTitle((t) => t || d.title); setBody(d.body); setFormat(d.format); setWarnings(d.warnings); }
-    catch (x) { setErr(x.message); }
+    try {
+      const d = await readDocument(f, loadPdf);
+      setTitle((t) => t || d.title); setBody(d.body); setFormat(d.format); setWarnings(d.warnings);
+      setSourceName(d.source_name || f.name); setVerdict(d.verdict || null);
+    } catch (x) { setErr(x.message); }
   };
   const save = async () => {
     setBusy(true); setErr(null);
-    try { await api('docs.save', { id: doc?.id, title, body, format, bots, source_name: doc?.source_name }); showToast(doc ? 'Saved as a new draft version. Review it again to index.' : 'Draft saved.', 'ok'); onDone(); }
+    try { await api('docs.save', { id: doc?.id, title, body, format, bots, project_ref: projectRef || null, source_name: sourceName || null }); showToast(doc ? 'Saved as a new draft version. Review it again to index.' : 'Draft saved.', 'ok'); onDone(); }
     catch (x) { setErr(x.message); } finally { setBusy(false); }
   };
   return (
@@ -47,7 +58,14 @@ function Editor({ api, showToast, doc, onDone }) {
         <button type="button" className="btn btn-g" onClick={() => fileRef.current?.click()}><Mi>upload_file</Mi>Load .md, .txt or .pdf</button>
       </div>
       <label>Title<input className="fi" value={title} onChange={(e) => setTitle(e.target.value)} maxLength={200} /></label>
-      {format === 'pdf_text' && <div className="ait-trace" role="note">Text read from a PDF. Check it against the original: tables and columns can come out in the wrong order. Nothing is indexed until you review it.</div>}
+      <label>Project<select className="fi" value={projectRef} onChange={(e) => setProjectRef(e.target.value)}>
+        <option value="">General (not about one project)</option>
+        {projects.map((p) => <option key={p.id} value={p.id}>{p.body?.name}</option>)}
+        {/* The saved tag stays visible even when the project list failed to load. */}
+        {projectRef && !projects.some((p) => p.id === projectRef) && <option value={projectRef}>Current project ({projectRef.slice(0, 8)})</option>}
+      </select></label>
+      {projErr && <div className="ait-err" role="alert">Could not load the project list: {projErr}. The current tag is kept.</div>}
+      {format === 'pdf_text' && <div className="ait-trace" role="note">Text read from a PDF{sourceName ? ` (${sourceName})` : ''}. Check it against the original: tables and columns can come out in the wrong order. Nothing is indexed until you review it.{verdict && VERDICT[verdict] ? ` ${VERDICT[verdict]}` : ''}</div>}
       {warnings.map((w) => <div key={w} className="ait-err">{w}</div>)}
       <label htmlFor="dp-body">Content (Markdown)</label>
       <textarea id="dp-body" className="fi dp-area" value={body} onChange={(e) => setBody(e.target.value)} spellCheck={false}
@@ -71,7 +89,11 @@ export default function DocumentsPanel({ api, showToast }) {
   const [editing, setEditing] = useState(null); // null | 'new' | doc
   const [busy, setBusy] = useState('');
 
+  const [projects, setProjects] = useState([]);
   const load = useCallback(() => api('docs.list').then((d) => { setErr(null); setData(d); }, (e) => setErr(e.message)), [api]);
+  const [projErr, setProjErr] = useState(null);
+  useEffect(() => { api('items.list').then((xs) => { setProjErr(null); setProjects((xs || []).filter((i) => i.kind === 'project' && i.status === 'active')); }, (e) => setProjErr(e.message)); }, [api]);
+  const nameOf = (id) => projects.find((p) => p.id === id)?.body?.name;
   useEffect(() => { load(); }, [load]);
 
   const open = async (d) => { try { setEditing(await api('docs.get', { id: d.id })); } catch (x) { showToast(x.message, 'err'); } };
@@ -91,7 +113,7 @@ export default function DocumentsPanel({ api, showToast }) {
 
   if (err) return <div className="ait-err" role="alert">Could not load documents: {err} <button className="btn btn-g btn-sm" onClick={load}><Mi>refresh</Mi>Retry</button></div>;
   if (!data) return <div className="ea-count">Loading documents…</div>;
-  if (editing) return <Editor api={api} showToast={showToast} doc={editing === 'new' ? null : editing} onDone={() => { setEditing(null); load(); }} />;
+  if (editing) return <Editor api={api} showToast={showToast} projects={projects} projErr={projErr} doc={editing === 'new' ? null : editing} onDone={() => { setEditing(null); load(); }} />;
 
   return (
     <section className="analytics-card dp">
@@ -114,7 +136,8 @@ export default function DocumentsPanel({ api, showToast }) {
             <div key={d.id} className="ait-row dp-row">
               <div style={{ minWidth: 0 }}>
                 <div style={{ fontWeight: 600 }}>{d.title}</div>
-                <div className="meta">v{d.version} · {d.format === 'pdf_text' ? 'PDF text' : d.format} · {d.chars.toLocaleString()} chars · {d.bots.join(', ')}{d.index_model ? ` · ${d.index_model} (${d.index_dim})` : ''} · {fmt(d.updated_at)}</div>
+                <div className="meta">v{d.version} · {d.format === 'pdf_text' ? 'PDF text' : d.format} · {d.chars.toLocaleString()} chars · {d.bots.join(', ')} · {d.project_ref ? (nameOf(d.project_ref) || 'unknown project') : 'general'}{d.index_model ? ` · ${d.index_model} (${d.index_dim})` : ''} · {fmt(d.updated_at)}</div>
+                {(data.association || []).filter((a) => a.id === d.id).map((a) => <div key={a.id} className="ait-err">Names {a.named} but is not tagged with it, so other projects' questions can retrieve it. Edit it and choose {a.named}.</div>)}
                 {d.status === 'failed' && d.index_error && <div className="ait-err">{d.index_error}</div>}
               </div>
               <div className="dp-acts">

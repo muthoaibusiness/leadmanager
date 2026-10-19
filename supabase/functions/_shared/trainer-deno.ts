@@ -7,6 +7,7 @@ import { runTestTurn, type LiveResult } from "./trainer-live.ts";
 import type { Bot } from "./trainer-core.ts";
 import { SUPABASE_URL, SERVICE_KEY, sbSelect, sbUpsert, sendWaMessageMirroredId } from "./wa.ts";
 import { chatCompletion, requestBody, embedRequest, embedWithConfig, type ModelConfig } from "./trainer-model.ts";
+import { httpProbe } from "./trainer-brochure.ts";
 
 const H = { apikey: SERVICE_KEY, Authorization: `Bearer ${SERVICE_KEY}`, "Content-Type": "application/json" };
 
@@ -66,6 +67,26 @@ const resolveHost = async (host: string) => {
   return addrs;
 };
 
+// Brochure file check: a 1 KB range GET per hop, redirects checked by hand.
+// The body is cancelled after the first chunk so a host that ignores Range
+// never streams a whole 40 MB PDF into the function.
+export const probe = httpProbe({
+  resolve: resolveHost,
+  fetch: async (url, init) => {
+    const r = await fetch(url, init);
+    // Chunks until the 12-byte header is in (a WebP needs bytes 8 to 11), then stop.
+    const reader = r.body?.getReader();
+    let first = new Uint8Array();
+    while (reader && first.length < 12) {
+      const c = await reader.read();
+      if (c.done || !c.value) break;
+      const next = new Uint8Array(first.length + c.value.length); next.set(first); next.set(c.value, first.length); first = next;
+    }
+    await reader?.cancel().catch(() => {});
+    return { ok: r.ok, status: r.status, headers: r.headers, arrayBuffer: async () => first.slice(0, 1024).buffer };
+  },
+});
+
 export const modelLlm = (cfg: ModelConfig, key: string): Llm => ({
   chat: (req) => chatCompletion(cfg, key, req, { fetch: (url, init) => fetch(url, init), resolve: resolveHost }),
 });
@@ -103,7 +124,7 @@ export function runTrainerTestTurn(a: {
 }): Promise<LiveResult> {
   const { callModel, inventory } = _internals.portsFor({ db, llm, env });
   return runTestTurn({ ...a, replyModel: env.replyModel }, {
-    callModel, inventory,
+    callModel, inventory, probeDocument: probe, probeImage: probe,
     select: db.select, insert: db.insert, patch: db.patch,
     upsert: (table, row) => sbUpsert(table, [row], table === "ai_conversation_state" ? "conversation_id" : "id"),
     send: (to, msg) => sendWaMessageMirroredId(a.bot, to, a.convId, a.phone, msg, { senderName: "AI Trainer", storeWaId: true }),
