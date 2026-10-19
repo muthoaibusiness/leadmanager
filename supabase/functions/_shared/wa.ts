@@ -154,7 +154,10 @@ export async function sendWaMessageMirrored(
   phone: string,
   msg: { type: "text" | "image" | "document"; text?: string; mediaUrl?: string; fileName?: string },
 ): Promise<boolean> {
-  return (await sendWaMessageMirroredId(account, to, convId, phone, msg, { senderName: "AI Agent", storeWaId: false })) !== null;
+  // storeWaId on for the legacy agent too: the fromMe echo wa-webhook mirrors
+  // back then collides on the wa_id index instead of showing as a second
+  // copy of every bot message, and the id is the handle for a later unsend.
+  return (await sendWaMessageMirroredId(account, to, convId, phone, msg, { senderName: "AI Agent", storeWaId: true })) !== null;
 }
 
 // Same as sendWaMessageMirrored, returning the Wasender message id ("" when

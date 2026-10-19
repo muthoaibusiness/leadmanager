@@ -475,7 +475,7 @@ async function handleInbound(evt: ParsedEvent): Promise<void> {
 
   // Once the profiles are out (keyword, stage 2b or stage 3) the bundle is
   // never sent again — the gated LLM answer still runs for other questions.
-  const profilesAlreadySent = ["profile_sent", "asked_agent", "agent_ack"].includes(flowStatus.flow_stage);
+  const profilesAlreadySent = ["profile_sent", "asked_agent", "agent_ack", "agent_assigned"].includes(flowStatus.flow_stage);
   if (settings.faqAgentEnabled && evt.text && !takeover && evt.remote) {
     // Test mode on and an allow-listed number (getBotSettings): the AI Trainer
     // core answers instead of the legacy agent. Everything else runs unchanged.
@@ -631,6 +631,11 @@ async function handleCommand(evt: ParsedEvent): Promise<void> {
       await fixLeadPhoneFromNote(String(result.lead_id), evt.phone, notedPhone);
     }
     if (result.lead_id) await logConversationHistory(String(result.lead_id), "c1", evt.phone, `Dubai Bot (WhatsApp ${evt.command})`);
+    // A human agent now owns this customer — the automated follow-up flow
+    // must not ask "want a dedicated agent?" after one was just assigned.
+    await sbPatchFireAndForget("preleads", `phone=eq.${encodeURIComponent(evt.phone)}`, {
+      flow_stage: "agent_assigned", stage_at: new Date().toISOString(),
+    });
 
     // (B1) Lead CTWA?
     if (settings.metaCapiEnabled && result.status === "created" && (result.ctwa_clid || "") !== "") {
