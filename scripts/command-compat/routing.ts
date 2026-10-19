@@ -4,6 +4,8 @@
 // tested under Node without changing or deploying the bots. If a test fails,
 // compare this file with the deployed source before touching anything else.
 
+import { brochureCaption } from "../../supabase/functions/_shared/ai.ts";
+
 export type Parsed = { kind: "ignore" | "command" | "inbound"; command: string; text: string; phone: string; remote: string; fromMe: boolean; target: string };
 export type Effects = {
   createLead?: { p_phone: string; p_cmd: string }; note?: string; notedPhone?: string | null; takeover?: boolean;
@@ -78,7 +80,7 @@ export function splitPhoneFromNote(text: string): { phone: string | null; text: 
 export function routeCommand(
   bot: "eyad" | "dubai", p: Parsed,
   ctx: { settings: Record<string, boolean>; leadResult?: { status: string; notify?: boolean; ctwa_clid?: string } | null;
-    project?: { name: string; brochure_url?: string; photos?: string[] } | null; leadForNote?: boolean },
+    project?: { name: string; address?: string | null; brochure_url?: string; photos?: string[] } | null; leadForNote?: boolean },
 ): Effects {
   const e: Effects = { send: [] };
   const s = ctx.settings;
@@ -116,7 +118,8 @@ export function routeCommand(
     if (!s.docsCommandEnabled) return e;
     const pr = ctx.project;
     if (!pr) return e;
-    if (pr.brochure_url) e.send.push({ kind: "document", to: p.target, url: pr.brochure_url, caption: `${pr.name} — Brochure` });
+    // wa-bot-eyad v59+: the caption names the sector (brochureCaption, _shared/ai.ts).
+    if (pr.brochure_url) e.send.push({ kind: "document", to: p.target, url: pr.brochure_url, caption: brochureCaption(pr) });
     for (const url of (pr.photos || []).slice(0, 3)) e.send.push({ kind: "image", to: p.target, url, caption: pr.name });
     return e;
   }
