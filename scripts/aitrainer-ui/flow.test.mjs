@@ -55,7 +55,11 @@ const $$ = (sel) => [...document.querySelectorAll(sel)];
 const btn = (label) => $$("button").find((b) => b.textContent.trim().includes(label));
 const click = async (el) => { await act(async () => { el.dispatchEvent(new w.MouseEvent("click", { bubbles: true })); }); await tick(20); };
 const type = async (el, v) => { await act(async () => { const proto = el.tagName === "TEXTAREA" ? w.HTMLTextAreaElement.prototype : w.HTMLInputElement.prototype; Object.getOwnPropertyDescriptor(proto, "value").set.call(el, v); el.dispatchEvent(new w.Event("input", { bubbles: true })); }); };
-const pick = async (el, v) => { await act(async () => { Object.getOwnPropertyDescriptor(w.HTMLSelectElement.prototype, "value").set.call(el, v); el.dispatchEvent(new w.Event("change", { bubbles: true })); }); await tick(20); };
+const pickNative = async (el, v) => { await act(async () => { Object.getOwnPropertyDescriptor(w.HTMLSelectElement.prototype, "value").set.call(el, v); el.dispatchEvent(new w.Event("change", { bubbles: true })); }); await tick(20); };
+// Radix select (ui/select.jsx): open the trigger named `label`, choose the option whose text matches.
+const trig = (label) => $(`.sel-trigger[aria-label="${label}"]`);
+const options = async (label) => { await act(async () => { trig(label).dispatchEvent(new w.PointerEvent("pointerdown", { bubbles: true, button: 0, pointerType: "mouse" })); }); await tick(30); return $$('[role="option"]'); };
+const pick = async (label, match) => { const o = (await options(label)).find((x) => match.test(x.textContent)); if (o) await click(o); await tick(20); return !!o; };
 const ok = (cond, msg) => { if (!cond) { console.log("FAIL:", msg); process.exitCode = 1; } else console.log("ok:", msg); };
 
 const mount = async (path) => {
@@ -126,9 +130,12 @@ root.unmount();
 root = await mount("QualityTab");
 ok(document.body.textContent.includes("Legacy: unversioned live reads"), "both bots shown as Legacy");
 await click(btn("Freeze drafts as candidate")); await tick(50);
-const snapSel = $('select[aria-label="Snapshot"]');
-ok(snapSel.options.length >= 2, "candidate listed");
-await pick(snapSel, snapSel.options[1].value);
+ok(await pick("Snapshot", /^v1 /), "candidate listed and chosen");
+// dubai has no regression test (the one saved above is eyad's): nothing to certify, Publish is off.
+await pick("Bot", /^dubai$/);
+ok(btn("Publish to dubai")?.disabled === true && document.body.textContent.includes("No active regression tests for dubai"), "Publish is off and says why when the bot has no active tests");
+await pick("Bot", /^eyad$/);
+ok(btn("Publish to eyad")?.disabled === false && !document.body.textContent.includes("No active regression tests"), "with an active test, Publish is available (the server still gates it on the run)");
 await click(btn("Run tests")); await tick(200);
 ok(document.body.textContent.includes("FAIL"), "run shows FAIL");
 await click(btn("Publish to eyad")); await tick(50);
@@ -146,7 +153,8 @@ await click(btn("Publish to eyad")); await tick(80);
 ok(t.ai_bot_pointers.find((p) => p.bot === "eyad").mode === "snapshot", "publish succeeded after all PASS");
 ok(t.ai_bot_pointers.find((p) => p.bot === "dubai").mode === "legacy", "dubai untouched");
 ok(toasts.some((m) => m.includes("not live yet") || m.includes("not live")), "publish toast says the version is not live yet");
-ok([...$('select[aria-label="Snapshot"]').options].some((o) => /active on eyad/.test(o.textContent)), "snapshot label shows the bot it is active on");
+ok((await options("Snapshot")).some((o) => /active on eyad/.test(o.textContent)), "snapshot label shows the bot it is active on");
+await act(async () => { document.activeElement?.dispatchEvent(new w.KeyboardEvent("keydown", { key: "Escape", bubbles: true })); }); await tick(30);
 ok(document.body.textContent.includes("no bot reads published versions yet"), "pointer card says customers still get legacy");
 await click(btn("Back to legacy")); await tick(80);
 ok(t.ai_bot_pointers.find((p) => p.bot === "eyad").mode === "legacy", "rollback to legacy works");
@@ -183,7 +191,7 @@ root.unmount();
 root = await mount("ModelTab");
 ok(document.body.textContent.includes("Used by the Playground only"), "model tab says it is Playground only");
 const mi = (label) => $$("label").find((l) => l.textContent.startsWith(label)).querySelector("input, select");
-await pick(mi("Provider"), "custom");
+await pickNative(mi("Provider"), "custom");
 await type(mi("API base URL"), "http://api.example.com/v1"); await type(mi("Model ID"), "acme/chat-1");
 await click(btn("Save"));
 ok(document.body.textContent.includes("must start with https://"), "http base URL refused in the form");

@@ -306,6 +306,16 @@ test("publishGate", () => {
   assert.equal(publishGate({ ...base, coreVersion: "2.0.0" }).ok, false);
 });
 
+test("publishGate: a run that covered no tests certifies nothing", () => {
+  const base = { snapshot: { id: "s", checksum: "c" }, bot: "eyad" as const, coreVersion: "1.0.0",
+    run: { snapshot_checksum: "c", status: "complete", core_version: "1.0.0", bot: "eyad" }, results: [] };
+  const none = publishGate({ ...base, activeTests: [] });
+  assert.equal(none.ok, false);
+  assert.deepEqual(none.reasons, ["no active tests for eyad: add at least one regression test, then run them"]);
+  // Tests that exist only for the other bot do not count either.
+  assert.equal(publishGate({ ...base, activeTests: [{ id: "t2", revision: 1, bots: ["dubai"] as any }] }).ok, false);
+});
+
 test("redactTurns", () => {
   const r = redactTurns([{ role: "customer", text: "ami Rahim, number +880 1712-345678, mail a@b.com" }, { role: "agent", text: "/fdh note" }], ["Rahim"]);
   assert.equal(r.rejected, false);

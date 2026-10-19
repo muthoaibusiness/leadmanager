@@ -59,7 +59,8 @@ test("document chunks reach the prompt with their source, ground the reply, and 
   const sys = calls.find((c) => c.system)?.system as string;
   assert.ok(sys.includes("Document excerpts"));
   assert.ok(sys.includes("[doc:d1#2] Nuznan fact sheet, Wecon Nuznan > Apartment sizes"));
-  assert.deepEqual(r.trace.documents, [{ id: "c1", document_id: "d1", version: 2, chunk_no: 2, section: "Wecon Nuznan > Apartment sizes", score: 0.83 }]);
+  // The title is traced so a reviewer can name the source without a lookup.
+  assert.deepEqual(r.trace.documents, [{ id: "c1", document_id: "d1", version: 2, chunk_no: 2, title: "Nuznan fact sheet", section: "Wecon Nuznan > Apartment sizes", score: 0.83 }]);
   const search = calls.find((c) => c[0] === "search")[1];
   assert.equal(search.bot, "eyad"); assert.deepEqual(search.projects, ["p-nuz"]);
 });
