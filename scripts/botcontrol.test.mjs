@@ -47,6 +47,14 @@ test('candidate tests: running, failing, incomplete and passing decide whether P
   assert.equal(at([run('s2', 'eyad', 'complete', { PASS: 4 }, '2026-10-19T01:00'), run('s2', 'eyad', 'complete', { FAIL: 1 }, '2026-10-19T02:00')]).tests, 'failing');
 });
 
+test('a complete run that covered no tests is "no tests", never passing, and Publish stays off', () => {
+  const base = { bot: 'eyad', settings: {}, pointer: { mode: 'legacy' }, snapshots: [snap('s2', 2, 'candidate')] };
+  for (const counts of [{ PASS: 0, FAIL: 0, INCONCLUSIVE: 0 }, {}]) {
+    const v = botControlView({ ...base, runs: [run('s2', 'eyad', 'complete', counts)] });
+    assert.equal(v.tests, 'no_tests'); assert.equal(v.canPublish, false); assert.equal(v.canRunTests, true);
+  }
+});
+
 test('no settings row reads as unknown, not off; an older candidate than the active version is not offered', () => {
   const v = botControlView({ bot: 'eyad', settings: null, pointer: { mode: 'snapshot', snapshot_id: 's5' },
     snapshots: [snap('s5', 5, 'published'), snap('s4', 4, 'candidate')], runs: [] });

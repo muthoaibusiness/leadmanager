@@ -118,6 +118,17 @@ ok(turn.turn.outcome === "ok" && turn.turn.reply === "Type B is 1,850 sqft.", "t
 ok(turn.turn.trace.documents[0].section === "Wecon Nuznan > Apartment sizes", "the top hit is the sizes section");
 ok(seen.at(-1).includes("Nuznan fact sheet, Wecon Nuznan > Apartment sizes"), "the excerpt reaches the model with its source");
 
+// 3b. The Playground shows the retrieved sections under the reply, from the saved trace.
+root.unmount();
+root = await mount("PlaygroundTab");
+await tick(300);
+await click($$('[aria-label="Saved Playground conversations"] button')[0]); await tick(150);
+const docList = $('[aria-label="Knowledge sections retrieved for this reply"]');
+ok(!!docList && docList.textContent.includes("Nuznan fact sheet › Wecon Nuznan › Apartment sizes"), "the reply lists the retrieved Knowledge section by document and heading");
+ok(/Knowledge retrieved \(\d+\)/.test(body()) && /[01]\.\d\d$/.test(docList?.querySelector(".ait-docs-score")?.textContent || ""), "each retrieved section shows its similarity score");
+root.unmount();
+root = await mount("DocumentsPanel");
+
 // 4. Change the embedding model: the document needs re-index and publishing is blocked until it is.
 await api("embedconfig.save", { provider: "openai", base_url: "https://api.openai.com/v1", model: "text-embedding-3-large", embedding_dim: 5 });
 root = await mount("DocumentsPanel");

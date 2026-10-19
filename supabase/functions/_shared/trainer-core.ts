@@ -606,7 +606,7 @@ export async function runTurn(a: {
   if (a.ports.searchDocs) {
     try {
       docHits = await a.ports.searchDocs({ text: a.text, bot: a.bot, projects: res.projects });
-      trace.documents = docHits.map((h) => ({ id: h.id, document_id: h.document_id, version: h.document_version, chunk_no: h.chunk_no, section: h.section, score: h.score }));
+      trace.documents = docHits.map((h) => ({ id: h.id, document_id: h.document_id, version: h.document_version, chunk_no: h.chunk_no, title: h.title, section: h.section, score: h.score }));
     } catch (e) { trace.documents = { error: e instanceof Error ? e.message : String(e) }; }
   }
   const prompt = buildPrompt(a.content, a.bot, history, a.text, a.state, res.projects, lang, live, ctx, docExcerpts(docHits));
@@ -760,7 +760,10 @@ export function publishGate(a: {
   if (a.run.snapshot_checksum !== a.snapshot.checksum) reasons.push("run was for different content");
   if (a.run.bot !== a.bot) reasons.push("run was for the other bot");
   if (a.run.core_version !== a.coreVersion) reasons.push(`run used core ${a.run.core_version}, current is ${a.coreVersion}`);
-  for (const t of a.activeTests.filter((x) => x.bots.includes(a.bot))) {
+  const mine = a.activeTests.filter((x) => x.bots.includes(a.bot));
+  // A run over zero tests completes with 0/0/0; that certifies nothing.
+  if (!mine.length) reasons.push(`no active tests for ${a.bot}: add at least one regression test, then run them`);
+  for (const t of mine) {
     const r = a.results.find((x) => x.test_id === t.id && x.test_revision === t.revision);
     if (!r) reasons.push(`test ${t.id} rev ${t.revision} not run`);
     else if (r.verdict !== "PASS") reasons.push(`test ${t.id} is ${r.verdict}`);
