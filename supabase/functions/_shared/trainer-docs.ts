@@ -1,4 +1,5 @@
 // Markdown knowledge documents (migration 0047). Deno-free.
+import { GENERIC } from "./trainer-words.ts";
 // markdownChunks splits a document on its headings into chunks that each start
 // with their heading path, so a retrieved chunk reads on its own and names its
 // section. Lists and tables stay whole; a long section splits on paragraph or
@@ -52,4 +53,26 @@ export function docExcerpts(hits: DocHit[]): string {
   if (!hits.length) return "";
   return ["Document excerpts (approved knowledge; cite the id in used_item_ids when you use one):",
     ...hits.map((h) => `- [${docRef(h)}] ${h.title}${h.section ? `, ${h.section}` : ""}\n  ${h.chunk_text.replace(/\n/g, "\n  ")}`)].join("\n");
+}
+
+// ── project association ─────────────────────────────────────────────────────
+// A document whose title names a project must be tagged with that project, so
+// retrieval can scope it. "mismatch": tagged with a different project (refused
+// on save). "untagged": names a project but carries none (flagged, since an
+// untagged document answers every project's questions).
+export type ProjectName = { id: string; name: string; aliases: string[] };
+export function docAssociation(title: string, projectRef: string | null, projects: ProjectName[]):
+  { problem: null | "mismatch" | "untagged"; named?: string; suggested_project?: string } {
+  const t = ` ${String(title || "").toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ")} `;
+  const hits = projects.filter((p) => [p.name, ...p.aliases].some((a) => {
+    const w = String(a || "").toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+    // Generic single words (wecon, summer, mall) do not name a project alone:
+    // the same list the reply path uses (trainer-core GENERIC).
+    return w.length > 1 && !GENERIC.has(w) && t.includes(` ${w} `);
+  }));
+  if (hits.length !== 1) return { problem: null };
+  const p = hits[0];
+  if (projectRef && projectRef !== p.id) return { problem: "mismatch", named: p.name };
+  if (!projectRef) return { problem: "untagged", named: p.name, suggested_project: p.id };
+  return { problem: null };
 }

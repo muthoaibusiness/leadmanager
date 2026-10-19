@@ -916,3 +916,255 @@ test("document actions need Management", async () => {
     assert.equal((await call(deps, a, {}, "agent", `10.48.0.${++ip}`)).status, 401, a);
   }
 });
+
+test("playground: a brochure ask checks the file, sends nothing, and stores what really happened", async () => {
+  const db = memDb();
+  db.t.ai_trainer_items.push(
+    { id: "p-nuz", kind: "project", revision: 1, status: "active", bots: ["eyad", "dubai"], project_ref: null,
+      body: { name: "Wecon Nuznan", region: "Dhaka", aliases: { banglish: ["nuznan"] }, media: { brochure: "https://wecon.test/nuznan.pdf" } } },
+    { id: "p-p2p", kind: "project", revision: 1, status: "active", bots: ["eyad", "dubai"], project_ref: null,
+      body: { name: "P2P Helthcare", region: "Chattogram", aliases: { banglish: ["p2p"] }, media: { brochure: "https://drive.google.test/file/d/x" } } });
+  const probed: string[] = [];
+  const probe = async (u: string) => { probed.push(u); return u.includes("drive.google")
+    ? { ok: true, status: 200, contentType: "text/html", magic: "<!DOC", bytes: 0 }
+    : { ok: true, status: 206, contentType: "application/pdf", magic: "%PDF-", bytes: 9 }; };
+  const model = llm();
+  const r = await call({ db, llm: model, env: ENV, probe }, "playground.turn", { bot: "eyad", source: "drafts", text: "send all project brochures", client_turn_id: "brochure-turn-1" });
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  assert.equal(model.calls.length, 0, "no model call for a brochure ask");
+  const turn = db.t.ai_playground_turns[0];
+  assert.equal(turn.outcome, "brochure_partial");
+  assert.deepEqual(turn.media.map((m: any) => m.project_ref), ["p-nuz"]);
+  assert.deepEqual(turn.trace.brochure.failed.map((f: any) => [f.project, f.status]), [["P2P Helthcare", "not_pdf"]]);
+  assert.doesNotMatch(turn.reply, /here is|\bsent\b|attached/i);
+  assert.deepEqual(probed.sort(), ["https://drive.google.test/file/d/x", "https://wecon.test/nuznan.pdf"]);
+});
+
+test("brochures.check: one row per active project with city, file and status; Management only; sends nothing", async () => {
+  const db = memDb();
+  db.t.ai_trainer_items.push(
+    { id: "p-nuz", kind: "project", revision: 1, status: "active", bots: ["eyad"], project_ref: null,
+      body: { name: "Wecon Nuznan", region: "Dhaka", aliases: {}, media: { brochure: "https://wecon.test/nuznan.pdf" } } },
+    { id: "p-mom", kind: "project", revision: 1, status: "active", bots: ["eyad"], project_ref: null,
+      body: { name: "Momtaz Manor", region: "Chattogram", aliases: {}, media: {} } },
+    { id: "p-old", kind: "project", revision: 2, status: "retired", bots: ["eyad"], project_ref: null,
+      body: { name: "Old", region: "Dhaka", aliases: {}, media: { brochure: "https://wecon.test/old.pdf" } } });
+  const probe = async () => ({ ok: true, status: 206, contentType: "application/pdf", magic: "%PDF-", bytes: 6122611 });
+  assert.equal((await call({ db, llm: llm(), env: ENV, probe }, "brochures.check", {}, "agent")).status, 401);
+  const r = await call({ db, llm: llm(), env: ENV, probe }, "brochures.check");
+  assert.equal(r.status, 200);
+  assert.deepEqual(r.body.data.rows.map((x: any) => [x.project, x.city, x.status, x.bytes ?? null]), [
+    ["Momtaz Manor", "Chattogram", "missing", null], ["Wecon Nuznan", "Dhaka", "verified", 6122611]]);
+  assert.deepEqual(r.body.data.counts, { total: 2, verified: 1, problems: 1 });
+});
+
+// ── P1/P3: project-scoped documents ─────────────────────────────────────────
+const PROJ = (id: string, name: string, alias: string) => ({ id, kind: "project", revision: 1, status: "active", bots: ["eyad", "dubai"], project_ref: null,
+  body: { name, region: "Dhaka", aliases: { banglish: [alias] }, media: {} } });
+const scopedDeps = () => {
+  const { deps, calls } = embDeps();
+  deps.db.t.ai_trainer_items.push(PROJ("p-nuz", "Wecon Nuznan", "nuznan"), PROJ("p-osm", "Wecon Osman Bellevue", "osman"));
+  // Stand-in for ai_match_doc_chunks with the migration's project filter:
+  // a chunk with a project answers only when that project is in scope.
+  const seen: any[] = [];
+  deps.db.rpc = ((orig) => async (fn: string, a: any) => {
+    if (fn !== "ai_match_doc_chunks") return orig(fn, a);
+    seen.push(a);
+    return { ok: true, data: deps.db.t.ai_trainer_chunks.filter((c: any) => c.company_id === a.p_company && c.embedding_model === a.p_model
+        && (c.project_ref === null || (a.p_projects || []).includes(c.project_ref)))
+      .map((c: any) => ({ id: c.id, document_id: c.document_id, document_version: c.document_version, chunk_no: c.chunk_no, section: c.section, chunk_text: c.chunk_text,
+        title: deps.db.t.ai_trainer_documents.find((d: any) => d.id === c.document_id).title, score: 0.9 })) };
+  })(deps.db.rpc.bind(deps.db));
+  return { deps, calls, seen };
+};
+const indexDoc = async (deps: any, doc: object) => {
+  const d = (await call(deps, "docs.save", { format: "markdown", bots: ["eyad"], ...doc })).body.data;
+  await call(deps, "docs.review", { id: d.id, version: d.version }); await call(deps, "docs.index", { id: d.id });
+  return d;
+};
+
+test("docs: a project-tagged document's chunks carry the project, and another project's question never retrieves them", async () => {
+  const { deps, seen } = scopedDeps();
+  await call(deps, "embedconfig.save", { ...EMB, api_key: "sk-emb-KEY-0002" });
+  await indexDoc(deps, { title: "Wecon Nuznan fact sheet", body: "# Wecon Nuznan\n## Sizes\nEach apartment is 2850 sqft.", project_ref: "p-nuz" });
+  await indexDoc(deps, { title: "Wecon Osman Bellevue fact sheet", body: "# Wecon Osman Bellevue\n## Sizes\nEach apartment is 2850 sqft.", project_ref: "p-osm" });
+  assert.deepEqual([...new Set(deps.db.t.ai_trainer_chunks.map((c: any) => c.project_ref))].sort(), ["p-nuz", "p-osm"]);
+  deps.llm = llm(JSON.stringify({ intent: "info", project_ref: null, language: "en", reply: "Which project?", media: [], handoff: false, asked: [], used_item_ids: [], clarify: true }));
+  const t = (await call(deps, "playground.turn", { bot: "eyad", source: "drafts", text: "osman er flat koto boro?", client_turn_id: "scope-osman-1", setup: {} })).body.data.turn;
+  assert.deepEqual(seen.at(-1).p_projects, ["p-osm"]);
+  assert.ok(t.trace.documents.length > 0);
+  assert.ok(t.trace.documents.every((d: any) => d.title.startsWith("Wecon Osman")), JSON.stringify(t.trace.documents));
+});
+
+test("docs: a document named after one project but tagged with another is refused; an untagged project document is flagged", async () => {
+  const { deps } = scopedDeps();
+  const bad = await call(deps, "docs.save", { title: "Wecon Nuznan fact sheet", format: "markdown", bots: ["eyad"], body: "# Wecon Nuznan\nx", project_ref: "p-osm" });
+  assert.equal(bad.status, 422);
+  assert.match(bad.body.error.message, /Wecon Nuznan/);
+  await call(deps, "docs.save", { title: "Wecon Osman Bellevue fact sheet", format: "markdown", bots: ["eyad"], body: "# Wecon Osman Bellevue\nx" });
+  await call(deps, "docs.save", { title: "WECON sales offices", format: "markdown", bots: ["eyad"], body: "# Offices\n- Dhaka" });
+  const audit = (await call(deps, "docs.list")).body.data.association;
+  assert.deepEqual(audit.map((x: any) => [x.title, x.problem, x.suggested_project]), [["Wecon Osman Bellevue fact sheet", "untagged", "p-osm"]]);
+});
+
+test("docs: the same text saved twice is refused as a duplicate, so one source is not indexed twice", async () => {
+  const { deps } = scopedDeps();
+  const body = "# Wecon Nuznan\n## Sizes\nEach apartment is 2850 sqft.";
+  assert.equal((await call(deps, "docs.save", { title: "Nuznan A", format: "markdown", bots: ["eyad"], body, project_ref: "p-nuz" })).status, 200);
+  const dup = await call(deps, "docs.save", { title: "Nuznan B", format: "markdown", bots: ["eyad"], body: `${body}\n`, project_ref: "p-nuz" });
+  assert.equal(dup.status, 409);
+  assert.match(dup.body.error.message, /Nuznan A/);
+});
+
+test("docs: replacing a document's project re-scopes it: the new version needs review and its chunks carry the new project", async () => {
+  const { deps } = scopedDeps();
+  await call(deps, "embedconfig.save", { ...EMB, api_key: "sk-emb-KEY-0002" });
+  const d = await indexDoc(deps, { title: "Jolshiri brochure", body: "# Jolshiri\nShared amenities.", project_ref: null });
+  const e = (await call(deps, "docs.save", { id: d.id, title: "Jolshiri brochure", format: "markdown", bots: ["eyad"], body: "# Jolshiri\nShared amenities.", project_ref: "p-nuz" })).body.data;
+  assert.equal(e.version, 2); assert.equal(e.status, "draft");
+  await call(deps, "docs.review", { id: d.id, version: 2 }); await call(deps, "docs.index", { id: d.id });
+  assert.deepEqual(deps.db.t.ai_trainer_chunks.filter((c: any) => c.document_version === 2).map((c: any) => c.project_ref), ["p-nuz"]);
+});
+
+test("docs: source_name is kept, and the PDF text metadata (pages, skipped pages) round-trips", async () => {
+  const { deps } = scopedDeps();
+  const d = (await call(deps, "docs.save", { title: "Summer Breeze brochure", format: "pdf_text", bots: ["eyad"], body: "## Page 2\n9 storied building.",
+    project_ref: null, source_name: "WECON-SM-Summer-Breeze-Brochure.pdf (29 pages, 5 without text)" })).body.data;
+  assert.equal(d.source_name, "WECON-SM-Summer-Breeze-Brochure.pdf (29 pages, 5 without text)");
+});
+
+test("review: retagging a document whose text another document shares is allowed; only a new duplicate is refused", async () => {
+  const { deps } = scopedDeps();
+  const body = "# Jolshiri\nShared amenities for every Jolshiri project.";
+  // Two copies that already exist (as legacy data can).
+  deps.db.t.ai_trainer_documents.push(
+    { id: "old-a", company_id: "c1", title: "Jolshiri A", format: "markdown", body, version: 1, status: "draft", bots: ["eyad"], project_ref: null },
+    { id: "old-b", company_id: "c1", title: "Jolshiri B", format: "markdown", body, version: 1, status: "draft", bots: ["eyad"], project_ref: null });
+  const retag = await call(deps, "docs.save", { id: "old-a", title: "Jolshiri A", format: "markdown", bots: ["eyad"], body, project_ref: "p-nuz" });
+  assert.equal(retag.status, 200, JSON.stringify(retag.body));
+  assert.equal((await call(deps, "docs.save", { title: "Jolshiri C", format: "markdown", bots: ["eyad"], body })).status, 409);
+});
+
+test("review: a title naming two projects (a comparison) is never refused as a mismatch", async () => {
+  const { deps } = scopedDeps();
+  const r = await call(deps, "docs.save", { title: "Osman vs Nuznan comparison", format: "markdown", bots: ["eyad"], body: "# Compare\nx", project_ref: "p-nuz" });
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+});
+
+test("playground: a configured model that times out once is retried, and the turn answers", async () => {
+  const deps: any = { db: memDb(), llm: llm(), env: ENV };
+  let n = 0;
+  deps.modelLlm = () => ({ async chat() { n++; return n === 1 ? { ok: false, code: "timeout", error: "Provider did not answer within 30s" }
+    : { ok: true, text: JSON.stringify({ intent: "info", project_ref: null, language: "en", reply: "Which project?", media: [], handoff: false, asked: [], used_item_ids: [], clarify: true }), prompt_tokens: 1, completion_tokens: 1 }; } });
+  await call(deps, "modelconfig.save", { provider: "openrouter", model: "deepseek/x", api_key: "sk-or-KEY-0001" });
+  const t = (await call(deps, "playground.turn", { bot: "eyad", source: "drafts", text: "tell me about your projects", client_turn_id: "retry-0001-aaaa", setup: {} })).body.data.turn;
+  assert.equal(n, 2); assert.equal(t.outcome, "ok"); assert.match(t.trace.model_retry, /30s/);
+});
+
+import { docAssociation } from "./trainer-docs.ts";
+test("review2: a short alias (P2P) still ties a document title to its project; generic words never do", () => {
+  const ps = [{ id: "p-p2p", name: "P2P Helthcare", aliases: ["p2p"] }, { id: "p-sb", name: "Wecon Summer Breeze", aliases: ["summer breeze", "summer"] }];
+  assert.deepEqual(docAssociation("p2p brochure", null, ps), { problem: "untagged", named: "P2P Helthcare", suggested_project: "p-p2p" });
+  assert.deepEqual(docAssociation("Summer offers", null, ps), { problem: null });
+});
+
+// ── Playground conversation flow (2026-10-20, reproduced on the handler) ────
+// The Osman resend regression: "abar pathan" after an Osman brochure went to
+// the model and got "Which project?"; "na, nuznan er ta" lost the correction;
+// "ok thanks" got a question back.
+const pgFlow = () => {
+  const db = memDb();
+  db.t.ai_trainer_items.push(
+    { id: "p-osm", kind: "project", revision: 1, status: "active", bots: ["eyad", "dubai"], project_ref: null, body: { name: "Wecon Osman Bellevue", region: "Dhaka", aliases: { banglish: ["osman"] }, media: { brochure: "https://wecon.test/osman.pdf" } } },
+    { id: "p-nuz", kind: "project", revision: 1, status: "active", bots: ["eyad", "dubai"], project_ref: null, body: { name: "Wecon Nuznan", region: "Dhaka", aliases: { banglish: ["nuznan"] }, media: { brochure: "https://wecon.test/nuznan.pdf" } } });
+  const model = llm();
+  const deps = { db, llm: model, env: ENV, probe: async () => ({ ok: true, status: 206, contentType: "application/pdf", magic: "%PDF-", bytes: 9 }) };
+  let conv: string | undefined;
+  const say = async (text: string, id: string) => {
+    const r = (await call(deps, "playground.turn", { bot: "eyad", source: "drafts", text, client_turn_id: id, conversation_id: conv, setup: {} })).body;
+    assert.equal(r.ok, true, JSON.stringify(r)); conv = r.data.conversation_id; return r.data.turn;
+  };
+  return { db, model, say };
+};
+
+test("playground: 'abar pathan' right after a brochure resends the same project's checked PDF (Osman resend regression)", async () => {
+  const f = pgFlow();
+  await f.say("osman er brochure pathan", "flow-0001-aaaa");
+  const t = await f.say("abar pathan", "flow-0002-aaaa");
+  assert.equal(f.model.calls.length, 0, "no model call for a resend");
+  assert.equal(t.outcome, "brochure_ready_not_sent");
+  assert.deepEqual(t.media.map((m: any) => [m.kind, m.project_ref]), [["brochure", "p-osm"]]);
+  for (const resend of ["send it again", "আবার পাঠান", "resend please"]) {
+    const r = await f.say(resend, `flow-r-${resend.length}-${Math.random().toString(36).slice(2, 8)}`);
+    assert.deepEqual(r.media.map((m: any) => m.project_ref), ["p-osm"], resend);
+  }
+});
+
+test("playground: a correction ('na, nuznan er ta') switches the brochure to the named project, never the old one", async () => {
+  const f = pgFlow();
+  await f.say("osman er brochure pathan", "flow-0101-aaaa");
+  const t = await f.say("na, nuznan er ta", "flow-0102-aaaa");
+  assert.deepEqual(t.media.map((m: any) => m.project_ref), ["p-nuz"]);
+  assert.equal(t.state_after.active_project, "p-nuz");
+  assert.equal(f.model.calls.length, 0);
+});
+
+test("playground: 'ok thanks' after a brochure is acknowledged with no reply, no model call and no resend", async () => {
+  const f = pgFlow();
+  await f.say("osman er brochure pathan", "flow-0201-aaaa");
+  for (const [i, ack] of ["ok thanks", "dhonnobad", "ধন্যবাদ", "got it"].entries()) {
+    const t = await f.say(ack, `flow-021${i}-aaaa`);
+    assert.equal(t.reply, null, ack); assert.deepEqual(t.media, [], ack);
+    assert.equal(t.outcome, "skipped_acknowledgement", ack);
+  }
+  assert.equal(f.model.calls.length, 0);
+});
+
+test("playground: 'abar pathan' with no brochure earlier in the conversation is not guessed as a resend", async () => {
+  const f = pgFlow();
+  const t = await f.say("abar pathan", "flow-0301-aaaa");
+  assert.deepEqual(t.media, []);
+  assert.notEqual(t.outcome, "brochure_ready_not_sent");
+});
+
+test("playground: the brochure in play lasts one turn; after an unrelated question, 'abar pathan' is not a resend", async () => {
+  const f = pgFlow();
+  await f.say("osman er brochure pathan", "flow-0401-aaaa");
+  const q = await f.say("where is osman?", "flow-0402-aaaa");
+  assert.equal(q.state_after.last_brochure, undefined, "cleared by the non-brochure turn");
+  const r = await f.say("abar pathan", "flow-0403-aaaa");
+  assert.deepEqual(r.media, []);
+});
+
+test("playground: a resend re-checks the file; a file that broke since is reported, not resent", async () => {
+  const f = pgFlow();
+  await f.say("osman er brochure pathan", "flow-0501-aaaa");
+  f.db.t.ai_trainer_items.find((x: any) => x.id === "p-osm").body.media.brochure = "http://wecon.test/osman.pdf";
+  const r = await f.say("abar pathan", "flow-0502-aaaa");
+  assert.deepEqual(r.media, []);
+  assert.equal(r.outcome, "brochure_unavailable");
+});
+
+test("playground: history and state are per conversation; a second conversation starts clean", async () => {
+  const f = pgFlow();
+  await f.say("osman er brochure pathan", "flow-0601-aaaa");
+  const other = pgFlow(); other.db.t = f.db.t;
+  const t = (await call({ db: f.db, llm: f.model, env: ENV }, "playground.turn", { bot: "eyad", source: "drafts", text: "abar pathan", client_turn_id: "flow-0602-bbbb", setup: {} })).body.data;
+  assert.notEqual(t.conversation_id, f.db.t.ai_playground_turns[0].conversation_id);
+  assert.deepEqual(t.turn.media, [], "no resend from another conversation's brochure");
+  assert.equal(t.turn.state_before, null);
+});
+
+test("playground: an earlier bot line saying a brochure was sent is not proof; 'did you send it?' cannot be answered 'yes, sent'", async () => {
+  const f = pgFlow();
+  // A legacy-style row whose reply claims a send, with no brochure in its state.
+  await f.say("osman kothay?", "flow-0701-aaaa");
+  f.db.t.ai_playground_turns[0].reply = "I have sent the Osman brochure.";
+  f.model.calls.length = 0;
+  const ans = JSON.stringify({ intent: "info", project_ref: "p-osm", language: "en", reply: "Yes, I have sent the brochure.", media: [], handoff: false, asked: [], used_item_ids: [], clarify: false });
+  (f.model as any).chat = async (req: any) => { f.model.calls.push(req); return { ok: true, text: ans, prompt_tokens: 1, completion_tokens: 1 }; };
+  const t = await f.say("did you send it?", "flow-0702-aaaa");
+  assert.equal(t.outcome, "fallback_invalid_output", "the claim guard refuses a 'sent' reply");
+  assert.doesNotMatch(t.reply || "", /have sent/i);
+  assert.deepEqual(t.media, []);
+});

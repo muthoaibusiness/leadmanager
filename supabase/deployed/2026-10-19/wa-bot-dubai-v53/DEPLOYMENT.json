@@ -1,0 +1,98 @@
+{
+  "label": "PRODUCTION SNAPSHOT - wa-bot-dubai v53 - read-only evidence, not deployable source",
+  "project_ref": "sbqmougcvnplgjgihpwe",
+  "function": {
+    "slug": "wa-bot-dubai",
+    "id": "ac5b899d-f3de-4084-b8fd-0b95325ee962",
+    "version": 53,
+    "status": "ACTIVE",
+    "verify_jwt": false,
+    "import_map": false,
+    "entrypoint": "source/supabase/functions/wa-bot-dubai/index.ts",
+    "created_at": "2026-10-14T06:06:58.851Z",
+    "updated_at": "2026-10-19T06:15:46.231Z",
+    "ezbr_sha256": "37240ddfc5cb9766bc0033ad163783113a183ea18abe217fb9c94fdc2bc0556b"
+  },
+  "retrieval": {
+    "retrieved_at": "2026-10-19T15:07:10Z",
+    "method": "npx supabase functions download wa-bot-dubai --project-ref sbqmougcvnplgjgihpwe --use-api (CLI 2.121.0); metadata from supabase functions list -o json and GET /v1/projects/{ref}/functions/wa-bot-dubai",
+    "read_only": true
+  },
+  "git_baseline": {
+    "closest_commit": "96661e92fedb7c6f48672f4e34375fca885210f0",
+    "note": "Deployment metadata records no git commit. Relationship established by source comparison only. See docs/reports/legacy-bot-reconciliation.md."
+  },
+  "integrity": {
+    "manifest": "SHA256SUMS",
+    "verify": "cd supabase/deployed/2026-10-19/wa-bot-dubai-v53 && sha256sum -c SHA256SUMS",
+    "gitattributes": "* -text (bytes stored as downloaded, CRLF preserved)"
+  },
+  "excluded": [
+    "supabase/.temp/cli-latest and supabase/.temp/linked-project.json (local CLI state written by the download, not deployed source)"
+  ],
+  "files": [
+    {
+      "path": "_shared/ai.ts",
+      "sha256": "e50d4776ce65167d99c3448dcba4b2da31aebc348c9c0386e504a9099fe0c493",
+      "bytes": 23861,
+      "line_endings": "CRLF",
+      "closest_git_commit": "96661e9",
+      "match": "58 changed lines (production-only edits)",
+      "compared_after": "stripping CR"
+    },
+    {
+      "path": "_shared/trainer-core.ts",
+      "sha256": "01a80bb5c69a0dd0749548ed1033a9a3e591e10f277bdef2cb8f42e95ea80939",
+      "bytes": 37512,
+      "line_endings": "CRLF",
+      "closest_git_commit": "1e1fc85",
+      "match": "exact",
+      "compared_after": "stripping CR"
+    },
+    {
+      "path": "_shared/trainer-deno.ts",
+      "sha256": "c381c8f0cb32ec602f2766b264916279734610026b3bb22cdaf42a5f0bf1ae50",
+      "bytes": 4340,
+      "line_endings": "CRLF",
+      "closest_git_commit": "ab66552",
+      "match": "exact",
+      "compared_after": "stripping CR"
+    },
+    {
+      "path": "_shared/trainer-handler.ts",
+      "sha256": "f4a8b68825f85ea7e3e6d85c0c0da3842c4002ed488225b0ca4eef12a108a1fa",
+      "bytes": 38770,
+      "line_endings": "CRLF",
+      "closest_git_commit": "91cb211",
+      "match": "exact",
+      "compared_after": "stripping CR"
+    },
+    {
+      "path": "_shared/trainer-live.ts",
+      "sha256": "1d32437fc0661592176af5cdbb18898eaeed087f0a78fcac867468873ff8ff23",
+      "bytes": 7412,
+      "line_endings": "CRLF",
+      "closest_git_commit": "ab66552",
+      "match": "exact",
+      "compared_after": "stripping CR"
+    },
+    {
+      "path": "_shared/wa.ts",
+      "sha256": "3c6911a750998a2bbfcb6a3b73a53e7efd7f8d72e0b64f8849f5327608ae212b",
+      "bytes": 22705,
+      "line_endings": "CRLF",
+      "closest_git_commit": "96661e9",
+      "match": "exact",
+      "compared_after": "stripping CR"
+    },
+    {
+      "path": "wa-bot-dubai/index.ts",
+      "sha256": "c5482de6e59d1a9c1c95dd3cdf52cff438917bf44fe4c7536b64cbf5d4421e85",
+      "bytes": 35931,
+      "line_endings": "CRLF",
+      "closest_git_commit": "96661e9",
+      "match": "34 changed lines (production-only edits)",
+      "compared_after": "stripping CR"
+    }
+  ]
+}

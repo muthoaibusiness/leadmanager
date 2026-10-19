@@ -74,6 +74,26 @@ test("chatCompletion: times out and reports it", async () => {
   assert.equal(r.ok, false); assert.equal(r.code, "timeout");
 });
 
+// Production 2026-10-19 (two Playground turns, both about 33s): OpenRouter sent
+// the headers, then held the body past the 30s timer, so the abort surfaced in
+// r.json() and was reported as "not JSON". It is a timeout, and it says so.
+test("chatCompletion: a body that stalls past the timeout is a timeout, not a format error", async () => {
+  const r: any = await chatCompletion({ provider: "custom", base_url: "https://api.example.com/v1", model: "m" }, KEY, REQ,
+    io(async (_u, init) => ({ ok: true, status: 200, headers: { get: () => null },
+      json: () => new Promise((_ok, no) => init.signal.addEventListener("abort", () => no(new DOMException("aborted", "AbortError")))) }), undefined, 30));
+  assert.equal(r.ok, false); assert.equal(r.code, "timeout");
+  assert.doesNotMatch(r.error, /not JSON/);
+});
+
+test("chatCompletion: a body that really is not JSON is a format error and shows the content type, not the body", async () => {
+  const r: any = await chatCompletion({ provider: "custom", base_url: "https://api.example.com/v1", model: "m" }, KEY, REQ,
+    io(async () => ({ ok: true, status: 200, headers: { get: (k: string) => (k === "content-type" ? "text/html" : null) },
+      json: async () => { throw new SyntaxError(`Unexpected token < in <html>${KEY}`); } })));
+  assert.equal(r.code, "format");
+  assert.match(r.error, /text\/html/);
+  assert.ok(!JSON.stringify(r).includes(KEY));
+});
+
 test("chatCompletion: refuses a public name that resolves to a private address, before any request", async () => {
   let called = false;
   const r: any = await chatCompletion({ provider: "custom", base_url: "https://rebind.example.com/v1", model: "m" }, KEY, REQ,
@@ -135,4 +155,32 @@ test("embedWithConfig: custom hosts are resolved first; private targets are refu
   assert.deepEqual(good, { ok: true, vector: [1, 2, 3], tokens: 0 });
   const pinned: any = await embedWithConfig({ provider: "openai", base_url: "", model: "e" } as any, KEY, "x", { fetch: (async () => res(200, { data: [{ embedding: [1] }] })) as any, resolve: async () => { throw new Error("not called"); } });
   assert.equal(pinned.ok, true, "fixed-host providers need no DNS lookup");
+});
+
+// Production 2026-10-19 20:15 and 20:16 (Playground, about 21 s each):
+// "Provider response has no choices[0].message.content". OpenRouter answers
+// HTTP 200 with an error object, or with content null and finish_reason
+// "length" when the reasoning used the budget. The error must name which.
+test("chatCompletion: a 200 with an error object, or with no content, names the cause and never leaks the body", async () => {
+  const cfg = { provider: "custom" as const, base_url: "https://api.example.com/v1", model: "m" };
+  const shapes: [object, string, RegExp][] = [
+    [{ error: { code: 502, message: `upstream ${KEY} failed` } }, "provider", /HTTP 502.*inside an HTTP 200/],
+    [{ choices: [{ finish_reason: "length", message: { content: null, reasoning: "thinking..." } }] }, "length", /token limit/],
+    [{ choices: [{ finish_reason: "content_filter", message: { content: null } }] }, "refused", /content filter/],
+    [{ choices: [] }, "format", /no choices/],
+    [{ choices: [{ finish_reason: "stop", message: { content: "" } }] }, "empty", /empty reply/],
+  ];
+  for (const [body, code, msg] of shapes) {
+    const r: any = await chatCompletion(cfg, KEY, REQ, io(async () => res(200, body)));
+    assert.equal(r.ok, false, JSON.stringify(body)); assert.equal(r.code, code, JSON.stringify(body)); assert.match(r.error, msg);
+    assert.ok(!JSON.stringify(r).includes(KEY) && !JSON.stringify(r).includes("thinking"), "nothing from the body leaks");
+  }
+});
+
+test("review2: an error inside an HTTP 200 keeps its meaning: 401/403 auth, 402 billing, 429 rate limit, 4xx request, 5xx provider", async () => {
+  const cfg = { provider: "custom" as const, base_url: "https://api.example.com/v1", model: "m" };
+  for (const [c, code] of [[401, "auth"], [403, "auth"], [402, "billing"], [429, "rate_limited"], [400, "request"], [404, "model"], [503, "provider"], ["x", "provider"]] as const) {
+    const r: any = await chatCompletion(cfg, KEY, REQ, io(async () => res(200, { error: { code: c, message: "m" } })));
+    assert.equal(r.code, code, String(c));
+  }
 });

@@ -149,7 +149,7 @@ export async function readDocument(file, loadPdf) {
   const isMd = lower.endsWith('.md') || lower.endsWith('.markdown') || file?.type === 'text/markdown';
   const kind = isMd ? 'markdown' : kindOf(file);
   if (!kind || kind === 'docx') throw new Error('Use Markdown (.md) or plain text. PDF is also accepted, but its text must be reviewed before indexing.');
-  if (file.size > INGEST_LIMITS.maxBytes) throw new Error('This file is larger than 15 MB.');
+  if (file.size > INGEST_LIMITS.maxBytes) throw new Error('This file is larger than 15 MB. Upload a compressed copy (for example, saved with reduced image quality); the text is the same.');
   const title = n.replace(/\.[^.]+$/, '').slice(0, 200) || 'Untitled';
   const bytes = new Uint8Array(await file.arrayBuffer());
   if (kind === 'markdown' || kind === 'text') {
@@ -158,8 +158,28 @@ export async function readDocument(file, loadPdf) {
     return { format: kind === 'markdown' ? 'markdown' : 'text', title, body, warnings: [] };
   }
   const pages = await pdfPages(bytes, loadPdf);
-  const warnings = pages.map((t, i) => (t.trim() ? null : `Page ${i + 1} has no text (scanned or image only) and was skipped.`)).filter(Boolean);
-  const body = pages.map((t, i) => (t.trim() ? `## Page ${i + 1}\n${t.trim()}` : null)).filter(Boolean).join('\n\n');
-  if (!body) throw new Error('No text could be read from this PDF: it has no text layer (scanned). Type the facts into a Markdown document instead.');
-  return { format: 'pdf_text', title, body, warnings };
+  const real = pageHasText;
+  const warnings = pages.map((t, i) => (real(t) ? null : `Page ${i + 1} has no text (scanned or image only) and was skipped.`)).filter(Boolean);
+  const body = pages.map((t, i) => (real(t) ? `## Page ${i + 1}\n${t.trim()}` : null)).filter(Boolean).join('\n\n');
+  // Measured on the page text itself; the "## Page N" headings are ours.
+  const stats = { pages: pages.length, text_pages: pages.filter(real).length, chars: pages.filter(real).reduce((n, t) => n + t.trim().length, 0) };
+  const verdict = pdfVerdict(stats);
+  if (!body || verdict === 'ocr_needed') throw new Error('This PDF has no text layer that can be used: its pages are images (scanned or exported as pictures), so it has no text to index. It needs OCR, or type the facts into a Markdown document instead.');
+  const skipped = stats.pages - stats.text_pages;
+  return { format: 'pdf_text', title, body, warnings, stats, verdict, source_name: `${n} (${stats.pages} pages${skipped ? `, ${skipped} without text` : ''})`.slice(0, 200) };
+}
+
+// A page whose only text is its page number ("1", "2 2", "১") has no content.
+// Bangla vowel signs are combining marks (\p{M}), so a word is letters and marks.
+// A table of figures ("40 60 1,250") is content too; a lone page number is not.
+export const pageHasText = (t) => { const s = String(t || ''); return /\p{L}[\p{L}\p{M}]+/u.test(s) || (s.match(/\p{N}+/gu) || []).length >= 3; };
+
+// How much of a PDF can answer questions. "ocr_needed": no text, or under 10
+// characters a page on average (a cover line on an image export). "partial":
+// half the pages or fewer carry text, so many facts are only in pictures.
+// Measured on the WECON brochures (2026-10-20): the image-only exports give
+// 64 and 80 characters over 24 and 30 pages; usable ones give 140 or more.
+export function pdfVerdict({ pages, text_pages, chars }) {
+  if (!text_pages || chars / Math.max(pages, 1) < 10) return 'ocr_needed';
+  return text_pages / Math.max(pages, 1) <= 0.5 ? 'partial' : 'usable';
 }

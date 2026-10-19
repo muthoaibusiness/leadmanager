@@ -372,3 +372,43 @@ test("project identity: a different project named mid-conversation replaces the 
   const r = resolveProject("osman er kotha bolun", st, { isAd: false }, [NUZM, OSM].map((x) => ({ id: x.id, body: x.body })) as any);
   assert.deepEqual(r.projects, ["p-osm"]);
 });
+
+test("guardReply: a Bangla or Banglish reply that sends a photo is not a claim; one that says a brochure is sent is", () => {
+  const g = (reply: string, language = "banglish") => guardReply(parseModelOutput(out({ language, reply, media: [{ type: "photo", project_ref: "p-nuz" }] }))!, CONTENT, ["p-nuz"], "");
+  assert.deepEqual(g("Nuznan er chobi pathacchi"), []);
+  assert.deepEqual(g("নুজনানের ছবি পাঠাচ্ছি", "bn"), []);
+  assert.ok(g("Nuznan er brochure pathacchi").includes("claim"));
+  assert.ok(g("নুজনানের ব্রোশিওর পাঠিয়ে দিয়েছি", "bn").includes("claim"));
+});
+
+// Production 2026-10-19: about 8% of Playground turns ended "fallback_model_error"
+// because the reasoning model returned no reply. One retry for a transient
+// failure (no reply, timeout, 5xx) saves the turn; a key or billing error does not retry.
+test("runTurn: a transient model failure is retried once; a permanent one is not", async () => {
+  const seq = (...rs: any[]) => { const calls: any[] = []; return { calls, ports: { callModel: async (req: any) => { calls.push(req); return rs.shift(); } } }; };
+  const good = { ok: true as const, text: out({ reply: "Wecon Nuznan is in Sector 16, Jolshiri Abashon.", project_ref: "p-nuz" }), cost_usd: 0.001 };
+  for (const code of ["timeout", "provider", "network", "rate_limited"]) {
+    const s = seq({ ok: false, code, error: `transient ${code}` }, good);
+    const r = await runTurn({ content: CONTENT, bot: "eyad", text: "nuznan kothay?", history: [], state: emptyState(), ad: { isAd: false }, returning: false, ports: s.ports as any });
+    assert.equal(r.outcome, "ok", code); assert.equal(s.calls.length, 2, code);
+    assert.equal(r.trace.model_retry, `transient ${code}`);
+  }
+  // "length"/"empty": the same request fails the same way, so no paid second call.
+  for (const code of ["auth", "billing", "config", "model", "request", "length", "empty"]) {
+    const s = seq({ ok: false, code, error: `permanent ${code}` }, good);
+    const r = await runTurn({ content: CONTENT, bot: "eyad", text: "nuznan kothay?", history: [], state: emptyState(), ad: { isAd: false }, returning: false, ports: s.ports as any });
+    assert.equal(r.outcome, "fallback_model_error", code); assert.equal(s.calls.length, 1, code);
+  }
+  const twice = seq({ ok: false, code: "timeout", error: "a" }, { ok: false, code: "timeout", error: "b" });
+  const r2 = await runTurn({ content: CONTENT, bot: "eyad", text: "nuznan kothay?", history: [], state: emptyState(), ad: { isAd: false }, returning: false, ports: twice.ports as any });
+  assert.equal(r2.outcome, "fallback_model_error"); assert.equal(twice.calls.length, 2, "never more than one retry");
+});
+
+test("review3: one turn makes at most one transient retry in total, so a timeout storm costs 3 calls, not 4", async () => {
+  const calls: any[] = [];
+  const rs: any[] = [{ ok: false, code: "timeout", error: "t1" }, { ok: true, text: "not json", cost_usd: 0 }, { ok: false, code: "timeout", error: "t2" }, { ok: true, text: out({ reply: "x" }), cost_usd: 0 }];
+  const r = await runTurn({ content: CONTENT, bot: "eyad", text: "nuznan kothay?", history: [], state: emptyState(), ad: { isAd: false }, returning: false,
+    ports: { callModel: async (req: any) => { calls.push(req); return rs.shift(); } } as any });
+  assert.equal(calls.length, 3);
+  assert.equal(r.outcome, "fallback_model_error");
+});
