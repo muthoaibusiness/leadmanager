@@ -46,8 +46,89 @@ export const isBrochureAsk = (text: string, o: { match?: (s: string) => string[]
   if (NOT_ASK.test(t)) return false;
   if (BROCHURE.some((r) => r.test(t))) return true;
   if (!LOOSE.some((r) => r.test(t))) return false;
-  return CONTEXT.some((r) => r.test(t)) || cityOf(t).length > 0 || !!o.match?.(text).length || t.split(/\s+/).filter(Boolean).length <= 3;
+  return CONTEXT.some((r) => r.test(t)) || cityOf(t).length > 0 || !!o.match?.(text).length || t.split(/\s+/).filter(Boolean).length <= 3
+    || DOC_VERB.test(t);
 };
+// "share the pdf", "PDF ta open koren", "according to the profile": the loose
+// word is the object of a send/open verb or the source of a question.
+const DOC_VERB = /\b(send|share|attach|forward|open|resend|pathao|pathan|pathaben|khulen|khulun|according|onujayi)\b|\b(the|ta|ti)\s+(profile|pdf)\b|\b(profile|pdf)\s+e\s+(ki|kon|koto)\b|\b(company|apnader|your)\s+profile\b|(পাঠা\S*|খুল\S*|অনুযায়ী)/;
+
+// ── what kind of brochure message ───────────────────────────────────────────
+// A brochure message is one of: send/open the PDF ("send"), a question about
+// what it says ("question"), both in one message ("both"), or neither clear
+// ("ambiguous"). The decision rests on what is left once the brochure word,
+// project and city names, fillers and politeness are taken out: a send verb,
+// a question marker, or something else. Word lists alone are not enough, so
+// leftover content words with no verb and no question are "ambiguous" and get
+// a short clarification instead of a guess.
+export type BrochureIntent = "send" | "question" | "both" | "ambiguous";
+// "din" is both "give" and "days" in Banglish: it counts as "give" only at
+// the end of the message or before "na"/"please".
+const DIN = /\bdin(\s+(na|please|pls|plz))?\s*[.!।]?\s*$/;
+const SEND = /\b(send|sent|share|attach|forward|open|resend|mail|email|give|pathao|pathan|pathaben|pathaiyo|pathai(?:ye)?|pathiye|path(?:a|i)|dao|den|diben|dite|dau|khulen|khulun|open\s*koren|open\s*koro|open\s*hocche\s*na)\b|(পাঠা\S*|দিন|দাও|দেন|দিবেন|খুল\S*|শেয়ার|সেন্ড)/;
+const WANT = /\b(want|need|chai|chaai|lagbe|dorkar|please|pls|plz)\b|(চাই|লাগবে|দরকার)/;
+const ASKS = /\b(what|which|how|when|where|why|who|tell|says?|said|mention\w*|list\w*|according|lekha|ki\s*ki|ki\s+ache|kon|koto|koyta|kobe|kothay|keno|bolen|bolun|bolo|bujhiye|bujhte|jante|explain|details?\s+of|onujayi|eta\s+ki|is\s+this)\b|(কি\s*কি|কী|কত|কয়টি|কয়টা|কবে|কোথায়|কেন|বলুন|বলেন|জানতে|লেখা|অনুযায়ী|সুবিধা)/;
+const TOPIC = /\b(amenit\w*|facilit\w*|floors?|storey\w*|units?|size|sqft|sft|parking|lift|handover|payment|price|location|address|feature\w*|spec\w*|bedrooms?|plan)\b|(সুবিধা|তলা|ফ্লোর|সাইজ|পার্কিং|লিফট|হ্যান্ডওভার|দাম)/;
+const DONE = /\b(got|received|peyechi|paichi|pelam|thanks|thank you|dhonnobad|ok\s+thanks|dekhlam|dekhechi|dekhe(?:\s+\S+){0,3}\s+(?:dibo|korbo|janabo|nibo)|seen|saw)\b|(পেয়েছি|ধন্যবাদ|দেখলাম|দেখেছি)/;
+const FILLER = /\b(the|a|an|of|for|me|my|to|us|our|your|this|that|it|er|e|r|ta|ti|gula|gulo|all|every|shob|sob|ar|and|also|project|projects|company|please|pls|plz|can|could|you|will|would|ki|na|ekhon|abar|again|hi|hello|bhai|apu|sir|madam|vai)\b|(ও|আর|এর|টা|টি|গুলো|সব|প্রজেক্ট\S*|কোম্পানি\S*)/g;
+
+// Every alias of every project, lowercased, so names are not read as content.
+export const projectWords = (projects: ItemRow[]) => [...new Set(projects.flatMap((p) => {
+  const a = p.body?.aliases || {};
+  return [p.body?.name, ...(a.bn || []), ...(a.banglish || []), ...(a.en || [])].filter((x) => typeof x === "string").flatMap((x: string) => norm(x).split(/\s+/));
+}))].filter((w) => w.length > 1);
+
+export function brochureIntent(text: string, o: { match?: (s: string) => string[]; words?: string[] } = {}): BrochureIntent | null {
+  if (!isBrochureAsk(text, o)) return null;
+  const t = norm(text);
+  // "thanks, got the brochure" is an acknowledgement, not a request.
+  if (DONE.test(t) && !SEND.test(t.replace(DONE, " ")) && !ASKS.test(t)) return null;
+  // "koto din" / "kon din" is days, never "give".
+  const send = SEND.test(t) || (DIN.test(t) && !/\b(koto|kon|koy)\s+din\b/.test(t));
+  // A question needs a question word or a topic; "can you send it?" is polite, not a question.
+  const question = ASKS.test(t) || (TOPIC.test(t) && /\?|[?।]/.test(t));
+  if (send && question) return "both";
+  if (question) return "question";
+  if (send || WANT.test(t)) return "send";
+  // What is left once the brochure word, names, cities and fillers are gone.
+  let rest = ` ${t} `;
+  for (const r of [...BROCHURE, ...LOOSE]) rest = rest.replace(new RegExp(r.source, "g"), " ");
+  for (const c of CITIES.flatMap((c) => CITY_RE[c])) rest = rest.replace(new RegExp(c.source, "g"), " ");
+  // A Bengali name takes a case ending ("নুজনানের", "নুজনানে"); it is still the name.
+  for (const w of o.words ?? []) rest = rest.replace(new RegExp(`(^|\\s)${w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?:ের|এর|র|ে|কে)?(?=\\s|$)`, "g"), " ");
+  rest = rest.replace(FILLER, " ").replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+  // A bare mention ("nuznan brochure", "osman brochur") is chat shorthand for "send it".
+  return rest ? "ambiguous" : "send";
+}
+
+// A short message right after a brochure turn: a resend ("abar pathan"), a
+// correction ("na, nuznan er ta"), or an acknowledgement ("ok thanks").
+// Read only when the conversation state says which projects' brochures were
+// last offered; without that the message goes the normal way.
+export type AfterBrochure = { kind: "resend" } | { kind: "correct"; projects: string[] } | { kind: "ack" };
+const RESEND = /\b(again|resend|re-send|abar|aabar|arekbar|ar ekbar)\b|(আবার|আরেকবার|আর একবার)/;
+const NO_LEAD = /^(no|na|nah|not\s+that|না)\b[,\s]*/;
+const ACK = /^(ok|okay|okk|thanks|thank you|thx|ty|got it|received|dhonnobad|thik ache|accha|acha|peyechi|pelam|ধন্যবাদ|ঠিক আছে|পেয়েছি)[\s,.!।]*(thanks|thank you|dhonnobad|ধন্যবাদ)?[\s.!।]*$/;
+export function afterBrochure(text: string, o: { match: (s: string) => string[]; words?: string[] }): AfterBrochure | null {
+  const t = norm(text).trim();
+  if (t.split(/\s+/).length > 6 || ASKS.test(t)) return null;
+  if (ACK.test(t)) return { kind: "ack" };
+  const named = o.match(text);
+  // Whatever is left once names, the "no", the pointer ("er ta") and
+  // politeness are gone must be nothing, or the message means something else
+  // ("nuznan ta sundor" is "Nuznan is nice", not a correction).
+  const leftover = (s: string) => {
+    let r = ` ${s} `;
+    for (const w of o.words ?? []) r = r.replace(new RegExp(`(^|\\s)${w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?:ের|এর|র|ে)?(?=\\s|$)`, "g"), " ");
+    return r.replace(/\b(no|na|nah|not|that|one|er|ta|tar|ti|the|please|pls|plz|it|again|abar|aabar|arekbar|ekbar|ar|resend|re-send)\b|(না|আবার|আরেকবার|টা)/g, " ")
+      .replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+  };
+  // "na, nuznan er ta" / "nuznan er ta": a correction to another project.
+  if (named.length && (NO_LEAD.test(t) || /\b(er ta|tar|ta|that one)\b/.test(t)) && !leftover(t)) return { kind: "correct", projects: named };
+  // "abar pathan" / "send it again": a resend needs a send verb, or nothing else.
+  if (RESEND.test(t) && (SEND.test(t) || DIN.test(t) || !leftover(t))) return { kind: "resend" };
+  return null;
+}
 
 export const CITIES = ["Dhaka", "Chattogram", "Cumilla"] as const;
 const CITY_RE: Record<string, RegExp[]> = {
@@ -63,10 +144,12 @@ const YES = /^(yes|yeah|yep|ok|okay|sure|please|pls|plz|ha|haa|hya|ji|jee|hmm|se
 // A short follow-up that asks something else ("ok, price koto?") is not a yes.
 const OTHER = /\?|\b(price|dam|daam|koto|cost|taka|where|kothay|size|sqft|photo|photos|chobi|video|map|floor)\b|(দাম|টাকা|কত|কোথায়|ছবি|ভিডিও)/;
 
+// intent "question" never reaches the sender: trainer-core answers it on the
+// grounded path. "both" answers there too, then sends the requested PDF.
 export type Request =
-  | { kind: "projects"; projects: string[]; scope: "named" | "state"; cities?: undefined }
-  | { kind: "projects"; projects: string[]; scope: "city" | "all"; cities: string[] }
-  | { kind: "clarify"; cities: string[]; question: string };
+  | { kind: "projects"; projects: string[]; scope: "named" | "state"; cities?: undefined; intent: "send" | "both" | "question" }
+  | { kind: "projects"; projects: string[]; scope: "city" | "all"; cities: string[]; intent: "send" | "both" | "question" }
+  | { kind: "clarify"; cities: string[]; question: string; projects?: string[] };
 
 const byName = (projects: ItemRow[]) => (a: string, b: string) => {
   const n = (id: string) => String(projects.find((p) => p.id === id)?.body?.name ?? id);
@@ -81,29 +164,45 @@ export function brochureRequest(text: string, state: ConvState, projects: ItemRo
   const t = norm(text).trim();
   const words = t.split(/\s+/).filter(Boolean);
   const botAsked = !!o.lastBot && isBrochureAsk(o.lastBot) && /\?/.test(o.lastBot);
-  const followUp = botAsked && words.length <= 5 && !OTHER.test(t) && !NO.test(t);
-  if (!isBrochureAsk(text, { match: o.match }) && !followUp) return null;
+  // A reply that asks something, or says it has a question ("proshno ache"),
+  // is never a "yes, send it", whatever the bot asked.
+  const asking = ASKS.test(t) || TOPIC.test(t) || /\b(questions?|proshno|prosno|query)\b|(প্রশ্ন)/.test(t);
+  const followUp = botAsked && words.length <= 5 && !OTHER.test(t) && !NO.test(t) && !asking;
+  const kind = brochureIntent(text, { match: o.match, words: projectWords(projects) });
+  if (!kind && !followUp) return null;
+  // Short follow-ups to the bot's own brochure question are send requests.
+  const intent: "send" | "both" | "question" = kind === "question" || kind === "both" ? kind : "send";
+  const named0 = o.match(text);
+  if (kind === "ambiguous" && !followUp) {
+    const ps = named0.length ? named0 : state.active_project ? [state.active_project] : [];
+    const name = ps.length === 1 ? String(projects.find((p) => p.id === ps[0])?.body?.name ?? "") : "";
+    return { kind: "clarify", cities: [], projects: ps, question: intentQuestion(o.lang ?? "en", name) };
+  }
   const sort = byName(projects);
   const inCity = (cities: string[]) => projects.filter((p) => cities.includes(regionOf(p))).map((p) => p.id).sort(sort);
   const known = CITIES.filter((c) => projects.some((p) => regionOf(p) === c));
   const clarify = (): Request => ({ kind: "clarify", cities: [...known], question: clarifyText(o.lang ?? "en", [...known]) });
-  const named = o.match(text);
-  if (named.length) return { kind: "projects", projects: [...new Set(named)].sort(sort), scope: "named" };
+  // A question needs no project picker: the answer path resolves or asks.
+  if (intent === "question" && !named0.length && !cityOf(text).length && !state.active_project) {
+    return { kind: "projects", projects: [], scope: "named", intent };
+  }
+  const named = named0;
+  if (named.length) return { kind: "projects", projects: [...new Set(named)].sort(sort), scope: "named", intent };
   const cities = cityOf(text);
   // A city with no active project is asked about, never answered with silence.
-  if (cities.length) return inCity(cities).length ? { kind: "projects", projects: inCity(cities), scope: "city", cities } : clarify();
+  if (cities.length) return inCity(cities).length ? { kind: "projects", projects: inCity(cities), scope: "city", cities, intent } : clarify();
   const fromBot = o.lastBot ? o.match(o.lastBot) : [];
   if (ALL_WORDS.test(t)) {
     // "all three" right after the bot listed three projects means those three.
-    if (fromBot.length > 1) return { kind: "projects", projects: [...new Set(fromBot)].sort(sort), scope: "named" };
+    if (fromBot.length > 1) return { kind: "projects", projects: [...new Set(fromBot)].sort(sort), scope: "named", intent };
     const botCities = o.lastBot ? cityOf(o.lastBot) : [];
-    if (botCities.length && botCities.length < known.length && inCity(botCities).length) return { kind: "projects", projects: inCity(botCities), scope: "city", cities: botCities };
-    return projects.length ? { kind: "projects", projects: projects.map((p) => p.id).sort(sort), scope: "all", cities: [...known] } : clarify();
+    if (botCities.length && botCities.length < known.length && inCity(botCities).length) return { kind: "projects", projects: inCity(botCities), scope: "city", cities: botCities, intent };
+    return projects.length ? { kind: "projects", projects: projects.map((p) => p.id).sort(sort), scope: "all", cities: [...known], intent } : clarify();
   }
   // "yes" to "Shall I send the Chowdhury Arcade brochure?"
-  if (followUp && YES.test(t) && fromBot.length === 1) return { kind: "projects", projects: fromBot, scope: "named" };
+  if (followUp && YES.test(t) && fromBot.length === 1) return { kind: "projects", projects: fromBot, scope: "named", intent };
   if (state.active_project && projects.some((p) => p.id === state.active_project)) {
-    return { kind: "projects", projects: [state.active_project], scope: "state" };
+    return { kind: "projects", projects: [state.active_project], scope: "state", intent };
   }
   return clarify();
 }
@@ -112,6 +211,16 @@ const list = (xs: string[], lang: Lang) => {
   const and = lang === "en" ? " and " : lang === "bn" ? " ও " : " ar ";
   return xs.length <= 1 ? xs.join("") : `${xs.slice(0, -1).join(", ")}${and}${xs.at(-1)}`;
 };
+
+// "Send the file, or answer a question from it?" — the one question asked when
+// the intent is unclear. It ends in "?" and names the brochure, so a short
+// "send it" afterwards is read as a follow-up to the bot's brochure question.
+export function intentQuestion(lang: Lang, project: string): string {
+  const of = project ? (lang === "en" ? ` for ${project}` : lang === "bn" ? ` ${project}-এর` : ` ${project} er`) : "";
+  if (lang === "bn") return `আপনি কি${of} ব্রোশিওর PDF চান, নাকি এ বিষয়ে কোনো প্রশ্ন আছে?`;
+  if (lang === "banglish") return `Apni ki${of} brochure PDF ta chan, naki brochure niye kono proshno ache?`;
+  return `Would you like the brochure PDF${of}, or do you have a question about it?`;
+}
 
 export function clarifyText(lang: Lang, cities: string[]): string {
   const c = list(cities, lang);
@@ -226,10 +335,17 @@ function deliveryText(lang: Lang, sentNames: string[], ready: string[], failed: 
 // address is refused before it is fetched. Throws on any refusal or timeout.
 // Residual risk, as in chatCompletion: fetch resolves the name again, so a
 // host that changes its DNS answer in between (rebinding) can still reach a
-// private address. Only the first 5 bytes are read and never returned, which
+// private address. Only the first 12 bytes are used and never returned, which
 // bounds what such a request can learn; an egress proxy would close it.
+// The fetch passed in must stop reading after the first chunk (the Deno port
+// in trainer-deno.ts cancels the body), so a host that ignores Range never
+// streams a whole PDF or image here.
 type ProbeFetch = (url: string, init: { method: "GET"; headers: Record<string, string>; redirect: "manual"; signal: AbortSignal }) =>
   Promise<{ ok: boolean; status: number; headers: { get(k: string): string | null }; arrayBuffer(): Promise<ArrayBuffer> }>;
+// The first bytes as one character per byte. A UTF-8 decode turns a JPEG's
+// FF D8 into U+FFFD, so an image check could never match it.
+const latin1 = (b: Uint8Array) => String.fromCharCode(...b);
+
 export function httpProbe(io: { fetch: ProbeFetch; resolve: (host: string) => Promise<string[]>; timeoutMs?: number }): Probe {
   return async (start) => {
     const ctl = new AbortController();
@@ -245,9 +361,9 @@ export function httpProbe(io: { fetch: ProbeFetch; resolve: (host: string) => Pr
         const r = await io.fetch(url, { method: "GET", headers: { Range: "bytes=0-1023", "User-Agent": "WEPRO-brochure-check" }, redirect: "manual", signal: ctl.signal });
         const loc = r.headers.get("location");
         if (r.status >= 300 && r.status < 400 && loc) { url = new URL(loc, url).toString(); continue; }
-        const head = new Uint8Array(await r.arrayBuffer()).slice(0, 8);
+        const head = new Uint8Array(await r.arrayBuffer()).slice(0, 12);
         const total = Number(/\/(\d+)$/.exec(r.headers.get("content-range") || "")?.[1] ?? r.headers.get("content-length") ?? 0);
-        return { ok: r.ok, status: r.status, contentType: r.headers.get("content-type") || "", magic: new TextDecoder().decode(head.slice(0, 5)), bytes: total };
+        return { ok: r.ok, status: r.status, contentType: r.headers.get("content-type") || "", magic: latin1(head.slice(0, 12)), bytes: total };
       }
       throw new Error("too many redirects");
     } catch (e) {

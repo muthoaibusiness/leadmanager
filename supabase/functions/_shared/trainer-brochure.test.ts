@@ -59,12 +59,12 @@ test("cityOf: Dhaka, Chattogram and Cumilla in every spelling; none otherwise", 
 
 test("brochureRequest: a named project is one project", () => {
   const r = req("nuznan er brochure pathan");
-  assert.deepEqual(r, { kind: "projects", projects: ["p-nuz"], scope: "named" });
+  assert.deepEqual(r, { kind: "projects", projects: ["p-nuz"], scope: "named", intent: "send" });
 });
 
 test("brochureRequest: a city asks for every active project in that city, sorted by name", () => {
   const r = req("Chittagong er shob project er brochure");
-  assert.deepEqual(r, { kind: "projects", projects: ["p-mom", "p-p2p", "p-iqb"], scope: "city", cities: ["Chattogram"] });
+  assert.deepEqual(r, { kind: "projects", projects: ["p-mom", "p-p2p", "p-iqb"], scope: "city", cities: ["Chattogram"], intent: "send" });
 });
 
 test("brochureRequest: all projects / all three cities covers Dhaka, Chattogram and Cumilla", () => {
@@ -78,7 +78,7 @@ test("brochureRequest: all projects / all three cities covers Dhaka, Chattogram 
 
 test("brochureRequest: 'all three' after a bot list of three projects means those three, not every project", () => {
   const r = req("Share all three", emptyState(), "We have Wecon Nuznan, Wecon Osman Bellevue and Momtaz Manor. Which brochure would you like?");
-  assert.deepEqual(r, { kind: "projects", projects: ["p-mom", "p-nuz", "p-osm"], scope: "named" });
+  assert.deepEqual(r, { kind: "projects", projects: ["p-mom", "p-nuz", "p-osm"], scope: "named", intent: "send" });
 });
 
 test("brochureRequest: no project, no city, nothing in state asks a short clarification", () => {
@@ -90,7 +90,7 @@ test("brochureRequest: no project, no city, nothing in state asks a short clarif
 
 test("brochureRequest: an active project in state is used when the ask names nothing", () => {
   const r = req("brochure ta den", { ...emptyState(), active_project: "p-osm" });
-  assert.deepEqual(r, { kind: "projects", projects: ["p-osm"], scope: "state" });
+  assert.deepEqual(r, { kind: "projects", projects: ["p-osm"], scope: "state", intent: "send" });
 });
 
 test("brochureRequest: a named project wins over the city and over state", () => {
@@ -295,7 +295,8 @@ test("httpProbe: follows a Drive download redirect and reads the first bytes onl
     return url.includes("/uc?") ? resp(302, { location: "/download?id=1" }) : resp(206, { type: "application/octet-stream", body: "%PDF-1.7 rest" });
   } });
   const r = await probe("https://drive.usercontent.test/u/0/uc?id=1&export=download");
-  assert.deepEqual({ ...r }, { ok: true, status: 206, contentType: "application/octet-stream", magic: "%PDF-", bytes: 6910581 });
+  assert.deepEqual({ ...r, magic: r.magic.slice(0, 5) }, { ok: true, status: 206, contentType: "application/octet-stream", magic: "%PDF-", bytes: 6910581 });
+  assert.ok(r.magic.length <= 12, "only the first 12 bytes are kept");
   assert.deepEqual(seen.map((s) => s.url), ["https://drive.usercontent.test/u/0/uc?id=1&export=download", "https://drive.usercontent.test/download?id=1"]);
   assert.ok(seen.every((s) => s.range === "bytes=0-1023" && s.redirect === "manual"));
 });
@@ -390,4 +391,233 @@ test("review: a city ask that lands on one project records it as resolved by cit
     ad: { isAd: false }, returning: true, ports: { ...noModel, probeDocument: probeOf() } });
   assert.equal(r.stateNext.active_project, "p-chy");
   assert.notEqual(r.stateNext.active_source, "explicit");
+});
+
+// ── P0: brochure intent routing (send / content question / both / ambiguous) ─
+import { brochureIntent, projectWords } from "./trainer-brochure.ts";
+const WORDS = projectWords(CONTENT.projects);
+const intent = (t: string) => brochureIntent(t, { words: WORDS });
+
+test("brochureIntent: explicit send or open requests are 'send'", () => {
+  for (const t of ["Brochure ta pathao", "PDF ta open koren", "nuznan er brochure pathan", "send me the brochure", "brochure den",
+    "ব্রোশিওর পাঠান", "পিডিএফ টা দিন", "osman er brochure ta open hocche na, abar pathan", "share the profile please", "attach the brochure"]) {
+    assert.equal(intent(t), "send", t);
+  }
+});
+
+test("brochureIntent: questions about what a brochure says are 'question', never 'send'", () => {
+  for (const t of ["nuznan brochure e ki ki amenities ache?", "How many floors does Summer Breeze have according to the brochure?",
+    "what does the brochure say about parking", "brochure e koto ta floor?", "ব্রোশিওরে কি কি সুবিধা আছে?",
+    "According to the profile, how big is each flat", "brochure ta te handover kobe lekha ache"]) {
+    assert.equal(intent(t), "question", t);
+  }
+});
+
+test("brochureIntent: send plus a question is 'both'", () => {
+  for (const t of ["Send the brochure and tell me the amenities", "brochure ta pathan ar bolen koto floor",
+    "ব্রোশিওর পাঠান আর বলুন কি কি সুবিধা আছে", "share the pdf, also how many units are there?"]) {
+    assert.equal(intent(t), "both", t);
+  }
+});
+
+test("brochureIntent: a bare mention is a send request (chat shorthand); leftover words with no verb or question are 'ambiguous'", () => {
+  for (const t of ["brochure", "nuznan brochure", "osman brochur", "the profile", "dhaka r shob project er brochure", "company profile please", "সব প্রজেক্টের ব্রোশিওর"]) {
+    assert.equal(intent(t), "send", t);
+  }
+  for (const t of ["nuznan er brochure niye ekta kotha chilo", "about the summer breeze brochure for my family"]) assert.equal(intent(t), "ambiguous", t);
+});
+
+test("brochureIntent: polite send requests with a '?' are still 'send'; desire verbs lose to a content question", () => {
+  for (const t of ["Can you send me the brochure?", "brochure pathaben ki?", "brochure chai", "I need the nuznan brochure"]) assert.equal(intent(t), "send", t);
+  for (const t of ["brochure e ki ache jante chai", "brochure onujayi koto din e handover?"]) assert.equal(intent(t), "question", t);
+});
+
+test("brochureIntent: unrelated text, thanks and 'got it' are null, so the normal reply path runs", () => {
+  for (const t of ["nuznan er price koto?", "where is osman", "my profile is on LinkedIn", "thanks, got the brochure", "brochure peyechi, dhonnobad"]) {
+    assert.equal(intent(t), null, t);
+  }
+});
+
+const say = (o: object) => JSON.stringify({ intent: "info", project_ref: null, language: "en", reply: "", media: [], handoff: false, asked: [], used_item_ids: [], clarify: false, ...o });
+const modelSaying = (...replies: string[]) => { const calls: any[] = []; return { calls, callModel: async (req: any) => { calls.push(req); return { ok: true as const, text: replies.shift() ?? say({ reply: "x" }), cost_usd: 0 }; } }; };
+
+test("runTurn: a brochure content question goes to the grounded answer path, with no brochure action", async () => {
+  const m = modelSaying(say({ project_ref: "p-nuz", reply: "The brochure lists a rooftop garden and a gym.", used_item_ids: ["doc:d1#0"] }));
+  const hits = [{ id: "c1", document_id: "d1", document_version: 1, chunk_no: 0, section: "Amenities", title: "Wecon Nuznan brochure", chunk_text: "Amenities: rooftop garden, gym", score: 0.7 }];
+  const searched: any[] = [];
+  const r = await runTurn({ content: CONTENT, bot: "eyad", text: "nuznan brochure e ki ki amenities ache?", history: [], state: emptyState(), ad: { isAd: false }, returning: true,
+    ports: { callModel: m.callModel, probeDocument: probeOf(), searchDocs: async (q) => { searched.push(q); return hits; } } });
+  assert.equal(m.calls.length, 1, "the model answered");
+  assert.deepEqual(searched.map((q) => q.projects), [["p-nuz"]], "retrieval scoped to the named project");
+  assert.equal(r.outcome, "ok");
+  assert.deepEqual(r.media, []);
+  assert.equal((r.trace.brochure_intent as any), "question");
+});
+
+test("runTurn: a content question with no evidence stays unanswered, honestly", async () => {
+  const m = modelSaying(say({ project_ref: "p-iqb", reply: "The brochure does not say. A consultant can confirm.", handoff: true }));
+  const r = await runTurn({ content: CONTENT, bot: "eyad", text: "How many floors does Iqbal Orchid have according to the brochure?", history: [], state: emptyState(),
+    ad: { isAd: false }, returning: true, ports: { callModel: m.callModel, probeDocument: probeOf(), searchDocs: async () => [] } });
+  assert.equal(m.calls.length, 1);
+  assert.deepEqual(r.media, []);
+  assert.doesNotMatch(r.reply, /\d/, "no figure without evidence");
+});
+
+test("runTurn: send plus a question answers from evidence and sends only the verified PDF that was asked for", async () => {
+  const m = modelSaying(say({ project_ref: "p-nuz", reply: "It has a rooftop garden and a gym.", used_item_ids: ["doc:d1#0"] }));
+  const hits = [{ id: "c1", document_id: "d1", document_version: 1, chunk_no: 0, section: "Amenities", title: "Wecon Nuznan brochure", chunk_text: "Amenities: rooftop garden, gym", score: 0.7 }];
+  const s = sender();
+  const r = await runTurn({ content: CONTENT, bot: "eyad", text: "Send the nuznan brochure and tell me the amenities", history: [], state: emptyState(), ad: { isAd: false }, returning: true,
+    ports: { callModel: m.callModel, probeDocument: probeOf(), searchDocs: async () => hits, sendDocument: s.send } });
+  assert.equal(m.calls.length, 1);
+  assert.deepEqual(s.sent.map((x) => x.mediaUrl), ["https://wecon.test/Wecon-Nuznan-Profile.pdf"]);
+  assert.match(r.reply, /rooftop garden/);
+  assert.match(r.reply, /Here is the brochure for Wecon Nuznan/);
+  assert.equal(r.outcome, "brochure_sent");
+});
+
+test("runTurn: send plus a question with a failed send answers the question and reports the failure, never 'sent'", async () => {
+  const m = modelSaying(say({ project_ref: "p-nuz", reply: "It has a rooftop garden.", used_item_ids: ["doc:d1#0"] }));
+  const hits = [{ id: "c1", document_id: "d1", document_version: 1, chunk_no: 0, section: "Amenities", title: "Wecon Nuznan brochure", chunk_text: "Amenities: rooftop garden", score: 0.7 }];
+  const s = sender(["https://wecon.test/Wecon-Nuznan-Profile.pdf"]);
+  const r = await runTurn({ content: CONTENT, bot: "eyad", text: "brochure ta pathan ar bolen nuznan e ki ki amenities", history: [], state: emptyState(), ad: { isAd: false }, returning: true,
+    ports: { callModel: m.callModel, probeDocument: probeOf(), searchDocs: async () => hits, sendDocument: s.send } });
+  assert.match(r.reply, /rooftop garden/);
+  assert.doesNotMatch(r.reply, /eikhane|here is/i);
+  assert.match(r.reply, /consultant/i);
+  assert.equal(r.outcome, "brochure_unavailable");
+  assert.equal(r.handoff, true);
+});
+
+test("runTurn: send plus a question for a project with no PDF answers and reports the missing file", async () => {
+  const m = modelSaying(say({ project_ref: "p-mom", reply: "Momtaz Manor is in Chattogram." }));
+  const r = await runTurn({ content: CONTENT, bot: "eyad", text: "send the momtaz brochure and tell me where it is", history: [], state: emptyState(), ad: { isAd: false }, returning: true,
+    ports: { callModel: m.callModel, probeDocument: probeOf(), searchDocs: async () => [] } });
+  assert.match(r.reply, /Chattogram/);
+  assert.match(r.reply, /Momtaz Manor/);
+  assert.deepEqual(r.media, []);
+  assert.equal(r.outcome, "brochure_unavailable");
+});
+
+test("runTurn: an ambiguous bare mention asks a short question and calls neither the model nor the sender", async () => {
+  const s = sender();
+  const r = await runTurn({ content: CONTENT, bot: "eyad", text: "nuznan er brochure niye ekta kotha chilo", history: [], state: emptyState(), ad: { isAd: false }, returning: true,
+    ports: { ...noModel, probeDocument: probeOf(), sendDocument: s.send } });
+  assert.equal(r.outcome, "brochure_clarify");
+  assert.match(r.reply, /Wecon Nuznan/);
+  assert.equal(s.sent.length, 0);
+  assert.match(r.reply, /\?/);
+  assert.ok(r.reply.length < 160);
+});
+
+test("runTurn: 'yes' to the bot's 'send it or answer a question?' sends the brochure for the project in play", async () => {
+  const first = await runTurn({ content: CONTENT, bot: "eyad", text: "nuznan er brochure niye ekta kotha chilo", history: [], state: emptyState(), ad: { isAd: false }, returning: true,
+    ports: { ...noModel, probeDocument: probeOf() } });
+  const s = sender();
+  const r = await runTurn({ content: CONTENT, bot: "eyad", text: "send it", history: [{ role: "customer", text: "nuznan brochure" }, { role: "bot", text: first.reply }],
+    state: first.stateNext, ad: { isAd: false }, returning: true, ports: { ...noModel, probeDocument: probeOf(), sendDocument: s.send } });
+  assert.equal(first.stateNext.active_project, "p-nuz", "the clarification keeps the project in play");
+  assert.deepEqual(s.sent.map((x) => x.mediaUrl), ["https://wecon.test/Wecon-Nuznan-Profile.pdf"]);
+  assert.equal(r.outcome, "brochure_sent");
+});
+
+test("runTurn: an unrelated message never touches the brochure path", async () => {
+  const m = modelSaying(say({ project_ref: "p-nuz", reply: "Wecon Nuznan is in Dhaka." }));
+  const s = sender();
+  const r = await runTurn({ content: CONTENT, bot: "eyad", text: "where is nuznan", history: [], state: emptyState(), ad: { isAd: false }, returning: true,
+    ports: { callModel: m.callModel, probeDocument: probeOf(), sendDocument: s.send } });
+  assert.equal(s.sent.length, 0);
+  assert.equal(r.trace.brochure, undefined);
+  assert.equal(r.outcome, "ok");
+});
+
+test("review: 'koto din' (how many days) and 'abar' (again) inside a question are not send requests", () => {
+  for (const t of ["brochure onujayi handover e koto din lagbe", "brochure e abar ki ki ache?", "brochure e kon din handover lekha"]) assert.equal(intent(t), "question", t);
+  assert.equal(intent("brochure ta din"), "send");
+  assert.equal(intent("osman er brochure ta open hocche na, abar pathan"), "send");
+});
+
+test("review: 'both' keeps the answer's outcome visible and the sent project in state", async () => {
+  const m = modelSaying(say({ project_ref: "p-nuz", reply: "It has a rooftop garden.", used_item_ids: ["doc:d1#0"] }));
+  const hits = [{ id: "c1", document_id: "d1", document_version: 1, chunk_no: 0, section: "Amenities", title: "Wecon Nuznan brochure", chunk_text: "Amenities: rooftop garden", score: 0.7 }];
+  const r = await runTurn({ content: CONTENT, bot: "eyad", text: "Send the nuznan brochure and tell me the amenities", history: [], state: { ...emptyState(), active_project: "p-osm" }, ad: { isAd: false }, returning: true,
+    ports: { callModel: m.callModel, probeDocument: probeOf(), searchDocs: async () => hits, sendDocument: sender().send } });
+  assert.equal(r.trace.answer_outcome, "ok");
+  assert.equal(r.stateNext.active_project, "p-nuz");
+});
+
+// Reproduced on the production catalog (2026-10-20). None of these sent a
+// wrong PDF before (they fell to a clarification), but each one asked a
+// question the customer had already answered.
+test("intent: a Bengali project name with a case ending is still a bare 'send' request", () => {
+  const NUZBN = P("p-nuzbn", "Wecon Nuznan", "Dhaka", ["nuznan"], "https://wecon.test/nuz.pdf");
+  NUZBN.body.aliases.bn = ["নুজনান"];
+  const words = projectWords(freezeContent([NUZBN], { reply_model: "m", max_tokens: 600, rubric_version: 1 }).content.projects);
+  assert.equal(brochureIntent("নুজনানের ব্রোশিওর", { words }), "send");
+  assert.equal(brochureIntent("নুজনানে ব্রোশিওর", { words }), "send");
+});
+
+test("intent: 'I saw it' and 'later I'll call' after a brochure are not requests; 'I can't understand it' is a question", () => {
+  for (const t of ["brochure dekhlam, valo", "ami brochure dekhe call dibo", "brochure dekhechi", "ব্রোশিওর দেখলাম"]) assert.equal(intent(t), null, t);
+  for (const t of ["brochure ta bujhte parchi na", "profile e ki ache", "eta ki apnader company profile?"]) assert.equal(intent(t), "question", t);
+});
+
+// ── review 2 (2026-10-20) ───────────────────────────────────────────────────
+import { intentQuestion } from "./trainer-brochure.ts";
+
+test("review2: a question in reply to 'the PDF, or a question about it?' is answered, never sent as a PDF", () => {
+  const ask = intentQuestion("en", "Wecon Nuznan");
+  for (const t of ["what about parking", "question ache", "how big are the flats", "handover kobe", "ekta proshno chilo"]) {
+    const r = req(t, { ...emptyState(), active_project: "p-nuz" }, ask);
+    assert.notEqual((r as any)?.intent, "send", t);
+  }
+  assert.equal((req("send it", { ...emptyState(), active_project: "p-nuz" }, ask) as any)?.intent, "send");
+  assert.equal(req("no thanks", { ...emptyState(), active_project: "p-nuz" }, ask), null);
+});
+
+test("review2: a brochure question with no project in play goes to the answer path, not a project picker", async () => {
+  const m = modelSaying(say({ reply: "Which project are you asking about?", clarify: true }));
+  const r = await runTurn({ content: CONTENT, bot: "eyad", text: "what does the brochure say about handover?", history: [], state: emptyState(), ad: { isAd: false }, returning: true,
+    ports: { callModel: m.callModel, probeDocument: probeOf(), searchDocs: async () => [] } });
+  assert.equal(m.calls.length, 1);
+  assert.notEqual(r.outcome, "brochure_clarify");
+  assert.deepEqual(r.media, []);
+});
+
+test("review2: the Deno probe port reads one chunk and cancels, even when the server ignores Range", async () => {
+  const src = (await import("node:fs")).readFileSync(new URL("./trainer-deno.ts", import.meta.url), "utf8");
+  const port = /export const probe = httpProbe\(\{[\s\S]*?\n\}\);/.exec(src)?.[0] || "";
+  assert.match(port, /getReader\(\)/, "reads through a stream reader");
+  assert.match(port, /\.read\(\)/, "takes one chunk");
+  assert.match(port, /cancel\(\)/, "cancels the rest of the body");
+  assert.doesNotMatch(port, /await r\.arrayBuffer\(\)|await r\.blob\(\)|await r\.text\(\)/, "never reads the whole body");
+});
+
+import { afterBrochure } from "./trainer-brochure.ts";
+test("review3: after a brochure, 'abar' needs a send verb or nothing else; a project plus 'ta' needs 'no' or nothing else", () => {
+  const o = { match, words: WORDS };
+  for (const t of ["abar pathan", "send it again", "আবার পাঠান", "resend please", "abar", "again please"]) assert.equal(afterBrochure(t, o)?.kind, "resend", t);
+  for (const t of ["abar jiggesh korbo", "abar call dibo", "nuznan ta sundor", "osman ta onek boro"]) assert.equal(afterBrochure(t, o), null, t);
+  assert.deepEqual(afterBrochure("na, nuznan er ta", o), { kind: "correct", projects: ["p-nuz"] });
+  assert.deepEqual(afterBrochure("nuznan er ta", o), { kind: "correct", projects: ["p-nuz"] });
+});
+
+test("review3: 'both' over several projects keeps the answer's project when it is one of those sent", async () => {
+  const m = modelSaying(say({ project_ref: "p-osm", reply: "Both are in Dhaka." }));
+  const r = await runTurn({ content: CONTENT, bot: "eyad", text: "send the nuznan and osman brochures and tell me where they are", history: [], state: emptyState(), ad: { isAd: false }, returning: true,
+    ports: { callModel: m.callModel, probeDocument: probeOf(), searchDocs: async () => [] } });
+  assert.equal(r.stateNext.active_project, "p-osm");
+  assert.deepEqual([...(r.stateNext.last_brochure || [])].sort(), ["p-nuz", "p-osm"]);
+});
+
+test("review3: the Deno probe keeps reading until it has 12 bytes (a WebP header), not just one chunk", async () => {
+  const src = (await import("node:fs")).readFileSync(new URL("./trainer-deno.ts", import.meta.url), "utf8");
+  const port = /export const probe = httpProbe\(\{[\s\S]*?\n\}\);/.exec(src)?.[0] || "";
+  assert.match(port, /while\s*\(/, "loops over chunks");
+  assert.match(port, /12/, "until 12 bytes");
+});
+
+test("review3: the generic project words live in a leaf module (no trainer-core <-> trainer-docs cycle)", async () => {
+  const docs = (await import("node:fs")).readFileSync(new URL("./trainer-docs.ts", import.meta.url), "utf8");
+  assert.doesNotMatch(docs, /from "\.\/trainer-core\.ts"/);
 });

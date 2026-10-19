@@ -155,6 +155,9 @@ export default function PlaygroundTab({ api, showToast }) {
   const [wrong, setWrong] = useState(null);
   const [names, setNames] = useState({});
   const opening = useRef(null);
+  // Set before the first await, so a second submit in the same tick (Enter
+  // plus click) sees it; `busy` state only updates on the next render.
+  const inFlight = useRef(false);
 
   useEffect(() => {
     api('snapshot.list').then(setSnapshots).catch(() => {});
@@ -192,6 +195,8 @@ export default function PlaygroundTab({ api, showToast }) {
   // A retry reuses the same client turn id, so the server returns the saved
   // turn instead of running the model again if the first attempt got through.
   const submit = async (msg, clientTurnId) => {
+    if (inFlight.current) return;
+    inFlight.current = true;
     setBusy(true); setFailed(null);
     const isSnap = source !== 'drafts';
     try {
@@ -205,7 +210,7 @@ export default function PlaygroundTab({ api, showToast }) {
       if (x.code === 'freeze') showToast(`Drafts have errors: ${(x.details || []).join('; ')}`, 'err');
       else if (x.code === 'not_found') { showToast(x.message, 'err'); startNew(); }
       else setFailed({ text: msg, clientTurnId, message: x.message });
-    } finally { setBusy(false); }
+    } finally { inFlight.current = false; setBusy(false); }
   };
   const send = (e) => { e.preventDefault(); if (text.trim()) submit(text, newTurnId()); };
 

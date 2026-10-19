@@ -131,8 +131,24 @@ export async function chatCompletion(cfg: ModelConfig, key: string, req: ChatReq
       const type = (r.headers.get("content-type") || "unknown").split(";")[0].trim().slice(0, 60);
       return { ok: false, code: "format", error: `Provider returned a response that is not JSON (content type ${type})` };
     }
-    const text = j?.choices?.[0]?.message?.content;
-    if (typeof text !== "string") return { ok: false, code: "format", error: "Provider response has no choices[0].message.content; it may not be OpenAI-compatible" };
+    // OpenRouter can answer HTTP 200 with an error object, or with no content
+    // when the model stopped early. Each is named; the body is never echoed.
+    if (j?.error) {
+      const c = Number(j.error.code);
+      // Same meaning as an HTTP status: a 401 or 402 stays permanent.
+      const e = Number.isFinite(c) && c >= 400 && c < 600 ? providerError(c) : { code: "provider", error: "Provider error" };
+      return { ok: false, code: e.code, error: `${e.error} (returned inside an HTTP 200 response)` };
+    }
+    const choice = j?.choices?.[0];
+    if (!choice) return { ok: false, code: "format", error: "Provider response has no choices; it may not be OpenAI-compatible" };
+    const text = choice.message?.content;
+    if (typeof text !== "string" || !text.trim()) {
+      const why = String(choice.finish_reason || "");
+      if (why === "length") return { ok: false, code: "length", error: "The model used its whole token limit (most likely on reasoning) and returned no reply" };
+      if (why === "content_filter") return { ok: false, code: "refused", error: "The provider's content filter blocked the reply" };
+      if (typeof text === "string") return { ok: false, code: "empty", error: "The model returned an empty reply" };
+      return { ok: false, code: "format", error: "Provider response has no choices[0].message.content; it may not be OpenAI-compatible" };
+    }
     return { ok: true, text, prompt_tokens: Number(j?.usage?.prompt_tokens) || 0, completion_tokens: Number(j?.usage?.completion_tokens) || 0 };
   } catch (e) {
     if (ctl.signal.aborted) return { ok: false, code: "timeout", error: `Provider did not answer within ${Math.round((io.timeoutMs ?? 30_000) / 1000)}s` };

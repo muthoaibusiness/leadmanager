@@ -74,8 +74,14 @@ export const probe = httpProbe({
   resolve: resolveHost,
   fetch: async (url, init) => {
     const r = await fetch(url, init);
+    // Chunks until the 12-byte header is in (a WebP needs bytes 8 to 11), then stop.
     const reader = r.body?.getReader();
-    const first = reader ? (await reader.read()).value ?? new Uint8Array() : new Uint8Array();
+    let first = new Uint8Array();
+    while (reader && first.length < 12) {
+      const c = await reader.read();
+      if (c.done || !c.value) break;
+      const next = new Uint8Array(first.length + c.value.length); next.set(first); next.set(c.value, first.length); first = next;
+    }
     await reader?.cancel().catch(() => {});
     return { ok: r.ok, status: r.status, headers: r.headers, arrayBuffer: async () => first.slice(0, 1024).buffer };
   },
@@ -118,7 +124,7 @@ export function runTrainerTestTurn(a: {
 }): Promise<LiveResult> {
   const { callModel, inventory } = _internals.portsFor({ db, llm, env });
   return runTestTurn({ ...a, replyModel: env.replyModel }, {
-    callModel, inventory, probeDocument: probe,
+    callModel, inventory, probeDocument: probe, probeImage: probe,
     select: db.select, insert: db.insert, patch: db.patch,
     upsert: (table, row) => sbUpsert(table, [row], table === "ai_conversation_state" ? "conversation_id" : "id"),
     send: (to, msg) => sendWaMessageMirroredId(a.bot, to, a.convId, a.phone, msg, { senderName: "AI Trainer", storeWaId: true }),

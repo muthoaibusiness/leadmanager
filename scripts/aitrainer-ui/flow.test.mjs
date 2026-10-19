@@ -124,6 +124,14 @@ await type($('input[aria-label="Customer message"]'), "parking?"); await click(b
 ok(t.ai_playground_conversations.length === 1 && t.ai_playground_turns.length === 3 && t.ai_playground_turns[2].seq === 3, "continuing adds turn 3 to the same conversation");
 await click(btn("New conversation")); await tick(50);
 ok($$(".ait-msg.bot").length === 0 && botTrigger().disabled === false && !botTrigger().hasAttribute("data-disabled"), "New conversation clears the chat and unlocks settings");
+// A double submit (Enter then click before the first reply lands) sends one turn.
+const turnsBefore = t.ai_playground_turns.length;
+await type($('input[aria-label="Customer message"]'), "double send?");
+const form = $('input[aria-label="Customer message"]').closest("form");
+await act(async () => { form.dispatchEvent(new w.Event("submit", { bubbles: true, cancelable: true })); form.dispatchEvent(new w.Event("submit", { bubbles: true, cancelable: true })); });
+await tick(80);
+ok(t.ai_playground_turns.length === turnsBefore + 1, "a double submit saves one turn, not two");
+ok($$(".ait-msg.customer").filter((m) => m.textContent.includes("double send?")).length === 1, "and shows it once");
 root.unmount();
 
 // 3. Quality: freeze, run (judge fails), publish blocked; then judge passes, new run, publish works.

@@ -324,3 +324,15 @@ test("review: a recipient removed mid-turn leaves the conversation unpaused, sin
   assert.equal(f.sent.length, 0);
   assert.notEqual(f.t.ai_conversation_state[0]?.state?.paused, true);
 });
+
+test("a 'send the brochure and tell me X' turn on a test number answers, then sends the checked PDF, and says it was sent", async () => {
+  const f = fakes({ items: [BRO], model: () => reply({ intent: "info", project_ref: "p1", reply: "Wecon Nuznan is a residential project in Dhaka.", clarify: false }) });
+  const r = await runTestTurn(input({ text: "send the nuznan brochure and tell me where it is" }), withProbe(f));
+  assert.equal(f.modelReqs.length, 1);
+  assert.deepEqual(f.sent.map((s) => s.type), ["document", "text"]);
+  assert.match(f.sent[1].text, /residential project in Dhaka/);
+  assert.match(f.sent[1].text, /Here is the brochure for Wecon Nuznan/);
+  assert.doesNotMatch(f.sent[1].text, /ready to share/);
+  assert.equal(r.outcome, "brochure_sent");
+  assert.equal(f.t.ai_turns[0].trace.answer_outcome, "ok");
+});

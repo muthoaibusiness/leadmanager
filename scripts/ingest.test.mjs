@@ -118,3 +118,43 @@ test('readDocument: Markdown is kept verbatim; PDF text is marked for review and
   await assert.rejects(() => readDocument({ name: 'scan.pdf', type: 'application/pdf', size: blank.length, arrayBuffer: async () => blank.buffer }, loadPdf), /no text/);
   await assert.rejects(() => readDocument({ name: 'x.exe', type: '', size: 1, arrayBuffer: async () => new ArrayBuffer(1) }, loadPdf), /Markdown/);
 });
+
+test('readDocument: PDF reports pages, text pages and a verdict (usable, partial, OCR needed); oversized is refused, never truncated', async () => {
+  const { readDocument, pdfVerdict, INGEST_LIMITS } = await import('../src/lib/ingest.js');
+  const bytes = pdf([['Alpha has 9 floors and a rooftop garden for residents.'], [], [], ['Parking for 20 cars in the basement.']]);
+  const p = await readDocument({ name: 'Alpha.pdf', type: 'application/pdf', size: bytes.length, arrayBuffer: async () => bytes.buffer }, loadPdf);
+  assert.deepEqual(p.stats, { pages: 4, text_pages: 2, chars: 'Alpha has 9 floors and a rooftop garden for residents.'.length + 'Parking for 20 cars in the basement.'.length }, 'chars counts the PDF text, not the added headings');
+  assert.equal(p.verdict, 'partial', 'half the pages are pictures');
+  assert.match(p.source_name, /^Alpha\.pdf \(4 pages, 2 without text\)$/);
+  assert.equal(pdfVerdict({ pages: 24, text_pages: 0, chars: 0 }), 'ocr_needed');
+  assert.equal(pdfVerdict({ pages: 30, text_pages: 2, chars: 80 }), 'ocr_needed', 'a cover line or two is not usable text');
+  assert.equal(pdfVerdict({ pages: 6, text_pages: 6, chars: 3695 }), 'usable');
+  // Nuznan and Dakshinayan (2026-10-20): every page carries only its page number.
+  const numbersOnly = pdf([['1'], ['2'], ['3'], ['4']]);
+  await assert.rejects(() => readDocument({ name: 'Nuznan.pdf', type: 'application/pdf', size: numbersOnly.length, arrayBuffer: async () => numbersOnly.buffer }, loadPdf), /no text layer that can be used/);
+  assert.equal(pdfVerdict({ pages: 19, text_pages: 3, chars: 1158 }), 'partial');
+  const big = { name: 'Big.pdf', type: 'application/pdf', size: INGEST_LIMITS.maxBytes + 1, arrayBuffer: async () => { throw new Error('must not be read'); } };
+  await assert.rejects(() => readDocument(big, loadPdf), /larger than 15 MB.*compress/i);
+});
+
+test('review: the verdict measures the PDF text, not the "## Page N" headings added around it', async () => {
+  const { readDocument } = await import('../src/lib/ingest.js');
+  // 30 image pages, each with a stray two-letter tag: the headings alone would
+  // add about 11 characters a page and lift it over the threshold.
+  const stray = pdf(Array.from({ length: 30 }, () => ['WE']));
+  await assert.rejects(() => readDocument({ name: 'Dak.pdf', type: 'application/pdf', size: stray.length, arrayBuffer: async () => stray.buffer }, loadPdf), /no text layer that can be used/);
+});
+
+test('review2: a Bangla page counts as text: vowel signs are combining marks, not letters', async () => {
+  const { pageHasText } = await import('../src/lib/ingest.js');
+  assert.equal(pageHasText('কি কি সুবিধা আছে'), true);
+  assert.equal(pageHasText('Rooftop garden'), true);
+  for (const t of ['1', '2 2', '১ ১', '', '  ']) assert.equal(pageHasText(t), false, JSON.stringify(t));
+});
+
+test('review3: a page of figures (a payment or size table) is text; a bare page number is not', async () => {
+  const { pageHasText } = await import('../src/lib/ingest.js');
+  assert.equal(pageHasText('40 60 1,250 1,480'), true);
+  assert.equal(pageHasText('১,২৫০ ১,৪৮০ ২,১০০'), true);
+  for (const t of ['1', '2 2', '12', '১ ১']) assert.equal(pageHasText(t), false, t);
+});

@@ -6,11 +6,13 @@
 // Bump CORE_VERSION on any change that can alter a reply, a verdict or a
 // checksum. Test runs and published snapshots are certified per version.
 
-export const CORE_VERSION = "1.8.0";
+export const CORE_VERSION = "1.9.0";
 
 import { docExcerpts, type DocHit } from "./trainer-docs.ts";
+import { GENERIC } from "./trainer-words.ts";
 import { inventoryEvidence, type Inventory } from "./trainer-inventory.ts";
-import { brochureRequest, deliverBrochures, type DocMessage, type Probe } from "./trainer-brochure.ts";
+import { afterBrochure, brochureRequest, deliverBrochures, projectWords, type DocMessage, type Probe } from "./trainer-brochure.ts";
+import { floorLabel, missingMediaText, partialMediaText, verifyImages, withoutLostMedia, type ImageProbe } from "./trainer-media.ts";
 
 export type Kind = "project" | "fact" | "rule" | "behaviour" | "example";
 export type Bot = "eyad" | "dubai";
@@ -206,14 +208,17 @@ export type Turn = { role: "customer" | "bot" | "agent"; text: string };
 export type ConvState = {
   active_project: string | null; active_source: "explicit" | "ad" | "state" | null;
   language: "bn" | "banglish" | "en" | null; first_price_at: Record<string, string>; asked: string[]; paused: boolean;
+  // The projects whose brochures the last turn sent or prepared, so "abar
+  // pathan" can resend them. Set only from the brochure path's own result,
+  // never from a reply's wording. Optional: older saved states lack it.
+  last_brochure?: string[];
 };
 export const emptyState = (): ConvState => ({
   active_project: null, active_source: null, language: null, first_price_at: {}, asked: [], paused: false,
 });
 
-// A word that is a common English word never resolves a project on its own;
-// it only counts as part of a longer alias such as "summer breeze".
-const GENERIC = new Set(["summer", "arcade", "heritage", "breeze", "wecon", "mall", "manor", "orchid", "dale"]);
+// Common English words never resolve a project alone (trainer-words.ts).
+export { GENERIC } from "./trainer-words.ts";
 
 // \p{M} is kept: Bangla vowel signs and the hasanta are combining marks, and
 // dropping them would split a word like "ওসমান" in two.
@@ -530,7 +535,12 @@ export function resolveMedia(out: ModelOut, c: SnapshotContent): { actions: Medi
       if (md.brochure) actions.push({ type: "document", url: md.brochure, caption: `${name} brochure`, kind: "brochure", project_ref: p.id });
       else missing.push("brochure");
     } else {
-      const plans: { url: string; label?: string }[] = md.floor_plans || [];
+      // A plan with no catalog label takes the floor its file name states;
+      // a URL listed twice is offered once.
+      const seen = new Set<string>();
+      const plans: { url: string; label?: string }[] = (md.floor_plans || [])
+        .filter((f: { url: string }) => !seen.has(f.url) && seen.add(f.url))
+        .map((f: { url: string; label?: string }) => (f.label ? f : { ...f, label: floorLabel(f.url) ?? undefined }));
       if (!plans.length) { missing.push("floorplan"); continue; }
       const want = norm(m.floor || "");
       if (want === "all" || want === "sob" || want === "shob") {
@@ -542,13 +552,15 @@ export function resolveMedia(out: ModelOut, c: SnapshotContent): { actions: Medi
       else clarify = `Which floor plan would you like for ${name}: ${plans.map((f) => f.label || "unlabelled").join(", ")}?`;
     }
   }
-  return { actions, missing, clarify };
+  // The model can list one request twice; each image goes out once.
+  const seen = new Set<string>();
+  return { actions: actions.filter((x) => !seen.has(x.url) && !!seen.add(x.url)), missing: [...new Set(missing)], clarify };
 }
 
 // ── turn ────────────────────────────────────────────────────────────────────
 export type Ports = {
   callModel: (req: { model: string; max_tokens: number; system: string; messages: { role: "user" | "assistant"; content: string }[] }) =>
-    Promise<{ ok: true; text: string; cost_usd: number } | { ok: false; error: string }>;
+    Promise<{ ok: true; text: string; cost_usd: number } | { ok: false; error: string; code?: string }>;
   // Live stock and price for a project's crm_property_id; null when unavailable.
   inventory?: (crmPropertyId: string) => Promise<Inventory | null>;
   // Vector retrieval (migration 0045 ai_match_chunks). Both or neither.
@@ -564,6 +576,9 @@ export type Ports = {
   // passes it, so the Playground and test runs check files and send nothing.
   probeDocument?: Probe;
   sendDocument?: (m: DocMessage) => Promise<string | null>;
+  // Checks that a photo, floor plan or map URL is a reachable image
+  // (trainer-media.ts). Without it media is offered unchecked, as before.
+  probeImage?: ImageProbe;
 };
 export type TurnResult = { reply: string; media: MediaAction[]; handoff: boolean; stateNext: ConvState; outcome: string; trace: Record<string, unknown> };
 
@@ -585,7 +600,8 @@ export async function runTurn(a: {
   const sp = a.content.system_prompts?.[a.bot];
   const trace: Record<string, unknown> = { core_version: CORE_VERSION, language: lang,
     system_prompt: sp ? { id: sp.id, version_no: sp.version_no, sha256: sp.sha256 } : null };
-  const base = { ...a.state, language: lang };
+  // last_brochure lives for one turn: only the brochure path sets it again.
+  const base = { ...a.state, language: lang, last_brochure: undefined };
   const t = norm(a.text);
   if (GREETING.some((g) => g.test(t))) {
     trace.pre = "greeting";
@@ -600,12 +616,50 @@ export async function runTurn(a: {
   // states only what was checked and sent (trainer-brochure.ts).
   // Only the turn right before this one counts as "the bot just asked".
   const lastBot = a.history.at(-1)?.role === "bot" ? a.history.at(-1)!.text : undefined;
+  // Right after a brochure turn: resend, correct to another project, or thanks.
+  // The projects come from the saved state of that turn, not from its wording.
+  const prior = a.state.last_brochure?.filter((id) => a.content.projects.some((p) => p.id === id)) ?? [];
+  const after = prior.length ? afterBrochure(a.text, { match: (s) => mentioned(s, a.content.projects), words: projectWords(a.content.projects) }) : null;
+  if (after?.kind === "ack") {
+    trace.pre = "acknowledgement";
+    // A thanks keeps the brochure in play, so "abar pathan" still works after it.
+    return { reply: "", media: [], handoff: false, stateNext: { ...base, last_brochure: prior }, outcome: "skipped_acknowledgement", trace };
+  }
+  if (after) {
+    const ids = after.kind === "correct" ? after.projects : prior;
+    trace.brochure_intent = after.kind === "correct" ? "send" : "resend";
+    const d = await deliverBrochures(ids, a.content.projects, { probe: a.ports.probeDocument ?? null, send: a.ports.sendDocument ?? null }, lang);
+    trace.project = { projects: ids, source: "explicit", ambiguous: false };
+    trace.brochure = { request: { kind: "projects", projects: ids, scope: after.kind === "correct" ? "named" : "state", intent: "send" }, sent: d.sent, ready: d.ready, failed: d.failed };
+    return { reply: d.reply, media: d.actions, handoff: d.handoff, outcome: d.outcome, trace,
+      stateNext: { ...base, active_project: ids.length === 1 ? ids[0] : a.state.active_project, active_source: ids.length === 1 ? "explicit" : a.state.active_source,
+        last_brochure: d.actions.map((x) => x.project_ref), paused: d.handoff ? true : a.state.paused } };
+  }
   const ask = brochureRequest(a.text, a.state, a.content.projects, { match: (s) => mentioned(s, a.content.projects), lastBot, lang });
+  // A question about what a brochure says is answered like any other
+  // question, from retrieved evidence; "both" also sends the PDF afterwards.
+  if (ask?.kind === "projects" && ask.intent !== "send") {
+    trace.brochure_intent = ask.intent;
+    const answered = await groundedTurn(a, lang, trace, base, ask.projects.length ? ask.projects : undefined);
+    // A handed-off turn sends nothing more; a person takes it from here.
+    if (ask.intent === "question" || answered.outcome.startsWith("fallback") || answered.handoff) return answered;
+    const d = await deliverBrochures(ask.projects, a.content.projects, { probe: a.ports.probeDocument ?? null, send: a.ports.sendDocument ?? null }, lang);
+    trace.brochure = { request: ask, sent: d.sent, ready: d.ready, failed: d.failed };
+    // The turn's outcome is the brochure's (what was sent); the answer's is kept beside it.
+    trace.answer_outcome = answered.outcome;
+    const sentProject = ask.projects.length === 1 ? ask.projects[0]
+      : ask.projects.includes(answered.stateNext.active_project ?? "") ? answered.stateNext.active_project : a.state.active_project;
+    return { ...answered, reply: [answered.reply, d.reply].filter((x) => x.trim()).join("\n"), media: [...answered.media, ...d.actions],
+      handoff: answered.handoff || d.handoff, outcome: d.outcome,
+      stateNext: { ...answered.stateNext, active_project: sentProject, last_brochure: d.actions.map((x) => x.project_ref), paused: answered.stateNext.paused || d.handoff } };
+  }
   if (ask) {
     if (ask.kind === "clarify") {
       trace.brochure = { request: ask };
-      return { reply: ask.question, media: [], handoff: false, stateNext: base, outcome: "brochure_clarify", trace };
+      const keep = ask.projects?.length === 1 ? { active_project: ask.projects[0], active_source: "explicit" as const } : {};
+      return { reply: ask.question, media: [], handoff: false, stateNext: { ...base, ...keep }, outcome: "brochure_clarify", trace };
     }
+    trace.brochure_intent = "send";
     const d = await deliverBrochures(ask.projects, a.content.projects, { probe: a.ports.probeDocument ?? null, send: a.ports.sendDocument ?? null }, lang);
     trace.project = { projects: ask.projects, source: ask.scope === "named" ? "explicit" : ask.scope === "state" ? "state" : null, ambiguous: false };
     trace.brochure = { request: ask, sent: d.sent, ready: d.ready, failed: d.failed };
@@ -613,9 +667,17 @@ export async function runTurn(a: {
     const source = ask.scope === "named" ? "explicit" : ask.scope === "state" ? a.state.active_source : "state";
     return { reply: d.reply, media: d.actions, handoff: d.handoff, outcome: d.outcome, trace,
       stateNext: { ...base, active_project: active, active_source: ask.projects.length === 1 ? source : a.state.active_source,
-        paused: d.handoff ? true : a.state.paused } };
+        last_brochure: d.actions.map((x) => x.project_ref), paused: d.handoff ? true : a.state.paused } };
   }
-  const res = resolveProject(a.text, a.state, a.ad, a.content.projects);
+  return groundedTurn(a, lang, trace, base);
+}
+
+// The model path: project resolution, live stock, retrieval, the reply, the
+// guards. `scope` overrides project resolution with the brochure path's own
+// (a city or "all" request), so retrieval is filtered to those projects.
+async function groundedTurn(a: Parameters<typeof runTurn>[0], lang: "bn" | "banglish" | "en", trace: Record<string, unknown>, base: ConvState, scope?: string[]): Promise<TurnResult> {
+  const r0 = resolveProject(a.text, a.state, a.ad, a.content.projects);
+  const res = scope?.length ? { projects: scope, source: r0.source ?? ("state" as const), ambiguous: false } : r0;
   trace.project = res;
   const history = buildHistory(a.history);
   // Live stock and price only for a single resolved project linked to a CRM property.
@@ -654,9 +716,23 @@ export async function runTurn(a: {
     ...docHits.map((h) => h.chunk_text), live ?? ""].join("\n");
   const req = { model: a.content.model_config.reply_model, max_tokens: a.content.model_config.max_tokens, system: prompt.system, messages: prompt.messages };
   let cost = 0; let errors: string[] = []; let parsed: ModelOut | null = null;
+  // A transient failure (no reply, timeout, provider 5xx, network) is retried
+  // once with the same request; a key, billing or config error is not.
+  // "length" and "empty" are left out: the same request runs out of tokens the
+  // same way, so a retry only doubles the cost.
+  const TRANSIENT = new Set(["timeout", "provider", "network", "rate_limited"]);
+  // At most one transient retry per turn, across both validation attempts,
+  // so a slow provider costs 3 calls at worst, never 4.
+  let retried = false;
+  const call = async (r: typeof req) => {
+    const x = await a.ports.callModel(r);
+    if (x.ok || retried || !TRANSIENT.has(String(x.code || ""))) return x;
+    retried = true; trace.model_retry = x.error;
+    return a.ports.callModel(r);
+  };
   for (let attempt = 0; attempt < 2; attempt++) {
     const msgs = attempt === 0 ? req.messages : [...req.messages, { role: "user" as const, content: `Your previous answer was rejected (${errors.join(", ")}). Return corrected STRICT JSON only.` }];
-    const r = await a.ports.callModel({ ...req, messages: msgs });
+    const r = await call({ ...req, messages: msgs });
     if (!r.ok) { trace.model_error = r.error; trace.cost_usd = cost; return { reply: FALLBACK[lang], media: [], handoff: true, stateNext: { ...base, paused: true }, outcome: "fallback_model_error", trace }; }
     cost += r.cost_usd;
     parsed = parseModelOutput(r.text);
@@ -672,10 +748,25 @@ export async function runTurn(a: {
   const dropped = parsed.media.filter((m) => m.type === "brochure");
   if (dropped.length) trace.media_dropped = dropped.map((m) => ({ type: m.type, project_ref: m.project_ref }));
   const media = resolveMedia({ ...parsed, media: parsed.media.filter((m) => m.type !== "brochure") }, a.content);
+  // Each image URL is checked before it is offered; a failed one is reported.
+  let images = media.actions;
+  if (a.ports.probeImage && images.length) {
+    const v = await verifyImages(images, a.ports.probeImage);
+    images = v.ok;
+    if (v.failed.length) trace.media_failed = v.failed;
+  }
   // The model's citations are kept only when they name something it was shown.
   const shown = new Set([...scoped.map((i) => i.id), ...res.projects]);
   trace.media_missing = media.missing; trace.used_item_ids = parsed.used_item_ids.filter((id) => shown.has(id)); trace.intent = parsed.intent;
-  const text = brandSpelling(parsed.reply);
+  const text0 = brandSpelling(parsed.reply);
+  // The model wrote its reply believing the media would go. When none of a
+  // requested kind can be sent, that sentence is replaced, never kept.
+  const failedKinds = ((trace.media_failed as { kind: string }[] | undefined) || []).map((f) => f.kind);
+  const lostKinds = [...new Set([...media.missing, ...failedKinds])].filter((k) => !images.some((m) => m.kind === k));
+  // Some of a kind went and some did not: the reply keeps its words and says so.
+  const partKinds = [...new Set(failedKinds)].filter((k) => images.some((m) => m.kind === k));
+  const text = lostKinds.length ? [withoutLostMedia(text0, lostKinds), missingMediaText(lang, lostKinds)].filter(Boolean).join(" ")
+    : partKinds.length ? [text0, partialMediaText(lang, partKinds)].filter(Boolean).join(" ") : text0;
   const reply = media.clarify ? `${text}${text ? "\n" : ""}${media.clarify}` : text;
   const active = res.projects.length === 1 ? res.projects[0] : (parsed.project_ref && res.projects.includes(parsed.project_ref) ? parsed.project_ref : a.state.active_project);
   const stateNext: ConvState = {
@@ -685,7 +776,7 @@ export async function runTurn(a: {
       ? { ...a.state.first_price_at, [active]: "now" } : a.state.first_price_at,
     paused: parsed.handoff ? true : a.state.paused,
   };
-  return { reply, media: media.actions, handoff: parsed.handoff, stateNext, outcome: "ok", trace };
+  return { reply, media: images, handoff: parsed.handoff, stateNext, outcome: "ok", trace };
 }
 
 // ── tests and verdicts ──────────────────────────────────────────────────────
