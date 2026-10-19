@@ -22,7 +22,7 @@
 import {
   CORS, json, SUPABASE_URL, SERVICE_KEY, WASENDER_BASE,
   claimEvent, getCredentials, getActiveProjects, getRecentHistory, sendWaMessageMirrored, getKnowledge, getCorrections,
-  findLeadForNote, logNoteActivity, getBotSettings, getProjectBySendCode, fillWelcomeTemplate, fixLeadPhoneFromNote, splitPhoneFromNote,
+  findLeadForNote, logNoteActivity, getBotSettings, aiStillOn, verifyWebhook, getProjectBySendCode, fillWelcomeTemplate, fixLeadPhoneFromNote, splitPhoneFromNote,
   logConversationHistory,
 } from "../_shared/wa.ts";
 import type { BotSettings } from "../_shared/wa.ts";
@@ -238,11 +238,13 @@ async function runFaqAgent(account: string, phone: string, target: string, remot
 
     const bundle = opts.profilesAlreadySent ? null : matchJolshiriBundle(text, projects);
     if (bundle) {
+      if (!(await aiStillOn("eyad", phone))) return false;
       await sendWaMessageMirrored(account, target, convId, phone, { type: "text", text: bundle.message });
       for (let i = 0; i < bundle.brochures.length; i++) {
         await new Promise((r) => setTimeout(r, 5500));
         const b = bundle.brochures[i];
-        await sendWaMessageMirrored(account, target, convId, phone, {
+        if (!(await aiStillOn("eyad", phone))) return false;
+      await sendWaMessageMirrored(account, target, convId, phone, {
           type: "document", mediaUrl: b.url, fileName: `${b.project.name} Brochure.pdf`, text: `${b.project.name} — Brochure`,
         });
       }
@@ -256,6 +258,7 @@ async function runFaqAgent(account: string, phone: string, target: string, remot
     if (!result.reply && !send) return false;
 
     if (result.reply) {
+      if (!(await aiStillOn("eyad", phone))) return false;
       await sendWaMessageMirrored(account, target, convId, phone, { type: "text", text: result.reply });
       // Wasender's account-protection rate limit is 1 message per 5s.
       if (opts.allowMedia && send) await new Promise((r) => setTimeout(r, 5500));
@@ -264,7 +267,8 @@ async function runFaqAgent(account: string, phone: string, target: string, remot
       const mediaList = resolveMedia(send, projects);
       for (let i = 0; i < mediaList.length; i++) {
         const media = mediaList[i];
-        await sendWaMessageMirrored(account, target, convId, phone, {
+        if (!(await aiStillOn("eyad", phone))) return false;
+      await sendWaMessageMirrored(account, target, convId, phone, {
           type: media.type, mediaUrl: media.url, fileName: media.fileName, text: media.caption,
         });
         if (i < mediaList.length - 1) await new Promise((r) => setTimeout(r, 5500));
@@ -372,7 +376,7 @@ async function handleInbound(p: ParsedEvent): Promise<void> {
 
   // Once the profiles are out (keyword, stage 2b or stage 3) the bundle is
   // never sent again — the gated LLM answer still runs for other questions.
-  const profilesAlreadySent = ["profile_sent", "asked_agent", "agent_ack"].includes(status.flow_stage);
+  const profilesAlreadySent = ["profile_sent", "asked_agent", "agent_ack", "agent_assigned"].includes(status.flow_stage);
   if (settings.faqAgentEnabled && p.text && upsert.takeover !== true && p.remote && settings.trainerTest) {
     // Test mode on and an allow-listed number (getBotSettings): the AI Trainer
     // core answers instead of the legacy agent. Everything else above and
@@ -497,6 +501,11 @@ async function handleCreateLead(p: ParsedEvent, settings: BotSettings): Promise<
     await fixLeadPhoneFromNote(String(lead.lead_id), p.phone, notedPhone);
   }
   if (lead.lead_id) await logConversationHistory(String(lead.lead_id), COMPANY_ID, p.phone, `Eyad Bot (WhatsApp ${p.command})`);
+  // A human agent now owns this customer — the automated follow-up flow
+  // must not ask "want a dedicated agent?" after one was just assigned.
+  await sbPatchJson("preleads", `phone=eq.${encodeURIComponent(p.phone)}`, {
+    flow_stage: "agent_assigned", stage_at: new Date().toISOString(),
+  }).catch(() => {});
 
   // Branch 1 — Lead CTWA? → Send Meta CAPI Event → CAPI OK? → Mark CAPI Sent
   // Only a newly-created lead with a Meta click id goes to CAPI.
@@ -627,15 +636,15 @@ Deno.serve(async (req) => {
   if (req.method !== "POST") return json({ error: "Method not allowed" }, 405);
 
   const rawBody = await req.text();
-  forwardToMirror(rawBody, req.headers);
 
-  // No signature check here, deliberately — the source "WhatsApp Webhook"
-  // node has no auth at all (options:{}) and accepts any POST. Adding one
-  // would silently drop real traffic if Wasender's delivery to this specific
-  // endpoint doesn't carry a header matching wa_secrets.webhook_secret. If
-  // you want this endpoint authenticated, confirm Wasender actually sends
-  // that header for this bot subscription first, then reintroduce the same
-  // check wa-webhook uses (getCredentials + safeEqual).
+  // Same rule as wa-webhook (shared verifyWebhook): with a webhook secret configured the
+  // X-Webhook-Signature header must equal it. Unset secret → accepted with a warning.
+  const auth = await verifyWebhook("eyad", req.headers);
+  if (!auth.ok) {
+    console.warn("wa-bot-eyad: rejected webhook: bad signature");
+    return json({ error: "Invalid signature" }, 401);
+  }
+  forwardToMirror(rawBody, req.headers);
 
   let payload: any;
   try { payload = JSON.parse(rawBody); } catch { return json({ error: "Invalid JSON" }, 400); }
@@ -652,7 +661,7 @@ Deno.serve(async (req) => {
   // format for the SAME delivery fanned out to both functions — not to
   // reintroduce a per-event key, which would defeat the original's whole
   // reason for keying on id alone).
-  const isReplay = (req.headers.get("x-replay") ?? "") === "1";
+  const isReplay = auth.strong && (req.headers.get("x-replay") ?? "") === "1"; // only a verified sender may skip dedupe
   if (p.kind !== "ignore" && p.deliveryId && !isReplay) {
     const fresh = await claimEvent(`eyadbot:${p.deliveryId}`, p.event);
     if (!fresh) return json({ ok: true, duplicate: true });

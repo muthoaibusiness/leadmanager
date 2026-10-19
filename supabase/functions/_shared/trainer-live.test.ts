@@ -23,6 +23,7 @@ function fakes(opts: { testMode?: boolean; numbers?: string[]; items?: any[]; me
       const [table, q] = path.split("?");
       let rows = [...(t[table] || [])];
       for (const part of (q || "").split("&")) { const m = /^(\w+)=eq\.(.+)$/.exec(part); if (m) rows = rows.filter((r) => String(r[m[1]]) === decodeURIComponent(m[2])); }
+      for (const part of (q || "").split("&")) { const m = /^(\w+)=like\.\*(.+)$/.exec(part); if (m) rows = rows.filter((r) => String(r[m[1]] ?? "").endsWith(decodeURIComponent(m[2]))); }
       if (/order=wa_timestamp\.desc/.test(q || "")) rows.sort((a, b) => String(b.wa_timestamp).localeCompare(String(a.wa_timestamp)));
       return rows;
     },
@@ -154,4 +155,91 @@ test("an exception is caught and logged, never thrown into the bot", async () =>
   const f = fakes(); f.ports.select = async () => { throw new Error("db down"); };
   const r = await runTestTurn(input(), f.ports);
   assert.equal(r.outcome, "error"); assert.equal(f.t.ai_turns[0].outcome, "error");
+});
+
+test("test mode switched off after the model call and before the send stops the send", async () => {
+  const f = fakes({ model: () => { f.t.wa_bot_settings[0].trainer_test_mode = false; return reply(); } });
+  const r = await runTestTurn(input(), f.ports);
+  assert.equal(f.sent.length, 0); assert.equal(r.sent, 0);
+  assert.deepEqual(f.t.ai_turns[0].trace.send_errors, ["recipient no longer allowed"]);
+});
+
+test("a failed settings read blocks the turn (fail closed)", async () => {
+  const f = fakes(); const real = f.ports.select;
+  f.ports.select = async (p) => (p.startsWith("wa_bot_settings") ? [] : real(p));
+  const r = await runTestTurn(input(), f.ports);
+  assert.equal(r.outcome, "blocked_not_test_number"); assert.equal(f.sent.length, 0); assert.equal(f.modelReqs.length, 0);
+});
+
+test("a conversation paused by a trainer handoff gets no further reply", async () => {
+    const f = fakes();
+    f.t.ai_conversation_state.push({ conversation_id: input().convId, bot: "eyad", state: { paused: true }, paused: true });
+    await runTestTurn(input(), f.ports);
+    assert.equal(f.sent.length, 0); assert.equal(f.modelReqs.length, 0);
+  });
+
+test("memory follows the customer across WhatsApp thread ids (@lid and phone JID)", async () => {
+  const f = fakes({ model: () => reply({ intent: "info", project_ref: "p1", reply: "Wecon Nuznan is in Dhaka.", clarify: false }) });
+  await runTestTurn(input({ convId: "eyad:8801711000001@s.whatsapp.net", text: "Nuznan location?" }), f.ports);
+  assert.equal(f.t.ai_conversation_state.length, 1);
+  assert.equal(f.t.ai_conversation_state[0].conversation_id, "eyad:8801711000001", "keyed by bot and phone, not by thread");
+  assert.equal(f.t.ai_conversation_state[0].state.active_project, "p1");
+  // Same person, now arriving on a LID thread: the remembered project carries over.
+  const r = await runTestTurn(input({ convId: "eyad:98765432109876@lid", text: "and the price?" }), f.ports);
+  assert.equal(f.t.ai_conversation_state.length, 1, "no second memory row");
+  assert.equal((f.t.ai_turns.at(-1)!.trace as any).project.source, "state");
+  assert.ok(r.turnId);
+});
+
+test("a pause written under the old per-thread key is still honoured", async () => {
+  const f = fakes();
+  f.t.ai_conversation_state.push({ conversation_id: input().convId, bot: "eyad", state: { paused: true }, paused: true });
+  const r = await runTestTurn(input(), f.ports);
+  assert.equal(r.outcome, "skipped_paused"); assert.equal(f.t.ai_turns[0].outcome, "skipped_paused");
+});
+
+test("an agent takeover (/t) pauses the trainer too", async () => {
+  const f = fakes(); f.t.preleads = [{ phone: "+880 1711000001", takeover: "true" }];
+  const r = await runTestTurn(input(), f.ports);
+  assert.equal(r.outcome, "skipped_paused"); assert.equal(f.modelReqs.length, 0);
+});
+
+test("another customer's takeover sharing the last 10 digits does not pause this one", async () => {
+  const f = fakes(); f.t.preleads = [{ phone: "971711000001", takeover: true }];
+  const r = await runTestTurn(input(), f.ports);
+  assert.notEqual(r.outcome, "skipped_paused");
+});
+
+test("a pause applied while the model is answering stops the send", async () => {
+  const f = fakes({ model: () => { f.t.preleads = [{ phone: "8801711000001", takeover: true }]; return reply(); } });
+  const r = await runTestTurn(input(), f.ports);
+  assert.equal(f.sent.length, 0); assert.equal(r.sent, 0);
+});
+
+test("a foreign number sharing the last 10 digits is not a test number",
+  () => {
+    assert.equal(isTestNumber(["8801501234567"], "971501234567"), false);
+  });
+
+test("a test-number turn uses the bot's published System Prompt, never a draft or another bot's", async () => {
+  const f = fakes();
+  f.t.ai_system_prompts = [
+    { id: "e1", bot: "eyad", company_id: "c1", version_no: 2, status: "published", body: "EYAD-PUBLISHED-PROMPT", sha256: "h1" },
+    { id: "e2", bot: "eyad", company_id: "c1", version_no: 3, status: "draft", body: "EYAD-DRAFT-PROMPT", sha256: "h2" },
+    { id: "d1", bot: "dubai", company_id: "c1", version_no: 1, status: "published", body: "DUBAI-PROMPT", sha256: "h3" },
+  ];
+  f.t.ai_system_prompt_pointers = [{ bot: "eyad", company_id: "c1", prompt_id: "e1" }, { bot: "dubai", company_id: "c1", prompt_id: "d1" }];
+  await runTestTurn(input(), f.ports);
+  const sys = f.modelReqs[0].system;
+  assert.ok(sys.includes("EYAD-PUBLISHED-PROMPT"));
+  assert.ok(!sys.includes("EYAD-DRAFT-PROMPT") && !sys.includes("DUBAI-PROMPT"));
+  assert.deepEqual(f.t.ai_turns[0].trace.system_prompt, { id: "e1", version_no: 2, sha256: "h1" });
+  assert.ok(!JSON.stringify(f.t.ai_turns[0]).includes("EYAD-PUBLISHED-PROMPT"), "prompt text not logged");
+});
+
+test("with no published System Prompt the built-in persona is used and the trace says so", async () => {
+  const f = fakes();
+  await runTestTurn(input(), f.ports);
+  assert.ok(!f.modelReqs[0].system.includes("Operator instructions"));
+  assert.equal(f.t.ai_turns[0].trace.system_prompt, null);
 });

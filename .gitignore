@@ -39,3 +39,6 @@ dist-ssr
 .claude/
 .ignore
 .mcp.json
+
+# ux-ui-agent-skills gate receipts (local, per machine).
+.ds-receipts/

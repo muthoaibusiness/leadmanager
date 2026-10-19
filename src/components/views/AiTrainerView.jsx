@@ -11,6 +11,7 @@ import QualityTab from '../aitrainer/QualityTab.jsx';
 import BotsTab from '../aitrainer/BotsTab.jsx';
 import TestNumbersTab from '../aitrainer/TestNumbersTab.jsx';
 import ModelTab from '../aitrainer/ModelTab.jsx';
+import PromptTab from '../aitrainer/PromptTab.jsx';
 import '../aitrainer/aitrainer.css';
 
 // AI Trainer: Management trains the WhatsApp bot here. Edits are drafts; the
@@ -24,6 +25,7 @@ const TABS = [
   ['quality', 'Quality & Publish', 'fact_check'],
   ['bots', 'Bots', 'tune'],
   ['testnumbers', 'Test numbers', 'phone_iphone'],
+  ['prompt', 'System Prompt', 'description'],
   ['model', 'Model & API', 'key'],
 ];
 
@@ -50,6 +52,7 @@ export default function AiTrainerView() {
       {tab === 'quality' && <QualityTab {...props} />}
       {tab === 'bots' && <BotsTab {...props} />}
       {tab === 'testnumbers' && <TestNumbersTab {...props} />}
+      {tab === 'prompt' && <PromptTab {...props} />}
       {tab === 'model' && <ModelTab {...props} />}
     </div>
   );

@@ -5,8 +5,9 @@
 // save a test, freeze, run tests, publish blocked on FAIL, then pass.
 import { Window } from "happy-dom";
 const w = new Window({ url: "http://localhost/" });
-for (const k of ["document", "navigator", "HTMLElement", "Node", "Event", "KeyboardEvent", "MouseEvent", "getComputedStyle", "requestAnimationFrame", "cancelAnimationFrame", "sessionStorage", "localStorage"]) {
-  Object.defineProperty(globalThis, k, { value: w[k], configurable: true, writable: true });
+// Element, PointerEvent and the observers are what radix (ui/select.jsx) needs.
+for (const k of ["document", "navigator", "HTMLElement", "Element", "Node", "Event", "CustomEvent", "KeyboardEvent", "MouseEvent", "PointerEvent", "FocusEvent", "getComputedStyle", "requestAnimationFrame", "cancelAnimationFrame", "sessionStorage", "localStorage", "DOMRect", "ResizeObserver", "MutationObserver", "DocumentFragment", "HTMLButtonElement", "HTMLInputElement", "HTMLSelectElement", "HTMLTextAreaElement", "SVGElement", "ShadowRoot", "Text"]) {
+  if (w[k]) Object.defineProperty(globalThis, k, { value: w[k], configurable: true, writable: true });
 }
 Object.defineProperty(globalThis, "window", { value: w, configurable: true, writable: true }); globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 const R = new URL("../..", import.meta.url).pathname.replace(/\/$/, "");
@@ -24,6 +25,7 @@ const db = {
   async patch(table, filter, patch) { const [k, v] = filter.split("=eq."); const r = t[table].find((x) => String(x[k]) === decodeURIComponent(v)); if (r) Object.assign(r, patch); return !!r; },
   async rpc(fn, a) {
     if (fn === "ai_item_save") { const it = a.p_item; if (t.ai_trainer_items.some((x) => x.status === "active" && x.kind === it.kind && x.content_hash === it.content_hash && x.id !== it.id)) return { ok: false, error: "duplicate_content" }; if (a.p_expected_revision === 0) { const r = { ...it, id: id(), revision: 1, status: it.status || "active" }; t.ai_trainer_items.push(r); return { ok: true, data: { id: r.id, revision: 1 } }; } const c = t.ai_trainer_items.find((x) => x.id === it.id); if (c.revision !== a.p_expected_revision) return { ok: false, error: "revision_conflict" }; Object.assign(c, it, { revision: c.revision + 1 }); return { ok: true, data: { id: c.id, revision: c.revision } }; }
+    if (fn === "ai_pointer_set") { const p = t.ai_bot_pointers.find((x) => x.bot === a.p_bot); if (a.p_check_expected && (p.snapshot_id ?? null) !== (a.p_expected_snapshot_id ?? null)) return { ok: false, error: "pointer_moved" }; const sn = t.ai_snapshots.find((x) => x.id === a.p_snapshot_id); if (a.p_publish && sn && sn.status !== "published") Object.assign(sn, { status: "published" }); Object.assign(p, { mode: a.p_mode, snapshot_id: a.p_snapshot_id, changed_at: new Date().toISOString(), changed_by_claimed: a.p_actor, reason: a.p_reason }); t.ai_trainer_audit.push({ entity: "pointer", action: a.p_action }); return { ok: true, data: p }; }
     if (fn === "ai_budget_reserve") return { ok: true, data: id() };
     if (fn === "ai_model_key_set") { const r = t.ai_model_configs.find((x) => x.scope === a.p_scope); vaultKey = a.p_key; if (new URL(r.base_url).hostname !== new URL(a.p_expected_base_url).hostname) return { ok: false, error: "host_mismatch" }; Object.assign(r, { key_last4: a.p_key.slice(-4), key_host: new URL(a.p_expected_base_url).hostname, key_set_at: new Date().toISOString(), last_test: null }); return { ok: true }; }
     if (fn === "ai_model_key_get") return { ok: true, data: vaultKey };
@@ -44,6 +46,7 @@ const api = async (action, payload) => {
   return r.body.data;
 };
 const toasts = []; const showToast = (m, k) => toasts.push(`${k}:${m}`);
+globalThis.window.confirm = () => true;
 globalThis.window.prompt = () => "testing"; // reasons for retire/rollback
 
 const tick = async (ms = 0) => { await act(async () => { await new Promise((r) => setTimeout(r, ms)); }); };
@@ -111,11 +114,12 @@ ok($$(".ait-msg.bot").length === 0, "after reload, a new conversation is shown u
 const item = $$('[aria-label="Saved Playground conversations"] button')[0];
 await click(item); await tick(100);
 ok($$(".ait-msg.bot").length === 2 && document.body.textContent.includes("Jolshiri"), "opening it from History loads its full history");
-ok($('select').disabled === true, "bot/version are fixed for a saved conversation");
+const botTrigger = () => $$(".sel-trigger")[0];
+ok(botTrigger().disabled === true || botTrigger().hasAttribute("data-disabled"), "bot/version are fixed for a saved conversation");
 await type($('input[aria-label="Customer message"]'), "parking?"); await click(btn("Send")); await tick(80);
 ok(t.ai_playground_conversations.length === 1 && t.ai_playground_turns.length === 3 && t.ai_playground_turns[2].seq === 3, "continuing adds turn 3 to the same conversation");
 await click(btn("New conversation")); await tick(50);
-ok($$(".ait-msg.bot").length === 0 && $('select').disabled === false, "New conversation clears the chat and unlocks settings");
+ok($$(".ait-msg.bot").length === 0 && botTrigger().disabled === false && !botTrigger().hasAttribute("data-disabled"), "New conversation clears the chat and unlocks settings");
 root.unmount();
 
 // 3. Quality: freeze, run (judge fails), publish blocked; then judge passes, new run, publish works.
@@ -141,6 +145,9 @@ ok(document.body.textContent.includes("PASS"), "new run shows PASS");
 await click(btn("Publish to eyad")); await tick(80);
 ok(t.ai_bot_pointers.find((p) => p.bot === "eyad").mode === "snapshot", "publish succeeded after all PASS");
 ok(t.ai_bot_pointers.find((p) => p.bot === "dubai").mode === "legacy", "dubai untouched");
+ok(toasts.some((m) => m.includes("not live yet") || m.includes("not live")), "publish toast says the version is not live yet");
+ok([...$('select[aria-label="Snapshot"]').options].some((o) => /active on eyad/.test(o.textContent)), "snapshot label shows the bot it is active on");
+ok(document.body.textContent.includes("no bot reads published versions yet"), "pointer card says customers still get legacy");
 await click(btn("Back to legacy")); await tick(80);
 ok(t.ai_bot_pointers.find((p) => p.bot === "eyad").mode === "legacy", "rollback to legacy works");
 root.unmount();

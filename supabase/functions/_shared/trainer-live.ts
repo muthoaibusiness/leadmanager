@@ -7,15 +7,15 @@
 // and code as the Playground, and is logged to ai_turns. The reply goes out
 // only when the recipient is still an allow-listed test number at send time.
 // The bot pointers are not read: test mode never touches real customers.
+import { normPhone, samePhone } from "./phone.ts";
+import { REPLY_LIMITS } from "./trainer-model.ts";
+import { withSystemPrompt } from "./trainer-prompt.ts";
 import { CORE_VERSION, emptyState, freezeContent, checksumOf, runTurn, type Bot, type ConvState, type ItemRow, type Ports, type Turn } from "./trainer-core.ts";
 
-// Last 10 digits: 8801XXXXXXXXX, 01XXXXXXXXX and +880 1XXX… all agree
-// (the same rule as getBotSettings in wa.ts).
-export const phoneKey = (v: unknown) => String(v ?? "").replace(/\D/g, "").slice(-10);
-export const isTestNumber = (testNumbers: unknown, phone: unknown) => {
-  const k = phoneKey(phone);
-  return k.length === 10 && Array.isArray(testNumbers) && testNumbers.some((n) => phoneKey(n) === k);
-};
+// Full-number match (normPhone), the same rule as getBotSettings in wa.ts.
+export const phoneKey = normPhone;
+export const isTestNumber = (testNumbers: unknown, phone: unknown) =>
+  Array.isArray(testNumbers) && testNumbers.some((n) => samePhone(n, phone));
 
 // wa_messages rows, oldest first, as trainer turns. IN is the customer; an OUT
 // row written by a bot path (AI Agent / AI Trainer) is the bot; any other OUT
@@ -46,11 +46,31 @@ export type LiveInput = {
 };
 export type LiveResult = { outcome: string; turnId: string | null; sent: number; blocked?: string };
 
+// One memory row per customer and bot. A WhatsApp thread id can be the phone
+// JID or a LID, so keying memory by thread would split one customer in two.
+export const memoryKey = (bot: Bot, phone: unknown) => `${bot}:${normPhone(phone)}`;
+
+async function loadState(ports: LivePorts, key: string, convId: string): Promise<any> {
+  const own = (await ports.select(`ai_conversation_state?conversation_id=eq.${encodeURIComponent(key)}&select=*`))[0];
+  return own ?? (await ports.select(`ai_conversation_state?conversation_id=eq.${encodeURIComponent(convId)}&select=*`))[0];
+}
+
+// Paused by a trainer handoff, or taken over by an agent's /t (preleads.takeover).
+async function isPaused(ports: LivePorts, key: string, convId: string, phone: string): Promise<boolean> {
+  const st = await loadState(ports, key, convId);
+  if (st?.paused === true || st?.state?.paused === true) return true;
+  // preleads.phone has no fixed format, so match a suffix, then the full number.
+  const tail = normPhone(phone).slice(-10);
+  if (!tail) return false;
+  const leads = await ports.select(`preleads?phone=like.*${encodeURIComponent(tail)}&select=phone,takeover`);
+  return leads.some((l) => samePhone(l.phone, phone) && (l.takeover === true || l.takeover === "true"));
+}
+
 // The current wa_bot_settings row, read again just before each send so a
 // number removed from the list (or test mode switched off) mid-turn is honoured.
 async function stillAllowed(ports: LivePorts, bot: Bot, phone: string, to: string): Promise<boolean> {
   const row = (await ports.select(`wa_bot_settings?bot=eq.${bot}&select=trainer_test_mode,test_numbers`))[0];
-  return !!row && row.trainer_test_mode === true && isTestNumber(row.test_numbers, phone) && phoneKey(to) === phoneKey(phone);
+  return !!row && row.trainer_test_mode === true && isTestNumber(row.test_numbers, phone) && samePhone(to, phone);
 }
 
 export async function runTestTurn(a: LiveInput, ports: LivePorts): Promise<LiveResult> {
@@ -68,7 +88,13 @@ export async function runTestTurn(a: LiveInput, ports: LivePorts): Promise<LiveR
       return { outcome: "blocked_not_test_number", turnId, sent: 0, blocked: "not a test number" };
     }
     const rows = (await ports.select("ai_trainer_items?status=eq.active&select=*")) as ItemRow[];
-    const { content, errors } = freezeContent(rows, { reply_model: a.replyModel, max_tokens: 600, rubric_version: 1 });
+    const frozen = freezeContent(rows, { reply_model: a.replyModel, max_tokens: REPLY_LIMITS.max_tokens, rubric_version: 1 });
+    const errors = frozen.errors;
+    // The bot's published System Prompt only (migration 0046); a draft never
+    // reaches a WhatsApp chat, even a test number's.
+    const ptr = (await ports.select(`ai_system_prompt_pointers?bot=eq.${a.bot}&company_id=eq.c1&select=prompt_id`).catch(() => []))[0];
+    const sp = ptr?.prompt_id ? (await ports.select(`ai_system_prompts?id=eq.${encodeURIComponent(ptr.prompt_id)}&status=eq.published&select=id,version_no,sha256,body`).catch(() => []))[0] : null;
+    const content = withSystemPrompt(frozen.content, sp ? { [a.bot]: sp } : {});
     const checksum = await checksumOf(content);
     if (errors.length) {
       await finish("blocked_draft_errors", { errors }, { snapshot_checksum: checksum });
@@ -80,16 +106,22 @@ export async function runTestTurn(a: LiveInput, ports: LivePorts): Promise<LiveR
     const hist = historyFromMessages(msgs.reverse());
     const last = hist.at(-1);
     if (last && last.role === "customer" && last.text.trim() === a.text.trim()) hist.pop();
-    const st = (await ports.select(`ai_conversation_state?conversation_id=eq.${encodeURIComponent(a.convId)}&select=*`))[0];
+    const key = memoryKey(a.bot, a.phone);
+    if (await isPaused(ports, key, a.convId, a.phone)) {
+      await finish("skipped_paused", { memory_key: key }, { snapshot_checksum: checksum });
+      return { outcome: "skipped_paused", turnId, sent: 0, blocked: "conversation is paused" };
+    }
+    const st = await loadState(ports, key, a.convId);
     const state: ConvState = { ...emptyState(), ...(st?.state || {}) };
-    const r = await runTurn({ content, bot: a.bot, text: a.text, history: hist, state, ad: a.ad, returning: hist.length > 0, ports });
-    await ports.upsert("ai_conversation_state", { conversation_id: a.convId, bot: a.bot, state: r.stateNext, paused: r.stateNext.paused, updated_at: new Date().toISOString() });
+    const r = await runTurn({ content, bot: a.bot, text: a.text, history: hist, state, ad: a.ad, returning: hist.length > 0 || !!st, ports });
+    await ports.upsert("ai_conversation_state", { conversation_id: key, bot: a.bot, state: r.stateNext, paused: r.stateNext.paused, updated_at: new Date().toISOString() });
     let sent = 0; const waIds: string[] = []; const sendErrors: string[] = [];
     const out: { type: "text" | "image" | "document"; text: string; mediaUrl?: string; fileName?: string }[] = [];
     if (r.reply.trim()) out.push({ type: "text", text: r.reply });
     if (a.allowMedia) for (const m of r.media) out.push({ type: m.type, text: m.caption, mediaUrl: m.url, fileName: m.type === "document" ? `${m.caption}.pdf` : undefined });
     for (let i = 0; i < out.length; i++) {
       if (!(await stillAllowed(ports, a.bot, a.phone, a.to))) { sendErrors.push("recipient no longer allowed"); break; }
+      if (await isPaused(ports, key, a.convId, a.phone) && !r.handoff) { sendErrors.push("paused during the turn"); break; }
       const id = await ports.send(a.to, out[i]);
       if (id) { sent++; waIds.push(id); } else sendErrors.push(`send ${i + 1} failed`);
       // Wasender allows 1 message per 5s per session.
