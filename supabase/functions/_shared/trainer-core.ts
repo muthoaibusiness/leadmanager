@@ -6,10 +6,11 @@
 // Bump CORE_VERSION on any change that can alter a reply, a verdict or a
 // checksum. Test runs and published snapshots are certified per version.
 
-export const CORE_VERSION = "1.7.0";
+export const CORE_VERSION = "1.8.0";
 
 import { docExcerpts, type DocHit } from "./trainer-docs.ts";
 import { inventoryEvidence, type Inventory } from "./trainer-inventory.ts";
+import { brochureRequest, deliverBrochures, type DocMessage, type Probe } from "./trainer-brochure.ts";
 
 export type Kind = "project" | "fact" | "rule" | "behaviour" | "example";
 export type Bot = "eyad" | "dubai";
@@ -229,6 +230,9 @@ function mentioned(text: string, projects: ItemRow[]): string[] {
   return [...hit];
 }
 
+// The projects a text names by alias. Exported for the brochure path.
+export const namedProjects = (text: string, projects: ItemRow[]) => mentioned(text, projects);
+
 export function resolveProject(
   text: string, state: ConvState, ad: { isAd: boolean; adText?: string }, projects: ItemRow[],
 ): { projects: string[]; source: "explicit" | "state" | "ad" | null; ambiguous: boolean } {
@@ -419,7 +423,8 @@ export function buildPrompt(
     `Reply in ${LANG_NAME[lang as keyof typeof LANG_NAME] ?? "English"}. Short, friendly, no emoji. Do not ask again for anything in already_asked.`,
     "Never say you cannot answer and stop. Never say a person has been informed or that anything was booked or sent.",
     "Only request media that the project lists. Use project ids from the catalog.",
-    'Return STRICT JSON only: {"intent": string, "project_ref": string|null, "language": "bn"|"banglish"|"en", "reply": string, "media": [{"type": "photo"|"floorplan"|"brochure"|"map", "project_ref": string, "floor"?: string}], "handoff": boolean, "asked": [string], "used_item_ids": [string], "clarify": boolean}',
+    "Brochures and profiles are sent by the system, not by you: never say a brochure is attached, sent or on its way, and never put one in media.",
+    'Return STRICT JSON only: {"intent": string, "project_ref": string|null, "language": "bn"|"banglish"|"en", "reply": string, "media": [{"type": "photo"|"floorplan"|"map", "project_ref": string, "floor"?: string}], "handoff": boolean, "asked": [string], "used_item_ids": [string], "clarify": boolean}',
   ].join("\n");
   const messages = [
     ...history.map((h) => ({ role: (h.role === "customer" ? "user" : "assistant") as "user" | "assistant",
@@ -450,7 +455,12 @@ export function parseModelOutput(raw: string): ModelOut | null {
 const REFUSAL = [/parbo\s*na/i, /bolte\s*parbo/i, /confirm\s*korte\s*parbo/i, /can'?t\s+(tell|discuss|share|say)/i,
   /cannot\s+(tell|discuss|share|say)/i, /বলতে\s*পারব\s*না/, /পারব\s*না/];
 const CLAIM = [/\binformed\b/i, /\bnotified\b/i, /jaanie\s*dichi/i, /janiye\s*dichi/i, /\bbooked\b/i, /have\s+sent/i,
-  /জানিয়ে\s*দিয়েছি/];
+  /জানিয়ে\s*দিয়েছি/,
+  // A model reply never carries a file, so it must not say it does (E2E C1, 2026-10-19).
+  /\b(attach(ed|ing)?|sending|sent)\b[^.!?\n]{0,40}\b(brochure|profile|pdf|file|document)s?\b/i,
+  /\b(brochure|profile|pdf)s?\b[^.!?\n]{0,30}\b(attached|is on its way|coming)\b/i,
+  /\b(brochure|profile|pdf)s?\b[^.!?\n]{0,30}(pathacchi|pathiye\s*dichi|pathalam|attach\s*korchi|attach\s*kore\s*dichi)/i,
+  /(ব্রো?শি?[উও]?র|ব্রোশার|প্রোফাইল|পিডিএফ)[^.!?।\n]{0,30}(পাঠাচ্ছি|পাঠিয়ে\s*দিয়েছি|পাঠালাম|সংযুক্ত)/];
 // "I can't say the price, but I can set a meeting" is the rule's own answer;
 // the guard targets a reply that refuses and stops (spec 6.2 step 8).
 const NEXT_STEP = [/meeting/i, /\bagent\b/i, /consultant/i, /brochure/i, /\bcall\b/i, /মিটিং/, /এজেন্ট/, /কনসালট্যান্ট/, /ব্রোশি?উ?র/];
@@ -548,6 +558,12 @@ export type Ports = {
   searchDocs?: (a: { text: string; bot: Bot; projects: string[] }) => Promise<DocHit[]>;
   matchChunks?: (a: { chunkIds: string[]; model: string; query: number[]; bot: Bot; projects: string[]; k: number }) =>
     Promise<{ id: string; item_id: string; item_revision: number; chunk_no: number; chunk_text: string; score: number }[]>;
+  // Brochures (trainer-brochure.ts). probeDocument checks that a URL is a
+  // reachable PDF; without it no brochure is ever offered. sendDocument sends
+  // one on WhatsApp and returns the message id or null; only a real chat
+  // passes it, so the Playground and test runs check files and send nothing.
+  probeDocument?: Probe;
+  sendDocument?: (m: DocMessage) => Promise<string | null>;
 };
 export type TurnResult = { reply: string; media: MediaAction[]; handoff: boolean; stateNext: ConvState; outcome: string; trace: Record<string, unknown> };
 
@@ -578,6 +594,26 @@ export async function runTurn(a: {
   if (WANTS_PERSON.some((g) => g.test(a.text))) {
     trace.pre = "wants_person";
     return { reply: FALLBACK[lang], media: [], handoff: true, stateNext: { ...base, paused: true }, outcome: "handoff_requested", trace };
+  }
+  // Brochure and profile requests are answered by code, never by the model:
+  // the projects come from the catalog, each file is checked, and the reply
+  // states only what was checked and sent (trainer-brochure.ts).
+  // Only the turn right before this one counts as "the bot just asked".
+  const lastBot = a.history.at(-1)?.role === "bot" ? a.history.at(-1)!.text : undefined;
+  const ask = brochureRequest(a.text, a.state, a.content.projects, { match: (s) => mentioned(s, a.content.projects), lastBot, lang });
+  if (ask) {
+    if (ask.kind === "clarify") {
+      trace.brochure = { request: ask };
+      return { reply: ask.question, media: [], handoff: false, stateNext: base, outcome: "brochure_clarify", trace };
+    }
+    const d = await deliverBrochures(ask.projects, a.content.projects, { probe: a.ports.probeDocument ?? null, send: a.ports.sendDocument ?? null }, lang);
+    trace.project = { projects: ask.projects, source: ask.scope === "named" ? "explicit" : ask.scope === "state" ? "state" : null, ambiguous: false };
+    trace.brochure = { request: ask, sent: d.sent, ready: d.ready, failed: d.failed };
+    const active = ask.projects.length === 1 ? ask.projects[0] : a.state.active_project;
+    const source = ask.scope === "named" ? "explicit" : ask.scope === "state" ? a.state.active_source : "state";
+    return { reply: d.reply, media: d.actions, handoff: d.handoff, outcome: d.outcome, trace,
+      stateNext: { ...base, active_project: active, active_source: ask.projects.length === 1 ? source : a.state.active_source,
+        paused: d.handoff ? true : a.state.paused } };
   }
   const res = resolveProject(a.text, a.state, a.ad, a.content.projects);
   trace.project = res;
@@ -631,7 +667,11 @@ export async function runTurn(a: {
   if (!parsed || errors.length) {
     return { reply: FALLBACK[lang], media: [], handoff: true, stateNext: { ...base, paused: true }, outcome: "fallback_invalid_output", trace };
   }
-  const media = resolveMedia(parsed, a.content);
+  // A brochure goes out only through the checked path above, never because
+  // the model asked for one: the model cannot know that the file exists.
+  const dropped = parsed.media.filter((m) => m.type === "brochure");
+  if (dropped.length) trace.media_dropped = dropped.map((m) => ({ type: m.type, project_ref: m.project_ref }));
+  const media = resolveMedia({ ...parsed, media: parsed.media.filter((m) => m.type !== "brochure") }, a.content);
   // The model's citations are kept only when they name something it was shown.
   const shown = new Set([...scoped.map((i) => i.id), ...res.projects]);
   trace.media_missing = media.missing; trace.used_item_ids = parsed.used_item_ids.filter((id) => shown.has(id)); trace.intent = parsed.intent;

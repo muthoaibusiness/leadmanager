@@ -372,3 +372,11 @@ test("project identity: a different project named mid-conversation replaces the 
   const r = resolveProject("osman er kotha bolun", st, { isAd: false }, [NUZM, OSM].map((x) => ({ id: x.id, body: x.body })) as any);
   assert.deepEqual(r.projects, ["p-osm"]);
 });
+
+test("guardReply: a Bangla or Banglish reply that sends a photo is not a claim; one that says a brochure is sent is", () => {
+  const g = (reply: string, language = "banglish") => guardReply(parseModelOutput(out({ language, reply, media: [{ type: "photo", project_ref: "p-nuz" }] }))!, CONTENT, ["p-nuz"], "");
+  assert.deepEqual(g("Nuznan er chobi pathacchi"), []);
+  assert.deepEqual(g("নুজনানের ছবি পাঠাচ্ছি", "bn"), []);
+  assert.ok(g("Nuznan er brochure pathacchi").includes("claim"));
+  assert.ok(g("নুজনানের ব্রোশিওর পাঠিয়ে দিয়েছি", "bn").includes("claim"));
+});

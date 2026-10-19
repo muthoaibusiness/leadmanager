@@ -71,6 +71,23 @@ function RetrievedDocs({ docs }) {
   );
 }
 
+// The brochure path's own record (trainer-brochure.ts): which files were
+// checked, and why any could not be shared. The Playground never sends.
+const BROCHURE_WHY = { missing: 'no file in the catalog', not_pdf: 'link is not a PDF', unreachable: 'file could not be reached',
+  invalid_link: 'link is not allowed', conflict: 'same file listed on another project', unverified: 'file not checked',
+  unknown_project: 'unknown project', send_failed: 'send failed' };
+function BrochureCheck({ b }) {
+  if (!b || (!b.ready?.length && !b.sent?.length && !b.failed?.length)) return null;
+  return (
+    <ul className="ait-trace" aria-label="Brochure check for this reply" style={{ margin: '4px 0', paddingLeft: 18 }}>
+      {b.sent?.map((r) => <li key={r.project_ref}>{r.project}: sent</li>)}
+      {b.ready?.map((r) => <li key={r.project_ref}>{r.project}: PDF verified, not sent from the Playground</li>)}
+      {b.failed?.map((r) => <li key={r.project_ref} className="ait-err">{r.project || r.project_ref}: {BROCHURE_WHY[r.status] || r.status}{r.detail ? ` (${r.detail})` : ''}</li>)}
+    </ul>
+  );
+}
+const OK_OUTCOMES = ['ok', 'brochure_sent', 'brochure_ready_not_sent'];
+
 const fromRow = (r, history) => ({
   id: r.id, seq: r.seq, customer: r.customer_text, reply: r.reply || '', media: r.media || [], handoff: r.handoff,
   outcome: r.outcome, trace: r.trace || {}, error: r.error, checksum: r.checksum, at: r.created_at, finishedAt: r.finished_at,
@@ -209,9 +226,9 @@ export default function PlaygroundTab({ api, showToast }) {
               <div className="ait-msg customer">{t.customer}<div className="ait-trace">#{t.seq} · {fmt(t.at)}</div></div>
               <div className="ait-msg bot">
                 {t.reply || <i>(no reply: {t.outcome})</i>}
-                {t.media?.map((m, i) => <div key={i} className="ait-trace"><Mi>{m.type === 'document' ? 'description' : 'image'}</Mi> {m.caption}</div>)}
+                {t.media?.map((m, i) => <div key={i} className="ait-trace"><Mi>{m.type === 'document' ? 'description' : 'image'}</Mi> {m.caption} · would be sent on WhatsApp{m.url ? <> · <a href={m.url} target="_blank" rel="noopener noreferrer">open</a></> : null}</div>)}
                 <div className="ait-trace">
-                  <span className={`ait-badge ${t.outcome === 'ok' ? 'pass' : /fallback|error/.test(t.outcome) ? 'fail' : 'inc'}`}>{t.outcome}</span>
+                  <span className={`ait-badge ${OK_OUTCOMES.includes(t.outcome) ? 'pass' : /fallback|error|unavailable|partial/.test(t.outcome) ? 'fail' : 'inc'}`}>{t.outcome}</span>
                   {t.handoff ? ' · handoff' : ''} · {fmt(t.finishedAt)} · project: {(t.trace?.project?.projects || []).map(id => names[id] || id).join(', ') || 'none'}
                   {/* used_item_ids is what the model says it used, not a retrieval log. */}
                   {' '}· sources the model reports using: {(t.trace?.used_item_ids || []).length ? t.trace.used_item_ids.map(id => names[id] || id).join(', ') : 'none'}
@@ -220,6 +237,7 @@ export default function PlaygroundTab({ api, showToast }) {
                   {t.trace?.media_missing?.length ? ` · missing media: ${t.trace.media_missing.join(', ')}` : ''}
                   {t.error ? <span className="ait-err"> · error: {t.error}</span> : ''}
                 </div>
+                <BrochureCheck b={t.trace?.brochure} />
                 <RetrievedDocs docs={t.trace?.documents} />
                 <button className="btn btn-g btn-sm" onClick={() => setWrong({ turn: t, history: t.historyBefore })}><Mi>edit</Mi>Mark wrong</button>
               </div>

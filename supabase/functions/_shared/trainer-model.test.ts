@@ -74,6 +74,26 @@ test("chatCompletion: times out and reports it", async () => {
   assert.equal(r.ok, false); assert.equal(r.code, "timeout");
 });
 
+// Production 2026-10-19 (two Playground turns, both about 33s): OpenRouter sent
+// the headers, then held the body past the 30s timer, so the abort surfaced in
+// r.json() and was reported as "not JSON". It is a timeout, and it says so.
+test("chatCompletion: a body that stalls past the timeout is a timeout, not a format error", async () => {
+  const r: any = await chatCompletion({ provider: "custom", base_url: "https://api.example.com/v1", model: "m" }, KEY, REQ,
+    io(async (_u, init) => ({ ok: true, status: 200, headers: { get: () => null },
+      json: () => new Promise((_ok, no) => init.signal.addEventListener("abort", () => no(new DOMException("aborted", "AbortError")))) }), undefined, 30));
+  assert.equal(r.ok, false); assert.equal(r.code, "timeout");
+  assert.doesNotMatch(r.error, /not JSON/);
+});
+
+test("chatCompletion: a body that really is not JSON is a format error and shows the content type, not the body", async () => {
+  const r: any = await chatCompletion({ provider: "custom", base_url: "https://api.example.com/v1", model: "m" }, KEY, REQ,
+    io(async () => ({ ok: true, status: 200, headers: { get: (k: string) => (k === "content-type" ? "text/html" : null) },
+      json: async () => { throw new SyntaxError(`Unexpected token < in <html>${KEY}`); } })));
+  assert.equal(r.code, "format");
+  assert.match(r.error, /text\/html/);
+  assert.ok(!JSON.stringify(r).includes(KEY));
+});
+
 test("chatCompletion: refuses a public name that resolves to a private address, before any request", async () => {
   let called = false;
   const r: any = await chatCompletion({ provider: "custom", base_url: "https://rebind.example.com/v1", model: "m" }, KEY, REQ,

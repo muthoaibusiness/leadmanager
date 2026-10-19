@@ -13,6 +13,7 @@ import { withSystemPrompt, promptLimits, type SystemPrompt } from "./trainer-pro
 import { indexItems, vectorRetrieval } from "./trainer-index.ts";
 import { markdownChunks } from "./trainer-docs.ts";
 import { lookupInventory } from "./trainer-inventory.ts";
+import { brochureCatalog, verifyBrochure, type Probe } from "./trainer-brochure.ts";
 
 export type Db = {
   select(path: string): Promise<any[]>;
@@ -32,7 +33,8 @@ export type Env = { budgetUsd: number; replyModel: string; judgeModel: string; p
 // is optional: without it, or without a saved config, the Playground uses llm.
 // embedder enables vector retrieval; without it every turn uses "full".
 export type Embedder = (model: string, text: string) => Promise<{ ok: true; vector: number[]; tokens: number } | { ok: false; error: string }>;
-type Deps = { db: Db; llm: Llm; env: Env; now?: () => Date; modelLlm?: (cfg: ModelConfig, key: string) => Llm; embedder?: Embedder ; embedWith?: (cfg: ModelConfig & { dim: number }, key: string) => (text: string) => Promise<{ ok: true; vector: number[]; tokens: number } | { ok: false; error: string }> };
+// probe checks a brochure URL (first bytes only); without it no brochure is offered.
+type Deps = { db: Db; llm: Llm; env: Env; now?: () => Date; probe?: Probe; modelLlm?: (cfg: ModelConfig, key: string) => Llm; embedder?: Embedder ; embedWith?: (cfg: ModelConfig & { dim: number }, key: string) => (text: string) => Promise<{ ok: true; vector: number[]; tokens: number } | { ok: false; error: string }> };
 type Res = { status: number; body: any };
 
 const ok = (data: unknown): Res => ({ status: 200, body: { ok: true, data } });
@@ -94,6 +96,9 @@ function portsFor(deps: Deps, llm: Llm = deps.llm): Ports {
     },
     inventory: async (propertyId) =>
       deps.env.companyId ? lookupInventory(deps.db, { propertyId, companyId: deps.env.companyId }, deps.now) : null,
+    // No sendDocument here: the Playground, prompt tests and test runs check
+    // brochure files but never send one.
+    ...(deps.probe ? { probeDocument: deps.probe } : {}),
     ...(deps.embedder ? vectorPorts(deps, deps.embedder) : {}),
   };
 }
@@ -774,6 +779,17 @@ async function promptTest(deps: Deps, p: any): Promise<Res> {
   return ok({ reply: r.reply, outcome: r.outcome, handoff: r.handoff, media: r.media.map((m) => ({ kind: m.kind, caption: m.caption })), trace: r.trace });
 }
 
+// The brochure catalog: every active project's brochure, checked now. Read
+// only: it fetches the first bytes of each file and sends nothing.
+async function brochuresCheck(deps: Deps): Promise<Res> {
+  const rows = brochureCatalog(await loadDrafts(deps.db)).sort((a, b) => a.project.localeCompare(b.project));
+  // Four at a time: the catalog is small, but a slow host should not hold every slot.
+  const checked: typeof rows = [];
+  for (let i = 0; i < rows.length; i += 4) checked.push(...await Promise.all(rows.slice(i, i + 4).map((r) => verifyBrochure(r, deps.probe ?? null))));
+  const verified = checked.filter((r) => r.status === "verified").length;
+  return ok({ checked_at: (deps.now?.() ?? new Date()).toISOString(), rows: checked, counts: { total: checked.length, verified, problems: checked.length - verified } });
+}
+
 // Newest first. Search matches the title and any customer message or reply;
 // bot narrows to one bot.
 async function playgroundList(deps: Deps, p: any): Promise<Res> {
@@ -843,6 +859,7 @@ export async function handleTrainer(req: { method: string; headers: Headers; ip:
       case "modelconfig.get": return await modelConfigGet(deps);
       case "modelconfig.save": return await modelConfigSave(deps, p, actor);
       case "modelconfig.test": return await modelConfigTest(deps, actor);
+      case "brochures.check": return await brochuresCheck(deps);
       default: return await handleRunsAndPublish(action, p, actor, deps);
     }
   } catch (e) {

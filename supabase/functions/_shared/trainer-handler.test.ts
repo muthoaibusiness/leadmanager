@@ -916,3 +916,44 @@ test("document actions need Management", async () => {
     assert.equal((await call(deps, a, {}, "agent", `10.48.0.${++ip}`)).status, 401, a);
   }
 });
+
+test("playground: a brochure ask checks the file, sends nothing, and stores what really happened", async () => {
+  const db = memDb();
+  db.t.ai_trainer_items.push(
+    { id: "p-nuz", kind: "project", revision: 1, status: "active", bots: ["eyad", "dubai"], project_ref: null,
+      body: { name: "Wecon Nuznan", region: "Dhaka", aliases: { banglish: ["nuznan"] }, media: { brochure: "https://wecon.test/nuznan.pdf" } } },
+    { id: "p-p2p", kind: "project", revision: 1, status: "active", bots: ["eyad", "dubai"], project_ref: null,
+      body: { name: "P2P Helthcare", region: "Chattogram", aliases: { banglish: ["p2p"] }, media: { brochure: "https://drive.google.test/file/d/x" } } });
+  const probed: string[] = [];
+  const probe = async (u: string) => { probed.push(u); return u.includes("drive.google")
+    ? { ok: true, status: 200, contentType: "text/html", magic: "<!DOC", bytes: 0 }
+    : { ok: true, status: 206, contentType: "application/pdf", magic: "%PDF-", bytes: 9 }; };
+  const model = llm();
+  const r = await call({ db, llm: model, env: ENV, probe }, "playground.turn", { bot: "eyad", source: "drafts", text: "send all project brochures", client_turn_id: "brochure-turn-1" });
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  assert.equal(model.calls.length, 0, "no model call for a brochure ask");
+  const turn = db.t.ai_playground_turns[0];
+  assert.equal(turn.outcome, "brochure_partial");
+  assert.deepEqual(turn.media.map((m: any) => m.project_ref), ["p-nuz"]);
+  assert.deepEqual(turn.trace.brochure.failed.map((f: any) => [f.project, f.status]), [["P2P Helthcare", "not_pdf"]]);
+  assert.doesNotMatch(turn.reply, /here is|\bsent\b|attached/i);
+  assert.deepEqual(probed.sort(), ["https://drive.google.test/file/d/x", "https://wecon.test/nuznan.pdf"]);
+});
+
+test("brochures.check: one row per active project with city, file and status; Management only; sends nothing", async () => {
+  const db = memDb();
+  db.t.ai_trainer_items.push(
+    { id: "p-nuz", kind: "project", revision: 1, status: "active", bots: ["eyad"], project_ref: null,
+      body: { name: "Wecon Nuznan", region: "Dhaka", aliases: {}, media: { brochure: "https://wecon.test/nuznan.pdf" } } },
+    { id: "p-mom", kind: "project", revision: 1, status: "active", bots: ["eyad"], project_ref: null,
+      body: { name: "Momtaz Manor", region: "Chattogram", aliases: {}, media: {} } },
+    { id: "p-old", kind: "project", revision: 2, status: "retired", bots: ["eyad"], project_ref: null,
+      body: { name: "Old", region: "Dhaka", aliases: {}, media: { brochure: "https://wecon.test/old.pdf" } } });
+  const probe = async () => ({ ok: true, status: 206, contentType: "application/pdf", magic: "%PDF-", bytes: 6122611 });
+  assert.equal((await call({ db, llm: llm(), env: ENV, probe }, "brochures.check", {}, "agent")).status, 401);
+  const r = await call({ db, llm: llm(), env: ENV, probe }, "brochures.check");
+  assert.equal(r.status, 200);
+  assert.deepEqual(r.body.data.rows.map((x: any) => [x.project, x.city, x.status, x.bytes ?? null]), [
+    ["Momtaz Manor", "Chattogram", "missing", null], ["Wecon Nuznan", "Dhaka", "verified", 6122611]]);
+  assert.deepEqual(r.body.data.counts, { total: 2, verified: 1, problems: 1 });
+});

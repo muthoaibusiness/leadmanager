@@ -124,7 +124,13 @@ export async function chatCompletion(cfg: ModelConfig, key: string, req: ChatReq
     });
     if (!r.ok) return { ok: false, ...providerError(r.status) };
     let j: any;
-    try { j = await r.json(); } catch { return { ok: false, code: "format", error: "Provider returned a response that is not JSON" }; }
+    // The timer also covers the body: a provider that sends headers and then
+    // stalls aborts here, inside json(). That is a timeout, not bad JSON.
+    try { j = await r.json(); } catch {
+      if (ctl.signal.aborted) throw new Error("aborted");
+      const type = (r.headers.get("content-type") || "unknown").split(";")[0].trim().slice(0, 60);
+      return { ok: false, code: "format", error: `Provider returned a response that is not JSON (content type ${type})` };
+    }
     const text = j?.choices?.[0]?.message?.content;
     if (typeof text !== "string") return { ok: false, code: "format", error: "Provider response has no choices[0].message.content; it may not be OpenAI-compatible" };
     return { ok: true, text, prompt_tokens: Number(j?.usage?.prompt_tokens) || 0, completion_tokens: Number(j?.usage?.completion_tokens) || 0 };
