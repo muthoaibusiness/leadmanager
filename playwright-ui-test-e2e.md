@@ -5,7 +5,7 @@
 **Backend:** Supabase project `sbqmougcvnplgjgihpwe`. This is the **production** database. The bundle on the site was checked, and the site calls this project.
 **Account:** the Management account the user named. The user typed the password into a headed browser window. It was never passed to a script, logged or stored.
 **Runner:** Playwright 1.64.1 (Chromium), driving the real UI. The script is `scripts/e2e/aitrainer.e2e.mjs`, and every result comes from its observations.
-**Evidence:** screenshots and `e2e-results.json` (every reply, trace and trainer action called) in [`docs/e2e/evidence/`](docs/e2e/evidence/).
+**Evidence:** screenshots and `e2e-results.json` (every reply, trace and trainer action called) are written to `docs/e2e/evidence/`. That folder is git-ignored: it exists only on the machine that ran the test, and a rerun regenerates it.
 
 ## Summary
 
