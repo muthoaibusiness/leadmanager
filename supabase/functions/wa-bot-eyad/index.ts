@@ -28,7 +28,8 @@ import {
 import type { BotSettings } from "../_shared/wa.ts";
 import {
   askAgent, resolveMedia, fixGrammar, matchJolshiriBundle, buildJolshiriBundle,
-  FLOW_AUTO_PROFILE_TEXT, FLOW_AGENT_YES_TEXT, GENERIC_WELCOME_TEXT, isAffirmative,
+  FLOW_AUTO_PROFILE_TEXT, FLOW_AGENT_YES_TEXT, GENERIC_WELCOME_TEXT, isAffirmative, isProfileConsent,
+  isJolshiriProject, matchNamedProject, isPriceQuestion, isLandOffer, FLOW_PRICE_AGENT_TEXT, brochureCaption,
 } from "../_shared/ai.ts";
 import { runTrainerTestTurn } from "../_shared/trainer-deno.ts";
 
@@ -161,6 +162,8 @@ interface ParsedEvent {
   ctwaClid: string;
   command: string;
   deliveryId: string;
+  // Text of the message the customer replied to (WhatsApp quote), if any.
+  quoted: string;
 }
 
 function parseEvent(payload: any): ParsedEvent {
@@ -201,6 +204,8 @@ function parseEvent(payload: any): ParsedEvent {
   }
 
   const deliveryId = key?.id ? String(key.id) : "";
+  const qm = m?.extendedTextMessage?.contextInfo?.quotedMessage;
+  const quoted = String(qm?.conversation || qm?.extendedTextMessage?.text || "").trim();
 
   return {
     kind,
@@ -218,6 +223,7 @@ function parseEvent(payload: any): ParsedEvent {
     ctwaClid: ad ? String(ad.ctwaClid || "") : "",
     command: kind === "command" ? text.toLowerCase().split(/\s+/)[0] : "",
     deliveryId,
+    quoted,
   };
 }
 
@@ -243,7 +249,7 @@ async function runFaqAgent(account: string, phone: string, target: string, remot
         await new Promise((r) => setTimeout(r, 5500));
         const b = bundle.brochures[i];
         await sendWaMessageMirrored(account, target, convId, phone, {
-          type: "document", mediaUrl: b.url, fileName: `${b.project.name} Brochure.pdf`, text: `${b.project.name} — Brochure`,
+          type: "document", mediaUrl: b.url, fileName: `${b.project.name} Brochure.pdf`, text: brochureCaption(b.project),
         });
       }
       return true;
@@ -307,7 +313,7 @@ async function handleInbound(p: ParsedEvent): Promise<void> {
   // below needs message_logs/flow_stage before deciding what to send) ────
   if (!preleadId) return;
   const [statusRows, projects] = await Promise.all([
-    sbSelectJson(`preleads?id=eq.${encodeURIComponent(preleadId)}&select=forwarded,message_logs,flow_stage`),
+    sbSelectJson(`preleads?id=eq.${encodeURIComponent(preleadId)}&select=forwarded,message_logs,flow_stage,ctwa_clid,wa_ad_id`),
     sbSelectJson("wa_projects?select=name,region,keywords,brochure_url"),
   ]);
   const status = statusRows?.[0] ?? {};
@@ -319,9 +325,27 @@ async function handleInbound(p: ParsedEvent): Promise<void> {
   // sub-workflow instead. That drip never existed here, so the port silently
   // greeted nobody who came from an ad — the main audience. Welcome now
   // fires for every genuinely new contact unless a human has taken over.
+  // What the customer actually wrote wins over the ad they clicked: naming a
+  // project makes it theirs (prelead.property_interest), and only a Jolshiri
+  // project gets the Jolshiri welcome + follow-up flow.
+  const named = p.text ? matchNamedProject(p.text, projects as any[]) : null;
+  if (named && named.name !== upsert.property_interest) {
+    upsert.property_interest = named.name;
+    await sbPatchJson("preleads", `id=eq.${encodeURIComponent(preleadId)}`, { property_interest: named.name }).catch(() => {});
+  }
+  // A land seller ("do you buy land in Cox's Bazar?") who happened to click
+  // an ad is not a Jolshiri buyer: generic hello, no brochure flow, and the
+  // LLM's land rule keeps everything else silent for a human to pick up.
+  const landOffer = !!p.text && isLandOffer(p.text);
+  // property_interest alone proves nothing: wa_upsert_prelead fills it with
+  // wa_settings.default_project (Osman) for every contact without an ad, so
+  // a direct "Dhanmondi koto number" knock looked like a Jolshiri ad lead.
+  // Only a real ad signal, or the customer naming a Jolshiri project, counts.
+  const adLead = p.isAd || !!status.ctwa_clid || !!status.wa_ad_id;
+  const jolshiriLead = named ? isJolshiriProject(named.name) : (adLead && isJolshiriProject(upsert.property_interest));
   if (settings.welcomeEnabled && upsert.takeover !== true && upsert.is_new === true) {
-    if (upsert.property_interest) {
-      // Came through an ad: the admin welcome (Jolshiri) and the follow-up
+    if (jolshiriLead && !landOffer) {
+      // Jolshiri lead (ad or named): the admin welcome and the follow-up
       // clock — 5 minutes of silence asks about the profiles, an hour of
       // silence after that asks about a dedicated agent. No auto-forward.
       await sendWaText(p.target, settings.welcomeMessage ? fillWelcomeTemplate(settings.welcomeMessage, p.name) : welcomeText(p.name));
@@ -329,14 +353,14 @@ async function handleInbound(p: ParsedEvent): Promise<void> {
         flow_stage: "greeted", stage_at: new Date().toISOString(), stage_msg_count: msgCount,
       }).catch(() => {});
     } else {
-      // Direct knock, no ad: generic hello only, no Jolshiri flow.
+      // Direct knock, or a non-Jolshiri project: generic hello, no Jolshiri flow.
       await sendWaText(p.target, GENERIC_WELCOME_TEXT);
     }
   }
 
   // ── Follow-up flow stage 3 — "yes" to the stage 2a profile offer sends
   // the bundle right away instead of waiting for the next cron tick.
-  if (status.flow_stage === "asked_profile" && upsert.takeover !== true && isAffirmative(p.text)) {
+  if (status.flow_stage === "asked_profile" && upsert.takeover !== true && isProfileConsent(p.text, p.quoted)) {
     const convId = `eyad:${p.remote}`;
     const bundle = buildJolshiriBundle(await getActiveProjects(), FLOW_AUTO_PROFILE_TEXT);
     if (bundle) {
@@ -345,7 +369,7 @@ async function handleInbound(p: ParsedEvent): Promise<void> {
         await new Promise((r) => setTimeout(r, 5500));
         const b = bundle.brochures[i];
         await sendWaMessageMirrored("eyad", p.target, convId, p.phone, {
-          type: "document", mediaUrl: b.url, fileName: `${b.project.name} Brochure.pdf`, text: `${b.project.name} — Brochure`,
+          type: "document", mediaUrl: b.url, fileName: `${b.project.name} Brochure.pdf`, text: brochureCaption(b.project),
         });
       }
       await sbPatchJson("preleads", `id=eq.${encodeURIComponent(preleadId)}`, {
@@ -370,6 +394,17 @@ async function handleInbound(p: ParsedEvent): Promise<void> {
     return;
   }
 
+  // Price / payment question (not the very first ad message — that one gets
+  // the greeting + brochure flow): offer a dedicated agent, jump to stage 4.
+  const agentAlreadyOffered = ["asked_agent", "agent_ack", "agent_assigned"].includes(status.flow_stage);
+  if (upsert.is_new !== true && p.text && isPriceQuestion(p.text) && !agentAlreadyOffered && upsert.takeover !== true) {
+    await sendWaMessageMirrored("eyad", p.target, `eyad:${p.remote}`, p.phone, { type: "text", text: FLOW_PRICE_AGENT_TEXT });
+    await sbPatchJson("preleads", `id=eq.${encodeURIComponent(preleadId)}`, {
+      flow_stage: "asked_agent", stage_at: new Date().toISOString(), stage_msg_count: msgCount,
+    }).catch(() => {});
+    return;
+  }
+
   // Once the profiles are out (keyword, stage 2b or stage 3) the bundle is
   // never sent again — the gated LLM answer still runs for other questions.
   const profilesAlreadySent = ["profile_sent", "asked_agent", "agent_ack", "agent_assigned"].includes(status.flow_stage);
@@ -382,7 +417,9 @@ async function handleInbound(p: ParsedEvent): Promise<void> {
     console.log("trainer test turn", { phone: p.phone, outcome: r.outcome, sent: r.sent, turnId: r.turnId });
   } else if (settings.faqAgentEnabled && p.text && upsert.takeover !== true && p.remote) {
     const sent = await runFaqAgent("eyad", p.phone, p.target, p.remote, p.text, {
-      adProject: upsert.property_interest || undefined, profilesAlreadySent, allowMedia: settings.aiMediaEnabled,
+      // A defaulted property_interest must not steer the model toward Osman.
+      adProject: (named || adLead) ? (upsert.property_interest || undefined) : undefined,
+      profilesAlreadySent: profilesAlreadySent || landOffer, allowMedia: settings.aiMediaEnabled,
     });
     if (sent) {
       await sbPatchJson("preleads", `id=eq.${encodeURIComponent(preleadId)}`, {
@@ -596,7 +633,7 @@ async function handleSendDocs(p: ParsedEvent): Promise<void> {
 
   const convId = `eyad:${p.remote}`;
   const items: { type: "document" | "image"; url: string; fileName?: string; caption: string }[] = [];
-  if (project.brochure_url) items.push({ type: "document", url: project.brochure_url, fileName: `${project.name} Brochure.pdf`, caption: `${project.name} — Brochure` });
+  if (project.brochure_url) items.push({ type: "document", url: project.brochure_url, fileName: `${project.name} Brochure.pdf`, caption: brochureCaption(project) });
   for (const url of (project.photos || []).slice(0, 3)) items.push({ type: "image", url, caption: project.name });
 
   for (let i = 0; i < items.length; i++) {

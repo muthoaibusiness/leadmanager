@@ -134,7 +134,7 @@ below — never invent a project, price, or fact that isn't in it.
 
 Projects:
 ${projectsBlock(projects)}
-${adProject ? `\nThis customer came in through an ad for: ${adProject}. Every answer stays about THIS project — don't bring up, compare to, or suggest another one on your own. Only discuss a different project if the customer names it themselves; after that, treat the one they just named as "their" project instead. Whenever they say "this project" or don't name one, it means ${adProject} (or whichever project they most recently named).\n` : ""}
+${adProject ? `\nThis customer came in through an ad for: ${adProject}. Every answer stays about THIS project — don't bring up, compare to, or suggest another one on your own. Only discuss a different project if the customer names it themselves; after that, treat the one they just named as "their" project instead. Whenever they say "this project" or don't name one, it means ${adProject} (or whichever project they most recently named).\n` : `\nNo project is known for this customer yet (no ad, none named). Do not assume one — see the "which project" rule below.\n`}
 Reply style (match the brand's existing WhatsApp templates):
 - Short. A few sentences at most — this is a chat, not an email.
 - Friendly, direct. No emoji at all.
@@ -144,6 +144,27 @@ Reply style (match the brand's existing WhatsApp templates):
 - If the customer asks for or clearly wants a photo, floor plan, or
   brochure, say so briefly AND set "send" so it's attached — don't just
   describe the document in text.
+- When NO project is in context (no ad project line above, the customer
+  hasn't named one, and the history doesn't settle it) and they ask
+  something project-specific — location, price, details, brochure, floor,
+  size, availability — do not guess a project. Ask which one, listing ONLY
+  the projects that fit what they asked for, as "name — short address
+  (area/sector, city)", one per line:
+    · shop / dokan / দোকান / office / showroom / market / mall → only
+      projects with type Commercial;
+    · flat / apartment / ফ্ল্যাট / বাসা / home → only type Residential;
+    · a city or area named (Dhaka, Jolshiri, Chattogram, Cumilla…) → only
+      projects in that region.
+  Never dump the whole catalog — a list longer than 4 lines means you did
+  not filter. Leave out any project the admin rules say to stay silent
+  about. Set "confident": true for this list. Ask it once; if the list is
+  already in the history and they still haven't named a project, reply "".
+- "Details", "information", "profile", "know more", "বিস্তারিত", "ডিটেইলস"
+  about a project = send its brochure in that same reply (type "brochure")
+  along with the one-line summary. NEVER ask "would you like the brochure?"
+  or any other yes/no offer — nothing tracks the answer, so an offer you
+  make is a document the customer never gets. Either attach it or don't
+  mention it.
 - A project with "floor plans available: <list>" has a separate image per
   floor. If the customer names a floor (ground, mezzanine, typical, roof —
   or the Bengali/transliterated equivalent), set "floor" to that exact label
@@ -264,20 +285,32 @@ export interface ResolvedMedia {
 // can't express.
 const JOLSHIRI_BUNDLE_NAMES = ["Wecon Osman Bellevue", "Wecon Nuznan", "Wecon Dakshinayan"];
 const JOLSHIRI_BUNDLE_MESSAGE =
-  "জলসিঁড়িতে আমাদের ৩টি প্রজেক্ট আছে। আপনার সুবিধার্থে আমি ৩টি প্রজেক্টের ব্রোশিওর শেয়ার করলাম।";
+  "We have 3 projects in Jolshiri. For your convenience, I've shared the brochures of all 3 projects.";
 
 // wa-followup stage copy (see FLOW.md-equivalent summary in that function's
 // header comment). Exported so both bots' inbound handler (stage 3's "yes"
 // path) and the follow-up cron job (stages 2a/2b/4) use identical wording.
 export const FLOW_ASK_PROFILE_TEXT =
-  "জলসিঁড়িতে আমাদের ৩টি প্রজেক্ট আছে। আপনার সুবিধার্থে আমি ৩টি প্রজেক্টের ব্রোশিওর শেয়ার করে রাখবো?";
+  "We have 3 projects in Jolshiri. Would you like me to share the brochures of all 3 projects?";
 export const FLOW_AUTO_PROFILE_TEXT =
-  "জলসিঁড়িতে আমাদের ৩টি প্রজেক্ট আছে। আপনার সুবিধার্থে আমি ৩টি প্রজেক্টের ব্রোশিওর শেয়ার করে রাখলাম।";
+  "We have 3 projects in Jolshiri. For your convenience, I've shared the brochures of all 3 projects.";
 export const FLOW_ASK_AGENT_TEXT =
   "আপনার জন্য কি একজন ডেডিকেটেড এজেন্ট নিয়োগ করে দিব, যিনি সরাসরি কল করে আপনাকে সহায়তা করবেন?";
 // "yes" to the agent question: acknowledge and hand the thread to a human —
 // no lead/forward is created automatically (user's rule).
 export const FLOW_AGENT_YES_TEXT = "জি, বলুন কিভাবে হেল্প করতে পারি।";
+// Price / payment questions are never answered by the bot (no figures it can
+// stand behind) — it offers a dedicated agent instead and the flow jumps to
+// asked_agent. "yes" then gets FLOW_AGENT_YES_TEXT like any stage-4 yes.
+export const FLOW_PRICE_AGENT_TEXT =
+  "For price and payment details, would you like me to assign a dedicated agent who will call you?";
+const PRICE_RE = /\b(price|prices|pricing|cost|rate|rates|dam|daam|mullo|koto|kato|payment|installment|emi|budget|per sft|sqft|sft)\b|দাম|মূল্য|পেমেন্ট|কিস্তি|কত টাকা|কত পড়বে|বাজেট|প্রাইস|স্কয়ার ফিট|ফিট কত/i;
+// Someone offering land / a plot (JV, land share, "55 gonda at Dolfin mor")
+// is not a buyer — no scripted path may fire on it ("rate" in such a message
+// once triggered the price→agent script). The land rule keeps the LLM silent.
+const LAND_RE = /\b(land|plot|plots|gonda|katha|kattha|bigha|decimal|mouja|mouza|joint venture|jv|land share|developer|develop)\b|জমি|জায়গা|প্লট|গন্ডা|গণ্ডা|কাঠা|বিঘা|শতক|মৌজা|ডেভেলপ|ল্যান্ড শেয়ার/i;
+export const isLandOffer = (text: string): boolean => LAND_RE.test(text);
+export const isPriceQuestion = (text: string): boolean => PRICE_RE.test(text) && !isLandOffer(text);
 // A direct knock with no ad behind it: nothing is known about what they
 // want, so no Jolshiri line and no Jolshiri follow-up flow — just this.
 export const GENERIC_WELCOME_TEXT = "Assalamu Alaikum.\nI'm Eyad from Wecon Properties. How can I help you today?";
@@ -291,20 +324,67 @@ export const GENERIC_WELCOME_TEXT = "Assalamu Alaikum.\nI'm Eyad from Wecon Prop
 // at the edge of a Bangla word.
 const YES_WORDS = new Set([
   "hae", "ha", "haan", "ji", "jee", "jii", "hmm", "hm", "ok", "okay", "oky", "sure", "yes", "yeah", "yep", "please", "pls", "plz",
-  "dao", "den", "dibo", "din", "accha", "acha", "thik", "ache",
+  "dao", "den", "dibo", "din", "accha", "acha", "thik", "ache", "thanks", "thank", "you", "tnx", "thnx", "ধন্যবাদ",
   "জি", "জ্বি", "জ্বী", "হ্যাঁ", "হ্যা", "হুম", "আচ্ছা", "ঠিক", "আছে", "দিন", "দেন", "দাও", "পাঠান", "পাঠাও", "প্লিজ", "প্লীজ", "ওকে",
 ]);
+// Short consent phrases that aren't yes-word-only ("ভালো হয়" = "that'd be
+// good"). Matched against the whole normalised message.
+const YES_PHRASES = new Set([
+  "ভালো হয়", "ভাল হয়", "হলে ভালো হয়", "দিলে ভালো হয়", "পাঠালে ভালো হয়", "পাঠিয়ে দিন", "পাঠিয়ে দেন", "পাঠিয়ে দাও", "দিয়ে দিন", "দিয়ে দেন",
+  "valo hoy", "bhalo hoy", "valo hobe", "bhalo hobe", "dile valo hoy", "pathale valo hoy", "pathiye din", "pathiye den", "pathan", "pathao", "diye din", "diye den",
+]);
+// A reply that QUOTES our profile question counts as consent unless it is
+// clearly a refusal — "Ok thanks" quoted on the question was a yes that the
+// word list alone missed. Both the current (English) and the earlier Bangla
+// wording are recognised, since threads from before the copy change exist.
+const ASK_PROFILE_TEXTS = [
+  "We have 3 projects in Jolshiri. Would you like me to share the brochures of all 3 projects?",
+  "জলসিঁড়িতে আমাদের ৩টি প্রজেক্ট আছে। আপনার সুবিধার্থে আমি ৩টি প্রজেক্টের ব্রোশিওর শেয়ার করে রাখবো?",
+];
+const NEGATIVE_RE = /\b(no|na|nah|nope|nai|lagbe na|dorkar nai|don't|dont)\b|না|নাহ|লাগবে না|দরকার নাই|দরকার নেই/i;
+export const isNegative = (text: string): boolean => NEGATIVE_RE.test(text);
+export const isProfileConsent = (text: string, quoted: string | undefined): boolean => {
+  if (isAffirmative(text)) return true;
+  const q = (quoted || "").trim();
+  return !!q && ASK_PROFILE_TEXTS.some((t) => q.startsWith(t.slice(0, 40))) && !isNegative(text);
+};
 export const isAffirmative = (text: string): boolean => {
   // \p{M} keeps Bangla vowel signs / virama ("জি" is জ + ি) — without it the
   // word collapses to "জ" and never matches.
-  const words = text.toLowerCase().replace(/[^\p{L}\p{M}\p{N}\s]/gu, " ").trim().split(/\s+/).filter(Boolean);
-  if (!words.length || words.length > 4) return false;
+  const norm = text.toLowerCase().replace(/[^\p{L}\p{M}\p{N}\s]/gu, " ").trim().replace(/\s+/g, " ");
+  if (!norm) return false;
+  if (YES_PHRASES.has(norm)) return true;
+  const words = norm.split(" ");
+  if (words.length > 4) return false;
   return words.every((w) => YES_WORDS.has(w));
 };
+
+// "Wecon Osman Bellevue (Sector 16, Jolshiri Abashon) — Brochure": the sector
+// is what Jolshiri buyers navigate by, so it rides on every brochure caption.
+export function brochureCaption(p: { name: string; address?: string | null }): string {
+  const m = (p.address || "").match(/sector\s*[-:]?\s*(\d+)/i);
+  const loc = m ? `Sector ${m[1]}${/jolshiri/i.test(p.address || "") ? ", Jolshiri Abashon" : ""}` : "";
+  return `${p.name}${loc ? ` (${loc})` : ""} — Brochure`;
+}
 
 export interface JolshiriBundle {
   message: string;
   brochures: { project: ProjectRow; url: string }[];
+}
+
+export const isJolshiriProject = (name: string | null | undefined): boolean =>
+  !!name && JOLSHIRI_BUNDLE_NAMES.some((n) => n.toLowerCase() === name.toLowerCase());
+
+// The project a message names outright (name or keyword), any region — so a
+// customer who clicked a Jolshiri ad but asks about "Chowdhury Arcade" is
+// treated as a Chowdhury Arcade lead, not pushed through the Jolshiri script.
+export function matchNamedProject(text: string, projects: ProjectRow[]): ProjectRow | null {
+  const lower = text.toLowerCase();
+  return projects.find((p) =>
+    lower.includes(p.name.toLowerCase()) ||
+    lower.includes(p.name.toLowerCase().replace(/^wecon\s+/, "")) ||
+    (p.keywords || []).some((k) => k.length >= 4 && lower.includes(k.toLowerCase())),
+  ) ?? null;
 }
 
 function jolshiriBundleProjects(projects: ProjectRow[]): ProjectRow[] | null {
@@ -394,5 +474,5 @@ export function resolveMedia(
   }
 
   const url = p.brochure_url;
-  return url ? [{ type: "document", url, fileName: `${p.name.replace(/\s+/g, "-")}-brochure.pdf`, caption: `${p.name} — Brochure` }] : [];
+  return url ? [{ type: "document", url, fileName: `${p.name.replace(/\s+/g, "-")}-brochure.pdf`, caption: brochureCaption(p) }] : [];
 }
