@@ -22,6 +22,7 @@ import NotifBell from './components/NotifBell.jsx';
 import UserMenu from './components/UserMenu.jsx';
 import Toast from './components/Toast.jsx';
 import DateRangePicker from './components/DateRangePicker.jsx';
+import { HeaderSearch, AiMenu } from './components/HeaderTools.jsx';
 import BackButton from './components/BackButton.jsx';
 import BellowsCrumb from './components/ui/bellows-crumb.jsx';
 import { Menu, MenuItem } from './components/ui/menu.jsx';
@@ -57,6 +58,7 @@ const PAGES = {
   ClientsView: () => import('./components/views/ClientsView.jsx'),
   ReportsView: () => import('./components/views/ReportsView.jsx'),
   AgentPerformanceView: () => import('./components/views/AgentPerformanceView.jsx'),
+  PerfReportsView: () => import('./components/views/PerfReportsView.jsx'),
   InventoryView: () => import('./components/views/InventoryView.jsx'),
   ConversationsView: () => import('./components/views/ConversationsView.jsx'),
 };
@@ -91,7 +93,7 @@ const OVERLAYS = {
 
 const lazyAll = (loaders) => Object.fromEntries(Object.entries(loaders).map(([k, f]) => [k, lazyChunk(f)]));
 
-const { AgentDash, TeamLeadDash, ManagementDash, MasterDash, LeadsView, CalendarView, TeamView, AccountsView, RelayView, AiTrainerView, RequestsView, ProfileView, PropertiesView, AvailableUnitsView, BookingsView, PipelineView, ClientsView, ReportsView, AgentPerformanceView, InventoryView, ConversationsView } = lazyAll(PAGES);
+const { AgentDash, TeamLeadDash, ManagementDash, MasterDash, LeadsView, CalendarView, TeamView, AccountsView, RelayView, AiTrainerView, RequestsView, ProfileView, PropertiesView, AvailableUnitsView, BookingsView, PipelineView, ClientsView, ReportsView, AgentPerformanceView, PerfReportsView, InventoryView, ConversationsView } = lazyAll(PAGES);
 const OVERLAY_COMPONENTS = Object.entries(lazyAll(OVERLAYS));
 const LandingPage = lazyChunk(() => import('./components/LandingPage.jsx'));
 const SignIn1 = lazyChunk(() => import('./components/ui/modern-stunning-sign-in.jsx').then(m => ({ default: m.SignIn1 })));
@@ -213,9 +215,15 @@ function PageHeader({ shown, showBtnRef }) {
       <BackButton />
       <BellowsCrumb className="hd-crumb" items={navTrail} onNavigate={(item) => item.go()} />
       {/* theme → date filter → notifications → account. Phones (CSS) hide the
-          theme button and move the account to the left, after the show button. */}
+          theme button and move the account to the left, after the show button.
+          There, search → AI → date filter share one pill (.hd-grp); on wider
+          screens the group is display: contents and search/AI are hidden. */}
       <ThemeToggle />
-      <DateRangePicker />
+      <div className="hd-grp">
+        <HeaderSearch />
+        <AiMenu />
+        <DateRangePicker />
+      </div>
       <NotifBell />
       <UserMenu />
     </header>
@@ -260,6 +268,7 @@ function PageHero() {
     properties: { sub: `${props.length} project${props.length === 1 ? '' : 's'} · ${propAvail} unit${propAvail === 1 ? '' : 's'} available` },
     reports: { sub: 'Live sales analytics' },
     agentperf: { sub: 'Per-role scorecards & funnels' },
+    perfreports: { sub: '' },
     bookings: { sub: 'Payments, instalments & dues' },
     team: { sub: `${teamAgents} agents` },
     accounts: { sub: 'Team list · create & manage accounts' },
@@ -355,6 +364,7 @@ function PageBody() {
   if (view === 'bookings') return <BookingsView />;
   if (view === 'reports') return <ReportsView />;
   if (view === 'agentperf') return <AgentPerformanceView />;
+  if (view === 'perfreports') return <PerfReportsView />;
   if (view === 'team') return <TeamView />;
   if (view === 'accounts') return <AccountsView />;
   if (view === 'relay') return <RelayView />;

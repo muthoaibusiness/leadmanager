@@ -11,8 +11,9 @@ export default function RefreshButton() {
   return (
     <div className="rf-ring">
       <button type="button" className={`rf-btn${busy ? ' busy' : ''}`} onClick={() => refreshDB()}
-        title="Refresh customers" aria-busy={busy}>
-        <Mi>sync</Mi>Refresh
+        title="Refresh customers" aria-label="Refresh customers" aria-busy={busy}>
+        {/* Phones (CSS) hide the word and keep a round icon button. */}
+        <Mi aria-hidden="true">sync</Mi><span className="rf-lbl">Refresh</span>
       </button>
     </div>
   );
