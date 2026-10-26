@@ -199,9 +199,12 @@ function LoginPage({ onLogin, onBack }) {
 // `shown`: the sidebar is on screen. `showBtnRef`: the show button, which the
 // shell moves focus onto when the sidebar hides with focus inside it.
 function PageHeader({ shown, showBtnRef }) {
-  const { setSidebarShown, navTrail } = useApp();
+  const { setSidebarShown, navTrail, view, user } = useApp();
+  // Any page but the account's home: phones (CSS) hide the account, tools and
+  // bell there and show only a round Back button.
+  const sub = view !== homeView(user);
   return (
-    <header className="pg-head">
+    <header className={`pg-head${sub ? ' pg-head-sub' : ''}`}>
       {/* Show-sidebar button, same glyph as the sidebar's hide button: always
           there for the 768–1023px drawer, on desktop only while collapsed, and
           hidden on phones, where the bottom bar's More opens the drawer (CSS). */}
