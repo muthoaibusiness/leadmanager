@@ -5954,6 +5954,19 @@ html, body { overscroll-behavior: none }
   border-color: var(--p)
 }
 
+/* "The customer asked for this time" checkbox under the presets. Spacing
+   matches .fu-presets above (this file has no spacing tokens).
+   ds-allow-hardcode: no spacing/type tokens exist in this stylesheet yet. */
+.fu-asked {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+  font-size: 13px;
+  color: var(--t2);
+  cursor: pointer
+}
+
 .lost-hints {
   margin-top: 14px
 }

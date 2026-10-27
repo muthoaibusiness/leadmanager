@@ -3,10 +3,11 @@ import Mi from './Mi.jsx';
 import { LoadingBlock } from './Spinner.jsx';
 import { useApp } from '../context/AppContext.jsx';
 import LogCall from './LogCall.jsx';
-import { getLead, getActs, ensureLead, ensureLeadActs, hasFullActs, changeStatus, doneVisit, deleteLead, logNoAnswer, noAnswerLock, attendMeeting, userNameById, claimLeadForSelf } from '../lib/db.js';
+import { getLead, getActs, ensureLead, ensureLeadActs, hasFullActs, changeStatus, doneVisit, deleteLead, logNoAnswer, noAnswerLock, attendMeeting, userNameById, claimLeadForSelf, MAX_ATTEMPTS, followUpBlock, setNoLongerResponding, clearFollowupSuppression } from '../lib/db.js';
+import { hasColumn } from '../lib/supabase.js';
 import { fmtD, fmtDT, fmtBDT, rlabel, scoreLead, scoreLabel, leadDisplayStatus, fmtDateTimeAP } from '../lib/helpers.js';
 import ActivityTimeline from './ActivityTimeline.jsx';
-import { ROLES, SRC_LABELS, effectiveRole, isNiHandler, canSelfForward, DRAWER_MQ, canSee } from '../lib/constants.js';
+import { ROLES, SRC_LABELS, effectiveRole, isNiHandler, canSelfForward, DRAWER_MQ, canSee, PAST_QUALIFY } from '../lib/constants.js';
 import useMediaQuery from '../hooks/useMediaQuery.js';
 import useChanged from '../hooks/useChanged.js';
 
@@ -151,13 +152,45 @@ function Actions({ l }) {
     showToast('Marked as Not Interested', 'warn');
   };
 
-  const doNoAnswer = () => {
-    const res = logNoAnswer(l.id, user);
+  const [naBusy, setNaBusy] = useState(false);
+  const doNoAnswer = async () => {
+    setNaBusy(true);
+    const res = await logNoAnswer(l.id, user);
+    setNaBusy(false);
     refreshDB();
-    const retry = res.lockUntil ? new Date(res.lockUntil).toLocaleString('en-GB', { weekday: 'short', day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : '';
-    if (res.locked) showToast(`Locked — 7 attempts used. Try again after ${retry}`, 'warn');
-    else if (res.hitCap) showToast(`7 attempts reached — locked for 24h, retry after ${retry}`, 'warn');
-    else showToast(`No Answer logged (${res.attempts}/7) · follow-up set for tomorrow`, '');
+    if (res.error) showToast('Could not log the attempt. Check the connection and try again.', 'err');
+    else if (!res.counted) showToast(res.hitCap ? `${MAX_ATTEMPTS} attempts already used. Follow-ups are off.` : 'Follow-ups are off for this lead', 'warn');
+    else if (res.hitCap) showToast(`${MAX_ATTEMPTS} attempts reached. Follow-ups stopped.`, 'warn');
+    else showToast(`No Answer logged (${res.attempts}/${MAX_ATTEMPTS}) · follow-up set for tomorrow`, '');
+  };
+
+  // Stop / resume follow-ups. WHO may do this is decided here in the browser
+  // only: every request uses the public key and the browser-checked login, so
+  // the database cannot tell a manager from an agent. Not secure until real
+  // sign-in (Supabase Auth). The database keeps NOT_INTERESTED_X2 permanent.
+  const block = followUpBlock(l);
+  const supervisor = r === ROLES.TL || r === ROLES.MGMT;
+  // Before migration 0049 the column is missing and the PATCH would drop it
+  // silently (sbUpdate strips unknown columns), so the action stays hidden.
+  const [has0049, setHas0049] = useState(false);
+  useEffect(() => {
+    let live = true;
+    hasColumn('leads', 'followup_suppressed_at', '"No Longer Responding" is hidden. Apply supabase/migrations/0049_followup_rules.sql.')
+      .then(ok => { if (live) setHas0049(ok); });
+    return () => { live = false; };
+  }, []);
+  const mayStop = has0049 && !block && (l.assignedTo === user.id || supervisor);
+  const mayResume = has0049 && !!l.followupSuppressedAt && l.followupSuppressedReason !== 'NOT_INTERESTED_X2' && supervisor;
+  const doStop = () => {
+    if (!window.confirm('Stop follow-ups for this lead? The lead and its status stay as they are.')) return;
+    setNoLongerResponding(l.id, user);
+    refreshDB();
+    showToast('Follow-ups stopped. No longer responding.', 'warn');
+  };
+  const doResume = () => {
+    clearFollowupSuppression(l.id, user);
+    refreshDB();
+    showToast('Follow-ups resumed', 'ok');
   };
 
   const doDoneVisit = () => {
@@ -172,22 +205,27 @@ function Actions({ l }) {
     showToast('Meeting marked as attended', 'ok');
   };
 
-  // A lead that has burned through its 7 attempts is locked for 24h: the entire
-  // action set is frozen for the agent until the cool-off lifts. Only the
+  // A 24h lock from before 0049 (7 attempts under the old rule) still freezes
+  // the agent's action set until it lapses; 0049 sets no new locks. Only the
   // attempting role is locked — supervisors (TL/MGMT) are never blocked.
+  // Interested stays visible inside the lock but disabled: the lock is the
+  // safeguard, so the action renders greyed out rather than hidden.
   const lockUntil = r === ROLES.AGENT ? noAnswerLock(l) : null;
   if (lockUntil) {
     const retry = lockUntil.toLocaleString('en-GB', { weekday: 'short', day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
     return (
       <div className="act-card">
         <div className="act-ttl">Actions</div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '14px', borderRadius: '8px', background: 'var(--orange-l)', color: 'var(--orange)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '14px', borderRadius: '8px', background: 'var(--orange-l)', color: 'var(--orange)' }}> {/* ds-allow-hardcode: pre-existing lock-banner inline styles */}
           <Mi>lock</Mi>
           <div style={{ display: 'flex', flexDirection: 'column', lineHeight: 1.35 }}>
             <b>Locked — 7 attempts used</b>
             <span style={{ fontSize: '12px' }}>No answer after 7 attempts. Try again after {retry}.</span>
           </div>
         </div>
+        <button className="btn btn-success btn-full" disabled> {/* ds-allow-hardcode: lock card needs its own top gap */}
+          <Mi>thumb_up</Mi>Interested
+        </button>
       </div>
     );
   }
@@ -202,8 +240,12 @@ function Actions({ l }) {
         <Mi>phone_callback</Mi>Connected
       </button>
     );
-    if (l.status === 'CONTACTED') btns.push(
-      <button key="interested" className="btn btn-success btn-full" onClick={() => doStatus('INTERESTED')}>
+    // Interested is kept visible at every status: from INTERESTED on (PAST_QUALIFY)
+    // it is disabled (already qualified; re-marking would rewind a later stage)
+    // rather than hidden, so the same control sits in the same place on every lead.
+    const interested = PAST_QUALIFY.includes(l.status);
+    btns.push(
+      <button key="interested" className="btn btn-success btn-full" onClick={() => doStatus('INTERESTED')} disabled={interested}>
         <Mi>thumb_up</Mi>Interested
       </button>
     );
@@ -224,21 +266,19 @@ function Actions({ l }) {
     // Attempt — neutral grey outcome: logs a 0-min call attempt, books a next-day
     // follow-up, keeps current status. Available while chasing first contact (NEW),
     // after connecting (CONTACTED), and once interested (3rd stage, confirming
-    // before the meeting). Counter restarts each stage; 7 in a stage → the lead is
-    // locked for 24h (status unchanged), then a fresh batch of 7 is granted.
-    if (['NEW', 'CONTACTED', 'INTERESTED'].includes(l.status)) {
-      // A lapsed lock (noAnswerLockUntil in the past) means the next attempt starts
-      // a fresh batch, so show no count until then.
-      const att = l.noAnswerLockUntil ? 0 : (l.noAnswerCount || 0);
+    // before the meeting). Counter restarts each stage; the 5th in a stage stops
+    // follow-ups (status unchanged). Hidden once follow-ups are off.
+    if (['NEW', 'CONTACTED', 'INTERESTED'].includes(l.status) && !block) {
+      const att = l.noAnswerCount || 0;
       btns.push(
-        <button key="noans" className="btn btn-neutral btn-full" onClick={doNoAnswer}>
-          <Mi>phone_missed</Mi>Attempt{att > 0 ? ` (${att}/7)` : ''}
+        <button key="noans" className="btn btn-neutral btn-full" onClick={doNoAnswer} disabled={naBusy}>
+          <Mi>phone_missed</Mi>Attempt{att > 0 ? ` (${att}/${MAX_ATTEMPTS})` : ''}
         </button>
       );
     }
     // After contact — follow-up to keep nurturing. Not at INTERESTED (3rd stage):
     // that lead is qualified and ready for a meeting.
-    if (l.status === 'CONTACTED') btns.push(
+    if (l.status === 'CONTACTED' && !block) btns.push(
       <button key="followup" className="btn btn-full" style={{ background: 'var(--orange-l)', color: 'var(--orange)' }} onClick={() => openModal('follow-up')}>
         <Mi>alarm</Mi>Follow-up
       </button>
@@ -268,12 +308,12 @@ function Actions({ l }) {
       </button>
     );
     // Attempt — couldn't reach the client; logs an attempt + next-day follow-up.
-    // 7 attempts in a stage → lead locked for 24h (status unchanged), then reset.
-    if (['MEETING_SET', 'SITE_VISIT_SCHEDULED'].includes(l.status)) {
-      const att = l.noAnswerLockUntil ? 0 : (l.noAnswerCount || 0);
+    // The 5th in a stage stops follow-ups (status unchanged).
+    if (['MEETING_SET', 'SITE_VISIT_SCHEDULED'].includes(l.status) && !block) {
+      const att = l.noAnswerCount || 0;
       btns.push(
-        <button key="mt-attempt" className="btn btn-neutral btn-full" onClick={doNoAnswer}>
-          <Mi>phone_missed</Mi>Attempt{att > 0 ? ` (${att}/7)` : ''}
+        <button key="mt-attempt" className="btn btn-neutral btn-full" onClick={doNoAnswer} disabled={naBusy}>
+          <Mi>phone_missed</Mi>Attempt{att > 0 ? ` (${att}/${MAX_ATTEMPTS})` : ''}
         </button>
       );
     }
@@ -305,8 +345,10 @@ function Actions({ l }) {
       <button key="ni-interested" className="btn btn-success btn-full" onClick={() => doStatus('INTERESTED')}>
         <Mi>thumb_up</Mi>Interested
       </button>,
-      <button key="ni-noans" className="btn btn-neutral btn-full" onClick={doNoAnswer}>
-        <Mi>phone_missed</Mi>Attempt{!l.noAnswerLockUntil && l.noAnswerCount > 0 ? ` (${l.noAnswerCount}/7)` : ''}
+    );
+    if (!block) btns.push(
+      <button key="ni-noans" className="btn btn-neutral btn-full" onClick={doNoAnswer} disabled={naBusy}>
+        <Mi>phone_missed</Mi>Attempt{l.noAnswerCount > 0 ? ` (${l.noAnswerCount}/${MAX_ATTEMPTS})` : ''}
       </button>,
       <button key="ni-followup" className="btn btn-full" style={{ background: 'var(--orange-l)', color: 'var(--orange)' }} onClick={() => openModal('follow-up')}>
         <Mi>alarm</Mi>Follow-up
@@ -331,7 +373,7 @@ function Actions({ l }) {
       </button>
     );
     if (inDeal) {
-      btns.push(
+      if (!block) btns.push(
         <button key="follow-up" className="btn btn-full" style={{ background: 'var(--orange-l)', color: 'var(--orange)' }} onClick={() => openModal('follow-up')}>
           <Mi>alarm</Mi>Take Time
         </button>
@@ -367,6 +409,17 @@ function Actions({ l }) {
       </button>
     );
   }
+
+  if (mayStop) btns.push(
+    <button key="no-longer" className="btn btn-g btn-full" onClick={doStop}>
+      <Mi>voice_over_off</Mi>No Longer Responding
+    </button>
+  );
+  if (mayResume) btns.push(
+    <button key="resume-fu" className="btn btn-g btn-full" onClick={doResume}>
+      <Mi>alarm_on</Mi>Resume Follow-ups
+    </button>
+  );
 
   btns.push(
     <div key="log-call" className="log-call-wrap">
