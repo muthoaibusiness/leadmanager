@@ -1,8 +1,11 @@
 import Mi from '../Mi.jsx';
 import { getTarget, achievement } from '../../lib/db.js';
 import { daysLeftInMonth } from '../../lib/helpers.js';
+import { Ring, Meter } from './MobileBits.jsx';
 
-export default function TargetCard({ user }) {
+// `variant="soft"` (the phone Home): the same target numbers as a ring and a
+// bar, for the bottom of the Today card.
+export default function TargetCard({ user, variant }) {
   const tgt = getTarget(user.id);
   const ach = achievement(user.id, user.role);
   const tar = tgt ? tgt.value : 0;
@@ -12,6 +15,20 @@ export default function TargetCard({ user }) {
   const needed = Math.max(0, tar - ach);
   const daily = left > 0 ? (needed / left).toFixed(1) : '-';
   const kpiName = 'Site Visits Done';
+
+  if (variant === 'soft') {
+    return (
+      <div className="mh-hero-foot">
+        <Ring pct={pct} label={`Monthly target ${pct} percent`} />
+        <div className="mh-meters">
+          <Meter label="Site visits · monthly target" value={tgt ? `${ach} of ${tar}` : 'No target'} pct={pct} />
+          <p className="mh-note">
+            {tgt ? (needed > 0 ? `${needed} to go` : 'Reached') : `${ach} done`} · {left} days left{tar > 0 && left > 0 && needed > 0 ? ` · ${daily}/day` : ''}
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="tc">

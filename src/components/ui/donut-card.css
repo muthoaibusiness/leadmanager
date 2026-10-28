@@ -29,6 +29,7 @@
   background: var(--surf-solid); border: 1px solid var(--bd2); box-shadow: var(--sh); font-size: 12.5px;
 }
 .dnc-tip.left { transform: translate(calc(-100% - 12px), -50%); }
+.dnc-tip.above { transform: translate(-50%, calc(-100% - 16px)); }   /* touch: clear of the finger */
 .dnc-tip i { width: 8px; height: 8px; border-radius: 2px; flex-shrink: 0; }
 .dnc-tip-l { color: var(--t2); }
 .dnc-tip b { font-weight: 700; color: var(--t1); font-variant-numeric: tabular-nums; }

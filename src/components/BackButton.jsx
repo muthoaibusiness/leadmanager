@@ -9,7 +9,9 @@ export default function BackButton() {
   if (!navBack) return null;
   return (
     <button type="button" className="hd-back" onClick={navBack.go} aria-label={`Back to ${navBack.label}`} title={`Back to ${navBack.label}`}>
-      <Mi aria-hidden="true">arrow_back</Mi>
+      {/* Phones show the chevron in a round button instead (index.css). */}
+      <Mi aria-hidden="true" className="hd-back-arrow">arrow_back</Mi>
+      <Mi aria-hidden="true" className="hd-back-chev">chevron_left</Mi>
     </button>
   );
 }

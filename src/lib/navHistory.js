@@ -16,6 +16,7 @@ export const VIEW_TITLES = {
   properties: 'Projects',
   reports: 'Reports',
   agentperf: 'Performance',
+  perfreports: 'Reports',
   bookings: 'Sales Activity',
   team: 'My Team',
   accounts: 'Users',

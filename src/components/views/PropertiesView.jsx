@@ -106,19 +106,19 @@ export default function PropertiesView() {
       </div>
 
       <div className="prop-toolbar" style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', alignItems: 'center', marginBottom: '16px', background: 'var(--surf)', padding: '12px', borderRadius: '12px', border: '1px solid var(--bd2)' }}>
-        <div className="pt-search" style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: '1 1 200px', minWidth: '200px', background: 'var(--inset)', padding: '0 12px', borderRadius: '8px', border: '1px solid var(--bd2)' }}>
+        <div className="pt-search" style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'var(--inset)', padding: '0 12px', borderRadius: '8px', border: '1px solid var(--bd2)' }}>
           <Mi>search</Mi>
           <input name="project-search" placeholder="Search project, area, address..." value={q} onChange={filterBy(setQ)} style={{ border: 'none', background: 'transparent', outline: 'none', width: '100%', height: '36px', color: 'var(--t1)' }} />
         </div>
-        <select name="project-city" className="fsel" value={city} onChange={filterBy(setCity)} style={{ flex: '1 1 auto', height: '38px', minWidth: '120px', padding: '0 12px', borderRadius: '8px', border: '1px solid var(--bd2)', background: 'var(--surf)', color: 'var(--t1)' }}>
+        <select name="project-city" className="fsel" value={city} onChange={filterBy(setCity)} style={{ height: '38px', padding: '0 12px', borderRadius: '8px', border: '1px solid var(--bd2)', background: 'var(--surf)', color: 'var(--t1)' }}>
           <option value="ALL">All cities</option>
           {cities.map(c => <option key={c} value={c}>{c}</option>)}
         </select>
-        <select name="project-type" className="fsel" value={type} onChange={filterBy(setType)} style={{ flex: '1 1 auto', height: '38px', minWidth: '120px', padding: '0 12px', borderRadius: '8px', border: '1px solid var(--bd2)', background: 'var(--surf)', color: 'var(--t1)' }}>
+        <select name="project-type" className="fsel" value={type} onChange={filterBy(setType)} style={{ height: '38px', padding: '0 12px', borderRadius: '8px', border: '1px solid var(--bd2)', background: 'var(--surf)', color: 'var(--t1)' }}>
           <option value="ALL">All types</option>
           {PROPERTY_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
         </select>
-        <select name="project-status" className="fsel" value={status} onChange={filterBy(setStatus)} style={{ flex: '1 1 auto', height: '38px', minWidth: '120px', padding: '0 12px', borderRadius: '8px', border: '1px solid var(--bd2)', background: 'var(--surf)', color: 'var(--t1)' }}>
+        <select name="project-status" className="fsel" value={status} onChange={filterBy(setStatus)} style={{ height: '38px', padding: '0 12px', borderRadius: '8px', border: '1px solid var(--bd2)', background: 'var(--surf)', color: 'var(--t1)' }}>
           <option value="ALL">All status</option>
           {Object.entries(PROPERTY_STATUS).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
         </select>

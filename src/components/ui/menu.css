@@ -17,6 +17,12 @@
 @media (max-width: 1023px) {
   .menu-item { min-height: 44px; }
 }
+/* MenuDotRadio: a small filled dot left of the checked option, nothing on the
+   others (the text stays aligned either way). */
+.menu-dot { position: relative; padding-left: 32px; font-weight: 500; }
+.menu-dot-slot { position: absolute; left: 10px; top: 50%; width: 14px; height: 14px; margin-top: -7px; display: grid; place-items: center; }
+.menu-dot-mark { display: block; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); }
+
 /* MenuRadio: an empty ring, or the filled one in the accent when checked. */
 .menu-radio .menu-on, .menu-radio[data-state="checked"] .menu-off { display: none; }
 .menu-radio[data-state="checked"] .menu-on { display: inline-block; color: var(--accent); }

@@ -3,7 +3,7 @@ import { setOfferResolver } from './offerRegistry.js';
 import { uid, now_, fmtBDT, fmtDT, curMonth, startOfMonth, rlabel } from './helpers.js';
 import { leadFilterParam, ORDER } from './leadQuery.js';
 import { COUNTED } from './contactPerf.js';
-import { sbGet, sbGetAll, sbCount, sbPage, hasColumn, sbRpc, sbUpdate, sbInsert, sbUpsert, sbMarkRead, sbDelete, sbDeleteLeads, sbEmailsInUse, sbUserIdsByRole, sbActsForLead, sbLoadActWindow, sbLoadLeadUpdates, sbLoadLeadsSince, ACT_WINDOW_DAYS, lToR, rToL, uToR, rToU, tToR, rToT, aToR, rToA, rToN, tgToR, rToTg, pToR, rToP, bkToR, rToBk, cToR, rToC, hrToR, rToHr, sbUpsertNotifs } from './supabase.js';
+import { sbGet, sbGetAll, sbCount, sbPage, hasColumn, sbRpc, sbRpcCall, sbUpdate, sbInsert, sbUpsert, sbMarkRead, sbDelete, sbDeleteLeads, sbEmailsInUse, sbUserIdsByRole, sbActsForLead, sbLoadActWindow, sbLoadLeadUpdates, sbLoadLeadsSince, ACT_WINDOW_DAYS, lToR, rToL, uToR, rToU, tToR, rToT, aToR, rToA, rToN, tgToR, rToTg, pToR, rToP, bkToR, rToBk, cToR, rToC, hrToR, rToHr, sbUpsertNotifs } from './supabase.js';
 // Bumped from propcrm_v1 when the cloud load became tenant-scoped: every
 // existing browser is carrying a full multi-tenant snapshot under the old key,
 // and mergeDB would happily fold it back in on top of the scoped one. A new key
@@ -1903,75 +1903,137 @@ export function setFollowUpFn(leadId, days, user) {
   addAct(leadId, { type: 'FOLLOW_UP', description: 'Follow-up reminder set for ' + days + ' day' + (days == 1 ? '' : 's') + ' — ' + new Date(iso).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }), userId: user.id, userName: user.name, durationSeconds: 0 });
 }
 
-// Schedule a follow-up at an exact date+time (ISO string).
-export function setFollowUpAt(leadId, iso, user) {
-  updLead(leadId, { nextFollowup: iso });
-  const when = new Date(iso).toLocaleString('en-GB', { weekday: 'short', day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
-  addAct(leadId, { type: 'FOLLOW_UP', description: 'Follow-up scheduled for ' + when, userId: user.id, userName: user.name, durationSeconds: 0 });
+// The follow-up rules (migration 0049). The database enforces the row values
+// (the cap, suppression clearing next_followup, the requested time); these
+// helpers mirror them so the UI shows the same thing before it asks.
+//
+// An attempt is a CALL with no answer (logNoAnswer). A connected call
+// (LogCall) is not one. Changing status resets the count, as before.
+export const MAX_ATTEMPTS = 5;
+const CLOSED = ['DEAL_CLOSED_WON', 'DEAL_CLOSED_LOST'];
+const fuWhen = (iso) => new Date(iso).toLocaleString('en-GB', { weekday: 'short', day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
+
+// Why follow-ups are off for a lead, or null. A count already at 5 or more
+// (leads from before 0049, live up to 7) reads as used up even though 0049 does
+// not suppress them; whether to suppress those rows is a separate decision.
+export function followUpBlock(lead) {
+  if (!lead) return 'closed';
+  if (CLOSED.includes(lead.status)) return 'closed';
+  if (lead.followupSuppressedAt) return lead.followupSuppressedReason || 'NO_LONGER_RESPONDING';
+  if ((lead.noAnswerCount || 0) >= MAX_ATTEMPTS) return 'ATTEMPTS_EXHAUSTED';
+  return null;
 }
 
-// 24h cool-off applied once an agent burns through a batch of attempts.
-const NO_ANSWER_LOCK_MS = 24 * 60 * 60 * 1000;
+// next_followup is text in toISOString() form (verified live). Never earlier
+// than the customer-requested time. Compared by instant, never as strings.
+export function nextFollowupFor(lead, when) {
+  const want = new Date(when).getTime();
+  const floor = lead?.followupNotBefore ? Date.parse(lead.followupNotBefore) : NaN;
+  return new Date(Number.isFinite(floor) && floor > want ? floor : want).toISOString();
+}
 
-// Returns the active lock expiry (a Date in the future) if the lead is currently
-// locked for no-answer, else null. A lock whose time has passed reads as null —
-// the lead is free again and the next attempt starts a fresh batch.
+// Schedule a follow-up at an exact date+time (ISO string). With
+// customerRequested, that time also becomes the earliest any follow-up may be
+// set (followup_not_before). Ignored on a lead whose follow-ups are off.
+export function setFollowUpAt(leadId, iso, user, { customerRequested = false } = {}) {
+  const lead = getLead(leadId);
+  if (lead && lead.followupSuppressedAt) return;
+  const patch = customerRequested
+    ? { nextFollowup: new Date(iso).toISOString(), followupNotBefore: new Date(iso).toISOString() }
+    : { nextFollowup: nextFollowupFor(lead, iso) };
+  updLead(leadId, patch);
+  addAct(leadId, {
+    type: 'FOLLOW_UP',
+    description: (customerRequested ? 'Follow-up set for when the customer asked — ' : 'Follow-up scheduled for ') + fuWhen(patch.nextFollowup),
+    userId: user.id, userName: user.name, durationSeconds: 0,
+  });
+}
+
+// Stop follow-ups because the customer no longer responds. The lead, its
+// status and its history stay. Lifting it is clearFollowupSuppression().
+// Who may do either is a UI rule only (see LeadPanel): every request uses the
+// public key, so the database cannot tell a manager from an agent.
+export function setNoLongerResponding(leadId, user) {
+  updLead(leadId, { followupSuppressedAt: now_(), followupSuppressedReason: 'NO_LONGER_RESPONDING', nextFollowup: null });
+  addAct(leadId, { type: 'FOLLOW_UP', description: 'No longer responding — follow-ups stopped', userId: user.id, userName: user.name, durationSeconds: 0 });
+}
+
+// Lift a suppression the UI allows lifting. NOT_INTERESTED_X2 is permanent:
+// the database keeps it whatever this sends.
+export function clearFollowupSuppression(leadId, user) {
+  updLead(leadId, { followupSuppressedAt: null, followupSuppressedReason: null });
+  addAct(leadId, { type: 'FOLLOW_UP', description: 'Follow-ups resumed', userId: user.id, userName: user.name, durationSeconds: 0 });
+}
+
+// Kept for leads still carrying a lock from before 0049 (it lapses on its own).
 export function noAnswerLock(lead) {
   const until = lead?.noAnswerLockUntil ? new Date(lead.noAnswerLockUntil) : null;
   return until && until > new Date() ? until : null;
 }
 
-// Phase-1 "No Answer": log a 0-min call attempt and auto-schedule a same-time
-// follow-up for tomorrow, keeping status unchanged. After `maxAttempts` no-answers
-// the lead is LOCKED for 24h — its status is NOT changed (no auto-disqualify);
-// once the lock lifts the agent is granted a fresh batch of attempts. Calling
-// while still locked is a no-op that returns { locked: true, lockUntil }.
-// Returns { attempts, hitCap, locked, lockUntil }.
-export function logNoAnswer(leadId, user, maxAttempts = 7) {
-  const lead = getLead(leadId);
-  if (!lead) return { attempts: 0, hitCap: false, locked: false };
+// "No Answer": a 0-min call attempt, a follow-up for tomorrow, status unchanged.
+// The count lives on the server (lead_log_no_answer, 0049): one atomic
+// increment, at most MAX_ATTEMPTS, and the 5th stops follow-ups. Each click
+// gets one request id, reused on a network retry, so a retry never counts
+// twice; a second click while the first is in flight joins it.
+// Returns { attempts, counted, hitCap, suppressed, nextFollowup } or
+// { error: true }.
+const _naInflight = new Map();
+export function logNoAnswer(leadId, user) {
+  if (_naInflight.has(leadId)) return _naInflight.get(leadId);
+  const p = logNoAnswerOnce(leadId, user).finally(() => _naInflight.delete(leadId));
+  _naInflight.set(leadId, p);
+  return p;
+}
 
-  const now = new Date();
-  const lockUntil = lead.noAnswerLockUntil ? new Date(lead.noAnswerLockUntil) : null;
-
-  // Still inside the 24h cool-off → refuse; the lead is locked.
-  if (lockUntil && lockUntil > now) {
-    return { attempts: lead.noAnswerCount || 0, hitCap: true, locked: true, lockUntil: lockUntil.toISOString() };
-  }
-
-  // A lapsed lock means the cool-off elapsed → start a fresh batch of attempts.
-  const prior = lockUntil ? 0 : (lead.noAnswerCount || 0);
-  const attempts = prior + 1;
-  const callTotal = (lead.callCount || 0) + 1;
-  const hitCap = attempts >= maxAttempts;
-
-  const patch = { noAnswerCount: attempts, callCount: callTotal };
-  if (hitCap) {
-    // Lock for 24h without touching status; resurface via a follow-up when it lifts.
-    const until = new Date(now.getTime() + NO_ANSWER_LOCK_MS);
-    patch.noAnswerLockUntil = until.toISOString();
-    patch.nextFollowup = until.toISOString();
-  } else {
-    patch.noAnswerLockUntil = null;
-    const next = new Date(); next.setDate(next.getDate() + 1);
-    patch.nextFollowup = next.toISOString();
-  }
-  updLead(leadId, patch);
-
-  addAct(leadId, {
-    type: 'CALL', result: 'No Answer', durationSeconds: 0,
-    description: 'Call attempt · No Answer (' + attempts + '/' + maxAttempts + ')',
-    userId: user.id, userName: user.name,
+async function logNoAnswerOnce(leadId, user) {
+  const requestId = globalThis.crypto.randomUUID();
+  const res = await sbRpcCall('lead_log_no_answer', { p_lead_id: leadId, p_user_id: user.id, p_user_name: user.name, p_request_id: requestId });
+  if (res.missing) return logNoAnswerLocal(leadId, user);
+  if (res.error) return { error: true };
+  const row = (res.data || [])[0];
+  if (!row) return { error: true };
+  const patch = {
+    noAnswerCount: row.attempts, noAnswerLockUntil: null, nextFollowup: row.next_followup ?? null,
+    followupSuppressedReason: row.suppressed_reason ?? null,
+  };
+  if (row.suppressed_reason) patch.followupSuppressedAt = getLead(leadId)?.followupSuppressedAt || now_();
+  if (row.counted) patch.callCount = (getLead(leadId)?.callCount || 0) + 1;
+  mutate(db => {
+    const i = db.leads.findIndex(l => l.id === leadId);
+    if (i >= 0) db.leads[i] = { ...db.leads[i], ...patch };
   });
-  const when = new Date(patch.nextFollowup).toLocaleString('en-GB', { weekday: 'short', day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
+  // The server wrote the CALL and FOLLOW_UP rows; the timeline refetches them.
+  forgetLeadActs(leadId);
+  return {
+    attempts: row.attempts, counted: !!row.counted,
+    hitCap: row.attempts >= MAX_ATTEMPTS, suppressed: !!row.suppressed_reason,
+    nextFollowup: row.next_followup ?? null,
+  };
+}
+
+// Before 0049 is applied: the old browser-side path, now capped at
+// MAX_ATTEMPTS with no 24h lock. Two devices can still lose a count here,
+// which is what the server function fixes.
+function logNoAnswerLocal(leadId, user) {
+  const lead = getLead(leadId);
+  if (!lead) return { error: true };
+  const prior = lead.noAnswerCount || 0;
+  if (prior >= MAX_ATTEMPTS || followUpBlock(lead) === 'closed') {
+    return { attempts: prior, counted: false, hitCap: prior >= MAX_ATTEMPTS, suppressed: false, nextFollowup: lead.nextFollowup || null };
+  }
+  const attempts = prior + 1;
+  const hitCap = attempts >= MAX_ATTEMPTS;
+  const next = new Date(); next.setDate(next.getDate() + 1);
+  const patch = { noAnswerCount: attempts, callCount: (lead.callCount || 0) + 1, noAnswerLockUntil: null, nextFollowup: hitCap ? null : nextFollowupFor(lead, next) };
+  updLead(leadId, patch);
+  addAct(leadId, { type: 'CALL', durationSeconds: 0, description: 'Call attempt · No Answer (' + attempts + '/' + MAX_ATTEMPTS + ')', userId: user.id, userName: user.name });
   addAct(leadId, {
     type: 'FOLLOW_UP', durationSeconds: 0,
-    description: hitCap
-      ? maxAttempts + ' attempts reached — locked 24h, retry after ' + when
-      : 'Auto follow-up next day — ' + when,
+    description: hitCap ? MAX_ATTEMPTS + ' attempts reached — follow-ups stopped' : 'Auto follow-up next day — ' + fuWhen(patch.nextFollowup),
     userId: user.id, userName: user.name,
   });
-  return { attempts, hitCap, locked: false, lockUntil: hitCap ? patch.noAnswerLockUntil : null };
+  return { attempts, counted: true, hitCap, suppressed: false, nextFollowup: patch.nextFollowup };
 }
 
 // Agent attended the scheduled meeting — flag it + log to the timeline.
@@ -2068,31 +2130,34 @@ export function markLostFn(leadId, reason, user) {
     (userId) => ({ userId, type: 'DEAL_LOST', message: 'Deal lost: ' + l.name, leadId }), user);
 }
 
+// Runs on every app load, in every tab, so each reminder has to be created
+// exactly once. Its id is fixed by lead, recipient and due time: a reload, a
+// second tab or a retry produces the same id, the cloud insert ignores it
+// (ignore-duplicates, so a read reminder stays read), and a rescheduled
+// follow-up gets a new one. nextFollowup is left as it is — the agent clears it
+// (clearFollowup) or reschedules it.
+const NO_REMINDER = ['DEAL_CLOSED_WON', 'DEAL_CLOSED_LOST'];
 export function checkFollowUpReminders(db) {
-  const now = new Date();
-  const notifList = [];
+  const now = Date.now();
+  const toInsert = [];
+  if (!db.notifications) db.notifications = {};
   // `leads` is a cache now, not a guaranteed key — sbLoad no longer ships it.
   (db.leads || []).forEach(lead => {
-    if (!lead.nextFollowup) return;
-    if (new Date(lead.nextFollowup) > now) return;
-    const tl = db.users.find(u => u.id === lead.assignedTo);
-    if (!tl) return;
-    notifList.push({ userId: tl.id, type: 'FOLLOW_UP', message: 'Follow-up reminder: ' + lead.name, leadId: lead.id });
-    lead.nextFollowup = null;
+    const due = Date.parse(lead.nextFollowup);
+    if (!(due <= now)) return; // unset, invalid, or not due yet
+    if (NO_REMINDER.includes(lead.status)) return;
+    // followupSuppressedAt arrives with migration 0049; until then it is never set.
+    if (lead.followupSuppressedAt) return;
+    const to = db.users.find(u => u.id === lead.assignedTo);
+    if (!to) return;
+    const id = `fu-${lead.id}-${to.id}-${due}`;
+    const list = db.notifications[to.id] || (db.notifications[to.id] = []);
+    if (list.some(n => n.id === id)) return;
+    const n = { id, type: 'FOLLOW_UP', message: 'Follow-up reminder: ' + lead.name, leadId: lead.id, timestamp: now_(), read: false, userId: to.id, companyId: lead.companyId ?? to.companyId ?? null };
+    list.unshift(n);
+    toInsert.push(n);
   });
-  if (notifList.length) {
-    if (!db.notifications) db.notifications = {};
-    const ts = now_();
-    notifList.forEach(({ userId, type, message, leadId }) => {
-      if (!db.notifications[userId]) db.notifications[userId] = [];
-      const companyId = db.users.find(u => u.id === userId)?.companyId ?? null;
-      const n = { id: 'n' + uid(), type, message, leadId, timestamp: ts, read: false, userId, companyId };
-      db.notifications[userId].unshift(n);
-    });
-    sbUpsertNotifs(notifList.map(({ userId, type, message, leadId }) => ({
-      id: 'n' + uid(), userId, type, message, leadId, timestamp: ts, read: false,
-    })));
-  }
+  if (toInsert.length) sbUpsertNotifs(toInsert, { ignoreDuplicates: true });
 }
 
 export function addNote(leadId, txt, user) {
