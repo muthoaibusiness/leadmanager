@@ -31,7 +31,7 @@ globalThis.fetch = async (url, init = {}) => {
 const json = (status, data) => new Response(JSON.stringify(data), { status, headers: { 'Content-Type': 'application/json' } });
 
 const db = await import('../src/lib/db.js');
-const { logNoAnswer, setNoLongerResponding, clearFollowupSuppression, setFollowUpAt, followUpBlock, nextFollowupFor, MAX_ATTEMPTS, getDB } = db;
+const { logNoAnswer, setNoLongerResponding, clearFollowupSuppression, setFollowUpAt, followUpBlock, nextFollowupFor, MAX_ATTEMPTS, getDB, clearFollowup, checkFollowUpReminders, addNote } = db;
 const flush = () => new Promise((r) => setTimeout(r, 0));
 
 const AGENT = { id: 'u1', name: 'Agent', role: 'AGENT', companyId: 'c1' };
@@ -229,4 +229,35 @@ test('setFollowUpAt does nothing on a suppressed lead', () => {
   setFollowUpAt('L1', '2026-12-01T10:00:00.000Z', AGENT);
   assert.equal(getDB().leads[0].nextFollowup, null);
   assert.equal(patches().length, 0);
+});
+
+test('a customer request recorded only as a note does not change the schedule', async () => {
+  reset(); seed({ nextFollowup: '2026-12-01T10:00:00.000Z' });
+  addNote('L1', 'Customer asked to be called Tuesday at 3pm', AGENT);
+  const l = getDB().leads[0];
+  assert.equal(l.nextFollowup, '2026-12-01T10:00:00.000Z', 'schedule unchanged');
+  assert.equal(patches().filter(p => p.body.next_followup).length, 0, 'no schedule PATCH');
+  await flush();
+  const act = calls.find((c) => c.method === 'POST' && c.url.includes('/rest/v1/activities'));
+  assert.equal(act.body.type, 'NOTE', 'recorded as a plain note only');
+});
+
+test('a custom schedule applies only to the lead it was saved on', () => {
+  reset();
+  const d = getDB();
+  seed({ status: 'CONTACTED' });
+  d.leads.push({ id: 'L2', name: 'Other', status: 'CONTACTED', assignedTo: 'u1', companyId: 'c1', noAnswerCount: 0, callCount: 0, nextFollowup: null });
+  setFollowUpAt('L1', '2026-12-10T09:00:00.000Z', AGENT);
+  const l1 = d.leads.find(l => l.id === 'L1');
+  const l2 = d.leads.find(l => l.id === 'L2');
+  assert.equal(l1.nextFollowup, '2026-12-10T09:00:00.000Z');
+  assert.equal(l2.nextFollowup, null, 'unrelated lead untouched');
+});
+
+test('an overdue follow-up with no custom touch is not auto-rescheduled (no global cadence)', () => {
+  reset(); seed({ status: 'CONTACTED', nextFollowup: '2026-01-01T09:00:00.000Z', noAnswerCount: 0 });
+  checkFollowUpReminders(getDB());
+  const l = getDB().leads[0];
+  assert.equal(l.nextFollowup, '2026-01-01T09:00:00.000Z', 'unchanged: reminders notify, they do not reschedule');
+  assert.equal(patches().length, 0, 'no reschedule PATCH');
 });

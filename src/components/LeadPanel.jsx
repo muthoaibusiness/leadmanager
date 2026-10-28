@@ -3,7 +3,7 @@ import Mi from './Mi.jsx';
 import { LoadingBlock } from './Spinner.jsx';
 import { useApp } from '../context/AppContext.jsx';
 import LogCall from './LogCall.jsx';
-import { getLead, getActs, ensureLead, ensureLeadActs, hasFullActs, changeStatus, doneVisit, deleteLead, logNoAnswer, noAnswerLock, attendMeeting, userNameById, claimLeadForSelf, MAX_ATTEMPTS, followUpBlock, setNoLongerResponding, clearFollowupSuppression } from '../lib/db.js';
+import { getLead, getActs, ensureLead, ensureLeadActs, hasFullActs, changeStatus, doneVisit, deleteLead, logNoAnswer, noAnswerLock, attendMeeting, userNameById, MAX_ATTEMPTS, followUpBlock, setNoLongerResponding, clearFollowupSuppression } from '../lib/db.js';
 import { hasColumn } from '../lib/supabase.js';
 import { fmtD, fmtDT, fmtBDT, rlabel, scoreLead, scoreLabel, leadDisplayStatus, fmtDateTimeAP } from '../lib/helpers.js';
 import ActivityTimeline from './ActivityTimeline.jsx';
@@ -235,7 +235,8 @@ function Actions({ l }) {
   // The Agent works a lead end to end: first contact → Interested → Set Meeting
   // → Attend → Site Visit → Visit Done → Forward to Team Lead.
   if (r === ROLES.AGENT) {
-    if (l.status === 'NEW') btns.push(
+    const s = l.status;
+    if (s === 'NEW') btns.push(
       <button key="contacted" className="btn btn-p btn-full" onClick={() => doStatus('CONTACTED')}>
         <Mi>phone_callback</Mi>Connected
       </button>
@@ -243,22 +244,23 @@ function Actions({ l }) {
     // Interested is kept visible at every status: from INTERESTED on (PAST_QUALIFY)
     // it is disabled (already qualified; re-marking would rewind a later stage)
     // rather than hidden, so the same control sits in the same place on every lead.
-    const interested = PAST_QUALIFY.includes(l.status);
+    const interested = PAST_QUALIFY.includes(s);
     btns.push(
       <button key="interested" className="btn btn-success btn-full" onClick={() => doStatus('INTERESTED')} disabled={interested}>
         <Mi>thumb_up</Mi>Interested
       </button>
     );
-    if (l.status === 'INTERESTED' && canSee(user, 'meeting')) btns.push(
+    if (s === 'INTERESTED' && canSee(user, 'meeting')) btns.push(
       <button key="set-meeting" className="btn btn-teal btn-full" onClick={() => openModal('set-meeting')}>
         <Mi>event</Mi>Set Meeting
       </button>
     );
     // Not Interested — manual disqualify, available before contact (NEW), after
-    // connecting (CONTACTED), and once interested (INTERESTED): a client who
-    // showed interest can still back out before the meeting, and the agent must
-    // be able to record it as a status, not only as a note.
-    if (['NEW', 'CONTACTED', 'INTERESTED'].includes(l.status)) btns.push(
+    // connecting (CONTACTED), once interested (INTERESTED), and through the
+    // meeting/site-visit stages: a client can still back out before negotiation
+    // closes, and the agent must be able to record it as a status, not only as
+    // a note.
+    if (['NEW', 'CONTACTED', 'INTERESTED', 'MEETING_SET', 'SITE_VISIT_SCHEDULED', 'SITE_VISIT_DONE'].includes(s)) btns.push(
       <button key="notint" className="btn btn-g btn-full" onClick={doNotInterested}>
         <Mi>thumb_down</Mi>Not Interested
       </button>
@@ -317,17 +319,14 @@ function Actions({ l }) {
         </button>
       );
     }
-    // Forward to Team Lead — only after the site visit is done (not at meeting stage).
-    if (l.status === 'SITE_VISIT_DONE') btns.push(
-      <button key="fwd-tl" className="btn btn-purple btn-full" onClick={() => openModal('forward-tl')}>
-        <Mi>forward_to_inbox</Mi>Forward to Team Lead
-      </button>
-    );
-    // Hand the lead to another agent on the team, at any open stage up to the
-    // Team Lead hand-off. Status is kept; the new agent picks up where it is.
-    // Raw role, not `r`: a Meeting Agent gets its own one-click "Forward to
-    // Myself" below instead of this teammate picker.
-    if (user.role !== ROLES.MA && l.assignedTo === user.id && !['NEGOTIATING', 'DEAL_CLOSED_WON', 'DEAL_CLOSED_LOST', 'NOT_INTERESTED'].includes(l.status)) btns.push(
+    // One top-level Forward action. Its modal offers the three destinations:
+    // a team member (open stage, owned), the Team Lead (after the site visit,
+    // with the offer), and myself (Add-Customer holder or self_forward grant,
+    // when not already assigned here). Shown when any of the three applies.
+    const teamRoute = user.role !== ROLES.MA && s !== 'NEGOTIATING' && s !== 'DEAL_CLOSED_WON' && s !== 'DEAL_CLOSED_LOST' && s !== 'NOT_INTERESTED' && l.assignedTo === user.id;
+    const tlRoute = s === 'SITE_VISIT_DONE';
+    const selfRoute = canSelfForward(user) && l.assignedTo !== user.id;
+    if (teamRoute || tlRoute || selfRoute) btns.push(
       <button key="fwd-agent" className="btn btn-g btn-full" onClick={() => openModal('forward-agent')}>
         <Mi>swap_horiz</Mi>Forward to Agent
       </button>
@@ -390,22 +389,6 @@ function Actions({ l }) {
     btns.push(
       <button key="transfer" className="btn btn-purple btn-full" onClick={() => openModal('transfer-lead')}>
         <Mi>swap_horiz</Mi>Transfer Lead
-      </button>
-    );
-  }
-
-  // canSelfForward, not `r` — effectiveRole() folds Meeting Agent back to
-  // Agent for every other action above; self-forward (role, or the
-  // 'self_forward' feature grant) is the one thing that has to tell apart
-  // who may claim a lead for themselves outside the usual Management transfer.
-  if (canSelfForward(user) && l.assignedTo !== user.id) {
-    btns.push(
-      <button key="self-forward" className="btn btn-purple btn-full" onClick={() => {
-        claimLeadForSelf(l.id, user);
-        refreshDB();
-        showToast('Lead forwarded to you', 'ok');
-      }}>
-        <Mi>swap_horiz</Mi>Forward to Myself
       </button>
     );
   }
