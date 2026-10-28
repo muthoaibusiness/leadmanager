@@ -6,6 +6,10 @@ import { setFollowUpAt, getLead, getDB, getActs, addNote, isAgentNote, nextFollo
 import { fmtDT } from '../../lib/helpers.js';
 import { companyTimeZone, zonedToUtcIso, utcIsoToZoned, isPast } from '../../lib/companyTime.js';
 import { hasColumn } from '../../lib/supabase.js';
+import { useProjectToast } from '../project/projectToast.js';
+import useDiscardGuard from '../../hooks/useDiscardGuard.js';
+import { toastMsg } from '../../lib/toastMap.js';
+import { followupDirty } from '../../lib/followupDirty.js';
 
 // The field holds a wall-clock time in the COMPANY's time zone (Dhaka by
 // default), not the browser's: a time the customer named must not shift
@@ -20,7 +24,8 @@ const fmtIn = (iso, tz, long) => new Date(iso).toLocaleString('en-GB', long
   : { timeZone: tz, day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
 
 export default function FollowUpModal() {
-  const { modal, closeModal, user, panLead, refreshDB, showToast } = useApp();
+  const { modal, closeModal, user, panLead, refreshDB } = useApp();
+  const toast = useProjectToast({ always: true });
   const uid = useId(); // field ids, so each <label htmlFor> points at its field
   const isOpen = modal === 'follow-up';
   const tz = companyTimeZone(getDB().companies?.find(c => c.id === user?.companyId));
@@ -53,6 +58,17 @@ export default function FollowUpModal() {
   const landsAt = iso ? (customerAsked ? iso : nextFollowupFor(lead, iso)) : null;
   const movedLater = !!(iso && landsAt && landsAt !== iso);
 
+  // Guard every close path (backdrop, the X button, Cancel, Escape): a form
+  // with typed input asks before discarding via the goey confirmation. Clean
+  // forms close without asking.
+  const dirty = () => isOpen && followupDirty({ note, newNote, customerAsked, date, time }, { defDate: zonedDate(tz, 1), defTime: '10:00' });
+  const g = useDiscardGuard({
+    isOpen,
+    isDirty: dirty,
+    onClose: closeModal,
+    ask: { title: 'Discard follow-up?', description: 'Your unsaved follow-up details will be lost.' },
+  });
+
   const sharedNotes = (getActs(panLead) || []).filter(isAgentNote);
   const visibleNotes = showAllNotes ? sharedNotes : sharedNotes.slice(0, 3);
 
@@ -68,9 +84,9 @@ export default function FollowUpModal() {
     // A closing modal can still take a key press during its fade-out; a second
     // Enter must not set the follow-up twice.
     if (!isOpen) return;
-    if (!when) { showToast('Pick a date & time', 'err'); return; }
-    if (!iso) { showToast('Invalid date & time', 'err'); return; }
-    if (isPast(iso)) { showToast('That time has passed. Pick a later one.', 'err'); return; }
+    if (!when) { toastMsg(toast, 'Pick a date & time', 'err'); return; }
+    if (!iso) { toastMsg(toast, 'Invalid date & time', 'err'); return; }
+    if (isPast(iso)) { toastMsg(toast, 'That time has passed. Pick a later one.', 'err'); return; }
     setFollowUpAt(panLead, iso, user, { customerRequested: has0049 && customerAsked });
     // The note is optional: scheduling works without one. Saved through the same
     // addNote path as Lead Actions > Add Note, so no extra activities row.
@@ -78,18 +94,18 @@ export default function FollowUpModal() {
     if (t) addNote(panLead, t, user);
     closeModal();
     refreshDB();
-    showToast('Follow-up set for ' + fmtIn(landsAt, tz, false), 'ok');
+    toastMsg(toast, 'Follow-up set for ' + fmtIn(landsAt, tz, false), 'ok');
   };
 
   const preview = landsAt ? fmtIn(landsAt, tz, true) : null;
   const tzLabel = tz.split('/').pop().replace(/_/g, ' ');
 
   return (
-    <div className={`mov${isOpen ? ' on' : ''}`} onClick={e => { if (e.target === e.currentTarget) closeModal(); }}>
-      <div className="modal">
+    <div className={`mov${isOpen ? ' on' : ''}`} {...g.backdropProps}>
+      <div className="modal" {...g.modalProps}>
         <div className="m-hd">
           <div className="m-ttl">Set Follow-up</div>
-          <button className="m-x" onClick={closeModal}><Mi>close</Mi></button>
+          <button className="m-x" onClick={g.requestClose}><Mi>close</Mi></button>
         </div>
         <div className="m-body">
           <div className="m-hint"><Mi>alarm</Mi>You'll get a reminder, and it appears on the home page task list.</div>
@@ -135,7 +151,7 @@ export default function FollowUpModal() {
           </div>
         </div>
         <div className="m-ft">
-          <button className="btn btn-g" onClick={closeModal}>Cancel</button>
+          <button className="btn btn-g" onClick={g.requestClose}>Cancel</button>
           <button className="btn btn-warn" disabled={!when} onClick={submit}>
             <Mi>alarm</Mi>Save
           </button>

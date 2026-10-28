@@ -10,6 +10,8 @@ import ActivityTimeline from './ActivityTimeline.jsx';
 import { ROLES, SRC_LABELS, effectiveRole, isNiHandler, canSelfForward, DRAWER_MQ, canSee, PAST_QUALIFY } from '../lib/constants.js';
 import useMediaQuery from '../hooks/useMediaQuery.js';
 import useChanged from '../hooks/useChanged.js';
+import { useProjectToast } from './project/projectToast.js';
+import { toastMsg } from '../lib/toastMap.js';
 
 const leadCode = (l) => l.externalId || ('#' + String(l.id || '').slice(-6).toUpperCase());
 const SHARED_LABEL = { price: 'Price idea', brochure: 'Brochure', floor_plan: 'Floor Plan', video: 'Video', image: 'Image' };
@@ -135,7 +137,8 @@ function LeadInfo({ l }) {
 }
 
 function Actions({ l }) {
-  const { user, openModal, refreshDB, showToast } = useApp();
+  const { user, openModal, refreshDB } = useApp();
+  const toast = useProjectToast({ always: true });
   // Behavioural role: an Executive works leads with the action set its features
   // imply (always Agent). Delete stays on the raw role below.
   const r = effectiveRole(user);
@@ -143,13 +146,13 @@ function Actions({ l }) {
   const doStatus = (s) => {
     changeStatus(l.id, s, user);
     refreshDB();
-    showToast('Status updated', 'ok');
+    toastMsg(toast, 'Status updated', 'ok');
   };
 
   const doNotInterested = () => {
     changeStatus(l.id, 'NOT_INTERESTED', user);
     refreshDB();
-    showToast('Marked as Not Interested', 'warn');
+    toastMsg(toast, 'Marked as Not Interested', 'warn');
   };
 
   const [naBusy, setNaBusy] = useState(false);
@@ -158,10 +161,10 @@ function Actions({ l }) {
     const res = await logNoAnswer(l.id, user);
     setNaBusy(false);
     refreshDB();
-    if (res.error) showToast('Could not log the attempt. Check the connection and try again.', 'err');
-    else if (!res.counted) showToast(res.hitCap ? `${MAX_ATTEMPTS} attempts already used. Follow-ups are off.` : 'Follow-ups are off for this lead', 'warn');
-    else if (res.hitCap) showToast(`${MAX_ATTEMPTS} attempts reached. Follow-ups stopped.`, 'warn');
-    else showToast(`No Answer logged (${res.attempts}/${MAX_ATTEMPTS}) · follow-up set for tomorrow`, '');
+    if (res.error) toastMsg(toast, 'Could not log the attempt. Check the connection and try again.', 'err');
+    else if (!res.counted) toastMsg(toast, res.hitCap ? `${MAX_ATTEMPTS} attempts already used. Follow-ups are off.` : 'Follow-ups are off for this lead', 'warn');
+    else if (res.hitCap) toastMsg(toast, `${MAX_ATTEMPTS} attempts reached. Follow-ups stopped.`, 'warn');
+    else toastMsg(toast, `No Answer logged (${res.attempts}/${MAX_ATTEMPTS}) · follow-up set for tomorrow`, '');
   };
 
   // Stop / resume follow-ups. WHO may do this is decided here in the browser
@@ -182,27 +185,29 @@ function Actions({ l }) {
   const mayStop = has0049 && !block && (l.assignedTo === user.id || supervisor);
   const mayResume = has0049 && !!l.followupSuppressedAt && l.followupSuppressedReason !== 'NOT_INTERESTED_X2' && supervisor;
   const doStop = () => {
-    if (!window.confirm('Stop follow-ups for this lead? The lead and its status stay as they are.')) return;
-    setNoLongerResponding(l.id, user);
-    refreshDB();
-    showToast('Follow-ups stopped. No longer responding.', 'warn');
+    toast.confirm({
+      title: 'Stop follow-ups for this lead?',
+      description: 'The lead and its status stay as they are.',
+      confirmLabel: 'Stop follow-ups',
+      onConfirm: () => { setNoLongerResponding(l.id, user); refreshDB(); toastMsg(toast, 'Follow-ups stopped. No longer responding.', 'warn'); },
+    });
   };
   const doResume = () => {
     clearFollowupSuppression(l.id, user);
     refreshDB();
-    showToast('Follow-ups resumed', 'ok');
+    toastMsg(toast, 'Follow-ups resumed', 'ok');
   };
 
   const doDoneVisit = () => {
     doneVisit(l.id, user);
     refreshDB();
-    showToast('Visit marked as done', 'ok');
+    toastMsg(toast, 'Visit marked as done', 'ok');
   };
 
   const doAttend = () => {
     attendMeeting(l.id, user);
     refreshDB();
-    showToast('Meeting marked as attended', 'ok');
+    toastMsg(toast, 'Meeting marked as attended', 'ok');
   };
 
   // A 24h lock from before 0049 (7 attempts under the old rule) still freezes
@@ -494,7 +499,8 @@ function Timeline({ acts, lead }) {
 }
 
 export default function LeadPanel() {
-  const { panLead, setPanLead, openModal, user, refreshDB, showToast, sidebarOpen } = useApp();
+  const { panLead, setPanLead, openModal, user, refreshDB, sidebarOpen } = useApp();
+  const toast = useProjectToast({ always: true });
   // Inert while the ≤1023px drawer is open, like the page behind it: the panel
   // lives outside #app, and even closed (off-canvas) its buttons would take Tab.
   const drawerOpen = useMediaQuery(DRAWER_MQ) && sidebarOpen;
@@ -504,11 +510,12 @@ export default function LeadPanel() {
 
   function handleDelete() {
     if (!l) return;
-    if (!window.confirm(`Delete "${l.name}"? This cannot be undone.`)) return;
-    deleteLead(panLead, user);
-    refreshDB();
-    setPanLead(null);
-    showToast('Customer deleted', 'ok');
+    toast.confirm({
+      title: `Delete "${l.name}"?`,
+      description: 'This cannot be undone.',
+      confirmLabel: 'Delete',
+      onConfirm: () => { deleteLead(panLead, user); refreshDB(); setPanLead(null); toastMsg(toast, 'Customer deleted', 'ok'); },
+    });
   }
 
   const isOpen = !!panLead;

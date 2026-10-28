@@ -7,6 +7,10 @@ import { sbGetUsersLite, rToU } from '../../lib/supabase.js';
 import { avc, ini, rlabel, fmtBDT } from '../../lib/helpers.js';
 import { ROLES, OFFER_MAX, canSelfForward } from '../../lib/constants.js';
 import useLeadBook from '../../hooks/useLeadBook.js';
+import { useProjectToast } from '../project/projectToast.js';
+import useDiscardGuard from '../../hooks/useDiscardGuard.js';
+import { toastMsg } from '../../lib/toastMap.js';
+import { forwardDirty } from '../../lib/forwardDirty.js';
 
 // Things the agent may have already shared with the client (clickable).
 const SHARED_OPTS = [
@@ -33,7 +37,8 @@ const ROLE_BADGE_CLS = { AGENT: 's-new', TEAM_LEAD: 's-negotiating', MANAGEMENT:
 //                else on the lead stays.
 const SELF = '__self__';
 export default function ForwardModal() {
-  const { modal, closeModal, user, panLead, refreshDB, showToast } = useApp();
+  const { modal, closeModal, user, panLead, refreshDB } = useApp();
+  const toast = useProjectToast({ always: true });
   const uid = useId(); // field ids, so each <label htmlFor> points at its field
   const isMA = modal === 'set-meeting';
   const isAG = modal === 'forward-agent';
@@ -86,6 +91,17 @@ export default function ForwardModal() {
     setDest(dests.length ? dests[0].key : 'agent');
   }
 
+  // Guard every close path (backdrop, the X button, Cancel, Escape): a form
+  // with any destination/offer/meeting input asks before discarding via the
+  // goey confirmation. Step navigation (Back/Next) never counts as dirty.
+  const dirty = () => isOpen && forwardDirty({ selected, pq, meetingAt, meetingLink, shared, meetingType, projectId, ourOffer, clientOffer, totalSft, offerNotes });
+  const g = useDiscardGuard({
+    isOpen,
+    isDirty: dirty,
+    onClose: closeModal,
+    ask: { title: 'Discard forward?', description: 'Your unsaved forward details will be lost.' },
+  });
+
   const db = getDB();
 
   useEffect(() => {
@@ -117,20 +133,20 @@ export default function ForwardModal() {
   // Shared by Set Meeting — validates the working-hour window and, for an
   // online meeting, that a join link was given.
   const buildMeetingData = () => {
-    if (!meetingAt) { showToast('Pick a meeting date & time', 'err'); return null; }
+    if (!meetingAt) { toastMsg(toast, 'Pick a meeting date & time', 'err'); return null; }
     const d = new Date(meetingAt);
     const h = d.getHours() + d.getMinutes() / 60;
     const w = HOURS[meetingType];
-    if (h < w.min || h > w.max) { showToast(`${meetingType === 'ONLINE' ? 'Online' : 'Offline'} meetings must be within ${w.label}`, 'err'); return null; }
-    if (meetingType === 'ONLINE' && !meetingLink.trim()) { showToast('Add the online meeting link', 'err'); return null; }
+    if (h < w.min || h > w.max) { toastMsg(toast, `${meetingType === 'ONLINE' ? 'Online' : 'Offline'} meetings must be within ${w.label}`, 'err'); return null; }
+    if (meetingType === 'ONLINE' && !meetingLink.trim()) { toastMsg(toast, 'Add the online meeting link', 'err'); return null; }
     return { meetingType, meetingAt: d.toISOString(), meetingLink: meetingType === 'ONLINE' ? meetingLink.trim() : '', meetingShared: shared };
   };
 
   const submitSelf = () => {
-    if (!claimLeadForSelf(panLead, user)) { showToast('Could not forward this lead', 'err'); return; }
+    if (!claimLeadForSelf(panLead, user)) { toastMsg(toast, 'Could not forward this lead', 'err'); return; }
     closeModal();
     refreshDB();
-    showToast('Lead forwarded to you', 'ok');
+    toastMsg(toast, 'Lead forwarded to you', 'ok');
   };
 
   const submit = () => {
@@ -142,7 +158,7 @@ export default function ForwardModal() {
       setMeeting(panLead, meetingData, user);
       closeModal();
       refreshDB();
-      showToast('Meeting set', 'ok');
+      toastMsg(toast, 'Meeting set', 'ok');
       return;
     }
 
@@ -167,26 +183,26 @@ export default function ForwardModal() {
     // land nowhere. fwdLead enforces the same rule.
     if (dest === 'tl' && !offerComplete(offerData)) {
       const overCap = offerData.ourOffer > OFFER_MAX || offerData.clientOffer > OFFER_MAX;
-      showToast(overCap
+      toastMsg(toast, overCap
         ? `Offer rates are per SFT — 5 digits at most (${OFFER_MAX})`
         : 'Enter our rate, the client rate and total SFT before forwarding', 'err');
       return;
     }
-    if (!fwdLead(panLead, toUser, user, offerData)) { showToast('Could not forward this lead', 'err'); return; }
+    if (!fwdLead(panLead, toUser, user, offerData)) { toastMsg(toast, 'Could not forward this lead', 'err'); return; }
     if (dest === 'tl' && project) updLead(panLead, { dealProjectId: project.id, dealProjectName: project.name, propertyInterest: project.name });
     closeModal();
     refreshDB();
-    showToast('Lead forwarded to ' + toUser.name, 'ok');
+    toastMsg(toast, 'Lead forwarded to ' + toUser.name, 'ok');
   };
 
   const selectedUser = selected ? targets.find(u => u.id === selected) : null;
 
   return (
-    <div className={`mov${isOpen ? ' on' : ''}`} onClick={e => { if (e.target === e.currentTarget) closeModal(); }}>
-      <div className="modal">
+    <div className={`mov${isOpen ? ' on' : ''}`} {...g.backdropProps}>
+      <div className="modal" {...g.modalProps}>
         <div className="m-hd">
           <div className="m-ttl">{isMA ? 'Set Meeting' : 'Forward to Agent'}</div>
-          <button className="m-x" onClick={closeModal}><Mi>close</Mi></button>
+          <button className="m-x" onClick={g.requestClose}><Mi>close</Mi></button>
         </div>
 
         {/* Step 1 — forward: choose a destination, then a person (agent/TL) */}
@@ -252,7 +268,7 @@ export default function ForwardModal() {
               )}
             </div>
             <div className="m-ft">
-              <button className="btn btn-g" onClick={closeModal}>Cancel</button>
+              <button className="btn btn-g" onClick={g.requestClose}>Cancel</button>
               {dest === 'self'
                 ? <button className="btn btn-p" disabled={selected !== SELF} onClick={submitSelf}><Mi>swap_horiz</Mi>Forward</button>
                 : <button className="btn btn-p" disabled={!selected} onClick={() => setStep(2)}>Next</button>}
@@ -380,7 +396,7 @@ export default function ForwardModal() {
             <div className="m-ft">
               {isAG
                 ? <button className="btn btn-g" onClick={() => setStep(1)}>Back</button>
-                : <button className="btn btn-g" onClick={closeModal}>Cancel</button>}
+                : <button className="btn btn-g" onClick={g.requestClose}>Cancel</button>}
               <button className="btn btn-p" onClick={submit}>
                 <Mi>{isAG ? 'swap_horiz' : 'event_available'}</Mi>{isAG ? 'Forward' : 'Set Meeting'}
               </button>
