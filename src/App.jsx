@@ -49,6 +49,7 @@ const PAGES = {
   AccountsView: () => import('./components/views/AccountsView.jsx'),
   RelayView: () => import('./components/views/RelayView.jsx'),
   AiTrainerView: () => import('./components/views/AiTrainerView.jsx'),
+  MetaCapiView: () => import('./components/views/MetaCapiView.jsx'),
   RequestsView: () => import('./components/views/RequestsView.jsx'),
   ProfileView: () => import('./components/views/ProfileView.jsx'),
   PropertiesView: () => import('./components/views/PropertiesView.jsx'),
@@ -93,7 +94,7 @@ const OVERLAYS = {
 
 const lazyAll = (loaders) => Object.fromEntries(Object.entries(loaders).map(([k, f]) => [k, lazyChunk(f)]));
 
-const { AgentDash, TeamLeadDash, ManagementDash, MasterDash, LeadsView, CalendarView, TeamView, AccountsView, RelayView, AiTrainerView, RequestsView, ProfileView, PropertiesView, AvailableUnitsView, BookingsView, PipelineView, ClientsView, ReportsView, AgentPerformanceView, PerfReportsView, InventoryView, ConversationsView } = lazyAll(PAGES);
+const { AgentDash, TeamLeadDash, ManagementDash, MasterDash, LeadsView, CalendarView, TeamView, AccountsView, RelayView, AiTrainerView, MetaCapiView, RequestsView, ProfileView, PropertiesView, AvailableUnitsView, BookingsView, PipelineView, ClientsView, ReportsView, AgentPerformanceView, PerfReportsView, InventoryView, ConversationsView } = lazyAll(PAGES);
 const OVERLAY_COMPONENTS = Object.entries(lazyAll(OVERLAYS));
 const LandingPage = lazyChunk(() => import('./components/LandingPage.jsx'));
 const SignIn1 = lazyChunk(() => import('./components/ui/modern-stunning-sign-in.jsx').then(m => ({ default: m.SignIn1 })));
@@ -279,6 +280,7 @@ function PageHero() {
     inventory: { sub: '' },
     profile: { sub: 'Manage your details & avatar' },
     companies: { sub: 'Company-wise overview' },
+    metacapi: { sub: 'Lead events reported to Meta' },
   };
   for (const k in META) META[k].title = VIEW_TITLES[k];
   let { title, sub } = META[view] || { title: view, sub: '' };
@@ -372,6 +374,7 @@ function PageBody() {
   if (view === 'accounts') return <AccountsView />;
   if (view === 'relay') return <RelayView />;
   if (view === 'aitrainer') return <AiTrainerView />;
+  if (view === 'metacapi') return <MetaCapiView />;
   if (view === 'inventory') return <InventoryView />;
   if (view === 'requests') return <RequestsView />;
   if (view === 'profile') return <ProfileView />;

@@ -30,7 +30,11 @@
     "test:ui:pillnav": "vite-node scripts/aitrainer-ui/pillnav.flow.test.mjs",
     "test:followup": "vite-node scripts/followup-reminders.test.mjs",
     "test:followup-rules": "vite-node scripts/followup-rules.test.mjs && node --test scripts/company-time.test.mjs",
-    "test:0049": "node scripts/test-0049.mjs"
+    "test:0049": "node scripts/test-0049.mjs",
+    "test:0050": "node scripts/test-0050.mjs",
+    "test:capi": "node --test supabase/functions/_shared/capi-core.test.ts supabase/functions/_shared/capi-rest.test.ts && vite-node scripts/metacapi-access.test.mjs",
+    "test:capi:race": "node scripts/capi-limiter.race.test.mjs",
+    "test:ui:metacapi": "vite-node scripts/metacapi-ui.flow.test.mjs"
   },
   "dependencies": {
     "@ark-ui/react": "^5.37.2",

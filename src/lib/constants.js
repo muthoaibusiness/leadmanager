@@ -42,6 +42,9 @@ export const NAV_SCOPES = {
   accounts: ['MANAGEMENT'],
   relay: ['MANAGEMENT'],
   aitrainer: ['MANAGEMENT'],
+  // Meta CAPI lead-event delivery and recovery. The meta-capi Edge Function
+  // checks the same rule (role, or a saved 'metacapi' grant) on every call.
+  metacapi: ['MANAGEMENT', 'MASTER'],
   companies: ['MASTER'],   // master-admin company-wise overview
   profile: [...ALL_ROLES, 'MASTER'],
 };
@@ -91,11 +94,11 @@ export const isNiHandler = (user) => !!user && Array.isArray(user.allowedFeature
 // people created (without it, only their own) and add corrections to finance
 // history. Checked again server-side by the finance Edge Function, which reads
 // the same allowed_features column.
-export const FEATURE_KEYS = ['dashboard', 'leads', 'add_customer', 'conversations', 'calendar', 'meeting', 'pipeline', 'properties', 'reports', 'agentperf', 'perfreports', 'requests', 'inventory', 'finance_approve', 'team', 'accounts', 'relay', 'aitrainer', 'self_forward'];
+export const FEATURE_KEYS = ['dashboard', 'leads', 'add_customer', 'conversations', 'calendar', 'meeting', 'pipeline', 'properties', 'reports', 'agentperf', 'perfreports', 'requests', 'inventory', 'finance_approve', 'team', 'accounts', 'relay', 'aitrainer', 'metacapi', 'self_forward'];
 export const FEATURE_LABELS = {
   dashboard: 'Home', leads: 'Leads', add_customer: 'Add Customer', conversations: 'Conversations', calendar: 'Calendar', meeting: 'Meeting', pipeline: 'Pipeline', properties: 'Projects',
   reports: 'Reports', agentperf: 'Performance', perfreports: 'Performance Reports', requests: 'Requests', inventory: 'Inventory', finance_approve: 'Manage all budgets', team: 'Team',
-  accounts: 'Users & Accounts', relay: 'WhatsApp Relay', aitrainer: 'AI Trainer', self_forward: 'Self-forward leads',
+  accounts: 'Users & Accounts', relay: 'WhatsApp Relay', aitrainer: 'AI Trainer', metacapi: 'Meta CAPI', self_forward: 'Self-forward leads',
 };
 // What a grant does when its label alone doesn't say it.
 export const FEATURE_HINTS = {
