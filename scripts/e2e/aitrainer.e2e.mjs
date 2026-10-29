@@ -78,8 +78,14 @@ const tab = async (label) => {
 };
 const panel = () => page.locator('.ait-panel');
 
-// 0. Signed in and on the AI Trainer.
+// 0. Signed in and on the AI Trainer. E2E_SESSION_USER signs a fresh profile in
+// as that CRM user id (the app keeps only the id in pcrm_sess); the server
+// still checks the account's Management role on every trainer call.
 await page.goto(`${URL0}/#/aitrainer`, { waitUntil: 'domcontentloaded' });
+if (process.env.E2E_SESSION_USER && !(await page.evaluate(() => localStorage.getItem('pcrm_sess')))) {
+  await page.evaluate((id) => localStorage.setItem('pcrm_sess', JSON.stringify({ id })), process.env.E2E_SESSION_USER);
+  await page.reload({ waitUntil: 'domcontentloaded' });
+}
 await page.getByRole('tablist', { name: 'AI Trainer sections' }).waitFor({ timeout: 45000 }).catch(() => {});
 const tabs = await page.getByRole('tab').allTextContents();
 if (!tabs.length) {
@@ -215,6 +221,14 @@ const SCEN = [
       const r = ts[0].reply || '';
       return { pass: /Halishahar|হালিশহর/i.test(r), detail: `Bangla question answered with the catalog address (Halishahar): ${/Halishahar|হালিশহর/i.test(r)}` };
     } },
+  // The message the 2026-10-29 test-number turn on WhatsApp answered with the fallback.
+  { id: 'L1', area: 'Knowledge retrieval (live question)', bot: 'eyad', turns: ['Hi, where is Wecon Nuznan located and what flat sizes are available?'],
+    check: (ts) => {
+      const t = ts[0]; const r = t.reply || ''; const docs = Array.isArray(t.trace?.documents) ? t.trace.documents : [];
+      const addr = /504C/.test(r) && /Jolshiri/i.test(r); const size = /2,?850/.test(r);
+      const hit = docs.some((d) => /Nuznan/i.test(`${d.title || ''} ${d.section || ''}`));
+      return { pass: t.outcome === 'ok' && addr && size && hit, detail: `outcome ${t.outcome}; address (Road 504C, Jolshiri) ${addr}; size 2850 ${size}; Nuznan sections retrieved ${hit}` };
+    } },
   { id: 'C1', area: 'Command handling', bot: 'eyad', turns: ['/f note: interested in Nuznan'],
     check: (ts) => {
       const r = ts[0].reply || '';
@@ -245,8 +259,10 @@ for (const sc of SCEN) {
     await page.waitForTimeout(800);
   }
   const res = ts.some((t) => t.outcome === 'error' && !t.reply) ? { pass: false, detail: `turn failed: ${ts.map((t) => t.error || t.outcome).join(', ')}` } : sc.check(ts);
+  // What a reviewer sees under the reply: the "Knowledge retrieved (N)" line.
+  const shown = await panel().locator('.ait-docs summary, .ait-trace').filter({ hasText: /Knowledge retrieved/ }).last().innerText().catch(() => 'not shown');
   record(sc.id, sc.area, res.pass ? 'PASS' : 'FAIL', res.detail, {
-    bot: sc.bot,
+    bot: sc.bot, knowledge_ui: shown,
     turns: ts.map((t, i) => ({ customer: sc.turns[i], reply: (t.reply || '').slice(0, 500), outcome: t.outcome, handoff: t.handoff,
       model: t.trace?.model, prompt: t.trace?.system_prompt ? `v${t.trace.system_prompt.version_no}` : 'built-in',
       projects: t.trace?.project?.projects?.length ?? 0, documents: (t.trace?.documents || []).map?.((d) => d.section).slice(0, 3), guards: t.trace?.guard_errors })),
@@ -309,6 +325,31 @@ await tab('Bots');
     await page.keyboard.press('Escape');
     record('T2', 'Bots', opts.length >= 3 ? 'PASS' : 'FAIL', `Bot menu options: ${opts.join(', ')}`);
   }
+}
+
+// 8b. Test numbers: the number is listed, and its WhatsApp turns show. Read-only: the switch is never clicked.
+const TEST_NO = process.env.E2E_TEST_NUMBER;
+if (TEST_NO) {
+  const before = calls.length;
+  await tab('Test numbers');
+  // The response listener parses bodies asynchronously; wait for Eyad's, not just any call.
+  const t0 = Date.now();
+  let eyad = null;
+  while (!eyad && Date.now() - t0 < 60000) {
+    eyad = calls.slice(before).find((c) => c.action === 'testnumbers.get' && c.data?.bot === 'eyad')?.data;
+    if (!eyad) await page.waitForTimeout(500);
+  }
+  const num = eyad?.numbers?.find((n) => n.number === TEST_NO);
+  const card = panel().locator('section').filter({ hasText: 'Eyad Bot' });
+  // The number chip also holds the remove button, so match its accessible name.
+  const listed = await card.getByRole('button', { name: `Remove ${TEST_NO}` }).isVisible().catch(() => false);
+  const sw = await card.getByRole('switch').getAttribute('aria-checked').catch(() => null);
+  for (const s of await card.locator('details summary').all()) await s.click().catch(() => {});
+  const turns = (num?.threads || []).flatMap((th) => th.turns.map((t) => ({ thread: th.id, outcome: t.outcome, started_at: t.started_at, model: t.model,
+    reply: t.trace?.reply?.slice(0, 200), guards: t.trace?.guard_errors })));
+  record('N1', 'Test numbers', listed && sw === 'true' && num ? 'PASS' : 'FAIL',
+    `Eyad: test mode switch aria-checked=${sw}; +${TEST_NO} listed ${listed}; ${num?.threads?.length ?? 0} WhatsApp threads; ${turns.length} trainer turns`,
+    { turns, shot: await shot('08b-testnumbers') });
 }
 
 // 9. Retire the drafts this run added, through the UI, so the shared drafts end unchanged.

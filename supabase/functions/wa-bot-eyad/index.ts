@@ -29,7 +29,7 @@ import type { BotSettings } from "../_shared/wa.ts";
 import {
   askAgent, resolveMedia, fixGrammar, matchJolshiriBundle, buildJolshiriBundle,
   FLOW_AUTO_PROFILE_TEXT, FLOW_AGENT_YES_TEXT, GENERIC_WELCOME_TEXT, isAffirmative, isProfileConsent,
-  isJolshiriProject, matchNamedProject, isPriceQuestion, isLandOffer, FLOW_PRICE_AGENT_TEXT, brochureCaption,
+  leadContext, matchNamedProject, isPriceQuestion, isLandOffer, FLOW_PRICE_AGENT_TEXT, brochureCaption,
 } from "../_shared/ai.ts";
 import { runTrainerTestTurn } from "../_shared/trainer-deno.ts";
 
@@ -317,7 +317,7 @@ async function handleInbound(p: ParsedEvent): Promise<void> {
   // below needs message_logs/flow_stage before deciding what to send) ────
   if (!preleadId) return;
   const [statusRows, projects] = await Promise.all([
-    sbSelectJson(`preleads?id=eq.${encodeURIComponent(preleadId)}&select=forwarded,message_logs,flow_stage`),
+    sbSelectJson(`preleads?id=eq.${encodeURIComponent(preleadId)}&select=forwarded,message_logs,flow_stage,ctwa_clid,wa_ad_id`),
     sbSelectJson("wa_projects?select=name,region,keywords,brochure_url"),
   ]);
   const status = statusRows?.[0] ?? {};
@@ -341,8 +341,10 @@ async function handleInbound(p: ParsedEvent): Promise<void> {
   // an ad is not a Jolshiri buyer: generic hello, no brochure flow, and the
   // LLM's land rule keeps everything else silent for a human to pick up.
   const landOffer = !!p.text && isLandOffer(p.text);
+  // A defaulted property_interest is not a Jolshiri lead (leadContext in ai.ts).
+  const lead = leadContext({ named, isAd: p.isAd, status, propertyInterest: upsert.property_interest });
   if (settings.welcomeEnabled && upsert.takeover !== true && upsert.is_new === true) {
-    if (isJolshiriProject(upsert.property_interest) && !landOffer) {
+    if (lead.jolshiriLead && !landOffer) {
       // Jolshiri lead (ad or named): the admin welcome and the follow-up
       // clock — 5 minutes of silence asks about the profiles, an hour of
       // silence after that asks about a dedicated agent. No auto-forward.
@@ -415,7 +417,7 @@ async function handleInbound(p: ParsedEvent): Promise<void> {
     console.log("trainer test turn", { phone: p.phone, outcome: r.outcome, sent: r.sent, turnId: r.turnId });
   } else if (settings.faqAgentEnabled && p.text && upsert.takeover !== true && p.remote) {
     const sent = await runFaqAgent("eyad", p.phone, p.target, p.remote, p.text, {
-      adProject: upsert.property_interest || undefined, profilesAlreadySent: profilesAlreadySent || landOffer, allowMedia: settings.aiMediaEnabled,
+      adProject: lead.adProject, profilesAlreadySent: profilesAlreadySent || landOffer, allowMedia: settings.aiMediaEnabled,
     });
     if (sent) {
       await sbPatchJson("preleads", `id=eq.${encodeURIComponent(preleadId)}`, {

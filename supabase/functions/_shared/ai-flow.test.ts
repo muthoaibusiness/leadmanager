@@ -7,7 +7,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   isPriceQuestion, isLandOffer, matchNamedProject, isJolshiriProject, isAffirmative, isProfileConsent, isNegative,
-  brochureCaption, FLOW_ASK_PROFILE_TEXT, FLOW_PRICE_AGENT_TEXT, type ProjectRow,
+  brochureCaption, leadContext, SYSTEM_PROMPT, FLOW_ASK_PROFILE_TEXT, FLOW_PRICE_AGENT_TEXT, type ProjectRow,
 } from "./ai.ts";
 
 const P = (name: string, keywords: string[], address = ""): ProjectRow =>
@@ -127,4 +127,37 @@ test("EDGE: thanks alone is not consent; thanks on a quoted question still is", 
   for (const t of ["thank you", "thanks", "you", "ধন্যবাদ"]) assert.equal(isAffirmative(t), false, t);
   assert.equal(isProfileConsent("thank you", FLOW_ASK_PROFILE_TEXT), true);
   assert.equal(isProfileConsent("thank you", ""), false);
+});
+
+// ── lead context (production behaviour, wa-bot-eyad v61 / wa-bot-dubai v58) ──
+// wa_upsert_prelead fills property_interest with wa_settings.default_project
+// (Wecon Osman Bellevue) for every contact without an ad, so that value alone
+// says nothing about what the customer wants.
+const OSMAN = CATALOG[0];
+test("a direct contact with only the defaulted project is not a Jolshiri lead and gets no ad project", () => {
+  const c = leadContext({ named: null, isAd: false, status: {}, propertyInterest: "Wecon Osman Bellevue" });
+  assert.deepEqual(c, { adLead: false, jolshiriLead: false, adProject: undefined });
+});
+
+test("an ad click (payload, ctwa_clid or wa_ad_id) on a Jolshiri project is a Jolshiri lead", () => {
+  for (const s of [{ isAd: true, status: {} }, { isAd: false, status: { ctwa_clid: "x" } }, { isAd: false, status: { wa_ad_id: "y" } }]) {
+    const c = leadContext({ named: null, ...s, propertyInterest: "Wecon Nuznan" });
+    assert.deepEqual(c, { adLead: true, jolshiriLead: true, adProject: "Wecon Nuznan" }, JSON.stringify(s));
+  }
+});
+
+test("a named project decides the flow, ad or not", () => {
+  assert.deepEqual(leadContext({ named: OSMAN, isAd: false, status: {}, propertyInterest: "Wecon Osman Bellevue" }),
+    { adLead: false, jolshiriLead: true, adProject: "Wecon Osman Bellevue" });
+  assert.deepEqual(leadContext({ named: CATALOG[3], isAd: true, status: {}, propertyInterest: "Wecon Summer Breeze" }),
+    { adLead: true, jolshiriLead: false, adProject: "Wecon Summer Breeze" });
+});
+
+test("with no project in context the FAQ prompt says so and carries the which-project rule", () => {
+  const none = SYSTEM_PROMPT(CATALOG, undefined, [], []);
+  assert.match(none, /No project is known for this customer yet/);
+  assert.match(none, /When NO project is in context/);
+  const ad = SYSTEM_PROMPT(CATALOG, "Wecon Nuznan", [], []);
+  assert.match(ad, /came in through an ad for: Wecon Nuznan/);
+  assert.doesNotMatch(ad, /No project is known/);
 });
