@@ -144,8 +144,8 @@ test('FollowUpModal: Save writes the schedule and, only with text, one NOTE row'
   await render(); await flush();
   const ta = container.querySelector('textarea');
   assert.ok(ta, 'note textarea renders');
-  // History block absent when there are no notes.
-  assert.ok(!container.textContent.includes('Recent notes'), 'no history header with no notes');
+  // Empty state renders when there are no notes.
+  assert.ok(container.textContent.includes('No shared notes yet.'), 'empty shared-notes state renders');
   await act(async () => {
     Object.getOwnPropertyDescriptor(w.HTMLTextAreaElement.prototype, 'value').set.call(ta, 'Client asked to call Tuesday');
     ta.dispatchEvent(new w.Event('input', { bubbles: true }));
@@ -183,9 +183,177 @@ test('FollowUpModal shows shared note history once it exists', async () => {
   };
   const render = () => act(() => root.render(React.createElement(Ctx.Provider, { value }, React.createElement(FollowUpModal))));
   await render(); await flush();
-  assert.ok(container.textContent.includes('Recent notes'), 'history header renders');
+  assert.ok(container.textContent.includes('Shared Lead Notes'), 'shared-notes header renders');
   assert.ok(container.textContent.includes('Prefers evening calls'), 'agent note shown');
   assert.ok(!container.textContent.includes('Lead updated'), 'system notes filtered by isAgentNote');
+});
+
+test('agent actions render in the required primary order on a NEW lead', async () => {
+  seed({ status: 'NEW' });
+  const render = mount({ user: AGENT });
+  await render(); await flush();
+  const texts = allBtns().map(b => b.text).filter(t => t.length);
+  const idx = (s) => texts.findIndex(t => t.includes(s));
+  for (const [a, b] of [['Connected','Interested'],['Interested','Not Interested'],['Not Interested','Attempt'],['Attempt','Forward to Agent'],['Forward to Agent','No Longer Responding'],['No Longer Responding','Log Call'],['Log Call','Add Note']]) {
+    assert.ok(idx(a) >= 0 && idx(b) >= 0, `${a} and ${b} present`);
+    assert.ok(idx(a) < idx(b), `${a} before ${b}`);
+  }
+  for (const absent of ['Set Meeting','Attend Meeting','Reschedule Meeting','Schedule Site Visit','Mark Visit as Done','Follow-up']) {
+    assert.ok(!texts.some(t => t.includes(absent)), `${absent} hidden at NEW`);
+  }
+});
+
+test('at INTERESTED, Set Meeting, Not Interested and Attempt precede Forward to Agent', async () => {
+  seed({ status: 'INTERESTED' });
+  const render = mount({ user: AGENT });
+  await render(); await flush();
+  const texts = allBtns().map(b => b.text).filter(t => t.length);
+  const idx = (s) => texts.findIndex(t => t.includes(s));
+  assert.ok(idx('Set Meeting') >= 0 && idx('Not Interested') >= 0 && idx('Attempt') >= 0 && idx('Forward to Agent') >= 0);
+  assert.ok(idx('Set Meeting') < idx('Not Interested'));
+  assert.ok(idx('Not Interested') < idx('Attempt'));
+  assert.ok(idx('Attempt') < idx('Forward to Agent'));
+  assert.ok(!texts.some(t => t.includes('Follow-up')), 'Follow-up hidden at INTERESTED');
+});
+
+test('meeting/visit actions stay stage-gated (hidden when not applicable)', async () => {
+  const cases = [
+    ['CONTACTED', [], ['Attend Meeting','Reschedule Meeting','Schedule Site Visit','Mark Visit as Done']],
+    ['MEETING_SET', ['Attend Meeting','Reschedule Meeting','Schedule Site Visit'], ['Mark Visit as Done']],
+    ['SITE_VISIT_SCHEDULED', ['Mark Visit as Done'], ['Attend Meeting','Reschedule Meeting']],
+  ];
+  for (const [status, present, absent] of cases) {
+    seed({ status });
+    const render = mount({ user: AGENT });
+    await render(); await flush();
+    const texts = allBtns().map(b => b.text);
+    for (const p of present) assert.ok(texts.some(t => t.includes(p)), `${p} present at ${status}`);
+    for (const a of absent) assert.ok(!texts.some(t => t.includes(a)), `${a} hidden at ${status}`);
+  }
+});
+
+test('Not Interested remains available through meeting and site-visit stages', async () => {
+  for (const status of ['MEETING_SET','SITE_VISIT_SCHEDULED','SITE_VISIT_DONE']) {
+    seed({ status });
+    const render = mount({ user: AGENT });
+    await render(); await flush();
+    assert.ok(btn('Not Interested'), `Not Interested present at ${status}`);
+  }
+});
+
+test('forward is one top-level action: no separate Team Lead or Myself buttons', async () => {
+  seed({ status: 'SITE_VISIT_DONE', assignedTo: 'u1' });
+  let render = mount({ user: AGENT });
+  await render(); await flush();
+  assert.ok(btn('Forward to Agent'), 'single forward entry present');
+  assert.ok(!btn('Forward to Team Lead'), 'no separate Team Lead button');
+
+  seed({ status: 'INTERESTED', assignedTo: 'u9' });
+  render = mount({ user: { ...AGENT, allowedFeatures: ['self_forward'] } });
+  await render(); await flush();
+  assert.ok(btn('Forward to Agent'), 'single forward entry via self route');
+  assert.ok(!btn('Forward to Myself'), 'no separate Myself button');
+});
+
+test('a closed lead is not forwardable', async () => {
+  for (const status of ['DEAL_CLOSED_WON','DEAL_CLOSED_LOST','NEGOTIATING','NOT_INTERESTED']) {
+    seed({ status });
+    const render = mount({ user: AGENT });
+    await render(); await flush();
+    assert.ok(!btn('Forward to Agent'), `no forward at ${status}`);
+  }
+});
+
+test('ForwardModal offers destinations per eligibility (team member / Team Lead / myself)', async () => {
+  const ForwardModal = (await import('../src/components/modals/ForwardModal.jsx')).default;
+  const mkValue = (user) => ({
+    user, panLead: 'L1', setPanLead: () => {},
+    modal: 'forward-agent', openModal: () => {}, closeModal: () => {},
+    refreshDB: () => {}, showToast: () => {},
+    sidebarOpen: false, setChatTarget: () => {}, chatOk: false,
+  });
+  const render = (value, key) => act(() => root.render(React.createElement(Ctx.Provider, { value }, React.createElement(ForwardModal, { key }))));
+
+  // Owner at SITE_VISIT_DONE: team-member and Team Lead routes both apply.
+  seed({ status: 'SITE_VISIT_DONE', assignedTo: 'u1' });
+  await render(mkValue(AGENT), 'a'); await flush();
+  let txt = container.textContent;
+  assert.ok(txt.includes('Agent / team member'), 'team-member destination offered');
+  assert.ok(txt.includes('Team Lead'), 'Team Lead destination offered');
+
+  // Non-owner with the self_forward grant: only the Self Forward route applies.
+  seed({ status: 'INTERESTED', assignedTo: 'u9' });
+  await render(mkValue({ ...AGENT, allowedFeatures: ['self_forward'] }), 'b'); await flush();
+  txt = container.textContent;
+  assert.ok(txt.includes('Self Forward'), 'self-forward destination offered');
+  assert.ok(!txt.includes('Team Lead'), 'no Team Lead option when not at visit-done');
+  assert.ok(!txt.includes('Agent / team member'), 'no team-member option when not the owner');
+  // The user's own account shows as the recipient row; clicking it then Forward
+  // takes the lead.
+  await act(async () => {
+    const row = Array.from(container.querySelectorAll('button')).find(x => x.textContent.includes(AGENT.name));
+    assert.ok(row, 'own-account row shown');
+    row.dispatchEvent(new w.MouseEvent('click', { bubbles: true }));
+  });
+  await act(async () => {
+    const fwd = Array.from(container.querySelectorAll('button')).find(x => x.textContent.includes('Forward') && !x.textContent.includes('Self Forward'));
+    assert.ok(fwd, 'Forward action present');
+    fwd.dispatchEvent(new w.MouseEvent('click', { bubbles: true }));
+  });
+  await flush();
+  assert.equal(d.leads[0].assignedTo, 'u1', 'claimed for self on submit');
+});
+
+test('FollowUpModal renders separate Date and Time inputs, not one datetime-local', async () => {
+  seed({ status: 'INTERESTED' });
+  const FollowUpModal = (await import('../src/components/modals/FollowUpModal.jsx')).default;
+  const value = {
+    user: AGENT, panLead: 'L1', setPanLead: () => {},
+    modal: 'follow-up', openModal: () => {}, closeModal: () => {},
+    refreshDB: () => {}, showToast: () => {},
+    sidebarOpen: false, setChatTarget: () => {}, chatOk: false,
+  };
+  const render = () => act(() => root.render(React.createElement(Ctx.Provider, { value }, React.createElement(FollowUpModal))));
+  await render(); await flush();
+  assert.ok(container.querySelector('input[type="date"]'), 'date input renders');
+  assert.ok(container.querySelector('input[type="time"]'), 'time input renders');
+  assert.ok(!container.querySelector('input[type="datetime-local"]'), 'no datetime-local input');
+  assert.ok(!container.textContent.includes('Today 5 PM'), 'presets removed');
+});
+
+test('FollowUpModal "View all notes" expands the shared notes, and quick-add writes one NOTE row', async () => {
+  seed({ status: 'INTERESTED' });
+  const notes = Array.from({ length: 5 }, (_, i) => ({
+    id: 'a' + i, type: 'NOTE', description: 'Shared note ' + i, userId: 'u1', userName: 'Agent',
+    companyId: 'c1', timestamp: '2026-10-28T09:00:0' + i + ':00.000Z', durationSeconds: 0,
+  }));
+  d.activities['L1'] = notes;
+  const FollowUpModal = (await import('../src/components/modals/FollowUpModal.jsx')).default;
+  const value = {
+    user: AGENT, panLead: 'L1', setPanLead: () => {},
+    modal: 'follow-up', openModal: () => {}, closeModal: () => {},
+    refreshDB: () => {}, showToast: () => {},
+    sidebarOpen: false, setChatTarget: () => {}, chatOk: false,
+  };
+  const render = () => act(() => root.render(React.createElement(Ctx.Provider, { value }, React.createElement(FollowUpModal))));
+  await render(); await flush();
+  assert.ok(container.textContent.includes('View all notes (5)'), 'view-all toggle shows the count');
+  await act(async () => {
+    const b = Array.from(container.querySelectorAll('button')).find(x => x.textContent.includes('View all notes'));
+    b.dispatchEvent(new w.MouseEvent('click', { bubbles: true }));
+  });
+  assert.ok(container.textContent.includes('Shared note 4'), 'all five notes visible after expanding');
+  const inp = container.querySelector('input[placeholder="Add a new shared note…"]');
+  assert.ok(inp, 'quick-add shared note field renders');
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(w.HTMLInputElement.prototype, 'value').set.call(inp, 'New shared note');
+    inp.dispatchEvent(new w.Event('input', { bubbles: true }));
+    inp.dispatchEvent(new w.KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+  });
+  await flush();
+  const acts = d.activities['L1'] || [];
+  const noteActs = acts.filter(a => a.type === 'NOTE' && a.description === 'New shared note');
+  assert.equal(noteActs.length, 1, 'quick-add wrote exactly one NOTE row');
 });
 
 test('changeStatus to INTERESTED pushes one cloud POST and one PATCH (no duplicates)', async () => {

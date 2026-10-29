@@ -110,7 +110,10 @@ export const defaultFeatures = (role) => FEATURE_KEYS.filter(k => (NAV_SCOPES[k]
 // the grant path for anyone else who should have it too, same as any other
 // admin-toggled feature.
 export const canSelfForward = (user) =>
-  !!user && (user.role === ROLES.MA || (Array.isArray(user.allowedFeatures) && user.allowedFeatures.includes('self_forward')));
+  !!user && (user.role === ROLES.MA
+    || (Array.isArray(user.allowedFeatures)
+      ? user.allowedFeatures.includes('self_forward') || user.allowedFeatures.includes('add_customer')
+      : NAV_SCOPES.add_customer.includes(user.role)));
 
 // Properties catalog
 export const PROPERTY_TYPES = ['Apartment', 'Duplex', 'Penthouse', 'Plot', 'Commercial', 'Villa'];

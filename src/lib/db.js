@@ -1690,15 +1690,18 @@ export function bulkTransferLeads(leadIds, target, user) {
 // that calls it) since bulkTransferLeads above trusts its caller completely.
 export function claimLeadForSelf(leadId, user) {
   if (!leadId || !canSelfForward(user)) return false;
+  const l = getLead(leadId);
+  const prev = l?.previousAssignees || [];
   updLead(leadId, {
     teamId: user.teamId,
     assignedTo: user.id,
     assignedToName: user.name,
     assignedRole: user.role,
+    previousAssignees: l && l.assignedTo && !prev.includes(l.assignedTo) ? [...prev, l.assignedTo] : prev,
   });
   addAct(leadId, {
-    type: 'NOTE',
-    description: `Lead forwarded to self by ${user.name} (${rlabel(user.role)})`,
+    type: 'FORWARDED',
+    description: `Forwarded to self by ${user.name} (${rlabel(user.role)})`,
     userId: user.id,
     userName: user.name,
     durationSeconds: 0,
