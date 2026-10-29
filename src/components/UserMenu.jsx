@@ -97,6 +97,14 @@ export default function UserMenu() {
       )}>
         <HeaderFace face={face} tip={impersonator ? `${me} · viewing` : `${me} (you)`} />
       </Suspense>
+      {/* Phones only (CSS): name, role and a chevron beside the face make the
+          account pill. A press here opens the same menu; keyboard users reach
+          it through the face button. */}
+      <span className="hd-um-txt" aria-hidden="true" onClick={() => setOpen(o => !o)}>
+        <span className="hd-um-nm">{me}</span>
+        <span className="hd-um-rl">{impersonator ? 'Viewing · ' + rlabel(user.role) : rlabel(user.role)}</span>
+      </span>
+      <Mi className="hd-um-chev" aria-hidden="true" onClick={() => setOpen(o => !o)}>expand_more</Mi>
       {open && (
         <div className="umenu">
           <div className="um-me">

@@ -5,11 +5,11 @@ import { getHoldRequests } from '../lib/db.js';
 import { canSee, ROLES } from '../lib/constants.js';
 import { NAV_META } from '../lib/navMeta.js';
 
-// Phones only (CSS shows it below 768px): a floating pill of round icon
-// buttons along the bottom of the screen — two page tabs, a "+" that opens a
-// quick-actions menu, a third page tab, and More, which opens the sidebar
-// drawer (it still lists every page). It replaces the header's show-sidebar
-// button there.
+// Phones only (CSS shows it below 768px), along the bottom of the screen: a
+// floating pill of round icon buttons — up to three page tabs and More, which
+// opens the sidebar drawer (it still lists every page) — and, beside the pill,
+// a round "+" that opens a quick-actions menu. It replaces the header's
+// show-sidebar button there.
 
 // Candidate tabs in priority order; the first three the user may see are shown.
 const PRIORITY = ['dashboard', 'companies', 'leads', 'properties', 'reports', 'conversations',
@@ -74,7 +74,14 @@ export default function BottomNav({ inert }) {
 
   return (
     <nav className="bnav" aria-label="Quick navigation" inert={inert}>
-      {tabs.slice(0, 2).map(tab)}
+      <div className="bnav-pill">
+        {tabs.map(tab)}
+        <button type="button" className={`bnav-it bnav-more${moreOn ? ' on' : ''}`} onClick={() => setSidebarOpen(true)}
+          aria-label="More" title="More" aria-controls="app-sidebar" aria-expanded={sidebarOpen}>
+          <Mi aria-hidden="true">menu</Mi>
+          {moreDot && <span className="bnav-dot" aria-hidden="true" />}
+        </button>
+      </div>
       {actions.length > 0 && (
         <div className="bnav-addwrap" ref={addRef} onKeyDown={onEsc}>
           <button type="button" className={`bnav-add${addOpen ? ' open' : ''}`} onClick={() => setAddOpen(o => !o)}
@@ -92,12 +99,6 @@ export default function BottomNav({ inert }) {
           )}
         </div>
       )}
-      {tabs.slice(2).map(tab)}
-      <button type="button" className={`bnav-it bnav-more${moreOn ? ' on' : ''}`} onClick={() => setSidebarOpen(true)}
-        aria-label="More" title="More" aria-controls="app-sidebar" aria-expanded={sidebarOpen}>
-        <Mi aria-hidden="true">menu</Mi>
-        {moreDot && <span className="bnav-dot" aria-hidden="true" />}
-      </button>
     </nav>
   );
 }

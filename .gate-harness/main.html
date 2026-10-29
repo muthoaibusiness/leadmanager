@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Gate harness</title>
+  <script>
+    // Runs BEFORE the module graph: db.js reads localStorage at import time.
+    // Deterministic seed so both light and dark runs measure the same DOM.
+    const now = new Date('2026-01-15T10:00:00Z').toISOString();
+    const S = {
+      users: [
+        { id: 'u-agent', name: 'Agent One', role: 'AGENT', companyId: 'c1', teamId: 't1', isActive: true, email: 'a@x.co' },
+        { id: 'u-tl', name: 'Lead One', role: 'TEAM_LEAD', companyId: 'c1', teamId: 't1', isActive: true, email: 'tl@x.co' },
+        { id: 'u-mgmt', name: 'Manager One', role: 'MANAGEMENT', companyId: 'c1', teamId: null, isActive: true, email: 'm@x.co' },
+      ],
+      teams: [{ id: 't1', name: 'Team A', companyId: 'c1' }],
+      companies: [{ id: 'c1', name: 'Co' }],
+      leads: [
+        { id: 'L1', name: 'Sample Lead', phone: '+8801700000000', status: 'NEW', companyId: 'c1',
+          assignedTo: 'u-agent', teamId: 't1', assignedToName: 'Agent One', previousAssignees: [],
+          createdAt: now, updatedAt: now },
+        { id: 'L2', name: 'Stale Lead', phone: '+8801700000001', status: 'NEW', companyId: 'c1',
+          assignedTo: 'u-agent', teamId: 't1', assignedToName: 'Agent One', previousAssignees: [],
+          nextFollowup: '2026-01-15T09:00:00.000Z', createdAt: now, updatedAt: now },
+      ],
+      activities: { L1: [], L2: [] },
+      notifications: {},
+      deletionLog: [],
+    };
+    localStorage.setItem('propcrm_v2', JSON.stringify(S));
+    localStorage.setItem('pcrm_sess', JSON.stringify({ id: 'u-agent' }));
+    localStorage.setItem('propcrm_owner', 'u-agent');
+
+    // Offline stub: every PostgREST call answers locally. hasColumn's probe
+    // must succeed so the migration-gated UI renders (that is what we measure).
+    const realFetch = window.fetch.bind(window);
+    window.fetch = (url, opts) => {
+      const u = String(url);
+      if (u.includes('/rest/v1/') || u.includes('/realtime') || u.includes('/auth')) {
+        return Promise.resolve(new Response('[]', { status: 200, headers: { 'content-type': 'application/json' } }));
+      }
+      return realFetch(url, opts);
+    };
+  </script>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="module" src="./main.html.jsx"></script>
+</body>
+</html>

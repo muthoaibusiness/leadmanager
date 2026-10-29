@@ -76,7 +76,9 @@ const _missingTables = new Set();
 // - PGRST204 (unknown column): strip that column from every row and retry, so
 //   inserts still succeed before the schema migration adds columns like `cart`.
 // - PGRST205 (missing table): skip quietly (remember it for the session).
-export async function sbUpsert(table, rows) {
+// ignoreDuplicates: a row whose id already exists is left as it is, instead of
+// being overwritten.
+export async function sbUpsert(table, rows, { ignoreDuplicates = false } = {}) {
   if (!rows || !rows.length) return { ok: false, skipped: true };
   if (_missingTables.has(table)) return { ok: false, skipped: true };
   let payload = rows;
@@ -87,7 +89,7 @@ export async function sbUpsert(table, rows) {
     try {
       r = await sbFetch(`${SB_URL}/rest/v1/${table}`, {
         method: 'POST',
-        headers: { ...SB_H, Prefer: 'resolution=merge-duplicates' },
+        headers: { ...SB_H, Prefer: ignoreDuplicates ? 'resolution=ignore-duplicates' : 'resolution=merge-duplicates' },
         body: JSON.stringify(payload),
       });
     } catch (e) {
@@ -314,6 +316,8 @@ export function lToR(l) {
     call_count: l.callCount || 0, sms_count: l.smsCount || 0,
     whatsapp_count: l.whatsappCount || 0, visit_count: l.visitCount || 0,
     no_answer_count: l.noAnswerCount || 0, no_answer_lock_until: l.noAnswerLockUntil || null,
+    // Migration 0049. Not sent: ni_count and followup_suppressed_* are kept by
+    // the database trigger, and a full-row insert must not reset them.
     notes: l.notes || '', external_id: l.externalId || null, priority: l.priority || null,
     preferred_time: l.preferredTime || null, next_followup: l.nextFollowup || null,
     material_sent: l.materialSent || null, cart: l.cart || null, company_id: l.companyId || null,
@@ -341,6 +345,9 @@ export function rToL(r) {
     callCount: r.call_count || 0, smsCount: r.sms_count || 0,
     whatsappCount: r.whatsapp_count || 0, visitCount: r.visit_count || 0,
     noAnswerCount: r.no_answer_count || 0, noAnswerLockUntil: r.no_answer_lock_until || null,
+    // Migration 0049; absent (undefined) before it is applied.
+    niCount: r.ni_count || 0, followupSuppressedAt: r.followup_suppressed_at || null,
+    followupSuppressedReason: r.followup_suppressed_reason || null, followupNotBefore: r.followup_not_before || null,
     notes: r.notes || '', externalId: r.external_id || null, priority: r.priority || null,
     preferredTime: r.preferred_time || null, nextFollowup: r.next_followup || null,
     materialSent: r.material_sent || null, cart: r.cart || null, companyId: r.company_id || null,
@@ -408,9 +415,9 @@ export function rToN(r) {
 }
 
 // Flat array of notification objects (each has userId) → upsert to Supabase
-export async function sbUpsertNotifs(notifs) {
+export async function sbUpsertNotifs(notifs, opts) {
   if (!notifs || !notifs.length) return;
-  await sbUpsert('notifications', notifs.map(nToR));
+  await sbUpsert('notifications', notifs.map(nToR), opts);
 }
 
 // Which of these email addresses already belong to a user account, anywhere.
@@ -825,6 +832,30 @@ export async function sbRpc(fn, args = {}) {
     console.warn(`[rpc] ${fn} -> HTTP ${r.status}`, j.message || '');
     return null;
   } catch (e) { console.warn(`[rpc] ${fn} failed:`, e); return null; }
+}
+
+// sbRpc for a write: tells "the function is not there yet" (missing, so the
+// caller can fall back to the pre-migration path) apart from "it failed" and
+// from a network drop, which sbRpc folds into one null. Network errors are
+// retried with the same body, so an idempotent function sees the same request.
+export async function sbRpcCall(fn, args = {}, { retries = 2 } = {}) {
+  if (_missingRpc.has(fn)) return { missing: true };
+  for (let attempt = 0; ; attempt++) {
+    let r;
+    try {
+      r = await sbFetch(`${SB_URL}/rest/v1/rpc/${fn}`, { method: 'POST', headers: SB_H, body: JSON.stringify(args) });
+    } catch (e) {
+      if (attempt < retries) continue;
+      checkNetworkError(e);
+      return { error: e };
+    }
+    if (r.ok) return { data: await r.json() };
+    let j = {};
+    try { j = JSON.parse(await r.text()); } catch { /* non-JSON error body */ }
+    if (j.code === 'PGRST202' || r.status === 404) { _missingRpc.add(fn); return { missing: true }; }
+    console.warn(`[rpc] ${fn} -> HTTP ${r.status}`, j.message || '');
+    return { error: j, status: r.status };
+  }
 }
 
 // ── Counted / paged reads ─────────────────────────────────────────────────

@@ -32,6 +32,9 @@ export const NAV_SCOPES = {
   // standalone page is Team Lead only.
   reports: ['TEAM_LEAD'],
   agentperf: ['MANAGEMENT', 'TEAM_LEAD'],
+  // Reports page listed right after Performance (blank for now). Not the
+  // Team Lead's older `reports` analytics page above.
+  perfreports: ['MANAGEMENT', 'TEAM_LEAD'],
   requests: ['MANAGEMENT'],
   inventory: ['MANAGEMENT'],
   team: ['TEAM_LEAD'],
@@ -88,10 +91,10 @@ export const isNiHandler = (user) => !!user && Array.isArray(user.allowedFeature
 // people created (without it, only their own) and add corrections to finance
 // history. Checked again server-side by the finance Edge Function, which reads
 // the same allowed_features column.
-export const FEATURE_KEYS = ['dashboard', 'leads', 'add_customer', 'conversations', 'calendar', 'meeting', 'pipeline', 'properties', 'reports', 'agentperf', 'requests', 'inventory', 'finance_approve', 'team', 'accounts', 'relay', 'aitrainer', 'self_forward'];
+export const FEATURE_KEYS = ['dashboard', 'leads', 'add_customer', 'conversations', 'calendar', 'meeting', 'pipeline', 'properties', 'reports', 'agentperf', 'perfreports', 'requests', 'inventory', 'finance_approve', 'team', 'accounts', 'relay', 'aitrainer', 'self_forward'];
 export const FEATURE_LABELS = {
   dashboard: 'Home', leads: 'Leads', add_customer: 'Add Customer', conversations: 'Conversations', calendar: 'Calendar', meeting: 'Meeting', pipeline: 'Pipeline', properties: 'Projects',
-  reports: 'Reports', agentperf: 'Performance', requests: 'Requests', inventory: 'Inventory', finance_approve: 'Manage all budgets', team: 'Team',
+  reports: 'Reports', agentperf: 'Performance', perfreports: 'Performance Reports', requests: 'Requests', inventory: 'Inventory', finance_approve: 'Manage all budgets', team: 'Team',
   accounts: 'Users & Accounts', relay: 'WhatsApp Relay', aitrainer: 'AI Trainer', self_forward: 'Self-forward leads',
 };
 // What a grant does when its label alone doesn't say it.
@@ -107,7 +110,10 @@ export const defaultFeatures = (role) => FEATURE_KEYS.filter(k => (NAV_SCOPES[k]
 // the grant path for anyone else who should have it too, same as any other
 // admin-toggled feature.
 export const canSelfForward = (user) =>
-  !!user && (user.role === ROLES.MA || (Array.isArray(user.allowedFeatures) && user.allowedFeatures.includes('self_forward')));
+  !!user && (user.role === ROLES.MA
+    || (Array.isArray(user.allowedFeatures)
+      ? user.allowedFeatures.includes('self_forward') || user.allowedFeatures.includes('add_customer')
+      : NAV_SCOPES.add_customer.includes(user.role)));
 
 // Properties catalog
 export const PROPERTY_TYPES = ['Apartment', 'Duplex', 'Penthouse', 'Plot', 'Commercial', 'Villa'];
