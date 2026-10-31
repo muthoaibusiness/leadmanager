@@ -1,6 +1,7 @@
 import { useState, useRef } from 'react';
 import { useApp } from '../../context/AppContext.jsx';
-import { getDB, updateAgent } from '../../lib/db.js';
+import { getDB, updateProfile } from '../../lib/db.js';
+import { changePassword } from '../../lib/auth.js';
 import { avc, ini, fmtBDT, rlabel, startOfMonth, curMonth } from '../../lib/helpers.js';
 import { ROLES } from '../../lib/constants.js';
 import Mi from '../Mi.jsx';
@@ -59,7 +60,7 @@ export default function ProfileView() {
   const fresh = db.users.find(u => u.id === user.id) || user;
 
   const [name, setName] = useState(fresh.name || '');
-  const [email, setEmail] = useState(fresh.email || '');
+  const email = fresh.email || '';
   const [phone, setPhone] = useState(fresh.phone || '');
   const [pw, setPw] = useState('');
   const [pw2, setPw2] = useState('');
@@ -131,19 +132,19 @@ export default function ProfileView() {
 
   const removeAvatar = () => { setAvatar(''); setDirty(true); };
 
-  const save = () => {
-    if (!name.trim() || !email.trim()) { showToast('Name and email required', 'err'); return; }
+  // Name, phone and photo are saved to the own users row and reported only
+  // once the server returns it. A new password goes to Supabase Auth, never to
+  // the users table. Email is the sign-in identity and is not edited here.
+  const save = async () => {
+    if (!name.trim()) { showToast('Name required', 'err'); return; }
     if (pw && pw !== pw2) { showToast('Passwords do not match', 'err'); return; }
+    if (pw && pw.length < 10) { showToast('Password must be at least 10 characters', 'err'); return; }
     setBusy(true);
-    const fields = { name: name.trim(), email: email.trim(), phone: phone.trim(), avatar };
-    if (pw) fields.password = pw;
-    // Persist locally AND push to the cloud — updateAgent does both. The old code
-    // only mutated localStorage, so the edit never reached the DB and (now that
-    // users merge cloud-first) got reverted on the next sync.
-    updateAgent(fresh.id, fields);
-    setUser({ ...fresh, ...fields });
-    refreshDB();
+    const r = await updateProfile(fresh.id, { name: name.trim(), phone: phone.trim(), avatar });
+    const p = r.ok && pw ? await changePassword(pw) : { ok: true };
     setBusy(false);
+    if (r.ok) { setUser(prev => ({ ...prev, ...r.user })); refreshDB(); }
+    if (!r.ok || !p.ok) { showToast((!r.ok ? r.error : p.error) || 'Not saved', 'err'); return; }
     setDirty(false);
     setPw(''); setPw2('');
     showToast('Profile saved', 'ok');
@@ -206,7 +207,7 @@ export default function ProfileView() {
         <div className="pf-row">
           <div className="fl">
             <label>Email</label>
-            <input className="finp" type="email" value={email} onChange={markDirty(setEmail)} />
+            <input className="finp" type="email" value={email} disabled title="Your sign-in email. Ask an admin to change it." />
           </div>
           <div className="fl">
             <label>Role</label>

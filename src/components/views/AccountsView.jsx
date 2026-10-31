@@ -4,15 +4,18 @@ import useNavState from '../../hooks/useNavState.js';
 import Mi from '../Mi.jsx';
 import Avatar from '../Avatar.jsx';
 import { useApp } from '../../context/AppContext.jsx';
-import { getDB, bulkCreateUsers, addNotifs, deleteUserFn } from '../../lib/db.js';
+import { getDB, addNotifs, unassignDeletedUser } from '../../lib/db.js';
+import { createAccount, deleteAccount } from '../../lib/accessAdmin.js';
 import { rlabel } from '../../lib/helpers.js';
-import { ROLES } from '../../lib/constants.js';
+import { ROLES, canSee } from '../../lib/constants.js';
 import { useProjectToast } from '../project/projectToast.js';
 import { EditBtn, DelBtn } from '../UserRow.jsx';
 import { Menu, MenuItem, MenuLabel, MenuRadio, MenuRadioGroup, MenuSep } from '../ui/menu.jsx';
 import useLeadCounts from '../../hooks/useLeadCounts.js';
 import useOpenUserLeads from '../../hooks/useOpenUserLeads.js';
 import { eq } from '../../lib/leadQuery.js';
+import AccessPanel from '../AccessPanel.jsx';
+import '../finance/finance.css'; // .fin-tabs
 
 // Users & Accounts — one Management page for the whole company roster.
 // Replaces the old Users (team cards) and Accounts (bulk create + flat list)
@@ -21,6 +24,7 @@ import { eq } from '../../lib/leadQuery.js';
 
 const ROLE_OPTS = [
   { v: ROLES.AGENT, l: 'Agent' },
+  { v: ROLES.MA, l: 'Meeting Agent' },
   { v: ROLES.TL, l: 'Team Lead' },
   { v: ROLES.MGMT, l: 'Management' },
 ];
@@ -28,7 +32,7 @@ const ROLE_FILTER_OPTS = [...ROLE_OPTS, { v: ROLES.EXEC, l: 'Executive' }];
 const PAGE = 10;
 const blankRow = () => ({ name: '', email: '', phone: '', role: ROLES.AGENT, password: '', teamId: '' });
 // Role pill, one colour per role; Management carries the bolt.
-const ROLE_TONE = { MANAGEMENT: 'mgmt', TEAM_LEAD: 'tl', AGENT: 'agent', EXECUTIVE: 'exec' };
+const ROLE_TONE = { MANAGEMENT: 'mgmt', TEAM_LEAD: 'tl', AGENT: 'agent', MEETING_AGENT: 'agent', EXECUTIVE: 'exec' };
 const RoleBadge = ({ role }) => (
   <span className={`uct-role t-${ROLE_TONE[role] || 'agent'}`}>
     {role === ROLES.MGMT ? <Mi aria-hidden="true">bolt</Mi> : <i aria-hidden="true" />}
@@ -40,7 +44,7 @@ const nAccounts = (n) => `${n} account${n === 1 ? '' : 's'}`;
 const nRows = (n) => `${n} row${n === 1 ? '' : 's'}`;
 // Team Lead first, then Agent, Executive, Management, so a team
 // reads top-down when the table is sorted by team.
-const ROLE_ORDER = { TEAM_LEAD: 0, AGENT: 1, EXECUTIVE: 2, MANAGEMENT: 3 };
+const ROLE_ORDER = { TEAM_LEAD: 0, AGENT: 1, MEETING_AGENT: 1, EXECUTIVE: 2, MANAGEMENT: 3 };
 const toggleIn = (set, id) => { const n = new Set(set); if (n.has(id)) n.delete(id); else n.add(id); return n; };
 
 // Roster orders. 'team' is the default: teams A–Z, each read top-down by
@@ -51,7 +55,7 @@ const SORT_OPTS = [
   { v: 'name-desc', l: 'Name (Z–A)' },
   { v: 'role', l: 'Role' },
 ];
-const SENIORITY = { MANAGEMENT: 0, TEAM_LEAD: 1, AGENT: 2, EXECUTIVE: 3 };
+const SENIORITY = { MANAGEMENT: 0, TEAM_LEAD: 1, AGENT: 2, MEETING_AGENT: 2, EXECUTIVE: 3 };
 const byName = (a, b) => (a.name || '').localeCompare(b.name || '');
 
 // Export: the filtered roster, every page. Passwords are never exported.
@@ -105,6 +109,7 @@ export default function AccountsView() {
   const [sort, setSort] = useNavState('accounts.sort', 'team');
   const [selected, setSelected] = useState(() => new Set());
   const [page, setPage] = useNavState('accounts.page', 0);
+  const [tab, setTab] = useNavState('accounts.tab', 'users');
   // The View card: an id, so a deleted account simply closes it.
   const [detailId, setDetailId] = useState(null);
   const viewRef = useRef(null);   // the View button that opened the card; focus goes back to it
@@ -174,9 +179,16 @@ export default function AccountsView() {
   const createAll = async () => {
     const filled = rows.filter(r => r.name.trim() || r.email.trim());
     if (!filled.length) { toast.warning('Add at least one account', 'Enter a name and email in any row.'); return; }
-    // async: bulkCreateUsers asks the server about duplicate emails, because
-    // db.users only holds this company since the load became tenant-scoped.
-    const res = await bulkCreateUsers(filled, user);
+    // One access-admin create per row, in order; the server checks the email
+    // across every tenant and the role against the caller. Each row needs its
+    // own password (10+ characters): there is no shared default any more.
+    const res = { created: [], errors: [] };
+    for (const [i, r] of filled.entries()) {
+      const name = r.name.trim(); const email = r.email.trim();
+      const out = await createAccount({ name, email, phone: r.phone.trim(), role: r.role, password: r.password, teamId: r.teamId || undefined });
+      if (out.ok) res.created.push({ id: out.user.id, name, email, pass: r.password, role: r.role, roleLabel: rlabel(r.role) });
+      else res.errors.push({ line: i + 1, name: name || email || `(row ${i + 1})`, reason: out.error });
+    }
     setResult(res);
     if (res.created.length) {
       // notify management + relevant TLs
@@ -248,19 +260,27 @@ export default function AccountsView() {
     download('﻿' + lines.map(l => l.map(csvCell).join(',')).join('\r\n'), 'text/csv;charset=utf-8', name);
   };
 
-  const removeSelected = () => {
+  // One access-admin call per account; the toast counts what the server
+  // actually removed and names the first refusal.
+  const removeSelected = async () => {
     const ids = [...selected].filter(id => id !== user.id && coUsers.some(u => u.id === id));
     if (!ids.length) return;
     const names = ids.map(id => coUsers.find(u => u.id === id)?.name).filter(Boolean);
     if (!window.confirm(`Remove ${nAccounts(ids.length)}?\n\n${names.join(', ')}\n\nTheir leads become unassigned; a Team Lead's team is removed too. This cannot be undone.`)) return;
-    ids.forEach(id => deleteUserFn(id, user)); // tombstone + cloud delete + unassign their leads
+    let done = 0; let firstErr = '';
+    for (const id of ids) {
+      const r = await deleteAccount(id);
+      if (r.ok) { unassignDeletedUser(id, user); done++; } else if (!firstErr) firstErr = r.error;
+    }
     setSelected(new Set());
     refreshDB();
-    toast.success(`${nAccounts(ids.length)} removed`, 'They can no longer sign in.');
+    if (done) toast.success(`${nAccounts(done)} removed`, firstErr ? `${nAccounts(ids.length - done)} not removed: ${firstErr}` : 'They can no longer sign in.');
+    else toast.error('Nothing removed', firstErr);
   };
 
   // After every hook, so the hook order never depends on the role.
-  if (user.role !== ROLES.MGMT) return null;
+  // Same rule as the nav entry and the access-admin function (access-rules.js).
+  if (!canSee(user, 'accounts')) return null;
 
   // The View card: contact details, then what the old team card showed, per role.
   const renderDetail = (u) => {
@@ -318,8 +338,21 @@ export default function AccountsView() {
     );
   };
 
+  const TABS = [['users', 'Users', 'group'], ['access', 'Access', 'shield']];
+  const tabBar = (
+    <div className="fin-tabs acc-tabs" role="tablist" aria-label="Users and access">
+      {TABS.map(([k, l, ic]) => (
+        <button key={k} type="button" role="tab" aria-selected={tab === k} className={tab === k ? 'on' : ''} onClick={() => setTab(k)}>
+          <Mi>{ic}</Mi>{l}
+        </button>
+      ))}
+    </div>
+  );
+  if (tab === 'access') return <div className="acc">{tabBar}<AccessPanel users={coUsers} /></div>;
+
   return (
     <div className="acc">
+      {tabBar}
       {/* KPI strip */}
       <div className="acc-kpis">
         <div className="acc-kpi"><div className="acc-kpi-v">{counts.total}</div><div className="acc-kpi-l">Total accounts</div></div>
@@ -379,7 +412,7 @@ export default function AccountsView() {
           <div className="acc-card-hd">
             <div>
               <div className="acc-card-t"><Mi>group_add</Mi>Create multiple accounts</div>
-              <div className="acc-card-s">Add a row per person, or paste a list. Blank password defaults to <b>1234</b>.</div>
+              <div className="acc-card-s">Add a row per person, or paste a list. Each account needs its own password, 10 characters or more.</div>
             </div>
             <button className="btn btn-g btn-sm" onClick={() => setPasteOpen(o => !o)}><Mi>content_paste</Mi>Paste list</button>
           </div>
@@ -415,7 +448,7 @@ export default function AccountsView() {
                     {teams.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
                   </select>
                 ) : <span className="acc-na">—</span>}
-                <input className="fi" value={r.password} onChange={e => setRow(i, 'password', e.target.value)} placeholder="1234" />
+                <input className="fi" value={r.password} onChange={e => setRow(i, 'password', e.target.value)} placeholder="10+ characters" />
                 <button className="acc-del" onClick={() => delRow(i)} title="Remove"><Mi>close</Mi></button>
               </div>
             ))}

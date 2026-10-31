@@ -42,6 +42,9 @@ export default function MessageBubble({ msg, onRetry, onOpenImage }) {
   return (
     <div className={`wa-row${out ? ' out' : ''}`}>
       <div className={`wa-bub${out ? ' out' : ''}${msg.status === 'FAILED' ? ' failed' : ''}`}>
+        {out && msg.senderName && (
+          <div className="wa-src-chip">{msg.senderName}</div>
+        )}
         {msg.type === 'image' && msg.mediaUrl && !imgErr && (
           <button className="wa-img" onClick={() => onOpenImage?.(msg)} title="Open image">
             <img src={msg.mediaUrl} alt={msg.mediaName || 'Image'} loading="lazy" onError={() => setImgErr(true)} />

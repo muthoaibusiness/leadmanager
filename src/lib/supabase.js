@@ -19,12 +19,84 @@ if (!SB_URL || !SB_KEY) {
 // in-flight count that drives the global loading bar (netActivity.js) cannot
 // drift out of step with the requests it describes. finally() runs on failure
 // and on abort too — a counter that only decrements on success would stick.
+// It also makes sure the session token is current: a request never leaves
+// with an access token that has already expired (see ensureFreshToken).
+// The request is sent synchronously unless a refresh is actually due, so the
+// common path behaves exactly as a plain fetch (callers and tests rely on it).
 function sbFetch(input, init) {
   begin();
-  return fetch(input, init).finally(end);
+  // Callers spread SB_H, which freezes the Authorization getter: re-read it after a refresh.
+  const send = (fresh) => fetch(input, fresh ? { ...init, headers: { ...init.headers, Authorization: bearer() } } : init);
+  const p = init && init.headers && 'Authorization' in init.headers && tokenNeedsRefresh()
+    ? ensureFreshToken().then(() => send(true))
+    : send(false);
+  return p.finally(end);
 }
 
-export const SB_H = { apikey: SB_KEY, Authorization: 'Bearer ' + SB_KEY, 'Content-Type': 'application/json' };
+// The signed-in user's Supabase Auth access token. Without one, requests go
+// out as anon, which after migrations 0054/0055 can read and write nothing.
+// Loaded from the stored session at module load, so the first requests of a
+// warm reload already carry it (auth.js restores and verifies it afterwards).
+export const SESSION_KEY = 'pcrm_auth';
+const readStored = () => { try { return JSON.parse(localStorage.getItem(SESSION_KEY) || 'null'); } catch { return null; } };
+let _access = readStored()?.access_token || null;
+// Open realtime sockets, told about every new token (see ensureFreshToken).
+const _tokenListeners = new Set();
+export const onAccessToken = (fn) => { _tokenListeners.add(fn); return () => _tokenListeners.delete(fn); };
+export function setAccessToken(t) { _access = t || null; if (_access) _tokenListeners.forEach((fn) => fn(_access)); }
+export const bearer = () => 'Bearer ' + (_access || SB_KEY);
+// The raw token, for realtime joins (they take it in the payload, not a header).
+export const accessToken = () => _access || undefined;
+
+// Refresh the stored session shortly before it expires. One refresh at a time:
+// concurrent requests wait for the same one. A network failure keeps the
+// session (the user is offline, not signed out); a refused refresh token ends
+// it, and the next request goes out as anon and gets nothing.
+const SKEW_S = 60;
+let _refreshing = null;
+const tokenNeedsRefresh = () => {
+  const s = readStored();
+  return !!(s && s.refresh_token && !(s.expires_at && s.expires_at - SKEW_S > Math.floor(Date.now() / 1000)));
+};
+export async function ensureFreshToken() {
+  const s = readStored();
+  if (!s || !s.refresh_token) return null;
+  // Another tab may have refreshed it: hand the new token to this tab's sockets too.
+  if (!tokenNeedsRefresh()) { if (s.access_token !== _access) setAccessToken(s.access_token); return s; }
+  if (_refreshing) return _refreshing;
+  _refreshing = (async () => {
+    let r;
+    try {
+      r = await fetch(`${SB_URL}/auth/v1/token?grant_type=refresh_token`, {
+        method: 'POST', headers: { apikey: SB_KEY, 'Content-Type': 'application/json' }, body: JSON.stringify({ refresh_token: s.refresh_token }),
+      });
+    } catch { return null; }
+    if (!r.ok) {
+      // Only GoTrue saying the refresh token is dead ends the session. 408/429/5xx,
+      // and a proxy's non-JSON page, are transient.
+      let j = null; try { j = await r.json(); } catch { /* non-JSON */ }
+      const dead = j && (j.error === 'invalid_grant' || /refresh_token/.test(j.error_code || '') || /refresh token/i.test(j.msg || j.error_description || ''));
+      if (![400, 401, 403].includes(r.status) || !dead) return null;
+      // Another tab may have rotated it a moment ago and stored the new pair.
+      const now = readStored();
+      if (now && now.refresh_token && now.refresh_token !== s.refresh_token) { setAccessToken(now.access_token); return now; }
+      try { localStorage.removeItem(SESSION_KEY); } catch { /* storage disabled */ }
+      _access = null;
+      return null;
+    }
+    const j = await r.json();
+    if (!j.access_token) return null;
+    const next = { access_token: j.access_token, refresh_token: j.refresh_token, expires_at: j.expires_at, sub: j.user?.id ?? s.sub, uid: s.uid };
+    try { localStorage.setItem(SESSION_KEY, JSON.stringify(next)); } catch { /* storage disabled: memory still has it */ }
+    setAccessToken(next.access_token);
+    return next;
+  })().finally(() => { _refreshing = null; });
+  return _refreshing;
+}
+
+// Authorization is a getter so every `{ ...SB_H }` spread picks up the token
+// current at the time of the request, not the one at import.
+export const SB_H = { apikey: SB_KEY, get Authorization() { return bearer(); }, 'Content-Type': 'application/json' };
 
 function checkNetworkError(e) {
   if (e.name === 'TypeError' && e.message === 'Failed to fetch') {
@@ -76,7 +148,9 @@ const _missingTables = new Set();
 // - PGRST204 (unknown column): strip that column from every row and retry, so
 //   inserts still succeed before the schema migration adds columns like `cart`.
 // - PGRST205 (missing table): skip quietly (remember it for the session).
-export async function sbUpsert(table, rows) {
+// ignoreDuplicates: a row whose id already exists is left as it is, instead of
+// being overwritten.
+export async function sbUpsert(table, rows, { ignoreDuplicates = false } = {}) {
   if (!rows || !rows.length) return { ok: false, skipped: true };
   if (_missingTables.has(table)) return { ok: false, skipped: true };
   let payload = rows;
@@ -87,7 +161,7 @@ export async function sbUpsert(table, rows) {
     try {
       r = await sbFetch(`${SB_URL}/rest/v1/${table}`, {
         method: 'POST',
-        headers: { ...SB_H, Prefer: 'resolution=merge-duplicates' },
+        headers: { ...SB_H, Prefer: ignoreDuplicates ? 'resolution=ignore-duplicates' : 'resolution=merge-duplicates' },
         body: JSON.stringify(payload),
       });
     } catch (e) {
@@ -204,6 +278,26 @@ export async function sbInsert(table, row) {
 
 // `strict`: an unknown column fails the whole write ({ ok: false, missing })
 // instead of being dropped, for writes that are wrong unless every column lands.
+// PATCH that reports what actually changed. Unlike sbUpdate (return=minimal,
+// where a PATCH that RLS filters to zero rows still answers 204), this asks for
+// the rows back, so the caller can tell "saved" from "silently refused".
+// `select` names the columns: a bare return would include every readable one.
+export async function sbPatchRows(table, filter, patch, select) {
+  try {
+    const r = await sbFetch(`${SB_URL}/rest/v1/${table}?${filter}&select=${select}`, {
+      method: 'PATCH', headers: { ...SB_H, Prefer: 'return=representation' }, body: JSON.stringify(patch),
+    });
+    if (!r.ok) {
+      let msg = ''; try { msg = (await r.json())?.message || ''; } catch { /* non-JSON error body */ }
+      return { ok: false, rows: [], error: r.status === 401 || r.status === 403 ? 'Not saved: you may not change this.' : `Not saved (HTTP ${r.status}${msg ? ': ' + msg : ''})` };
+    }
+    return { ok: true, rows: await r.json() };
+  } catch (e) {
+    checkNetworkError(e);
+    return { ok: false, rows: [], error: 'Not saved: network error.' };
+  }
+}
+
 export async function sbUpdate(table, id, updates, { strict = false } = {}) {
   if (_missingTables.has(table)) return { ok: false, skipped: true };
   let payload = { ...updates };
@@ -314,6 +408,8 @@ export function lToR(l) {
     call_count: l.callCount || 0, sms_count: l.smsCount || 0,
     whatsapp_count: l.whatsappCount || 0, visit_count: l.visitCount || 0,
     no_answer_count: l.noAnswerCount || 0, no_answer_lock_until: l.noAnswerLockUntil || null,
+    // Migration 0049. Not sent: ni_count and followup_suppressed_* are kept by
+    // the database trigger, and a full-row insert must not reset them.
     notes: l.notes || '', external_id: l.externalId || null, priority: l.priority || null,
     preferred_time: l.preferredTime || null, next_followup: l.nextFollowup || null,
     material_sent: l.materialSent || null, cart: l.cart || null, company_id: l.companyId || null,
@@ -341,6 +437,9 @@ export function rToL(r) {
     callCount: r.call_count || 0, smsCount: r.sms_count || 0,
     whatsappCount: r.whatsapp_count || 0, visitCount: r.visit_count || 0,
     noAnswerCount: r.no_answer_count || 0, noAnswerLockUntil: r.no_answer_lock_until || null,
+    // Migration 0049; absent (undefined) before it is applied.
+    niCount: r.ni_count || 0, followupSuppressedAt: r.followup_suppressed_at || null,
+    followupSuppressedReason: r.followup_suppressed_reason || null, followupNotBefore: r.followup_not_before || null,
     notes: r.notes || '', externalId: r.external_id || null, priority: r.priority || null,
     preferredTime: r.preferred_time || null, nextFollowup: r.next_followup || null,
     materialSent: r.material_sent || null, cart: r.cart || null, companyId: r.company_id || null,
@@ -408,33 +507,9 @@ export function rToN(r) {
 }
 
 // Flat array of notification objects (each has userId) → upsert to Supabase
-export async function sbUpsertNotifs(notifs) {
+export async function sbUpsertNotifs(notifs, opts) {
   if (!notifs || !notifs.length) return;
-  await sbUpsert('notifications', notifs.map(nToR));
-}
-
-// Which of these email addresses already belong to a user account, anywhere.
-//
-// The client-side duplicate check (CreateUserModal, bulkCreateUsers) compares
-// against db.users, and db.users now holds one company only — so it went blind
-// to the other tenants exactly when the scoped load landed. Two accounts sharing
-// an address is an auth bug, not just untidy data: loginRemote matches on
-// `email=ilike.<addr>` and signs in whichever row's password matches.
-// Migration 0009 adds a unique index as the backstop; this is the readable error.
-//
-// ilike (not eq) because addresses are stored with whatever case they were typed
-// in. Returns a lower-cased Set; an empty Set on a network failure, so a create
-// is never blocked by being offline — the unique index still catches it.
-export async function sbEmailsInUse(emails) {
-  const list = [...new Set((emails || []).map(e => String(e || '').trim().toLowerCase()).filter(Boolean))];
-  const hits = new Set();
-  for (let i = 0; i < list.length; i += 40) {
-    const chunk = list.slice(i, i + 40);
-    const or = chunk.map(e => `email.ilike.${encodeURIComponent(e)}`).join(',');
-    const rows = await sbGet(`users?select=email&or=(${or})`);
-    (rows || []).forEach(r => r.email && hits.add(r.email.trim().toLowerCase()));
-  }
-  return hits;
+  await sbUpsert('notifications', notifs.map(nToR), opts);
 }
 
 // Mark specific notification ids as read in Supabase
@@ -448,18 +523,24 @@ export async function sbMarkRead(ids) {
   }).catch(e => console.warn('markRead', e));
 }
 
+// Realtime drops a channel when its token expires: hand an open socket each new one.
+const pushToken = (getWs, topic) => onAccessToken((t) => { const ws = getWs(); if (ws?.readyState === 1) ws.send(JSON.stringify({ topic, event: 'access_token', payload: { access_token: t }, ref: String(Date.now()) })); });
+
 export function sbSubscribeNotifs(userId, onNew) {
   const wsUrl = `${SB_URL.replace('https://', 'wss://')}/realtime/v1/websocket?apikey=${SB_KEY}&vsn=1.0.0`;
   let ws, hbTimer, reconnTimer;
   let dead = false;
+  const offToken = pushToken(() => ws, 'realtime:public:notifications');
 
-  function connect() {
+  async function connect() {
+    await ensureFreshToken().catch(() => null);
+    if (dead) return;
     try { ws = new WebSocket(wsUrl); } catch { return; }
     ws.onopen = () => {
       ws.send(JSON.stringify({
         topic: `realtime:public:notifications`,
         event: 'phx_join',
-        payload: { config: { postgres_changes: [{ event: 'INSERT', schema: 'public', table: 'notifications', filter: `user_id=eq.${userId}` }] } },
+        payload: { config: { postgres_changes: [{ event: 'INSERT', schema: 'public', table: 'notifications', filter: `user_id=eq.${userId}` }] } , access_token: accessToken() },
         ref: '1',
       }));
       hbTimer = setInterval(() => {
@@ -483,7 +564,7 @@ export function sbSubscribeNotifs(userId, onNew) {
   }
 
   connect();
-  return () => { dead = true; clearInterval(hbTimer); clearTimeout(reconnTimer); try { ws?.close(); } catch { /* best-effort teardown: dead is set, so no reconnect follows */ } };
+  return () => { dead = true; offToken(); clearInterval(hbTimer); clearTimeout(reconnTimer); try { ws?.close(); } catch { /* best-effort teardown: dead is set, so no reconnect follows */ } };
 }
 
 const RT_TABLES = ['users', 'teams', 'leads', 'activities', 'notifications', 'targets', 'companies', 'properties', 'bookings', 'hold_requests'];
@@ -550,8 +631,11 @@ export function sbSubscribeAll(onEvent, user) {
   let ws, hbTimer, reconnTimer;
   let dead = false;
   let config = null;
+  const offToken = pushToken(() => ws, 'realtime:public');
 
   async function connect() {
+    await ensureFreshToken().catch(() => null);
+    if (dead) return;
     // rtConfig filters activities and targets by company only once it knows
     // the column exists. Probe before the first join, so a scoped account does
     // not fall back to every tenant's rows just because nothing asked yet.
@@ -565,7 +649,7 @@ export function sbSubscribeAll(onEvent, user) {
       ws.send(JSON.stringify({
         topic: `realtime:public`,
         event: 'phx_join',
-        payload: { config: { postgres_changes: config } },
+        payload: { config: { postgres_changes: config }, access_token: accessToken() },
         ref: '1',
       }));
       hbTimer = setInterval(() => {
@@ -596,7 +680,7 @@ export function sbSubscribeAll(onEvent, user) {
   }
 
   connect();
-  return () => { dead = true; clearInterval(hbTimer); clearTimeout(reconnTimer); try { ws?.close(); } catch { /* best-effort teardown: dead is set, so no reconnect follows */ } };
+  return () => { dead = true; offToken(); clearInterval(hbTimer); clearTimeout(reconnTimer); try { ws?.close(); } catch { /* best-effort teardown: dead is set, so no reconnect follows */ } };
 }
 
 export function bkToR(b) {
@@ -687,7 +771,7 @@ export async function uploadProjectMedia(blob, path) {
   try {
     const r = await sbFetch(`${SB_URL}/storage/v1/object/${PROJECT_BUCKET}/${path}`, {
       method: 'POST',
-      headers: { apikey: SB_KEY, Authorization: 'Bearer ' + SB_KEY, 'Content-Type': blob.type || 'application/octet-stream' },
+      headers: { apikey: SB_KEY, Authorization: bearer(), 'Content-Type': blob.type || 'application/octet-stream' },
       body: blob,
     });
     if (!r.ok) {
@@ -704,7 +788,7 @@ export async function uploadProjectMedia(blob, path) {
 
 // The bulk load deliberately does NOT request `password`. Every logged-in
 // browser was being handed every user's plaintext credentials for no reason —
-// login now fetches the one row it needs via loginRemote(). Safe to omit on
+// sign-in is Supabase Auth (auth.js) and never reads it. Safe to omit on
 // write-back too: rToU leaves the field `undefined` when it isn't selected, and
 // JSON.stringify drops undefined keys, so sbUpdate's PATCH never touches the
 // column rather than nulling it.
@@ -825,6 +909,30 @@ export async function sbRpc(fn, args = {}) {
     console.warn(`[rpc] ${fn} -> HTTP ${r.status}`, j.message || '');
     return null;
   } catch (e) { console.warn(`[rpc] ${fn} failed:`, e); return null; }
+}
+
+// sbRpc for a write: tells "the function is not there yet" (missing, so the
+// caller can fall back to the pre-migration path) apart from "it failed" and
+// from a network drop, which sbRpc folds into one null. Network errors are
+// retried with the same body, so an idempotent function sees the same request.
+export async function sbRpcCall(fn, args = {}, { retries = 2 } = {}) {
+  if (_missingRpc.has(fn)) return { missing: true };
+  for (let attempt = 0; ; attempt++) {
+    let r;
+    try {
+      r = await sbFetch(`${SB_URL}/rest/v1/rpc/${fn}`, { method: 'POST', headers: SB_H, body: JSON.stringify(args) });
+    } catch (e) {
+      if (attempt < retries) continue;
+      checkNetworkError(e);
+      return { error: e };
+    }
+    if (r.ok) return { data: await r.json() };
+    let j = {};
+    try { j = JSON.parse(await r.text()); } catch { /* non-JSON error body */ }
+    if (j.code === 'PGRST202' || r.status === 404) { _missingRpc.add(fn); return { missing: true }; }
+    console.warn(`[rpc] ${fn} -> HTTP ${r.status}`, j.message || '');
+    return { error: j, status: r.status };
+  }
 }
 
 // ── Counted / paged reads ─────────────────────────────────────────────────
@@ -1085,6 +1193,30 @@ export async function sbLoadActWindow(user, leadIds, days = ACT_WINDOW_DAYS) {
   } catch (e) { console.warn('Supabase activity window load failed:', e); return null; }
 }
 
+// Activities of the given `types` only (Home's contact tracker passes the ones
+// it counts: status changes and follow-ups) since `since`, with just the columns
+// it counts by. Far lighter than the activity window above (a few types, six
+// columns), so the tracker never waits on that load. Scoped like the window for
+// MANAGEMENT (company) and MASTER (everything); the tracker lives on the
+// Management dashboard only.
+// Leads created since `since`, with just the columns Home's lead-source card
+// counts by. Light (four columns, one period), so the card never waits on the
+// whole lead book; scoped by company like sbLoad (MASTER: everything). The
+// company clause keeps rows with no company_id, which realtime never streams,
+// so the card's minute re-load still picks them up.
+export async function sbLoadLeadsSince(user, since) {
+  try {
+    const co = !isUnscoped(user) && await hasCompanyCol('leads') ? `&${coFilter(user.companyId)}` : '';
+    return await sbGetAll(`leads?select=id,source,created_at,company_id&order=created_at.asc&created_at=gte.${encodeURIComponent(since)}${co}`);
+  } catch (e) { console.warn('Supabase new-lead load failed:', e); return null; }
+}
+
+export async function sbLoadLeadUpdates(user, since, types) {
+  try {
+    const co = !isUnscoped(user) && await hasCompanyCol('activities') ? `&${coFilter(user.companyId)}` : '';
+    return await sbGetAll(`activities?select=id,lead_id,type,user_id,timestamp,company_id&type=in.(${types.join(',')})&order=timestamp.asc&timestamp=gte.${encodeURIComponent(since)}${co}`);
+  } catch (e) { console.warn('Supabase lead-update load failed:', e); return null; }
+}
 // UNUSED — nothing in src/ calls this; every cloud write goes through
 // sbInsert/sbUpdate/sbUpsert per row. Do not wire it up: the local snapshot is
 // now one company's slice AND persistLocal() progressively trims it under
@@ -1101,7 +1233,7 @@ export function sbSave(db) {
       Object.entries(db.activities || {}).forEach(([lid, arr]) => (arr || []).forEach(a => acts.push(aToR(a, lid))));
       await Promise.all([
         sbUpsert('companies', (db.companies || []).map(cToR)),
-        sbUpsert('users', db.users.map(uToR)),
+        // users is never bulk-written: access-admin and updateProfile own it (CR-001 D1).
         sbUpsert('teams', (db.teams || []).map(tToR)),
         sbUpsert('leads', db.leads.map(lToR)),
         sbUpsert('activities', acts),

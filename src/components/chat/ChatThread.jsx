@@ -12,9 +12,9 @@ const dayLabel = (iso) => {
 };
 
 // Message scroller. Sticks to the bottom while the agent is already there, but
-// leaves the scroll position alone when they've scrolled up to read history —
-// a jump-to-latest pill appears instead.
-export default function ChatThread({ messages, loading, onRetry }) {
+// leaves the scroll position alone when they've scrolled up to read history,
+// and a jump-to-latest pill appears instead.
+export default function ChatThread({ messages, loading, onRetry, hasOlder, loadingOlder, onLoadOlder }) {
   const boxRef = useRef(null);
   const atBottomRef = useRef(true);
   const [showJump, setShowJump] = useState(false);
@@ -61,6 +61,12 @@ export default function ChatThread({ messages, loading, onRetry }) {
 
   return (
     <div className="wa-thread-wrap">
+      {hasOlder && (
+        <button type="button" className="btn btn-g btn-sm"
+          disabled={loadingOlder} onClick={onLoadOlder}>
+          {loadingOlder ? 'Loading earlier messages...' : 'Load earlier messages'}
+        </button>
+      )}
       <div className="wa-thread" ref={boxRef} onScroll={onScroll}>
         {!messages.length && (
           <div className="wa-empty-sm wa-empty-thread">

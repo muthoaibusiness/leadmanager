@@ -1,0 +1,63 @@
+/* ui/progress-metric-card.jsx: the source's Tailwind utilities as CSS on theme
+   tokens. Sizes set the variables; the chart region fills the right 62% of
+   the body, behind the content. */
+.pmc {
+  --pmc-minh: 380px; --pmc-px: 32px; --pmc-pt: 28px; --pmc-fy: 16px; --pmc-title: 17px; --pmc-head: 72px;
+  --pmc-accent: var(--t2);
+  position: relative; display: flex; flex-direction: column; width: 100%; min-width: 0; min-height: var(--pmc-minh);
+  overflow: hidden; border-radius: 16px; border: 1px solid var(--bd); background: var(--surf);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, .04);
+}
+.pmc-sm { --pmc-minh: 260px; --pmc-px: 24px; --pmc-pt: 20px; --pmc-fy: 12px; --pmc-title: 15px; --pmc-head: 46px; }
+.pmc-lg { --pmc-minh: 460px; --pmc-px: 40px; --pmc-pt: 36px; --pmc-fy: 20px; --pmc-title: 19px; --pmc-head: 88px; }
+
+.pmc-main { position: relative; flex: 1; display: flex; flex-direction: column; }
+.pmc-region { position: absolute; top: 0; bottom: 0; right: 0; width: 62%; z-index: 0; }
+.pmc-glow { position: absolute; inset: 0; background: linear-gradient(to left, color-mix(in srgb, var(--pmc-accent) 12%, transparent), transparent 75%); }
+.pmc-dots {
+  position: absolute; inset: 0; color: color-mix(in srgb, var(--t1) 13%, transparent);
+  -webkit-mask-image: linear-gradient(to right, transparent, #000 55%);
+  mask-image: linear-gradient(to right, transparent, #000 55%);
+}
+.pmc-dots svg { display: block; }
+
+/* Lets the pointer through to the chart; the controls take it back. */
+.pmc-content { pointer-events: none; position: relative; z-index: 1; flex: 1; display: flex; flex-direction: column; padding: var(--pmc-pt) var(--pmc-px) 0; }
+.pmc-head { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px 16px; }
+.pmc-head-l { display: flex; align-items: center; gap: 12px; }
+.pmc-head-r { display: flex; align-items: center; gap: 14px; font-size: 14px; }
+.pmc-title { margin: 0; font-size: var(--pmc-title); font-weight: 600; letter-spacing: -.01em; color: var(--t1); }
+.pmc-trend { display: inline-flex; align-items: center; gap: 4px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.pmc-legend { margin-top: 10px; display: flex; flex-wrap: wrap; gap: 4px 16px; }
+.pmc-legend-i { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--t2); }
+.pmc-legend-i i { width: 8px; height: 8px; border-radius: 50%; }
+.pmc-total {
+  margin-top: 20px; font-family: var(--font-display); font-size: var(--pmc-head); font-weight: 500;
+  line-height: 1; letter-spacing: -.03em; color: var(--t1); font-variant-numeric: tabular-nums;
+}
+
+.pmc-foot {
+  position: relative; z-index: 1; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 6px 16px;
+  border-top: 1px solid var(--bd); padding: var(--pmc-fy) var(--pmc-px); font-size: 13.5px;
+}
+.pmc-delta { font-weight: 600; font-variant-numeric: tabular-nums; }
+.pmc-muted { color: var(--t3); }
+.pmc-stats { display: flex; align-items: center; gap: 10px; font-size: 12px; color: var(--t3); }
+.pmc-stats b { font-weight: 600; color: var(--t2); }
+.pmc-sep { opacity: .4; }
+
+.pmc-empty { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; padding: 40px 0; text-align: center; }
+.pmc-empty-t { margin: 0; font-size: 13.5px; font-weight: 600; color: var(--t1); }
+.pmc-empty-s { margin: 0; font-size: 12px; color: var(--t3); }
+
+.pmc-sk { border-radius: 6px; background: var(--surf2); animation: pmc-pulse 1.6s ease-in-out infinite; }
+.pmc-sk-soft { background: color-mix(in srgb, var(--surf2) 50%, transparent); }
+@keyframes pmc-pulse { 50% { opacity: .45; } }
+@media (prefers-reduced-motion: reduce) { .pmc-sk { animation: none; } }
+
+/* Phones: the chart takes a little less of the width, so the headline keeps
+   clear of it, and a little more height, since the header wraps to two rows. */
+@media (max-width: 560px) {
+  .pmc-region { width: 58%; }
+  .pmc-sm { --pmc-px: 18px; --pmc-minh: 290px; }
+}

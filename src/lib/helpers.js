@@ -144,7 +144,7 @@ export function rlabel(r) {
   const m = {
     AGENT: 'Agent',
     INITIAL_AGENT: 'Agent',   // pre-merge rows (see LEGACY_AGENT_ROLES)
-    MEETING_AGENT: 'Agent',
+    MEETING_AGENT: 'Meeting Agent',
     TEAM_LEAD: 'Team Lead',
     MANAGEMENT: 'Management',
     MASTER: 'Master Admin',

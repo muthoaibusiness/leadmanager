@@ -2,6 +2,7 @@ import { useState, useMemo } from 'react';
 import Mi from '../Mi.jsx';
 import { useApp } from '../../context/AppContext.jsx';
 import { getDB, getCompanies, companyStats, createCompany, setCompanyActive } from '../../lib/db.js';
+import { createAccount } from '../../lib/accessAdmin.js';
 import { fmtBDT } from '../../lib/helpers.js';
 import { ROLES } from '../../lib/constants.js';
 import DashGreeting from './DashGreeting.jsx';
@@ -30,11 +31,11 @@ export default function MasterDash() {
   if (user.role !== ROLES.MASTER) return null;
 
   const set = (k) => (e) => setForm(f => ({ ...f, [k]: e.target.value }));
-  const save = () => {
+  const save = async () => {
     if (!form.name.trim()) { setErr('Company name required.'); return; }
     if (!form.adminName.trim() || !form.adminEmail.trim()) { setErr('Admin name and email required.'); return; }
     if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(form.adminEmail)) { setErr('Valid admin email required.'); return; }
-    const res = createCompany(form);
+    const res = await createCompany(form, createAccount);
     if (res.error) { setErr(res.error); return; }
     setErr('');
     setCreated({ company: form.name, email: res.adminEmail, pass: res.password });
@@ -86,7 +87,7 @@ export default function MasterDash() {
             <div className="fg"><label>Admin email *</label><input className="fi" value={form.adminEmail} onChange={set('adminEmail')} placeholder="admin@company.com" /></div>
           </div>
           <div className="ms-form-row">
-            <div className="fg"><label>Password</label><input className="fi" value={form.password} onChange={set('password')} placeholder="1234" /></div>
+            <div className="fg"><label>Password</label><input className="fi" value={form.password} onChange={set('password')} placeholder="10+ characters" /></div>
             <div className="fg"><label>Phone</label><input className="fi" value={form.phone} onChange={set('phone')} placeholder="+880…" /></div>
           </div>
           {err && <div className="ms-err">{err}</div>}

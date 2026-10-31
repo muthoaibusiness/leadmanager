@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect } from 'react';
+import { useEffect, useLayoutEffect, useRef } from 'react';
 import { HISTORY_MARK, DEFAULT_SNAP, pageKey, toHash, parseHash, pageLabel, parentOf, trailOf } from '../lib/navHistory.js';
 
 // Mirrors AppContext's page state into window.history. One history entry per
@@ -75,15 +75,24 @@ function pageEntry(snap, db, boot) {
   return nav.entry;
 }
 
+// Overlays a page keeps in its own state (Inventory's statement view and
+// statement editor) register here through usePageOverlay. They share the one
+// guard entry with the app's overlays, and Back closes the top one through its
+// own close function: a form with unsaved input asks first, and when the user
+// stays, reconcile puts the guard back. The last one registered is on top.
+const pageOverlays = [];
+const anyOverlayOpen = () => !!nav.live?.overlayOpen || pageOverlays.length > 0;
+
 // Bring the browser's entries in line with the overlay state: a guard above the
 // page while anything is open, none once everything is closed.
 function reconcile() {
   if (!nav.live?.uid) return;
-  if (nav.live.overlayOpen && !nav.guard) {
+  const open = anyOverlayOpen();
+  if (open && !nav.guard) {
     flush();
     write('pushState', nav.entry, true);
     nav.guard = true;
-  } else if (!nav.live.overlayOpen && nav.guard) {
+  } else if (!open && nav.guard) {
     nav.guard = false;
     nav.expectPop++;
     nav.expectAt = Date.now();
@@ -94,13 +103,33 @@ const reconcileSoon = () => setTimeout(reconcile, 0);
 
 // Back with an overlay up closes the top one exactly as Esc would: modals,
 // the lead panel and the drawer through App.jsx's Esc handler and each form's
-// discard guard (a dirty form asks first and stays open), notifications directly.
+// discard guard (a dirty form asks first and stays open), notifications directly,
+// a page's own overlay through its registered close.
 function closeTop() {
   const o = nav.live.overlays;
   if (o.modal || o.panLead || o.sidebarOpen) {
     const t = document.activeElement instanceof HTMLElement ? document.activeElement : document.body;
     t.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', bubbles: true, cancelable: true }));
   } else if (o.notifOpen) nav.live.closeNotif();
+  else if (pageOverlays.length) pageOverlays[pageOverlays.length - 1].close();
+}
+
+// Registers a page's own overlay while `open`. `close` is what Back calls:
+// the same path as its ✕ (a form passes its discard-guarded close).
+export function usePageOverlay(open, close) {
+  const closeRef = useRef(close);
+  useEffect(() => { closeRef.current = close; });
+  useEffect(() => {
+    if (!open) return undefined;
+    const o = { close: () => closeRef.current() };
+    pageOverlays.push(o);
+    reconcileSoon();
+    return () => {
+      const i = pageOverlays.indexOf(o);
+      if (i >= 0) pageOverlays.splice(i, 1);
+      reconcileSoon();
+    };
+  }, [open]);
 }
 
 function restore(st) {
@@ -138,7 +167,7 @@ function onPop(ev) {
       nav.entry = { id: newId(), idx: cur.idx + 1, key: pageKey(snap), snap, local: {}, scroll: 0, prev: { label: pageLabel(cur.snap, nav.live.db) }, pending: null };
       nav.sig = JSON.stringify(snap);
       write('replaceState', nav.entry);
-      if (nav.live.overlayOpen) nav.live.closeAll();
+      if (anyOverlayOpen()) nav.live.closeAll();
       nav.live.apply(snap);
     } else write('replaceState', nav.entry); // an entry from before sign-in (the landing page's #anchors) shows this page
     return;
@@ -151,8 +180,8 @@ function onPop(ev) {
     return;
   }
   nav.guard = false;
-  if (nav.live.overlayOpen && st.id === nav.entry.id) { closeTop(); reconcileSoon(); return; }
-  if (nav.live.overlayOpen) nav.live.closeAll(); // jumped several entries at once
+  if (anyOverlayOpen() && st.id === nav.entry.id) { closeTop(); reconcileSoon(); return; }
+  if (anyOverlayOpen()) nav.live.closeAll(); // jumped several entries at once
   if (st.id !== nav.entry.id) restore(st);
   reconcileSoon();
 }

@@ -132,7 +132,10 @@
 }
 
 html {
-  font-size: 14px
+  font-size: 14px;
+  /* no iOS text inflation on rotation: sizes stay as set in every orientation */
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%
 }
 
 body {
@@ -1523,6 +1526,12 @@ a {
   position: relative
 }
 
+/* Pages scroll inside .pg-body, never the document. Without this, a pull past
+   either end of a list chains to the root, and iOS Safari's rubber band (or
+   Android's overscroll stretch) drags the whole shell, header and account face
+   with it. The scroller's own bounce is untouched. */
+html, body { overscroll-behavior: none }
+
 /* Desktop inset shell: the sidebar sits flush on the canvas (same surface, no
    divider) and the page is a rounded, bordered panel held --inset off the
    viewport's top, right and bottom edges. The ≤1023px drawer layout keeps
@@ -1592,7 +1601,7 @@ a {
    takes a heavier tint than --surf: the smoke stays a faint glow there. */
 #app .sidebar { background: rgba(10, 10, 12, .86) }
 :root[data-theme="light"] #app .sidebar { background: rgba(255, 255, 255, .86) }
-#app :is(.card, .mc, .sc-card, .kpi-tile, .tc, .agc, .tmcard, .lt, .fbar, .lead-filter, .analytics-card, .rep-card, .st-card, .alert-card, .prop-card, .prop-toolbar, .cl-card, .cal-card, .cal-panel, .uct-card, .acc-card, .ms-card, .wa-list, .wa-main) {
+#app :is(.card, .mc, .sc-card, .kpi-tile, .tc, .agc, .tmcard, .lt, .fbar, .lead-filter, .analytics-card, .rep-card, .alert-card, .prop-card, .prop-toolbar, .cl-card, .cal-card, .cal-panel, .uct-card, .acc-card, .ms-card, .wa-list, .wa-main) {
   -webkit-backdrop-filter: var(--card-blur);
   backdrop-filter: var(--card-blur)
 }
@@ -2166,7 +2175,8 @@ a {
   color: var(--t2);
   font: 600 12px/1 var(--font-display);
   user-select: none;
-  cursor: pointer
+  cursor: pointer;
+  flex-shrink: 0
 }
 .ag-av:focus-visible { outline: 2px solid var(--t1); outline-offset: 1px }
 .ag-img { display: block; width: 100%; height: 100%; object-fit: cover }
@@ -2613,6 +2623,212 @@ a {
   .pg-head .hd-um { order: -1 }
   .pg-head .thtog { display: none }
   .umenu-theme { display: flex }
+  /* No Back and no breadcrumb on phones: the page hero names the page. The
+     face's auto margin takes the trail's room, so the face stays at the left
+     edge and the controls at the right on every page. */
+  .pg-head .hd-back, .pg-head .hd-crumb { display: none }
+  .pg-head .hd-um { margin-right: auto }
+}
+
+/* The account face never gives up width to the trail, so it keeps its size
+   and place on every page and at every width. */
+.pg-head .hd-um { flex-shrink: 0 }
+
+/* ── Phone header pills (≤767px; components/HeaderTools.jsx, UserMenu.jsx) ──
+   Left: the account pill (face + name + role + chevron). Right: one pill
+   holding search, AI and the date filter, then a round notifications button.
+   Wider screens: the group is display: contents, so the date filter keeps its
+   old place, and search, AI and the pill text are hidden. */
+.hd-grp { display: contents }
+.hd-srch, .hd-ai-wrap, .hd-um-txt, .hd-um-chev { display: none }
+.hd-ai-wrap { position: relative; flex-shrink: 0 }
+.hd-ai-ico { display: block }
+
+@media (max-width: 767px) {
+  .pg-head .hd-um {
+    flex-shrink: 1;
+    min-width: 0;
+    gap: 8px;
+    height: 44px;
+    padding: 3px 10px 3px 3px;
+    border-radius: 999px;
+    background: var(--surf2);
+    border: 1px solid var(--bd);
+    cursor: pointer
+  }
+  .hd-um-txt {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    line-height: 1.2
+  }
+  .hd-um-nm, .hd-um-rl { white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
+  .hd-um-nm { font-size: 13.5px; font-weight: 600; color: var(--t1) }
+  .hd-um-rl { font-size: 11.5px; color: var(--t3) }
+  .hd-um-chev.mi { display: block; flex-shrink: 0; font-size: 18px; color: var(--t3) }
+
+  .hd-grp {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    flex-shrink: 0;
+    height: 44px;
+    padding: 3px;
+    border-radius: 999px;
+    background: var(--surf2);
+    border: 1px solid var(--bd)
+  }
+  .hd-grp .hd-ic { width: 36px; height: 36px; border-color: transparent; color: var(--t1) }
+  .hd-grp .hd-ic:hover, .hd-grp .hd-ic.open { background: var(--surf); border-color: transparent }
+  .hd-srch, .hd-ai-wrap { display: flex }
+
+  .pg-head .notif-btn {
+    width: 44px;
+    height: 44px;
+    background: var(--surf2);
+    border-color: var(--bd);
+    color: var(--t1)
+  }
+
+  .hd-ai-menu.umenu {
+    position: fixed;
+    top: calc(var(--hh) + 8px);
+    bottom: auto;
+    left: auto;
+    right: 8px;
+    width: 220px;
+    animation: umdrop .16s ease
+  }
+}
+
+/* ── Global search sheet (components/GlobalSearch.jsx) ─────────────────────
+   Portalled to <body>. Phones: full screen. Wider: a centred panel (the
+   trigger is phone-only today). Above the bottom bar (150), below the
+   sidebar drawer (200). */
+.gs {
+  position: fixed;
+  inset: 0;
+  z-index: 180;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  color: var(--t1);
+  padding-top: env(safe-area-inset-top, 0px);
+  animation: gsin .16s ease
+}
+@keyframes gsin {
+  from { opacity: 0; transform: translateY(8px) }
+  to { opacity: 1; transform: none }
+}
+.gs-bar { display: flex; align-items: center; gap: 10px; padding: 7px 16px 10px }
+.gs-box {
+  flex: 1;
+  min-width: 0;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 6px 0 14px;
+  border-radius: 999px;
+  background: var(--surf2);
+  border: 1px solid var(--bd);
+  color: var(--t3)
+}
+.gs-box:focus-within { border-color: var(--bd2) }
+.gs-box .mi { font-size: 20px; flex-shrink: 0 }
+.gs-box input {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--t1);
+  font: inherit;
+  font-size: 16px   /* 16px+ keeps iOS from zooming on focus */
+}
+.gs-box input::-webkit-search-cancel-button { display: none }
+.gs-clear {
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--t3);
+  cursor: pointer
+}
+.gs-clear .mi { font-size: 18px }
+.gs-cancel { flex-shrink: 0; border: none; background: none; color: var(--t1); font: inherit; font-size: 14.5px; font-weight: 500; cursor: pointer; padding: 6px 2px }
+.gs-body {
+  flex: 1;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 4px 16px calc(24px + env(safe-area-inset-bottom, 0px))
+}
+.gs-sec { margin-top: 14px }
+.gs-hd { display: flex; align-items: center; justify-content: space-between; padding: 0 4px 8px; font-size: 15px; font-weight: 600 }
+.gs-all { border: none; background: none; color: var(--t1); font: inherit; font-size: 13px; font-weight: 500; cursor: pointer; padding: 2px 0 }
+.gs-list {
+  display: flex;
+  flex-direction: column;
+  border-radius: 18px;
+  background: var(--surf2);
+  border: 1px solid var(--bd);
+  overflow: hidden
+}
+.gs-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 56px;
+  padding: 9px 14px;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer
+}
+.gs-row + .gs-row { border-top: 1px solid var(--bd) }
+.gs-row:hover, .gs-row:focus-visible { background: var(--surf) }
+.gs-ico {
+  width: 36px;
+  height: 36px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 12px;
+  background: var(--surf);
+  border: 1px solid var(--bd);
+  color: var(--t2)
+}
+.gs-ico .mi { font-size: 19px }
+.gs-tx { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px }
+.gs-t1, .gs-t2 { white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
+.gs-t1 { font-size: 14.5px; font-weight: 500; color: var(--t1) }
+.gs-t2 { font-size: 12.5px; color: var(--t3) }
+.gs-tag { flex-shrink: 0; padding: 3px 9px; border-radius: 999px; background: var(--surf); border: 1px solid var(--bd); font-size: 11.5px; color: var(--t2) }
+.gs-chev.mi { flex-shrink: 0; font-size: 20px; color: var(--t3) }
+.gs-note { padding: 10px 4px; font-size: 13px; color: var(--t3) }
+
+@media (min-width: 768px) {
+  .gs {
+    inset: 10vh auto auto 50%;
+    transform: translateX(-50%);
+    width: min(640px, calc(100vw - 48px));
+    max-height: 76vh;
+    border-radius: 20px;
+    border: 1px solid var(--bd2);
+    box-shadow: var(--sh-lg);
+    padding-top: 8px;
+    animation: none
+  }
 }
 
 /* Show-sidebar button, first in the header, with the hide button's glyph and
@@ -2840,26 +3056,19 @@ a {
 }
 
 /* In-body hero header (eyebrow + big title + subtitle) */
+/* Page header: title + subtitle, tight under the breadcrumb (which already
+   names the page and leads back), so the page content starts high. */
 .hero {
   display: flex;
   align-items: flex-end;
   justify-content: space-between;
   gap: 12px 20px;
-  margin-bottom: clamp(14px, .6vw + 10px, 22px);
+  margin-bottom: 12px;
   flex-wrap: wrap
 }
 
 .hero-main {
   min-width: 0
-}
-
-.hero-eyebrow {
-  font-size: 12px;
-  font-weight: 800;
-  letter-spacing: .2em;
-  text-transform: uppercase;
-  color: var(--volt);
-  margin-bottom: 8px
 }
 
 .hero-back {
@@ -2888,7 +3097,7 @@ a {
 
 .hero-title {
   font-family: var(--font-display);
-  font-size: clamp(22px, 1vw + 16px, 32px);
+  font-size: clamp(20px, .6vw + 15px, 26px);
   font-weight: 500;
   text-transform: uppercase;
   letter-spacing: .01em;
@@ -2897,15 +3106,12 @@ a {
 }
 
 .hero-sub {
-  font-size: 14.5px;
+  font-size: 13px;
   color: var(--t2);
-  margin-top: 8px
+  margin-top: 4px
 }
 
 /* Compact hero (Pipeline) — reclaim vertical space for the board */
-.hero-compact { margin-bottom: 12px }
-.hero-compact .hero-eyebrow { margin-bottom: 2px }
-.hero-compact .hero-title { font-size: clamp(20px, .6vw + 15px, 26px) }
 .hero-compact .hero-sub { display: none }
 
 .hero-acts {
@@ -5748,6 +5954,19 @@ a {
   border-color: var(--p)
 }
 
+/* "The customer asked for this time" checkbox under the presets. Spacing
+   matches .fu-presets above (this file has no spacing tokens).
+   ds-allow-hardcode: no spacing/type tokens exist in this stylesheet yet. */
+.fu-asked {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+  font-size: 13px;
+  color: var(--t2);
+  cursor: pointer
+}
+
 .lost-hints {
   margin-top: 14px
 }
@@ -6782,6 +7001,11 @@ textarea.fi {
   overflow: hidden;
   margin-bottom: 16px
 }
+
+/* A bordered row inside an .analytics-card list — last one in the card
+   drops its divider so the card's own bottom edge closes it off. */
+.relay-row { padding: 14px 18px; border-bottom: 1px solid var(--bd) }
+.relay-row:last-child { border-bottom: none }
 
 .ac-hd {
   display: flex;
@@ -9690,39 +9914,47 @@ textarea.fi {
   flex-shrink: 0
 }
 
-/* Muthoclo KPI trend card */
+/* the headline row of four KpiRow cards */
+.kpi-cards { margin-bottom: 22px }
+
+/* KPI card (StatTrend), matched to the reference mock: black cards with
+   a lit top edge, a regular-weight title, a thin line icon top right, the
+   value with a note under it, and a small orange visual on the right. The
+   card keeps these colours in both themes; only the orange lights up. */
 .st-card {
-  --st-accent: var(--volt);
+  --st-accent: #FB8849;
+  --st-ink: #FFFFFF;
+  --st-title: #D6D7DA;
+  --st-mute: #A9A9AB;
+  --st-icon: #75767A;
+  --st-track: #25262A;
   position: relative;
   display: flex;
   flex-direction: column;
-  background: var(--surf);
-  border: 1px solid var(--bd);
-  border-radius: var(--r-lg);
-  padding: 16px 18px;
-  min-height: 116px;
+  gap: 14px;
+  background:
+    radial-gradient(60% 50% at 0% 0%, rgba(255, 255, 255, .04), transparent 100%),
+    #000;
+  border: 1px solid #27282C;
+  border-top-color: #35363B;
+  border-radius: 16px;
+  padding: 20px 22px 22px;
+  min-height: 150px;
   overflow: hidden;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .05), 0 12px 28px -18px rgba(0, 0, 0, .8);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;   /* opaque, so no glass blur here (crisp edges) */
   transition: border-color var(--tr), transform var(--tr), box-shadow var(--tr)
 }
 
-.st-card::before {
-  content: '';
-  position: absolute;
-  inset: 0 0 auto 0;
-  height: 2px;
-  background: var(--st-accent);
-  opacity: .5
-}
-
-.st-card:hover {
-  border-color: color-mix(in srgb, var(--st-accent) 25%, var(--bd2));
+.st-card.mc-click:hover {   /* only a clickable card lifts */
+  border-color: #2B2C2E;
+  border-top-color: #3A3B3F;
   transform: translateY(-2px);
-  box-shadow: 0 8px 18px -14px color-mix(in srgb, var(--st-accent) 30%, transparent)
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .05), 0 14px 30px -16px rgba(0, 0, 0, .9), 0 0 24px -12px color-mix(in srgb, var(--st-accent) 45%, transparent)
 }
 
-.st-card.has-graph {
-  padding-bottom: 0
-}
+.st-card .mc-go { color: var(--st-icon) }
 
 .st-top {
   display: flex;
@@ -9731,78 +9963,152 @@ textarea.fi {
   gap: 8px
 }
 
-.st-lwrap {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0
-}
-
-.st-ico {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 24px;
-  height: 24px;
-  border-radius: var(--r-sm);
-  background: color-mix(in srgb, var(--st-accent) 10%, transparent);
-  color: var(--st-accent);
-  flex: none
-}
-
-.st-ico .mi {
-  font-size: 15px
-}
-
 .st-l {
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: .06em;
-  text-transform: uppercase;
-  color: var(--t3);
+  font-size: 15.5px;
+  font-weight: 400;
+  letter-spacing: 0;
+  color: var(--st-title);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis
 }
 
-.st-d {
-  display: inline-flex;
-  align-items: center;
-  gap: 2px;
-  font-size: 13px;
-  font-weight: 800;
-  font-variant-numeric: tabular-nums
+.st-ico {
+  color: var(--st-icon);
+  flex: none
 }
 
-.st-d .mi {
-  font-size: 15px
+.st-body {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 14px;
+  margin-top: auto
 }
 
-.st-d.up {
-  color: var(--green)
-}
-
-.st-d.down {
-  color: var(--red)
+.st-main {
+  flex: 1 1 auto;
+  min-width: 0
 }
 
 .st-v {
   font-family: var(--font-display);
-  font-size: 30px;
-  font-weight: 800;
-  color: var(--t1);
+  font-size: clamp(20px, 1.5vw, 28px);   /* one line, even "BDT 4.20Cr" beside a visual */
+  font-weight: 400;
+  color: var(--st-ink);
   line-height: 1;
-  margin-top: 9px;
+  letter-spacing: .2px;
+  white-space: nowrap;
   font-variant-numeric: tabular-nums
 }
 
-.st-spark {
-  margin-top: auto;
-  width: calc(100% + 36px);
-  margin-left: -18px;
-  margin-right: -18px;
-  height: 46px;
-  display: block
+.st-note {
+  margin-top: 11px;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--st-mute);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis
+}
+
+.st-note.up {
+  color: var(--st-accent)
+}
+
+/* the visuals: one height, flush with the value's baseline; they give way
+   to a long value before the value wraps */
+.st-vis {
+  flex: 0 1 auto;
+  min-width: 64px;
+  height: 52px
+}
+
+.st-area {
+  width: 48%;
+  max-width: 140px;
+  height: 58px;
+  display: block;
+  overflow: visible
+}
+
+.st-bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 5px;
+  width: 44%;
+  max-width: 120px;
+  height: 40px;
+  padding-bottom: 2px;
+  border-bottom: 1px solid #2A2B2F
+}
+
+.st-bars i {
+  flex: 1 1 0;
+  border-radius: 3px;
+  background: linear-gradient(180deg, #A9A9AB, #4A4B4F)
+}
+
+.st-bars i.on {
+  background: linear-gradient(180deg, #FFB07A, var(--st-accent));
+  box-shadow: 0 0 10px color-mix(in srgb, var(--st-accent) 45%, transparent)
+}
+
+.st-dots {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  width: 44%;
+  max-width: 130px
+}
+
+.st-dots b {
+  display: flex;
+  flex: 1 1 0;
+  flex-direction: column;
+  justify-content: flex-end;
+  gap: 3px;
+  height: 100%
+}
+
+.st-dots i {
+  flex: 1 1 0;
+  max-height: 5px;
+  border-radius: 1.5px;
+  background: #35363B
+}
+
+.st-dots i.on {
+  background: var(--st-accent);
+  box-shadow: 0 0 4px color-mix(in srgb, var(--st-accent) 55%, transparent)
+}
+
+.st-pill {
+  position: relative;
+  width: 44%;
+  max-width: 120px;
+  height: 40px;
+  align-self: center;
+  border-radius: 999px;
+  overflow: hidden;
+  background: repeating-linear-gradient(90deg, #3C3D42 0 3px, #27282C 3px 6px);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .06), inset 0 0 0 1px #2B2C2E
+}
+
+.st-pill i {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #F56B2A, #FF9A5E);
+  box-shadow: 0 0 16px color-mix(in srgb, var(--st-accent) 55%, transparent)
+}
+
+@media(max-width:767px) {
+  .st-card { padding: 14px 14px 16px }
+  .st-v { font-size: 22px }
+  .st-note { white-space: normal; overflow: visible; line-height: 1.3 }
+  .st-vis { min-width: 56px; height: 44px }
+  .st-pill { height: 32px }
 }
 
 /* Needs-attention alert strip */
@@ -12014,6 +12320,13 @@ textarea.fi {
 .mip-fld input{ background:0; border:0; outline:0; color:var(--mip-t1); font:inherit; font-size:13px; width:150px; }
 .mip-fld input::placeholder{ color:var(--mip-t2); }
 .mip-fld svg{ width:15px; height:15px; stroke:var(--mip-t2); fill:none; }
+/* Phones: the search shrinks to sit beside the role tabs instead of dropping
+   to a second line (the spacer gives way so the field takes the room). */
+@media(max-width:767px){
+  .mip-bar .mip-sp{ display:none; }
+  .mip-bar .mip-fld{ flex:1 1 120px; min-width:0; }
+  .mip-bar .mip-fld input{ width:100%; min-width:0; }
+}
 
 /* layout */
 .mip-grid{ display:grid; grid-template-columns:1.05fr .95fr; gap:22px; }
@@ -13090,6 +13403,574 @@ input[type="time"]::-webkit-calendar-picker-indicator { opacity: .9; cursor: poi
 .uct-range { margin-right: 6px; font-size: 12.5px; color: var(--t2) }
 .uct-pg { width: 30px; height: 30px; display: flex; align-items: center; justify-content: center; border: 1px solid var(--bd); border-radius: var(--r-sm); background: var(--surf); color: var(--t1); cursor: pointer }
 .uct-pg:disabled { opacity: .4; cursor: default }
-.uct-pg .mi { font-size: 20px }
 @media(max-width:640px) { .uct-bar-r { margin-left: 0 } .uct-dgrid { grid-template-columns: 1fr } }
 .ag-overdue { background: var(--red-l) !important; color: var(--red) !important; border: 0; cursor: pointer; font: inherit; font-size: 11px; font-weight: 700 }
+
+/* ── WhatsApp Lead Action Buttons ── */
+.lt-wa-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  background: var(--green-l, rgba(37, 211, 102, 0.12));
+  color: var(--green, #25D366);
+  border: 1px solid rgba(37, 211, 102, 0.25);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  margin-left: 6px;
+  flex-shrink: 0;
+}
+.lt-wa-btn:hover {
+  background: #25D366;
+  color: #fff;
+  border-color: #25D366;
+  transform: scale(1.08);
+}
+.lt-wa-btn .mi {
+  font-size: 16px;
+}
+
+.iad-q-wa {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--r-sm);
+  background: var(--green-l, rgba(37, 211, 102, 0.12));
+  color: var(--green, #25D366);
+  border: 1px solid rgba(37, 211, 102, 0.25);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  margin-left: 6px;
+  flex-shrink: 0;
+}
+.iad-q-wa:hover {
+  background: #25D366;
+  color: #fff;
+  border-color: #25D366;
+  transform: scale(1.06);
+}
+.iad-q-wa .mi {
+  font-size: 18px;
+}
+
+
+/* Light theme: the filter pills' chevron is drawn near-white for the dark
+   theme, which vanished on a light pill; draw it near-black there. */
+:root[data-theme="light"] .fsel {
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%230A0A0A' stroke-width='2.5' stroke-linecap='round'><polyline points='6 9 12 15 18 9'/></svg>")
+}
+
+/* Projects toolbar sizing (was inline in PropertiesView.jsx; moved here so
+   the phone pass below can override it). */
+.prop-toolbar .pt-search { flex: 1 1 200px; min-width: 200px }
+.prop-toolbar .fsel { flex: 1 1 auto; min-width: 120px }
+
+/* ════════════════════════════════════════════════════════════════════════
+   PHONE CALM PASS (≤767px) — compact, quieter controls for iPhone 13–16 and
+   common Android widths (360–440px). Last in the file so it wins on source
+   order over the earlier phone passes. Desktop and tablet are untouched.
+   ════════════════════════════════════════════════════════════════════════ */
+@media (max-width: 767px) {
+  /* Header pills: 44 → 40px tall. The face shrinks to 34px inside its pill. */
+  .pg-head .hd-um { height: 40px; padding: 2px 10px 2px 2px; gap: 7px }
+  .pg-head .hd-um .ag-av { width: 34px; height: 34px }
+  .hd-um-nm { font-size: 13px }
+  .hd-um-rl { font-size: 11px }
+  .hd-grp { height: 40px; padding: 2px }
+  .hd-grp .hd-ic { width: 34px; height: 34px }
+  .hd-grp .hd-ic .mi { font-size: 18px }
+  .hd-ai-ico { width: 18px; height: 18px }
+  .pg-head .notif-btn { width: 40px; height: 40px }
+
+  /* Bottom bar: the tabs in one pill, "+" as its own round button beside it
+     (both references). Monochrome: the current tab is a soft chip, "+" is the
+     text colour on the page colour, so nothing glows. */
+  :root { --bnav: calc(56px + 14px + 12px + env(safe-area-inset-bottom, 0px)) }
+  .bnav {
+    left: 12px;
+    right: 12px;
+    width: auto;
+    max-width: 440px;
+    margin: 0 auto;
+    transform: none;
+    bottom: calc(14px + env(safe-area-inset-bottom, 0px));
+    height: 56px;
+    padding: 0;
+    gap: 10px;
+    background: none;
+    border: 0;
+    box-shadow: none
+  }
+  .bnav-pill {
+    flex: 1;
+    min-width: 0;
+    height: 56px;
+    display: flex;
+    align-items: center;
+    justify-content: space-around;
+    padding: 0 6px;
+    border-radius: 999px;
+    background: var(--surf);
+    border: 1px solid var(--bd2);
+    box-shadow: var(--sh-lg)
+  }
+  .bnav-it { width: 44px; height: 44px; color: var(--t3) }
+  .bnav-it.on { background: var(--surf2); color: var(--t1) }
+  .bnav-it .mi { font-size: 22px }
+  .bnav-addwrap { flex-shrink: 0 }
+  /* "+": black frosted glass in both themes — translucent black over a blur
+     of the page, a top sheen and a hairline rim so it still reads on the
+     black dark-theme page. */
+  .bnav-add {
+    width: 56px;
+    height: 56px;
+    color: #fff;
+    background:
+      linear-gradient(180deg, rgba(255, 255, 255, .18), rgba(255, 255, 255, 0) 55%),
+      rgba(12, 12, 14, .62);
+    -webkit-backdrop-filter: blur(18px) saturate(160%);
+    backdrop-filter: blur(18px) saturate(160%);
+    border: 1px solid rgba(255, 255, 255, .22);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, .25), 0 10px 28px rgba(0, 0, 0, .45)
+  }
+  :root[data-theme="light"] .bnav-add {
+    background:
+      linear-gradient(180deg, rgba(255, 255, 255, .16), rgba(255, 255, 255, 0) 55%),
+      rgba(10, 10, 10, .78);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, .22), 0 10px 26px rgba(0, 0, 0, .28)
+  }
+  .bnav-add .mi { font-size: 26px }
+  .bnav .bnav-menu { left: auto; right: 0; bottom: calc(100% + 12px) }
+
+  /* Leads filter bar: search on its own line, the pickers share the next one
+     (each ellipsises its value) instead of stacking full width. */
+  .fbar { padding: 8px; gap: 6px; margin-bottom: 12px; border-radius: 18px }
+  .fbar .sbox { flex: 1 1 100%; height: 40px }
+  .fbar .fsel {
+    flex: 1 1 0;
+    min-width: 0;
+    max-width: none;
+    height: 36px;
+    padding: 0 26px 0 12px;
+    background-position: right 10px center;
+    font-size: 12.5px
+  }
+
+  /* Projects toolbar: the same layout — search on its own line, pickers and
+     the count on the next. The !important flags beat values PropertiesView
+     still sets inline (padding, gap, radius, height). */
+  .prop-toolbar { padding: 8px !important; gap: 6px !important; border-radius: 18px !important }
+  .prop-toolbar .pt-search { flex: 1 1 100%; min-width: 0; height: 40px; border-radius: 999px !important }
+  .prop-toolbar .fsel { flex: 1 1 0; min-width: 0; height: 36px !important; border-radius: 999px !important; font-size: 12.5px }
+
+  /* Refresh: a round icon button, no word. */
+  .rf-btn { padding: 9px; gap: 0 }
+  .rf-btn .rf-lbl { display: none }
+
+  /* Row checkboxes: an outlined rounded square instead of a bright white
+     native box; checked fills with the accent and draws a tick. */
+  .lt-cb-col input[type="checkbox"] {
+    appearance: none;
+    -webkit-appearance: none;
+    width: 20px;
+    height: 20px;
+    margin: 0;
+    border: 1.5px solid var(--bd2);
+    border-radius: 6px;
+    background: transparent no-repeat center / 14px 14px;
+    cursor: pointer
+  }
+  .lt-cb-col input[type="checkbox"]:checked {
+    border-color: var(--accent);
+    background-color: var(--accent);
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%230A0A0A' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'><polyline points='5 12 10 17 19 7'/></svg>")
+  }
+  .lt-cb-col input[type="checkbox"]:focus-visible { outline: 2px solid var(--t1); outline-offset: 2px }
+
+  /* Projects KPI strip: 3 across (two rows instead of three). */
+  .inv-strip { grid-template-columns: repeat(3, 1fr); gap: 6px }
+  .inv-strip .inv-tile { padding: 10px 11px }
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   PHONE HOME (≤767px) — the soft Home that ManagementDash and AgentDash render
+   below 768px (`.mh`, see their phone branches). Light follows the warm
+   task-app palette, dark the black Trackle palette. Desktop never renders .mh.
+   ════════════════════════════════════════════════════════════════════════ */
+@media (max-width: 767px) {
+  :root {
+    --mh-page: #000000; --mh-card: #1C1C1E; --mh-well: #2C2C2E; --mh-track: #2C2C2E;
+    --mh-ink: #FFFFFF; --mh-mute: #98989F; --mh-mute2: #C7C7CC; --mh-line: rgba(255, 255, 255, .07);
+    --mh-strong: #F5F5F7; --mh-on-strong: #000000; --mh-good: var(--green); --mh-bad: var(--red);
+    /* the PC KPI cards' warm orange (--st-accent) and its gradient start */
+    --mh-warm: #FB8849; --mh-warm-hi: #FFB07A; --mh-warm-ink: #FB8849;
+    --mh-shadow: none;
+    --mh-barbg: #48484C; --mh-heat0: #2C2C2E; --mh-heat1: #4A4A4F; --mh-heat2: #8E8E93; --mh-heat3: #F5F5F7
+  }
+  :root[data-theme="light"] {
+    --mh-page: #EEECE9; --mh-card: #F8F7F5; --mh-well: #ECE9E4; --mh-track: #E3E0DB;
+    --mh-ink: #171615; --mh-mute: #6F6B66; --mh-mute2: #4A4743; --mh-line: rgba(23, 22, 21, .06);
+    --mh-strong: #1B1A19; --mh-on-strong: #FFFFFF; --mh-good: var(--green); --mh-bad: var(--red);
+    /* same orange; text uses a deeper shade so it stays readable on the cream cards */
+    --mh-warm: #F47B36; --mh-warm-hi: #FFB07A; --mh-warm-ink: #A8550C;
+    --mh-shadow: 0 1px 2px rgba(23, 22, 21, .04);
+    --mh-barbg: #D3CEC7; --mh-heat0: #E3E0DB; --mh-heat1: #CFCAC3; --mh-heat2: #8C877F; --mh-heat3: #1B1A19
+  }
+
+  /* Home sits on a flat page (no smoke photo), as in both references. */
+  #app:has(.mh), :root[data-theme="light"] #app:has(.mh) { background-image: none; background-color: var(--mh-page) }
+
+  .mh { display: flex; flex-direction: column; gap: 18px; color: var(--mh-ink); font-family: Inter, system-ui, sans-serif }
+  .mh button { font: inherit }
+
+  /* greeting (DashGreeting) */
+  .mh .iad-greet { margin: 2px 2px 0 }
+  .mh .iad-greet-hi { font-family: Inter, system-ui, sans-serif; font-size: 26px; font-weight: 600; letter-spacing: -.02em; line-height: 1.15; color: var(--mh-ink) }
+  .mh .iad-greet-hi span { color: var(--accent) }   /* the name in brand green, as on the PC Home */
+  .mh .iad-greet-sub { margin-top: 4px; font-size: 13.5px; color: var(--mh-mute) }
+
+
+  /* cards */
+  .mh-card { background: var(--mh-card); border: 1px solid var(--mh-line); border-radius: 22px; box-shadow: var(--mh-shadow); color: var(--mh-ink) }
+  button.mh-card { width: 100%; text-align: left; cursor: pointer; -webkit-tap-highlight-color: transparent }
+  button.mh-card:active { transform: scale(.985) }
+  .mh :is(button, a, select):focus-visible { outline: 2px solid var(--mh-ink); outline-offset: 2px }
+
+  .mh-lbl { font-size: 12.5px; color: var(--mh-mute) }
+  .mh-num { font-family: var(--font-display); font-size: 38px; line-height: 1.05; font-weight: 600; letter-spacing: -.02em; color: var(--mh-ink); overflow-wrap: anywhere }
+  .mh-num-md { font-size: 30px }
+  .mh-ttl { font-size: 13px; font-weight: 600 }
+  .mh-chip { height: 26px; display: inline-flex; align-items: center; padding: 0 10px; border-radius: 999px; background: var(--mh-well); font-size: 12px; color: var(--mh-mute2); white-space: nowrap }
+  .mh-note { margin: 0; padding: 0 2px; font-size: 12.5px; color: var(--mh-mute) }
+  /* changes read like the PC KPI cards: up in warm orange, down muted */
+  .mh .up { color: var(--mh-warm-ink) }
+  .mh .down { color: var(--mh-mute) }
+
+  /* hero (KpiRow variant="hero", the agent's Today card) */
+  .mh-hero { display: flex; flex-direction: column; gap: 16px; padding: 18px; border-radius: 26px }
+  .mh-hero-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-width: 0 }
+  /* the date pill (PeriodSelect), in the quiet chip look of the proposal's
+     "All projects" chip: a small neutral pill, no border; it opens the date
+     menu below. ::before widens the touch area to 44px without growing it. */
+  .mh-period-btn {
+    position: relative; max-width: 64%; height: 26px; padding: 0 10px; flex-shrink: 0;
+    display: inline-flex; align-items: center; justify-content: center;
+    border: 0; border-radius: 999px; background: var(--mh-well); color: var(--mh-mute2);
+    font-size: 12px; font-weight: 500; cursor: pointer;
+    -webkit-tap-highlight-color: transparent; transition: background-color .2s ease
+  }
+  .mh-period-btn::before { content: ''; position: absolute; inset: -9px }
+  .mh-period-tx { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis }
+  .mh-period-btn:active, .mh-period-btn[data-state="open"] { background: color-mix(in srgb, var(--mh-ink) 12%, var(--mh-well)) }
+
+  /* the date menu (portalled outside .mh): soft card, warm focus, warm dot */
+  .sel-content.menu-content.mh-period-menu {
+    min-width: 168px; padding: 4px; gap: 1px; border-radius: 14px;
+    background: var(--mh-card); border: 1px solid var(--mh-line); color: var(--mh-ink);
+    font-family: Inter, system-ui, sans-serif;
+    box-shadow: 0 12px 32px rgba(0, 0, 0, .28)
+  }
+  .mh-period-menu .menu-item { min-height: 40px; border-radius: 10px; font-size: 13.5px; font-weight: 500 }
+  .mh-period-menu .menu-item[data-highlighted] { background: color-mix(in srgb, var(--mh-warm) 14%, transparent) }
+  .mh-period-menu .menu-item[data-state="checked"] { color: var(--mh-warm-ink); font-weight: 600 }
+  .mh-period-menu .menu-dot-mark { background: var(--mh-warm) }
+  /* Custom period: From / To under the card header */
+  .mh-range { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px }
+  .mh-range label { display: flex; flex-direction: column; gap: 4px; min-width: 0; font-size: 11.5px; color: var(--mh-mute) }
+  .mh-range input {
+    width: 100%; min-width: 0; height: 40px; box-sizing: border-box; padding: 0 10px;
+    border: 1px solid var(--mh-line); border-radius: 12px; background: var(--mh-well); color: var(--mh-ink);
+    font: inherit; font-size: 16px;   /* 16px+ keeps iOS from zooming on focus */
+    color-scheme: dark
+  }
+  :root[data-theme="light"] .mh-range input { color-scheme: light }
+  .mh-hero-row { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px }
+  .mh-big { display: flex; flex-direction: column; gap: 2px; min-width: 0 }
+  .mh-delta { font-size: 12.5px; font-weight: 600 }
+  .mh-trio { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px }
+  .mh-trio > div { display: flex; flex-direction: column; gap: 2px; min-width: 0 }
+  .mh-trio b { font-size: 15px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
+  .mh-hero-foot { display: flex; align-items: center; gap: 14px; padding-top: 14px; border-top: 1px solid var(--mh-line) }
+  .mh-meters { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 10px }
+  /* two meters side by side (Overview: Win rate | Collected of booked): label
+     over value in each, a thin divider between them */
+  .mh-meters.mh-meters-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 }
+  .mh-meters-row .mh-meter + .mh-meter { padding-left: 12px; margin-left: 12px; border-left: 1px solid var(--mh-line) }
+  .mh-meters-row .mh-meter-hd { flex-direction: column; justify-content: flex-start; gap: 1px }
+  .mh-meters-row .mh-meter-hd :is(span, b) { white-space: normal; line-height: 1.25 }
+  .mh-meter { display: flex; flex-direction: column; gap: 5px; min-width: 0 }
+  .mh-meter-hd { display: flex; justify-content: space-between; gap: 8px; font-size: 12px }
+  .mh-meter-hd span { color: var(--mh-mute); white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
+  .mh-meter-hd b { font-weight: 600; white-space: nowrap }
+  .mh-track { height: 5px; border-radius: 999px; background: var(--mh-track); overflow: hidden }
+  .mh-fill { height: 100%; border-radius: 999px; background: linear-gradient(90deg, var(--mh-warm-hi), var(--mh-warm)) }
+  .mh-ring { position: relative; width: 58px; height: 58px; flex-shrink: 0 }
+  .mh-ring > svg { display: block }
+  .mh-ring > span { position: absolute; inset: 0; display: grid; place-items: center; font-size: 13px; font-weight: 600 }
+  .mh-ring-track { fill: none; stroke: var(--mh-track); stroke-width: 6 }
+  .mh-ring-fill { fill: none; stroke: var(--mh-warm); stroke-width: 6; stroke-linecap: round }
+
+  .mh-btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 36px; width: fit-content; padding: 0 14px; border: 0; border-radius: 999px; background: var(--accent); color: var(--on-accent); font-size: 12.5px; font-weight: 600; cursor: pointer; white-space: nowrap }
+  .mh-btn-lg { height: 44px; padding: 0 16px; font-size: 13px; flex-shrink: 0 }
+  .mh-btn .mi { font-size: 17px }
+
+
+  /* prospects contacted (ContactTracker variant="soft") */
+  .mh-contact { display: flex; align-items: center; gap: 14px; padding: 16px; border-radius: 24px }
+  .mh-contact-main { flex: 1 1 52%; min-width: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 6px }
+  .mh-heat { flex: 1 1 44%; display: grid; gap: 3px; align-content: center }
+  .mh-heat-c { aspect-ratio: 1; border-radius: 3px; background: var(--mh-heat0) }
+  .mh-heat-c.l1 { background: color-mix(in srgb, var(--mh-warm) 35%, var(--mh-heat0)) }
+  .mh-heat-c.l2 { background: color-mix(in srgb, var(--mh-warm) 68%, var(--mh-heat0)) }
+  .mh-heat-c.l3 { background: var(--mh-warm) }
+  .mh-pill { display: inline-flex; flex-wrap: wrap; align-items: baseline; gap: 0 4px; padding: 3px 9px; border-radius: 12px; background: var(--mh-well); font-size: 11.5px; font-weight: 600 }
+  .mh-pill.flat { color: var(--mh-mute2) }
+  .mh-pill-sub { font-weight: 500; color: var(--mh-mute) }
+
+  /* small period menus */
+  .mh-select {
+    appearance: none; -webkit-appearance: none; max-width: 100%; height: 30px; padding: 0 26px 0 11px;
+    border: 1px solid var(--mh-line); border-radius: 999px; color: var(--mh-ink); font: inherit; font-size: 12.5px; font-weight: 500;
+    background: var(--mh-well) url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23F5F5F7' stroke-width='2.5' stroke-linecap='round'><polyline points='6 9 12 15 18 9'/></svg>") no-repeat right 9px center
+  }
+  :root[data-theme="light"] .mh-select { background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23171615' stroke-width='2.5' stroke-linecap='round'><polyline points='6 9 12 15 18 9'/></svg>") }
+  .mh-select option { background: var(--mh-card); color: var(--mh-ink) }
+
+  /* sections */
+  .mh-sec { display: flex; flex-direction: column; gap: 10px; min-width: 0 }
+  .mh-sec-hd { display: flex; align-items: center; gap: 8px; padding: 0 2px; min-height: 30px }
+  .mh-sec-hd h2 { margin: 0 auto 0 0; font-family: inherit; font-size: 17px; font-weight: 600; letter-spacing: -.01em; color: var(--mh-ink); text-transform: none }
+  .mh-sec-hd-in { padding: 0 0 8px }
+  /* a section's period picker (Performance Overview: "24 hours ⌄"), as a pill */
+  .mh-sec-hd .mtc-period {
+    gap: 6px; min-height: 34px; padding: 0 12px 0 14px; border: 1px solid var(--mh-line); border-radius: 999px;
+    background: var(--mh-card); color: var(--mh-ink); font-size: 13px; font-weight: 600
+  }
+  .mh-sec-hd .mtc-period:hover { text-decoration: none }
+  .mh-count { min-width: 24px; height: 24px; display: inline-grid; place-items: center; padding: 0 8px; border-radius: 999px; background: var(--accent); color: var(--on-accent); font-size: 12px; font-weight: 600 }
+  .mh-link { min-height: 32px; padding: 0 2px; border: 0; background: none; color: var(--mh-ink); font-size: 13px; font-weight: 500; cursor: pointer; white-space: nowrap }
+
+  /* sideways rows that bleed to the screen edges */
+  .mh-hscroll { display: flex; gap: 8px; overflow-x: auto; scroll-snap-type: x proximity; margin: 0 calc(-1 * var(--gutter)); padding: 2px var(--gutter) 6px; scroll-padding: 0 var(--gutter); scrollbar-width: none; -webkit-overflow-scrolling: touch }
+  .mh-hscroll::-webkit-scrollbar { display: none }
+  .mh-hscroll > * { flex-shrink: 0; scroll-snap-align: start }
+
+  /* Prospects contacted | Lead sources, side by side (two equal columns; the
+     cards stretch to the same height) */
+  .mh-pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; align-items: stretch }
+  /* the contacts card stacked for half width: info, then the squares */
+  .mh-pair .mh-contact { flex-direction: column; align-items: stretch; gap: 12px; padding: 14px }
+  .mh-pair .mh-contact-main { flex: none }
+  .mh-pair .mh-heat { flex: none; width: 100% }
+  .mh-pair .mh-num-md { font-size: 28px }
+  /* each card's title + subtitle (Performance Overview) */
+  .mh-card-hd { display: flex; flex-direction: column; gap: 2px; min-width: 0; margin-bottom: 2px }
+  .mh-card-t { font-size: 15px; font-weight: 600; letter-spacing: -.01em; line-height: 1.25; color: var(--mh-ink); text-wrap: balance }
+  .mh-card-s { font-size: 12px; line-height: 1.3; color: var(--mh-mute) }
+
+  /* lead sources overview (LeadSourcesCard variant="soft"): title, period,
+     a small ring with the total, the top three sources, View all */
+  .mh-ls { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; padding: 14px; border-radius: 24px; min-width: 0 }
+  :is(.mh-ls, .mh-contact) .mtc-period { min-height: 30px; padding: 0; font-size: 12.5px; color: var(--mh-ink) }
+  .mh-ls-note { padding: 8px 0 }
+  .mh-ls-ring { position: relative; align-self: center; width: min(100%, 110px); aspect-ratio: 1; margin: 2px 0 }
+  .mh-ls-ring svg { display: block; width: 100%; height: 100% }
+  .mh-ls-track { fill: none; stroke: var(--mh-track); stroke-width: 12 }
+  .mh-ls-seg { fill: none; stroke-width: 12 }
+  .mh-ls-center { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; pointer-events: none }
+  .mh-ls-center b { font-family: var(--font-display); font-size: 18px; font-weight: 600; line-height: 1.1 }
+  .mh-ls-center span { font-size: 10.5px; color: var(--mh-mute) }
+  .mh-ls-top { list-style: none; margin: 0; padding: 0; width: 100%; display: flex; flex-direction: column; gap: 4px }
+  .mh-ls-top li { display: grid; grid-template-columns: 7px minmax(0, 1fr) auto; align-items: center; gap: 6px; font-size: 12px }
+  .mh-ls-top i { width: 7px; height: 7px; border-radius: 50% }
+  .mh-ls-top span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--mh-mute2) }
+  .mh-ls-top b { font-weight: 600; font-variant-numeric: tabular-nums }
+  /* the cards' bottom button (View all, Check now), pinned to the card foot */
+  .mh-more {
+    display: flex; align-items: center; justify-content: center; gap: 2px; width: 100%; min-height: 36px; margin-top: auto;
+    border: 0; border-radius: 999px; background: var(--mh-well); color: var(--mh-ink);
+    font-size: 12.5px; font-weight: 600; cursor: pointer; -webkit-tap-highlight-color: transparent
+  }
+  .mh-more .mi { font-size: 16px }
+
+  /* projects */
+  button.mh-proj { flex: 0 0 236px; width: 236px; display: flex; flex-direction: column; gap: 8px; padding: 10px 10px 14px; border-radius: 24px; min-width: 0 }
+  .mh-proj-well { height: 118px; display: flex; align-items: flex-end; justify-content: center; gap: 16px; padding: 8px 12px; border-radius: 18px; background: var(--mh-well) }
+  .mh-proj-col { display: flex; flex-direction: column; align-items: center; gap: 4px }
+  .mh-proj-v { font-size: 11.5px; font-weight: 600 }
+  .mh-proj-bar { width: 26px; border-radius: 6px; background: var(--mh-barbg) }
+  .mh-proj-bar.hi { background: linear-gradient(180deg, var(--mh-warm-hi), var(--mh-warm)) }
+  .mh-proj-l { font-size: 11px; color: var(--mh-mute2); white-space: nowrap }
+  .mh-proj-name, .mh-proj-sub { max-width: 100%; padding: 0 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; box-sizing: border-box }
+  .mh-proj-name { padding-top: 4px; font-size: 14.5px; font-weight: 600 }
+  .mh-proj-sub { font-size: 12px; color: var(--mh-mute) }
+  .mh-proj .mh-meter { padding: 4px 4px 0 }
+
+  .mh-trend { padding: 16px; border-radius: 24px; min-width: 0 }
+
+  /* latest leads */
+  button.mh-lead { display: flex; flex-direction: column; gap: 10px; padding: 14px 16px; border-radius: 20px; min-width: 0 }
+  .mh-lead-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; min-width: 0 }
+  .mh-lead-tx { display: flex; flex-direction: column; gap: 2px; min-width: 0 }
+  .mh-lead-name, .mh-lead-meta { white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
+  .mh-lead-name { font-size: 14.5px; font-weight: 600 }
+  .mh-lead-meta { font-size: 12.5px; color: var(--mh-mute) }
+  /* status chips as in the PC leads table: open = orange, won = green, lost = muted */
+  .mh-status { flex-shrink: 0; height: 24px; display: inline-flex; align-items: center; padding: 0 10px; border-radius: 999px; background: var(--orange-l); font-size: 11.5px; font-weight: 700; color: var(--orange); white-space: nowrap }
+  .mh-status.won { background: var(--green-l); color: var(--green) }
+  .mh-status.lost { background: var(--mh-well); color: var(--mh-mute) }
+  .mh-lead-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-width: 0 }
+  .mh-agent { display: inline-flex; align-items: center; gap: 6px; min-width: 0; font-size: 12px; color: var(--mh-mute2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
+  .mh-av { width: 22px; height: 22px; flex-shrink: 0; display: grid; place-items: center; border-radius: 50%; background: var(--mh-strong); color: var(--mh-on-strong); font-size: 9.5px; font-weight: 600 }
+  .mh-when { flex-shrink: 0; font-size: 12px; color: var(--mh-mute) }
+
+  /* agent: call-outcome tiles inside Today, KPI tiles */
+  .mh-mini { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px }
+  .mh-mini-it { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; min-width: 0; padding: 10px 12px; border: 0; border-radius: 16px; background: var(--mh-well); color: var(--mh-ink); text-align: left; cursor: pointer }
+  .mh-mini-it span { max-width: 100%; font-size: 11.5px; color: var(--mh-mute2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
+  .mh-mini-it b { font-size: 18px; font-weight: 600 }
+  .mh-tiles { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px }
+  .mh-tiles > .mh-tile:last-child:nth-child(odd) { grid-column: span 2 }
+  button.mh-tile { display: flex; flex-direction: column; gap: 3px; min-width: 0; padding: 14px; border-radius: 20px }
+  .mh-tile b { font-size: 20px; font-weight: 600 }
+  .mh-tile-sub { max-width: 100%; font-size: 11.5px; color: var(--mh-mute); white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
+
+  /* agent: follow-ups and call list */
+  .mh-row { display: flex; align-items: center; gap: 8px; padding: 6px 10px 6px 4px; border-radius: 20px; min-width: 0 }
+  .mh-row-main { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: 8px 10px; border: 0; border-radius: 14px; background: none; color: inherit; text-align: left; cursor: pointer }
+  .mh-row-name, .mh-row-meta { max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
+  .mh-row-name { font-size: 14.5px; font-weight: 600 }
+  .mh-row-meta { font-size: 12px; color: var(--mh-mute) }
+  .mh-due { font-weight: 600; color: var(--mh-mute2) }
+  .mh-due.over { color: var(--mh-bad) }
+  .mh-act { width: 44px; height: 44px; flex-shrink: 0; display: grid; place-items: center; border: 0; border-radius: 50%; background: var(--mh-well); color: var(--mh-ink); text-decoration: none; cursor: pointer }
+  .mh-act.dark { background: var(--mh-strong); color: var(--mh-on-strong) }
+  .mh-act .mi { font-size: 19px }
+  .mh-list { display: flex; flex-direction: column; padding: 2px 0; overflow: hidden }
+  .mh-list-row { display: flex; align-items: center; gap: 6px; padding: 6px 10px 6px 4px; min-width: 0 }
+  .mh-list-row + .mh-list-row { border-top: 1px solid var(--mh-line) }
+  .mh-tags { display: flex; align-items: center; gap: 6px; margin-top: 3px }
+  .mh-tags .mh-status { height: 22px; padding: 0 8px; font-size: 11px }
+  .mh-score { font-size: 11.5px; font-weight: 700 }
+
+  /* existing blocks the agent Home keeps (pipeline, conversion, success rate,
+     visits): the same soft card look */
+  .mh :is(.mpipe, .analytics-card, .sg-card, .iad-queue) {
+    background: var(--mh-card); border: 1px solid var(--mh-line); border-radius: 22px; box-shadow: var(--mh-shadow); margin-bottom: 0
+  }
+  .mh .ag-overdue { min-height: 32px; padding: 0 12px }   /* touch target */
+
+  /* agent values tinted like the desktop StatCards (.mc.accent / good / warn / danger) */
+  .mh :is(.mh-tile, .mh-mini-it).mh-tone-accent b { color: var(--volt) }
+  .mh :is(.mh-tile, .mh-mini-it).mh-tone-good b { color: var(--green) }
+  .mh :is(.mh-tile, .mh-mini-it).mh-tone-warn b { color: var(--gold) }
+  .mh :is(.mh-tile, .mh-mini-it).mh-tone-danger b { color: var(--red) }
+
+  /* call-list reasons in the desktop call list's colours (.iad-rs-*) */
+  .mh .mh-rs.iad-rs-overdue { background: var(--red-l); color: var(--red) }
+  .mh .mh-rs.iad-rs-today { background: var(--orange-l); color: var(--orange) }
+  .mh .mh-rs.iad-rs-new { background: var(--mh-well); color: var(--t2) }
+}
+
+/* BackButton: the chevron is for the phone round button only (below). */
+.hd-back-chev { display: none }
+
+/* ════════════════════════════════════════════════════════════════════════
+   PHONE SUB-PAGES (≤767px) — the header's account pill, tools and bell show
+   on the home page only (App.jsx PageHeader adds .pg-head-sub elsewhere);
+   other pages get just a round Back button, as in the reference.
+   ════════════════════════════════════════════════════════════════════════ */
+@media (max-width: 767px) {
+  .pg-head.pg-head-sub :is(.hd-um, .hd-grp, .notif-btn, .thtog, .ham) { display: none }
+  .pg-head.pg-head-sub .hd-back {
+    display: grid; place-items: center; width: 44px; height: 44px; margin: 0;
+    border-radius: 50%; border: 1px solid var(--bd); background: var(--surf-solid); color: var(--t1);
+    box-shadow: 0 4px 14px rgba(0, 0, 0, .12)
+  }
+  .pg-head.pg-head-sub .hd-back:active { transform: scale(.96) }
+  .pg-head.pg-head-sub .hd-back .hd-back-arrow { display: none }
+  .pg-head.pg-head-sub .hd-back .hd-back-chev { display: inline-block; font-size: 26px }
+
+  /* ── Lead sources page (dashboards/LeadSourcesPage.jsx), over the app ── */
+  /* One screen, no page scroll: a fixed-height column. The list shows up to
+     9 rows (then scrolls inside its card); the ring takes the height left. */
+  .lsp {
+    position: fixed; inset: 0; z-index: 180; height: 100dvh; overflow: hidden; overscroll-behavior: contain;
+    display: flex; flex-direction: column;
+    background: var(--mh-page); color: var(--mh-ink); font-family: Inter, system-ui, sans-serif;
+    padding-top: env(safe-area-inset-top, 0px); animation: gsin .18s ease
+  }
+  .lsp-top { flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between; padding: 8px 16px }
+  .lsp-back, .lsp-pill {
+    border: 0; background: var(--mh-card); color: var(--mh-ink); cursor: pointer;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, .10); -webkit-tap-highlight-color: transparent
+  }
+  .lsp-back { width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center }
+  .lsp-back .mi { font-size: 24px }
+  .lsp-back:active, .lsp-pill:active { transform: scale(.97) }
+  .lsp-pill { height: 36px; padding: 0 14px; border-radius: 999px; font: inherit; font-size: 13px; font-weight: 500 }
+  .lsp :is(button):focus-visible { outline: 2px solid var(--mh-ink); outline-offset: 2px }
+
+  .lsp-body { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; padding: 0 16px calc(12px + env(safe-area-inset-bottom, 0px)) }
+  .lsp-title { flex: 0 0 auto; margin: 2px 0 0; font-size: 26px; font-weight: 700; letter-spacing: -.02em; line-height: 1.15 }
+  .lsp-sub { flex: 0 0 auto; margin: 2px 0 0 2px; font-size: 13px; color: var(--mh-mute) }
+  .lsp-note { padding: 32px 4px; text-align: center; font-size: 13.5px; color: var(--mh-mute) }
+
+  /* the ring's box: the height left over, as a size container, so the ring is
+     as big as the space allows (full width on tall screens); LeadSourcesPage
+     places the names for the size it gets */
+  .lsp-chart { flex: 1 1 0; min-height: 96px; display: flex; align-items: center; justify-content: center; padding: 6px 0 10px; container-type: size }
+  .lsp-donut { position: relative; width: min(100cqw, 100cqh); aspect-ratio: 1; container-type: inline-size }
+  .lsp-donut svg { display: block; width: 100%; height: 100%; overflow: visible }
+  .lsp-track { fill: none; stroke: var(--mh-track); stroke-width: 26 }
+  .lsp-seg { fill: none; stroke-width: 26; stroke-linecap: round; cursor: pointer; pointer-events: stroke; transition: opacity .15s }
+  .lsp-seg.dim { opacity: .22 }
+  .lsp-seg-pct { font-size: 10.5px; font-weight: 700; fill: #FFFFFF; pointer-events: none }
+  .lsp-center { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; pointer-events: none; text-align: center }
+  /* 26px / 12px on a full ring, smaller with a small ring so it fits the hole */
+  .lsp-center b { font-family: var(--font-display); font-size: clamp(14px, 9cqw, 26px); font-weight: 600; letter-spacing: -.02em; line-height: 1.1 }
+  .lsp-center span { max-width: min(120px, 40cqw); font-size: clamp(9px, 4cqw, 12px); color: var(--mh-mute); white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
+  /* a name chip: the outer span places it (and dims it), the inner one is the
+     pill and carries the rise-in animation */
+  .lsp-chip-pos { position: absolute; pointer-events: none; transition: opacity .15s }
+  .lsp-chip-pos.dim { opacity: .3 }
+  .lsp-chip {
+    display: block; max-width: 76px; padding: 2px 8px; border-radius: 999px;
+    background: var(--mh-card); box-shadow: 0 2px 8px rgba(0, 0, 0, .08); font-size: 11px; font-weight: 600;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis
+  }
+
+  .lsp-sec-hd { flex: 0 0 auto; padding: 0 4px 8px }
+  .lsp-sec-hd h2 { margin: 0; font-size: 16px; font-weight: 600 }
+  .lsp-sec-hd p { margin: 2px 0 0; font-size: 12px; color: var(--mh-mute); font-variant-numeric: tabular-nums }
+  .lsp-up { color: var(--mh-warm-ink) }
+  .lsp-down { color: var(--mh-mute) }
+  /* Minimal list, full width: dot · name on the left; count and % together on
+     the right (counts right-aligned, then a short gap and the %), in one shared
+     grid (each row is a subgrid, so the columns line up). Up to 9 rows (40px)
+     show at once; a 10th+ scrolls inside the card. On a very short screen the
+     list gives up height first (the ring has a floor). */
+  .lsp-list {
+    flex: 0 1 auto; min-height: 126px; max-height: calc(9 * 40px + 8px);
+    width: 100%; box-sizing: border-box;
+    display: grid; grid-template-columns: 8px minmax(0, 1fr) max-content 44px; column-gap: 12px; align-content: start;
+    list-style: none; margin: 0; padding: 3px 18px; border-radius: 18px; background: var(--mh-card); border: 1px solid var(--mh-line);
+    overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch
+  }
+  .lsp-list > li { grid-column: 1 / -1; display: grid; grid-template-columns: subgrid }
+  .lsp-row {
+    grid-column: 1 / -1; display: grid; grid-template-columns: subgrid; align-items: center;
+    box-sizing: border-box; height: 40px; padding: 0; border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer;
+    transition: opacity .15s; -webkit-tap-highlight-color: transparent
+  }
+  .lsp-list li + li .lsp-row { border-top: 1px solid var(--mh-line) }
+  .lsp-row.dim { opacity: .4 }
+  .lsp-dot { width: 8px; height: 8px; border-radius: 50% }
+  .lsp-name { min-width: 0; font-size: 14px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
+  .lsp-val { justify-self: end; font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace; font-size: 14px; font-weight: 600; font-variant-numeric: tabular-nums }
+  .lsp-pct { justify-self: end; min-width: 28px; text-align: right; font-size: 11.5px; color: var(--mh-mute); font-variant-numeric: tabular-nums }
+}

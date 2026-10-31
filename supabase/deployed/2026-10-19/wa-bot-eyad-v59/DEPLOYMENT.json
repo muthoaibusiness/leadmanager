@@ -1,0 +1,84 @@
+{
+  "label": "PRODUCTION SNAPSHOT - wa-bot-eyad v59 - read-only evidence, not deployable source",
+  "project_ref": "sbqmougcvnplgjgihpwe",
+  "function": {
+    "slug": "wa-bot-eyad",
+    "id": "f5d3c910-09cd-4598-88a6-ce98e40c7b91",
+    "version": 59,
+    "status": "ACTIVE",
+    "verify_jwt": false,
+    "import_map": false,
+    "entrypoint": "source/supabase/functions/wa-bot-eyad/index.ts",
+    "created_at": "2026-10-14T06:06:51.706Z",
+    "updated_at": "2026-10-19T18:04:28.984Z",
+    "ezbr_sha256": "90163b031b41dca1f2f77481139c2e286230631bd8aade044a8b8f6b0b5a03c6"
+  },
+  "previous_snapshot": "wa-bot-eyad-v58",
+  "retrieval": {
+    "downloaded_at": "2026-10-19T18:14:38Z",
+    "metadata_read_before_download": "2026-10-19T18:14:23Z",
+    "metadata_read_after_download": "2026-10-19T18:15:00Z",
+    "metadata_unchanged_across_download": true,
+    "method": "npx supabase functions download wa-bot-eyad --project-ref sbqmougcvnplgjgihpwe --use-api (CLI 2.121.0); metadata from supabase functions list -o json",
+    "read_only": true
+  },
+  "git_baseline": {
+    "note": "Deployment metadata records no git commit or deployer. See docs/reports/legacy-bot-reconciliation.md section 13."
+  },
+  "integrity": {
+    "manifest": "SHA256SUMS",
+    "verify": "cd supabase/deployed/2026-10-19/wa-bot-eyad-v59 && sha256sum -c SHA256SUMS",
+    "gitattributes": "* -text (bytes stored as downloaded)"
+  },
+  "files": [
+    {
+      "path": "_shared/ai.ts",
+      "sha256": "96b287052f1df232f8a3b5a24de95e8bfa91f3b4e817d0070dc94bb8a4c2f3b6",
+      "bytes": 25423,
+      "line_endings": "CRLF",
+      "vs_previous_snapshot": "changed vs wa-bot-eyad-v58"
+    },
+    {
+      "path": "_shared/trainer-core.ts",
+      "sha256": "01a80bb5c69a0dd0749548ed1033a9a3e591e10f277bdef2cb8f42e95ea80939",
+      "bytes": 37512,
+      "line_endings": "CRLF",
+      "vs_previous_snapshot": "byte-identical to wa-bot-eyad-v58"
+    },
+    {
+      "path": "_shared/trainer-deno.ts",
+      "sha256": "c381c8f0cb32ec602f2766b264916279734610026b3bb22cdaf42a5f0bf1ae50",
+      "bytes": 4340,
+      "line_endings": "CRLF",
+      "vs_previous_snapshot": "byte-identical to wa-bot-eyad-v58"
+    },
+    {
+      "path": "_shared/trainer-handler.ts",
+      "sha256": "f4a8b68825f85ea7e3e6d85c0c0da3842c4002ed488225b0ca4eef12a108a1fa",
+      "bytes": 38770,
+      "line_endings": "CRLF",
+      "vs_previous_snapshot": "byte-identical to wa-bot-eyad-v58"
+    },
+    {
+      "path": "_shared/trainer-live.ts",
+      "sha256": "1d32437fc0661592176af5cdbb18898eaeed087f0a78fcac867468873ff8ff23",
+      "bytes": 7412,
+      "line_endings": "CRLF",
+      "vs_previous_snapshot": "byte-identical to wa-bot-eyad-v58"
+    },
+    {
+      "path": "_shared/wa.ts",
+      "sha256": "3c6911a750998a2bbfcb6a3b73a53e7efd7f8d72e0b64f8849f5327608ae212b",
+      "bytes": 22705,
+      "line_endings": "CRLF",
+      "vs_previous_snapshot": "byte-identical to wa-bot-eyad-v58"
+    },
+    {
+      "path": "wa-bot-eyad/index.ts",
+      "sha256": "94e5cc9efb62b5b029a37ea3af0294cf783d11da66b7a75ea8f5aa64e85b695b",
+      "bytes": 36731,
+      "line_endings": "CRLF",
+      "vs_previous_snapshot": "changed vs wa-bot-eyad-v58"
+    }
+  ]
+}
