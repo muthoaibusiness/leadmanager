@@ -1,0 +1,6 @@
+{
+  "label": "PRODUCTION SNAPSHOT - wa-bot-eyad v65 - rollback bundle before FAQ-search deploy",
+  "project_ref": "sbqmougcvnplgjgihpwe",
+  "function": { "slug": "wa-bot-eyad", "version": 65, "updated_at": "2026-10-31T08:44:37Z", "ezbr_sha256": "74c17f4547f6530f0d5cc32209860921c45a9aa8a94ae804462333eaa95b0424" },
+  "downloaded_at": "2026-10-31"
+}

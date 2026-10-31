@@ -6,14 +6,73 @@
 // POSTed to a server-side relay (Supabase Edge Function or n8n) whose URL comes
 // from wa_settings. The relay holds the credential.
 
-import { SB_URL, SB_KEY, SB_H, sbGet, sbUpsert } from './supabase.js';
-import { normalizePhone } from './db.js';
+import { SB_URL, SB_KEY, SB_H, bearer, accessToken, ensureFreshToken, onAccessToken, sbGet, sbUpsert } from './supabase.js';
+
+// The send endpoint is fixed at build time (CR-001 CR-2). wa_settings.relay_url
+// can be rewritten with the anon key, so trusting it would hand every human
+// message, and the sender's session token, to whoever planted the URL. The
+// stored value is shown read-only in Chat Settings and never fetched.
+export const WA_RELAY_URL = import.meta.env.VITE_WA_RELAY_URL || `${SB_URL}/functions/v1/wa-send`;
+const relayHeaders = () => ({ 'Content-Type': 'application/json', apikey: SB_KEY, Authorization: bearer() });
+// Every request that carries the session token refreshes it first if it has
+// expired (ensureFreshToken), the same as the requests in supabase.js.
+// The header is rebuilt after the refresh: callers built it from the old token.
+const authedFetch = async (url, init) => { await ensureFreshToken(); return fetch(url, { ...init, headers: { ...init.headers, Authorization: bearer() } }); };
+import { normalizePhone, getDB } from './db.js';
 
 export const WA_BUCKET = 'wa-media';
+
+// ── accounts ────────────────────────────────────────────────────────────────
+// Two Wasender sessions: Dubai WhatsApp and Eyad WhatsApp.
+// Dubai agent / Dubai team leads send through the Dubai number;
+// all other agents / leads send through Eyad's number.
+export const WA_ACCOUNTS = ['dubai', 'eyad'];
+export const WA_DEFAULT_ACCOUNT = 'eyad';
+export const WA_ACCOUNT_LABEL = { dubai: 'Dubai WhatsApp', eyad: 'Eyad WhatsApp' };
+
+const DUBAI_MATCH = (import.meta.env.VITE_WA_DUBAI_TEAM || 'dubai').toLowerCase();
+
+export function isDubaiAgent(user) {
+  if (!user) return false;
+  const teams = getDB().teams || [];
+  if (user.teamId) {
+    const team = teams.find(t => t.id === user.teamId);
+    if (team && (team.name || '').toLowerCase().includes(DUBAI_MATCH)) return true;
+  }
+  if ((user.teamName || '').toLowerCase().includes(DUBAI_MATCH)) return true;
+  const tag = `${user.name || ''} ${user.email || ''}`.toLowerCase();
+  return tag.includes(DUBAI_MATCH);
+}
+
+// Determines which number (Dubai or Eyad) should be used:
+// Dubai agent -> Dubai WhatsApp
+// Otherwise -> Eyad WhatsApp
+export function waAccountForUser(user, lead) {
+  if (isDubaiAgent(user)) return 'dubai';
+  if (lead?.teamId) {
+    const teams = getDB().teams || [];
+    const team = teams.find(t => t.id === lead.teamId);
+    if (team && (team.name || '').toLowerCase().includes(DUBAI_MATCH)) return 'dubai';
+  }
+  return WA_DEFAULT_ACCOUNT;
+}
+
+export const normAccount = (a) => (WA_ACCOUNTS.includes(String(a || '').toLowerCase()) ? String(a).toLowerCase() : WA_DEFAULT_ACCOUNT);
+export const waJidForPhone = (phone) => {
+  const d = normalizePhone(phone);
+  return d ? `${d}@s.whatsapp.net` : '';
+};
+export const waConvId = (account, jid) => `${normAccount(account)}:${jid}`;
+export const waConvJid = (id) => {
+  const s = String(id || '');
+  for (const a of WA_ACCOUNTS) if (s.startsWith(a + ':')) return s.slice(a.length + 1);
+  return s;
+};
 
 // Message lifecycle, in the order WhatsApp reports it.
 export const WA_STATUS = { PENDING: 'PENDING', SENT: 'SENT', DELIVERED: 'DELIVERED', READ: 'READ', FAILED: 'FAILED' };
 const STATUS_RANK = { PENDING: 0, SENT: 1, DELIVERED: 2, READ: 3, FAILED: 4 };
+
 // Never let a late-arriving webhook drag a message backwards (e.g. a delayed
 // SENT landing after DELIVERED). FAILED always wins.
 export function mergeStatus(prev, next) {
@@ -31,6 +90,7 @@ export function rToConv(r) {
     source: r.source || 'WHATSAPP', adMeta: r.ad_meta || null,
     assignedTo: r.assigned_to || null, companyId: r.company_id || null,
     archived: !!r.archived, createdAt: r.created_at, updatedAt: r.updated_at,
+    account: normAccount(r.account), lid: r.lid || '',
   };
 }
 
@@ -41,6 +101,7 @@ export function convToR(c) {
     last_message_preview: c.lastMessagePreview || '', last_message_dir: c.lastMessageDir || 'IN',
     unread_count: c.unreadCount || 0, source: c.source || 'WHATSAPP', ad_meta: c.adMeta || null,
     assigned_to: c.assignedTo || null, company_id: c.companyId || null, archived: !!c.archived,
+    account: normAccount(c.account),
   };
 }
 
@@ -52,6 +113,7 @@ export function rToMsg(r) {
     mediaSize: r.media_size || 0, status: r.status || 'SENT', error: r.error || '',
     senderName: r.sender_name || '', sentBy: r.sent_by || null, clientRef: r.client_ref || null,
     waTimestamp: r.wa_timestamp || r.created_at, createdAt: r.created_at,
+    account: normAccount(r.account),
   };
 }
 
@@ -63,6 +125,7 @@ export function msgToR(m) {
     media_size: m.mediaSize || 0, status: m.status || 'PENDING', error: m.error || '',
     sender_name: m.senderName || '', sent_by: m.sentBy || null, client_ref: m.clientRef || null,
     wa_timestamp: m.waTimestamp || new Date().toISOString(),
+    account: normAccount(m.account),
   };
 }
 
@@ -87,9 +150,12 @@ export async function waLoadSettings() {
   return rToSettings(rows && rows[0]);
 }
 
+// relay_url is never written: the send endpoint is fixed at build time
+// (WA_RELAY_URL), and the stored value is left as it is so a rollback to an
+// older client still finds it.
 export async function waSaveSettings(s, user) {
   const row = {
-    id: 'default', relay_url: s.relayUrl || '', session_name: s.sessionName || '',
+    id: 'default', session_name: s.sessionName || '',
     enabled: s.enabled !== false, allowed_user_ids: s.allowedUserIds || [],
     webhook_url: s.webhookUrl || '', updated_at: new Date().toISOString(),
     updated_by: user?.id || null,
@@ -97,64 +163,64 @@ export async function waSaveSettings(s, user) {
   return sbUpsert('wa_settings', [row]);
 }
 
-// Store/rotate the Wasender token. Deliberately goes through the relay, never
-// into a browser-readable table — wa_secrets has RLS on with no policies, so
-// only the service role behind the relay can write it.
-export async function waSaveToken(settings, { apiToken, webhookSecret }, user) {
-  if (!settings?.relayUrl) return { ok: false, error: 'Set the relay URL first.' };
-  try {
-    const r = await fetch(settings.relayUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'set-credentials', apiToken, webhookSecret, userId: user?.id }),
-    });
-    if (!r.ok) return { ok: false, error: `Relay returned HTTP ${r.status}` };
-    await sbUpsert('wa_settings', [{ id: 'default', token_set: true, updated_at: new Date().toISOString(), updated_by: user?.id || null }]);
-    return { ok: true };
-  } catch (e) {
-    return { ok: false, error: e.message || 'Could not reach the relay.' };
-  }
-}
-
 // ── access control ──────────────────────────────────────────────────────────
-// Admins manage the allow-list from Chat Settings. Before that list is
-// configured the feature still needs to reach its first user, so a Dubai
-// Agent is recognised by name as a fallback.
 export function isChatAdmin(user) {
   return !!user && (user.role === 'MANAGEMENT' || user.role === 'MASTER');
 }
 
+// Front-line agents are off by default — turned back on by flipping this one
+// line (or re-adding 'AGENT'/'EXECUTIVE' here) when the team is ready for
+// them to read/write WhatsApp chat themselves. Team Lead/Management/Master
+// keep access to monitor and reply.
+const CHAT_DENIED_ROLES = ['AGENT', 'EXECUTIVE'];
+
 export function waCanChat(user, settings) {
   if (!user) return false;
-  if (isChatAdmin(user)) return true;
+  if (CHAT_DENIED_ROLES.includes(user.role)) return false;
   if (settings && settings.enabled === false) return false;
-  // An explicit per-user feature grant from Users → Edit also opens the door.
-  if (Array.isArray(user.allowedFeatures) && user.allowedFeatures.includes('conversations')) return true;
-  const list = settings?.allowedUserIds || [];
-  if (list.length) return list.includes(user.id);
-  // Not configured yet → Dubai agent only, per the rollout scope.
-  const name = (user.name || '').toLowerCase();
-  const email = (user.email || '').toLowerCase();
-  return user.role === 'AGENT' && (name.includes('dubai') || email.includes('dubai'));
+  return true;
+}
+
+export function waCanChatLead(user, settings) {
+  if (!user) return false;
+  if (settings && settings.enabled === false) return false;
+  return true;
+}
+
+// Requirement 3: agent sees only chats for leads forwarded/assigned to that agent
+export function isLeadAssignedOrForwardedTo(lead, user) {
+  if (!user) return false;
+  if (isChatAdmin(user)) return true;
+  if (!lead) return false;
+  if (lead.assignedTo === user.id) return true;
+  if (Array.isArray(lead.previousAssignees) && lead.previousAssignees.includes(user.id)) return true;
+  if (user.role === 'TEAM_LEAD' && user.teamId && lead.teamId === user.teamId) return true;
+  return false;
 }
 
 // ── reads ───────────────────────────────────────────────────────────────────
-export async function waLoadConversations({ limit = 200 } = {}) {
-  const rows = await sbGet(`wa_conversations?archived=is.false&order=last_message_at.desc.nullslast&limit=${limit}`);
+export async function waLoadConversations({ limit = 200, offset = 0 } = {}) {
+  const rows = await sbGet(`wa_conversations?archived=is.false&order=last_message_at.desc.nullslast&limit=${limit}&offset=${offset}`);
   return (rows || []).map(rToConv);
 }
 
-export async function waLoadMessages(conversationId, { limit = 300 } = {}) {
+export async function waLoadMessages(conversationId, { limit = 300, before = null, beforeId = null } = {}) {
   if (!conversationId) return [];
+  // Keyset pagination on (wa_timestamp, id) ordered descending: strictly before
+  // the oldest loaded message, so messages sharing its exact timestamp are not
+  // dropped or repeated at the page boundary.
+  const beforeParam = before
+    ? beforeId
+      ? `&or=(wa_timestamp.lt.${encodeURIComponent(before)},and=(wa_timestamp.eq.${encodeURIComponent(before)},id.lt.${encodeURIComponent(beforeId)}))`
+      : `&wa_timestamp=lt.${encodeURIComponent(before)}`
+    : '';
   const rows = await sbGet(
-    `wa_messages?conversation_id=eq.${encodeURIComponent(conversationId)}&order=wa_timestamp.desc&limit=${limit}`
+    `wa_messages?conversation_id=eq.${encodeURIComponent(conversationId)}&order=wa_timestamp.desc,id.desc&limit=${limit}${beforeParam}`
   );
   return (rows || []).map(rToMsg).reverse(); // oldest → newest for rendering
 }
 
-// Match a conversation to an existing CRM lead by phone. Uses the same
-// normaliser the lead importer uses, then compares the last 9 digits so
-// +880 / 880 / 0-prefixed variants of one number still line up.
+// Match a conversation to an existing CRM lead by phone or lead_id.
 export function matchLead(conv, leads) {
   if (conv.leadId) {
     const direct = leads.find(l => l.id === conv.leadId);
@@ -170,7 +236,7 @@ export function matchLead(conv, leads) {
 export async function waMarkRead(conversationId) {
   if (!conversationId) return;
   try {
-    await fetch(`${SB_URL}/rest/v1/wa_conversations?id=eq.${encodeURIComponent(conversationId)}`, {
+    await authedFetch(`${SB_URL}/rest/v1/wa_conversations?id=eq.${encodeURIComponent(conversationId)}`, {
       method: 'PATCH',
       headers: { ...SB_H, Prefer: 'return=minimal' },
       body: JSON.stringify({ unread_count: 0 }),
@@ -180,7 +246,7 @@ export async function waMarkRead(conversationId) {
 
 export async function waLinkLead(conversationId, leadId) {
   try {
-    await fetch(`${SB_URL}/rest/v1/wa_conversations?id=eq.${encodeURIComponent(conversationId)}`, {
+    await authedFetch(`${SB_URL}/rest/v1/wa_conversations?id=eq.${encodeURIComponent(conversationId)}`, {
       method: 'PATCH',
       headers: { ...SB_H, Prefer: 'return=minimal' },
       body: JSON.stringify({ lead_id: leadId }),
@@ -189,30 +255,94 @@ export async function waLinkLead(conversationId, leadId) {
   } catch { return false; }
 }
 
+// AI reply + takeover state for one conversation, for the Conversations UI.
+// The reply switch is wa_bot_settings.faq_agent_enabled on the bot's row; a
+// human takeover is an active ai_handoffs row for this thread.
+export async function waAiState(conversationId) {
+  const bot = String(conversationId || '').split(':')[0] || 'eyad';
+  const [s, h] = await Promise.all([
+    sbGet(`wa_bot_settings?bot=eq.${bot}&select=faq_agent_enabled,trainer_test_mode`),
+    sbGet(`ai_handoffs?conversation_id=eq.${encodeURIComponent(conversationId)}&select=status&limit=1`),
+  ]);
+  const row = s?.[0];
+  return {
+    bot,
+    repliesOn: row ? row.faq_agent_enabled !== false : null,
+    trainerTest: !!row?.trainer_test_mode,
+    takeover: !!(h?.[0]),
+  };
+}
+
 export const waClientRef = () => 'c' + Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
 
-// What Wasender should address the message to. A LID thread (…@lid) carries an
-// internal identity, not a phone number, and the API rejects those digits with
-// "The provided JID does not exist on WhatsApp." Such a thread is only sendable
-// once the webhook has learned the real number from a later message.
+// What Wasender should address the message to.
 export function waSendTarget(conversation) {
-  const id = String(conversation?.id || '');
+  let id = String(conversation?.id || '');
+  for (const a of WA_ACCOUNTS) {
+    if (id.startsWith(a + ':')) {
+      id = id.slice(a.length + 1);
+      break;
+    }
+  }
   const idDigits = id.split('@')[0].split(':')[0].replace(/\D/g, '');
   const phone = String(conversation?.phone || '').replace(/\D/g, '');
   if (id.endsWith('@lid') && (!phone || phone === idDigits)) return '';
   return phone || idDigits;
 }
 
+// Find existing conversation for lead or create new on appropriate account (Dubai vs Eyad)
+export async function waFindOrCreateConversation(lead, user) {
+  const digits = normalizePhone(lead?.phone);
+  if (!digits) return { ok: false, error: 'This customer has no valid phone number.' };
+  const tail = digits.slice(-9);
+  const account = waAccountForUser(user, lead);
+  const jid = waJidForPhone(digits);
+  const convId = waConvId(account, jid);
+
+  try {
+    const rows = await sbGet(`wa_conversations?account=eq.${account}&phone=like.*${encodeURIComponent(tail)}&archived=is.false&order=last_message_at.desc.nullslast&limit=5`);
+    const hit = (rows || []).map(rToConv).find(c => (normalizePhone(c.phone) || '').slice(-9) === tail);
+    if (hit) {
+      if (!hit.leadId && lead.id) { waLinkLead(hit.id, lead.id); hit.leadId = lead.id; }
+      return { ok: true, conversation: hit, created: false };
+    }
+  } catch (e) {
+    console.warn('[wa] lookup error, will create new', e);
+  }
+
+  const conv = {
+    id: convId,
+    account,
+    phone: digits,
+    name: lead.name || digits,
+    leadId: lead.id || null,
+    lastMessageAt: new Date().toISOString(),
+    lastMessagePreview: '',
+    lastMessageDir: 'OUT',
+    unreadCount: 0,
+    source: 'WHATSAPP',
+    adMeta: null,
+    assignedTo: lead.assignedTo || null,
+    companyId: lead.companyId || null,
+    archived: false,
+  };
+  try {
+    await sbUpsert('wa_conversations', [convToR(conv)]);
+    return { ok: true, conversation: conv, created: true };
+  } catch (e) {
+    return { ok: false, error: e.message || 'Could not start the conversation.' };
+  }
+}
+
 // Upload an outbound attachment to Supabase Storage and return its public URL.
-// Wasender takes a URL for media, so the file never round-trips through the relay.
 export async function waUploadMedia(file, onProgress) {
   const safe = (file.name || 'file').replace(/[^\w.-]/g, '_');
   const path = `out/${Date.now()}_${Math.random().toString(36).slice(2, 8)}_${safe}`;
   try {
     if (onProgress) onProgress(10);
-    const r = await fetch(`${SB_URL}/storage/v1/object/${WA_BUCKET}/${path}`, {
+    const r = await authedFetch(`${SB_URL}/storage/v1/object/${WA_BUCKET}/${path}`, {
       method: 'POST',
-      headers: { apikey: SB_KEY, Authorization: 'Bearer ' + SB_KEY, 'Content-Type': file.type || 'application/octet-stream' },
+      headers: { apikey: SB_KEY, Authorization: bearer(), 'Content-Type': file.type || 'application/octet-stream' },
       body: file,
     });
     if (!r.ok) {
@@ -228,13 +358,15 @@ export async function waUploadMedia(file, onProgress) {
 }
 
 // Persist the outgoing message immediately so it survives a reload and shows a
-// PENDING tick, then ask the relay to actually deliver it. The relay rewrites
-// the row with the real Wasender id once accepted.
+// PENDING tick, then ask the relay to actually deliver it.
+// Uses Dubai session for Dubai agents and Eyad session for other agents.
 export async function waSendMessage(settings, { conversation, user, type = 'text', body = '', mediaUrl = '', mediaMime = '', mediaName = '', mediaSize = 0 }) {
   const clientRef = waClientRef();
+  const account = normAccount(conversation?.account || waAccountForUser(user));
   const optimistic = {
     id: clientRef,
     conversationId: conversation.id,
+    account,
     phone: conversation.phone,
     direction: 'OUT',
     type, body, caption: type === 'text' ? '' : body,
@@ -249,16 +381,12 @@ export async function waSendMessage(settings, { conversation, user, type = 'text
   await sbUpsert('wa_messages', [msgToR(optimistic)]);
   await sbUpsert('wa_conversations', [{
     id: conversation.id,
+    account,
     phone: conversation.phone,
     last_message_at: optimistic.waTimestamp,
     last_message_preview: type === 'text' ? body : (mediaName || type),
     last_message_dir: 'OUT',
   }]);
-
-  if (!settings?.relayUrl) {
-    await waFailMessage(clientRef, 'No relay URL configured — set it in Chat Settings.');
-    return { ok: false, optimistic, error: 'No relay URL configured.' };
-  }
 
   const to = waSendTarget(conversation);
   if (!to) {
@@ -268,11 +396,12 @@ export async function waSendMessage(settings, { conversation, user, type = 'text
   }
 
   try {
-    const r = await fetch(settings.relayUrl, {
+    const r = await authedFetch(WA_RELAY_URL, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: relayHeaders(),
       body: JSON.stringify({
         action: 'send',
+        account,
         to,
         conversationId: conversation.id,
         clientRef,
@@ -280,8 +409,7 @@ export async function waSendMessage(settings, { conversation, user, type = 'text
         text: type === 'text' ? body : '',
         caption: type === 'text' ? '' : body,
         mediaUrl, mediaName, mediaMime,
-        userId: user?.id || null,
-        sessionName: settings.sessionName || undefined,
+        sessionName: settings?.sessionName || undefined,
       }),
     });
     if (!r.ok) {
@@ -298,7 +426,7 @@ export async function waSendMessage(settings, { conversation, user, type = 'text
 
 export async function waFailMessage(id, error) {
   try {
-    await fetch(`${SB_URL}/rest/v1/wa_messages?id=eq.${encodeURIComponent(id)}`, {
+    await authedFetch(`${SB_URL}/rest/v1/wa_messages?id=eq.${encodeURIComponent(id)}`, {
       method: 'PATCH',
       headers: { ...SB_H, Prefer: 'return=minimal' },
       body: JSON.stringify({ status: 'FAILED', error: (error || '').slice(0, 500) }),
@@ -306,11 +434,9 @@ export async function waFailMessage(id, error) {
   } catch { /* the UI already shows FAILED optimistically */ }
 }
 
-// Retry = delete the failed row and send a fresh one, so the thread doesn't
-// accumulate dead bubbles.
 export async function waRetry(settings, msg, conversation, user) {
   try {
-    await fetch(`${SB_URL}/rest/v1/wa_messages?id=eq.${encodeURIComponent(msg.id)}`, {
+    await authedFetch(`${SB_URL}/rest/v1/wa_messages?id=eq.${encodeURIComponent(msg.id)}`, {
       method: 'DELETE', headers: { ...SB_H, Prefer: 'return=minimal' },
     });
   } catch { /* ignore — worst case a stale failed bubble lingers */ }
@@ -321,53 +447,24 @@ export async function waRetry(settings, msg, conversation, user) {
   });
 }
 
-// Fetch the contact's WhatsApp profile photo through the relay (same reason
-// sending goes through it — the Wasender token never reaches the browser) and
-// cache the URL on the thread so this runs at most once per contact.
-export async function waFetchAvatar(settings, conversation) {
-  if (!settings?.relayUrl) return { ok: false };
-  const phone = waSendTarget(conversation);
-  if (!phone) return { ok: false }; // LID-only thread — no real number to look up yet
-
-  try {
-    const r = await fetch(settings.relayUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'get-avatar', phone }),
-    });
-    if (!r.ok) return { ok: false };
-    const data = await r.json();
-    if (!data?.ok || !data.avatarUrl) return { ok: false };
-    await fetch(`${SB_URL}/rest/v1/wa_conversations?id=eq.${encodeURIComponent(conversation.id)}`, {
-      method: 'PATCH',
-      headers: { ...SB_H, Prefer: 'return=minimal' },
-      body: JSON.stringify({ avatar_url: data.avatarUrl }),
-    });
-    return { ok: true, avatarUrl: data.avatarUrl };
-  } catch {
-    return { ok: false };
-  }
-}
-
 // ── realtime ────────────────────────────────────────────────────────────────
-// Same Phoenix protocol the notification socket uses, scoped to the two chat
-// tables. Reports connection state so the view can show a reconnect banner.
 export function waSubscribe({ onMessage, onConversation, onState }) {
   if (!SB_URL || !SB_KEY) return () => {};
   const wsUrl = `${SB_URL.replace('https://', 'wss://')}/realtime/v1/websocket?apikey=${SB_KEY}&vsn=1.0.0`;
   let ws, hbTimer, reconnTimer, attempt = 0;
   let dead = false;
+  // Realtime drops a channel when its token expires: hand it each refreshed one.
+  const offToken = onAccessToken((t) => { if (ws?.readyState === 1) ws.send(JSON.stringify({ topic: 'realtime:public', event: 'access_token', payload: { access_token: t }, ref: String(Date.now()) })); });
 
-  function connect() {
+  async function connect() {
     onState?.('connecting');
+    await ensureFreshToken().catch(() => null);
+    if (dead) return;
     try { ws = new WebSocket(wsUrl); } catch { schedule(); return; }
 
     ws.onopen = () => {
       attempt = 0;
       onState?.('online');
-      // Must be `realtime:public` — under vsn=1.0.0 a third segment names a
-      // single TABLE (realtime:public:notifications), so an invented segment
-      // binds to a table that doesn't exist and silently delivers nothing.
       ws.send(JSON.stringify({
         topic: 'realtime:public',
         event: 'phx_join',
@@ -378,6 +475,8 @@ export function waSubscribe({ onMessage, onConversation, onState }) {
               { event: '*', schema: 'public', table: 'wa_conversations' },
             ],
           },
+          // RLS on these tables (0055) admits only a signed-in account.
+          access_token: accessToken(),
         },
         ref: '1',
       }));
@@ -389,8 +488,6 @@ export function waSubscribe({ onMessage, onConversation, onState }) {
     ws.onmessage = (e) => {
       try {
         const msg = JSON.parse(e.data);
-
-        // Surface a rejected join instead of sitting there looking connected.
         if (msg.event === 'phx_reply' && msg.payload?.status === 'error') {
           console.error('[wa] realtime join rejected:', msg.payload?.response);
           onState?.('error');
@@ -412,10 +509,10 @@ export function waSubscribe({ onMessage, onConversation, onState }) {
   function schedule() {
     if (dead) return;
     onState?.('offline');
-    const delay = Math.min(30000, 1000 * Math.pow(2, attempt++)); // 1s → 30s backoff
+    const delay = Math.min(30000, 1000 * Math.pow(2, attempt++));
     reconnTimer = setTimeout(connect, delay);
   }
 
   connect();
-  return () => { dead = true; clearInterval(hbTimer); clearTimeout(reconnTimer); try { ws?.close(); } catch { /* ignore */ } };
+  return () => { dead = true; offToken(); clearInterval(hbTimer); clearTimeout(reconnTimer); try { ws?.close(); } catch { /* ignore */ } };
 }

@@ -4,16 +4,23 @@
 // Deploy:  npx supabase functions deploy wa-send --no-verify-jwt
 // Secrets: npx supabase secrets set WASENDER_API_TOKEN=...
 //
-// --no-verify-jwt is required because the CRM authenticates its own users and
-// never mints a Supabase JWT. Admin-only actions are checked against the users
-// table instead (see isAdminUser).
+// Every call needs the caller's Supabase Auth session (wa-send-auth.ts,
+// decision D1); body.userId is ignored. set-credentials answers 410: tokens
+// are rotated by an operator with CR-001 runbook A.
 
 import {
-  CORS, json, WASENDER_BASE, getCredentials, isAdminUser, sbPatch, sbUpsert, phoneToJid,
+  CORS, json, WASENDER_BASE, getCredentials, sbPatch, sbUpsert, phoneToJid,
 } from "../_shared/wa.ts";
+import { verifiedActor, actorDepsFromEnv } from "../_shared/actor.ts";
+import { authorizeWaSend, checkWaSend, restChatDeps, claimSend, restPatch } from "../_shared/wa-send-auth.ts";
+
+const actorDeps = actorDepsFromEnv((k) => Deno.env.get(k));
+const chatDeps = restChatDeps(actorDeps.url, actorDeps.serviceKey);
+const msgPatch = restPatch(actorDeps.url, actorDeps.serviceKey);
 
 interface SendBody {
   action: "send" | "set-credentials";
+  account?: string;
   to?: string;
   conversationId?: string;
   clientRef?: string;
@@ -23,24 +30,24 @@ interface SendBody {
   mediaUrl?: string;
   mediaName?: string;
   mediaMime?: string;
-  userId?: string | null;
   sessionName?: string;
-  apiToken?: string;
-  webhookSecret?: string;
 }
 
-// Map our message type onto the Wasender payload shape.
+// Map our message type onto the Wasender payload shape. Wasender rejects an
+// image/document/video send with an empty "text" (its validator treats ""
+// as missing, not as a string — confirmed directly against the API), so a
+// caption-less send always needs a fallback.
 function buildPayload(b: SendBody) {
   const to = b.to || "";
   switch (b.type) {
     case "image":
-      return { to, text: b.caption || "", imageUrl: b.mediaUrl };
+      return { to, text: b.caption || "Photo", imageUrl: b.mediaUrl };
     case "video":
-      return { to, text: b.caption || "", videoUrl: b.mediaUrl };
+      return { to, text: b.caption || "Video", videoUrl: b.mediaUrl };
     case "audio":
       return { to, audioUrl: b.mediaUrl };
     case "document":
-      return { to, text: b.caption || "", documentUrl: b.mediaUrl, fileName: b.mediaName || "file" };
+      return { to, text: b.caption || (b.mediaName || "Document"), documentUrl: b.mediaUrl, fileName: b.mediaName || "file" };
     default:
       return { to, text: b.text || "" };
   }
@@ -57,26 +64,21 @@ Deno.serve(async (req) => {
     return json({ error: "Invalid JSON" }, 400);
   }
 
-  // ── rotate/store credentials (admin only) ────────────────────────────────
-  if (body.action === "set-credentials") {
-    if (!(await isAdminUser(body.userId ?? null))) return json({ error: "Not authorised" }, 403);
-    if (!body.apiToken) return json({ error: "apiToken is required" }, 400);
-    const ok = await sbUpsert("wa_secrets", [{
-      id: "default",
-      api_token: body.apiToken,
-      webhook_secret: body.webhookSecret || null,
-      updated_at: new Date().toISOString(),
-      updated_by: body.userId ?? null,
-    }]);
-    return ok ? json({ ok: true }) : json({ error: "Could not store credentials" }, 500);
-  }
+  const auth = await authorizeWaSend(req, body, (r) => verifiedActor(r, actorDeps));
+  if (!auth.ok) return json({ error: auth.error }, auth.status);
 
-  if (body.action !== "send") return json({ error: "Unknown action" }, 400);
-  if (!body.to || !body.clientRef || !body.conversationId) {
-    return json({ error: "to, clientRef and conversationId are required" }, 400);
-  }
+  // Chat access, company and thread ownership, server-side (wa-send-auth.ts).
+  let chat;
+  try { chat = await checkWaSend(auth.actor, body as unknown as Record<string, unknown>, chatDeps); }
+  catch (e) { console.error("wa-send access check failed", e); return json({ error: "Could not check chat access" }, 503); }
+  if (chat.status !== 200) return json({ error: chat.error }, chat.status);
+  // Send from the thread's own number, to the thread's own phone, never values named in the body.
+  const account = chat.conversation?.account === "dubai" ? "dubai" : "eyad";
+  body.to = chat.to;
+  try { if (!(await claimSend(body.clientRef as string, msgPatch))) return json({ error: "This message is already being sent" }, 409); }
+  catch (e) { console.error("wa-send claim failed", e); return json({ error: "Could not reserve the message" }, 503); }
 
-  const { token } = await getCredentials();
+  const { token } = await getCredentials(account);
   if (!token) {
     await sbPatch("wa_messages", `id=eq.${encodeURIComponent(body.clientRef)}`, {
       status: "FAILED", error: "No Wasender token configured on the server.",

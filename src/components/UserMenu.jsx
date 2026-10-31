@@ -1,7 +1,8 @@
 import { useState, useRef, useEffect, Suspense } from 'react';
 import Mi from './Mi.jsx';
 import { useApp } from '../context/AppContext.jsx';
-import { clearSession, getDB } from '../lib/db.js';
+import { getDB } from '../lib/db.js';
+import { signOut } from '../lib/auth.js';
 import { avc, ini, rlabel } from '../lib/helpers.js';
 import { canSee, ROLES } from '../lib/constants.js';
 import lazyChunk from '../lib/lazyChunk.js';
@@ -84,12 +85,13 @@ export default function UserMenu() {
     </button>
   );
 
-  const logout = () => { clearSession(); setSidebarOpen(false); setUser(null); };
+  // Revokes the Auth session at the server, then clears the local session and cache.
+  const logout = () => { signOut(); setSidebarOpen(false); setUser(null); };
 
   return (
     <div className={`hd-um${open ? ' open' : ''}${impersonator ? ' imp' : ''}`} ref={ref} onKeyDown={onEsc}>
       {/* Until HeaderFace loads, the same markup AvatarGroup renders, minus the
-          lift and the tooltip. */}
+          tooltip. */}
       <Suspense fallback={(
         <div data-slot="avatar-group" className="ag">
           <div data-slot="avatar-container" className="ag-slot" style={{ zIndex: 0 }}><div>{face(null)}</div></div>
@@ -97,6 +99,14 @@ export default function UserMenu() {
       )}>
         <HeaderFace face={face} tip={impersonator ? `${me} · viewing` : `${me} (you)`} />
       </Suspense>
+      {/* Phones only (CSS): name, role and a chevron beside the face make the
+          account pill. A press here opens the same menu; keyboard users reach
+          it through the face button. */}
+      <span className="hd-um-txt" aria-hidden="true" onClick={() => setOpen(o => !o)}>
+        <span className="hd-um-nm">{me}</span>
+        <span className="hd-um-rl">{impersonator ? 'Viewing · ' + rlabel(user.role) : rlabel(user.role)}</span>
+      </span>
+      <Mi className="hd-um-chev" aria-hidden="true" onClick={() => setOpen(o => !o)}>expand_more</Mi>
       {open && (
         <div className="umenu">
           <div className="um-me">

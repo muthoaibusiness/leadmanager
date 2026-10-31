@@ -1,7 +1,7 @@
 /* Projects hero (App.jsx PageHero): the Projects / Available Units tabs and
    Management's Manage menu button. Loaded with the shell, since they show on
    the Projects list before the Available Units page has ever been opened.
-   The tabs are a pill toggle like Available Units' Grid / Plan (.fpv-mode). */
+   The tabs are a pill toggle. */
 .hero-tabs {
   display: inline-flex; align-items: center; gap: 2px; padding: 3px;
   border: 1px solid var(--bd2); border-radius: 999px; background: var(--surf2);

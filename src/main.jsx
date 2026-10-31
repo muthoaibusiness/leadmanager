@@ -8,6 +8,16 @@ import { applyStoredTheme } from './lib/theme.js';
 
 applyStoredTheme(); // set data-theme before first paint to avoid a flash
 
+// iOS Safari zooms the page into any focused field under 16px and never zooms
+// back out, which leaves the header (account face included) enlarged and pushed
+// aside. maximum-scale=1 stops only that auto-zoom on iOS, where pinch zoom
+// still works; elsewhere it would block pinch zoom, so other browsers keep the
+// plain viewport. iPadOS reports itself as a Mac with touch points.
+if (/iP(hone|od|ad)/.test(navigator.platform) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)) {
+  const vp = document.querySelector('meta[name="viewport"]');
+  if (vp && !/maximum-scale/.test(vp.content)) vp.content += ', maximum-scale=1';
+}
+
 import React from 'react';
 
 class ErrorBoundary extends React.Component {

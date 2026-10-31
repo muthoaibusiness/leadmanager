@@ -1,5 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
-import useNavState from '../../hooks/useNavState.js';
+import { useState, useEffect, useLayoutEffect, useRef } from 'react';
 import Mi from '../Mi.jsx';
 import { useApp } from '../../context/AppContext.jsx';
 import { ROLES } from '../../lib/constants.js';
@@ -17,10 +16,14 @@ import './FloorPlan.css';
 
 // Projects → Available Units. Every signed-in user who can open Projects sees
 // the project's units, each colored by its live status (the same units the
-// Projects KPIs, the console grid, holds and deals use), two ways:
-//  - Grid: a seat-map of unit tiles, one floor chip per floor plan plus
-//    "Other units" for units on no plan. Works with or without plan images.
-//  - Plan: the uploaded floor plan drawing with a box per unit.
+// Projects KPIs, the console grid, holds and deals use), side by side:
+//  - left, Grid: a seat-map of unit tiles for the floor picked in the Floor
+//    dropdown (one per floor plan, plus "Other units" for units on no plan and
+//    "All floors"). Works with or without plan images.
+//  - middle, Plan: that floor's uploaded drawing with a box per unit; with All
+//    floors, the picked unit's floor (the top floor until one is picked). Left
+//    out when the project has no plans.
+//  - right: the picked unit's card.
 // Picking an available unit and pressing Continue opens the project console
 // with that unit already chosen. Management also adds, edits and deletes
 // plans (FloorPlanEditor).
@@ -51,7 +54,6 @@ export default function AvailableUnitsView() {
   void dbVersion; // re-read the store when realtime or a save changes it
   const toast = useProjectToast();
   const isAdmin = user?.role === ROLES.MGMT;
-  const [mode, setMode] = useNavState('units.mode', 'grid'); // 'grid' | 'plan'
   const [stat, setStat] = useState('all');
   const [q, setQ] = useState('');
   const [sel, setSel] = useState(null);     // unit code
@@ -61,6 +63,8 @@ export default function AvailableUnitsView() {
   const pnav = useProjectNav();
   const ctaRef = useRef(null);
   const [ctaOn, setCtaOn] = useState(false); // phone Continue bar: the unit card is still below it
+  const gridRef = useRef(null);
+  const [paneH, setPaneH] = useState(0); // desktop: the columns' height, fitted to the screen (0 = not fitted)
 
   // Saving needs migration 0021's column; only Management is told about it.
   useEffect(() => {
@@ -82,15 +86,14 @@ export default function AvailableUnitsView() {
   const others = proj ? proj.variants.flatMap(v => (v.units || []).filter(u => !placed.has(u.id)).map(u => unitRow({ variant: v, unit: u }))) : [];
   // Grid opens on All floors (no floor picked yet) when there is more than one.
   const floorCount = plans.length + (others.length ? 1 : 0);
-  const chip = mode === 'plan' ? plan?.id || null
-    : (planSel.planId === ALL || !planSel.planId) && floorCount > 1 ? ALL
+  const chip = (planSel.planId === ALL || !planSel.planId) && floorCount > 1 ? ALL
     : planSel.planId === OTHER && others.length ? OTHER
     : plan?.id || (others.length ? OTHER : null);
   const chipPlan = chip === OTHER || chip === ALL ? null : plan;
   if (useChanged(`${proj?.id}|${chip}`)) { setSel(null); setStat('all'); setQ(''); }
 
   // Every plan image of the open project, fetched once the browser is idle, so
-  // switching floors (or to Plan view) shows the drawing at once instead of
+  // switching floors shows the drawing at once instead of
   // waiting on a ~200 KB download per floor.
   const planUrls = plans.map(fp => fp.image?.url).filter(Boolean).join('\n');
   useEffect(() => {
@@ -174,10 +177,15 @@ export default function AvailableUnitsView() {
   const flat = groups.flatMap(g => g.rows).filter(r => r.loc);
   const cur = items.find(r => r.code === sel && r.loc) || null;
   const curFloor = cur ? (chipPlan || plans.find(fp => (fp.boxes || []).some(b => b.unitId === cur.code)))?.name || '' : '';
+  // The drawing in the middle: the picked floor's. With All floors, the picked
+  // unit's floor (the top floor until a unit is picked).
+  const curPlan = cur?.box ? plans.find(fp => (fp.boxes || []).includes(cur.box)) || null : null;
+  const viewPlan = chip === ALL ? (cur ? curPlan : plans[plans.length - 1] || null) : chipPlan;
+  const viewRows = viewPlan === chipPlan ? rows : rowsOf(viewPlan);
 
   const select = (code, fromPlan) => {
     setSel(code);
-    if (fromPlan && mode === 'plan' && window.matchMedia('(max-width: 860px)').matches) cardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    if (fromPlan && window.matchMedia('(max-width: 860px)').matches) cardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   };
   const step = (d) => {
     if (!flat.length) return;
@@ -185,23 +193,23 @@ export default function AvailableUnitsView() {
     select(flat[(i + d + flat.length) % flat.length].code);
   };
 
-  const W = chipPlan?.image?.width || 1, H = chipPlan?.image?.height || 1;
+  const W = viewPlan?.image?.width || 1, H = viewPlan?.image?.height || 1;
   // A unit's custom status (name + colour, project unitStatuses) or its base one.
   const look = (r) => (r?.loc ? statusLook(proj?.unitStatuses, r.loc.unit) : { status: r?.status, label: STATUS[r?.status]?.label || '', color: null });
   const tint = (r) => { const l = look(r); return l.color ? { '--st-c': l.color, '--st-ink': l.ink } : undefined; };
-  const boxes = rows.map(r => ({
+  const boxes = viewRows.map(r => ({
     id: r.box.id, ...toPx(r.box, W, H), label: r.code, sub: r.size ? `${r.size.toLocaleString('en-IN')} sqft` : '', status: r.status, color: look(r).color, dim: !shown(r),
     aria: r.loc ? `${r.code}, ${r.type}, ${r.size} sqft, ${look(r).label}` : `${r.code}, not linked to a unit`,
   }));
   const selBoxId = cur?.box ? cur.box.id : null;
   const canGo = cur?.status === 'available';
 
-  // Phones (grid): the Continue bar rides the bottom of the screen only while
+  // Phones: the Continue bar rides the bottom of the screen only while
   // the unit card, which has its own Continue, is still below the bar's line.
   // Once the card reaches that line the bar goes, so it never covers the card.
   // The bar's box stays mounted (empty, zero height) to mark the line.
   useEffect(() => {
-    if (mode !== 'grid' || !canGo) return;
+    if (!canGo) return;
     let raf = 0;
     const check = () => {
       raf = 0;
@@ -219,26 +227,24 @@ export default function AvailableUnitsView() {
       window.removeEventListener('resize', queue);
       setCtaOn(false);
     };
-  }, [mode, canGo]);
+  }, [canGo]);
 
   const tileTitle = (r) => [r.code, r.type, r.size ? `${r.size.toLocaleString('en-IN')} sqft` : '', look(r).label].filter(Boolean).join(' · ');
 
-  const chips = mode === 'plan' ? plans.map(fp => ({ id: fp.id, name: fp.name || 'Floor plan' }))
-    : [...plans.map(fp => ({ id: fp.id, name: fp.name || 'Floor plan' })), ...(others.length ? [{ id: OTHER, name: plans.length ? 'Other units' : 'All units' }] : [])];
+  const chips = [...plans.map(fp => ({ id: fp.id, name: fp.name || 'Floor plan' })), ...(others.length ? [{ id: OTHER, name: plans.length ? 'Other units' : 'All units' }] : [])];
   const chipName = chip === ALL ? 'All floors' : chips.find(c => c.id === chip)?.name || '';
   // Floor dropdown: top floor first (plans sort bottom-up), units on no plan last,
   // each with how many of its units are available.
   const freeOn = (c) => (c.id === OTHER ? others.filter(r => r.status === 'available').length
     : (plans.find(fp => fp.id === c.id)?.boxes || []).filter(b => findUnit(proj, b.unitId)?.unit.status === 'available').length);
   const floorList = [...chips.filter(c => c.id !== OTHER).reverse(), ...chips.filter(c => c.id === OTHER)].map(c => ({ ...c, free: freeOn(c) }));
-  // First item: every floor at once (Grid; picking it in Plan view switches to Grid).
+  // First item: every floor at once.
   if (floorList.length > 1) floorList.unshift({ id: ALL, name: 'All floors', free: floorList.reduce((n, f) => n + f.free, 0) });
-  const pickFloor = (id) => { if (id === ALL && mode === 'plan') setMode('grid'); pickPlan(id); };
-  // Unit tiles grouped by type: Grid view's main area and Plan view's side panel.
-  // Hovering one lights its box on the plan drawing.
+  // Unit tiles grouped by type (the left column). Hovering one lights its box
+  // on the plan drawing.
   const tiles = () => (
     <>
-      {groups.length === 0 && <div className="fpv-none">{items.length ? 'No units match.' : `No units on this ${mode === 'grid' ? 'floor' : 'plan'} yet.`}</div>}
+      {groups.length === 0 && <div className="fpv-none">{items.length ? 'No units match.' : 'No units on this floor yet.'}</div>}
       {groups.map(g => (
         <div key={g.name} className="fps-group">
           {(groups.length > 1 || chip === ALL) && <div className="fpv-ghd"><span>{g.name}</span><span>{g.note ?? g.rows.length}</span></div>}
@@ -259,8 +265,33 @@ export default function AvailableUnitsView() {
       ))}
     </>
   );
-  const noUnits = mode === 'grid' && !chips.length;
-  const noPlan = mode === 'plan' && !plan;
+  const noUnits = !chips.length;
+
+  // Desktop: the three columns fill the screen under the filters, so the page
+  // itself stays put; the grid scrolls in its own column while the plan and
+  // the unit card stay in view. Not below 1280px (the columns stack) or on a
+  // screen too short for it, where the page scrolls as before.
+  const hasGrid = !!proj && !noUnits;
+  useLayoutEffect(() => {
+    const el = gridRef.current;
+    const sc = el?.closest('.pg-body');
+    if (!hasGrid || !el || !sc) return;
+    const mq = window.matchMedia('(min-width: 1280px)');
+    const fit = () => {
+      if (!mq.matches) { setPaneH(0); return; }
+      const top = el.getBoundingClientRect().top - sc.getBoundingClientRect().top + sc.scrollTop;
+      const h = Math.floor(sc.clientHeight - top - parseFloat(getComputedStyle(sc).paddingBottom));
+      setPaneH(h >= 420 ? h : 0);
+    };
+    fit();
+    // the scroller's size, and anything above the grid that grows or wraps
+    const ro = new ResizeObserver(fit);
+    ro.observe(sc);
+    const inner = el.closest('.pg-inner');
+    if (inner) ro.observe(inner);
+    mq.addEventListener('change', fit);
+    return () => { ro.disconnect(); mq.removeEventListener('change', fit); };
+  }, [hasGrid]);
 
 
   return (
@@ -283,15 +314,10 @@ export default function AvailableUnitsView() {
                 <option key={p.id} value={p.id}>{p.name || 'Untitled project'}{p.floorPlans.length ? ` · ${p.floorPlans.length} plan${p.floorPlans.length > 1 ? 's' : ''}` : ' · no plan yet'}</option>
               ))}
             </select>
-            <div className="fpv-mode" role="group" aria-label="View">
-              {[['grid', 'grid_view', 'Grid'], ['plan', 'map', 'Plan']].map(([k, ic, l]) => (
-                <button key={k} type="button" aria-pressed={mode === k} className={mode === k ? 'on' : ''} onClick={() => setMode(k)}><Mi>{ic}</Mi>{l}</button>
-              ))}
-            </div>
-            {/* Floor: one dropdown for both views, top floor first, each floor
-                with its available count. */}
+            {/* Floor: one dropdown for the grid and the plan, top floor first,
+                each floor with its available count. */}
             {floorList.length > 0 && (
-              <Select className="fpv-floorsel" value={chip || ''} onChange={pickFloor} name="floor">
+              <Select className="fpv-floorsel" value={chip || ''} onChange={pickPlan} name="floor">
                 <SelectTrigger aria-label="Floor"><SelectValue placeholder="Pick a floor" /></SelectTrigger>
                 <SelectPopover>
                   <SelectListBox>
@@ -318,104 +344,108 @@ export default function AvailableUnitsView() {
             </Menu>
           </div>
 
-          {noPlan || noUnits ? (
+          {noUnits ? (
             <div className="empty fpv-empty">
-              <Mi>{noUnits ? 'grid_view' : 'map'}</Mi>
-              <p>{noUnits ? `No units in ${proj.name || 'this project'} yet.` : `No floor plans yet for ${proj.name || 'this project'}.`}</p>
-              {isAdmin && noPlan && <button type="button" className="btn btn-p" onClick={() => editPlan(null)} disabled={canSave === false}><Mi>add</Mi>Add floor plan</button>}
+              <Mi>grid_view</Mi>
+              <p>No units in {proj.name || 'this project'} yet.</p>
+              {isAdmin && <button type="button" className="btn btn-p" onClick={() => editPlan(null)} disabled={canSave === false}><Mi>add</Mi>Add floor plan</button>}
             </div>
           ) : (
-            <div className={`fpv-grid${mode === 'grid' ? ' is-seats' : ''}`}>
-              <div className="fpv-planwrap">
-                <div className="fpv-filters">
-                  <div className="fpv-chips" role="group" aria-label="Filter by status">
-                    {[['all', 'All', items.length], ['available', 'Available', counts.available], ['hold', 'On hold', counts.hold], ['sold', 'Sold', counts.sold]].map(([k, l, n]) => (
-                      <button key={k} type="button" aria-pressed={stat === k} className={`fpv-chip ch-${k}${stat === k ? ' on' : ''}`} onClick={() => setStat(k)}>
-                        {k !== 'all' && <i className={`fp-dot st-${k}`} />}{l}<b>{n}</b>
-                      </button>
-                    ))}
-                    {/* the project's own statuses, each in its colour */}
-                    {customs.map(c => (
-                      <button key={c.id} type="button" aria-pressed={stat === 'c:' + c.id} className={`fpv-chip ch-custom${stat === 'c:' + c.id ? ' on' : ''}`}
-                        style={{ '--st-c': c.color }} onClick={() => setStat('c:' + c.id)}>
-                        <i className="fp-dot" style={{ background: c.color }} />{c.name}<b>{counts['c:' + c.id]}</b>
-                      </button>
-                    ))}
-                  </div>
-                  <label className="fpv-search"><Mi>search</Mi><input name="unit-search" value={q} onChange={e => setQ(e.target.value)} placeholder="Find a unit…" aria-label="Find a unit by name" /></label>
+            <>
+              {/* Status chips and search: they filter the grid and dim the plan's boxes. */}
+              <div className="fpv-filters">
+                <div className="fpv-chips" role="group" aria-label="Filter by status">
+                  {[['all', 'All', items.length], ['available', 'Available', counts.available], ['hold', 'On hold', counts.hold], ['sold', 'Sold', counts.sold]].map(([k, l, n]) => (
+                    <button key={k} type="button" aria-pressed={stat === k} className={`fpv-chip ch-${k}${stat === k ? ' on' : ''}`} onClick={() => setStat(k)}>
+                      {k !== 'all' && <i className={`fp-dot st-${k}`} />}{l}<b>{n}</b>
+                    </button>
+                  ))}
+                  {/* the project's own statuses, each in its colour */}
+                  {customs.map(c => (
+                    <button key={c.id} type="button" aria-pressed={stat === 'c:' + c.id} className={`fpv-chip ch-custom${stat === 'c:' + c.id ? ' on' : ''}`}
+                      style={{ '--st-c': c.color }} onClick={() => setStat('c:' + c.id)}>
+                      <i className="fp-dot" style={{ background: c.color }} />{c.name}<b>{counts['c:' + c.id]}</b>
+                    </button>
+                  ))}
                 </div>
-
-                {mode === 'grid' ? (
-                  // The chosen floor's units, between the plan's optional landmarks.
-                  <>
-                    {/* Seat-map style: legend on top, then "Select unit · N selected";
-                        free units are outlined, taken ones solid, the pick solid blue. */}
-                    <section className="fpv-seats" aria-label={`Units on ${chipName || 'this floor'}`}>
-                      <div className="fp-legend fps-legend">
-                        <span><i className="fps-sw st-available" />Available</span>
-                        <span><i className="fps-sw is-sel" />Selected</span>
-                        <span><i className="fps-sw st-hold" />On hold</span>
-                        <span><i className="fps-sw st-sold" />Sold</span>
-                        {customs.map(s => <span key={s.id}><i className="fps-sw has-c" style={{ '--st-c': s.color }} />{s.name}</span>)}
-                      </div>
-                      <div className="fps-top"><span>Select unit</span><em>{cur ? `${cur.code} selected` : '0 selected'}</em></div>
-                      {chipPlan?.topLabel && <div className="fps-mark">{chipPlan.topLabel}</div>}
-                      {tiles()}
-                      {chipPlan?.bottomLabel && <div className="fps-mark">{chipPlan.bottomLabel}</div>}
-                    </section>
-                  </>
-                ) : (
-                  <>
-                    <FloorPlanCanvas className="fpv-stage" image={chipPlan.image} boxes={boxes} label={`${chipPlan.name || 'Floor plan'} of ${proj.name || 'the project'}`}
-                      selectedId={selBoxId} hoverId={hover}
-                      onSelect={(id) => { const r = rows.find(x => x.box.id === id); if (r) select(r.code, true); }}
-                      onHover={setHover} />
-                    <div className="fp-legend">
-                      {['available', 'hold', 'sold'].map(s => <span key={s}><i className={`fp-sw st-${s}`} />{STATUS[s].label}</span>)}
-                      {customs.map(s => <span key={s.id}><i className="fp-sw has-c" style={{ '--st-c': s.color }} />{s.name}</span>)}
-                      {rows.some(r => r.status === 'unlinked') && <span><i className="fp-sw st-unlinked" />Not linked</span>}
-                    </div>
-                  </>
-                )}
+                <label className="fpv-search"><Mi>search</Mi><input name="unit-search" value={q} onChange={e => setQ(e.target.value)} placeholder="Find a unit…" aria-label="Find a unit by name" /></label>
               </div>
 
-              <aside className="fpv-side">
-                <section className="fpv-card" ref={cardRef} aria-live="polite">
-                  {cur ? (
-                    <>
-                      <div className="fpv-eyebrow">{curFloor ? `${curFloor} · ` : ''}{cur.type}</div>
-                      <div className="fpv-name"><h2>{cur.code}</h2><span className={`fp-pill st-${cur.status}${look(cur).color ? ' has-c' : ''}`} style={tint(cur)}>{look(cur).label}</span></div>
-                      <div className="fpv-area">
-                        <span className="big">{cur.size ? cur.size.toLocaleString('en-IN') : '—'}</span><span className="unit">sqft</span>
-                        {cur.size > 0 && <span className="unit">· {(cur.size * SQM).toFixed(1)} m²</span>}
-                      </div>
-                      <dl className="fpv-meta">
-                        <dt>Price</dt><dd>{cur.price ? <>{taka(cur.price)}{cur.size > 0 && <span className="fpv-rate"> · {taka(cur.price / cur.size)}/sqft</span>}</> : '—'}</dd>
-                        <dt>Floor</dt><dd>{curFloor || '—'}</dd>
-                        {cur.loc.unit.clientName && <><dt>Client</dt><dd>{cur.loc.unit.clientName}</dd></>}
-                        {cur.loc.unit.holdUntil
-                          ? <><dt>Booked</dt><dd>Until {new Date(cur.loc.unit.holdUntil).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })}</dd></>
-                          : cur.loc.unit.heldByName && cur.status !== 'available' && <><dt>By</dt><dd>{cur.loc.unit.heldByName}</dd></>}
-                      </dl>
-                      <div className="fpv-nav">
-                        <button type="button" className="btn btn-g btn-sm" onClick={() => step(-1)}><Mi>chevron_left</Mi>Prev</button>
-                        <button type="button" className="btn btn-g btn-sm" onClick={() => step(1)}>Next<Mi>chevron_right</Mi></button>
-                      </div>
-                      {canGo
-                        ? <button type="button" className="btn btn-p btn-sm fpv-open" onClick={() => openConsole(cur)}><Mi>shopping_cart</Mi>Continue with {cur.code}</button>
-                        : <button type="button" className="btn btn-g btn-sm fpv-open" onClick={() => openConsole(null)}><Mi>storefront</Mi>Open project console</button>}
-                    </>
-                  ) : (
-                    <div className="fpv-hint"><Mi>touch_app</Mi><span>{mode === 'grid' ? 'Pick an available unit to continue with it.' : 'Pick a unit on the plan or in the list to see its details.'}</span></div>
-                  )}
+              {/* Grid · Plan · unit card. */}
+              <div ref={gridRef} className={`fpv-grid is-seats${plans.length ? '' : ' no-plan'}${paneH ? ' is-fit' : ''}`}
+                style={paneH ? { '--fpv-h': `${paneH}px` } : undefined}>
+                {/* The chosen floor's units, between the plan's optional landmarks.
+                    Seat-map style: legend on top, then "Select unit · N selected";
+                    free units are outlined, taken ones solid, the pick solid blue. */}
+                <section className="fpv-seats" aria-label={`Units on ${chipName || 'this floor'}`}>
+                  <div className="fp-legend fps-legend">
+                    <span><i className="fps-sw st-available" />Available</span>
+                    <span><i className="fps-sw is-sel" />Selected</span>
+                    <span><i className="fps-sw st-hold" />On hold</span>
+                    <span><i className="fps-sw st-sold" />Sold</span>
+                    {customs.map(s => <span key={s.id}><i className="fps-sw has-c" style={{ '--st-c': s.color }} />{s.name}</span>)}
+                  </div>
+                  <div className="fps-top"><span>Select unit</span><em>{cur ? `${cur.code} selected` : '0 selected'}</em></div>
+                  {chipPlan?.topLabel && <div className="fps-mark">{chipPlan.topLabel}</div>}
+                  {tiles()}
+                  {chipPlan?.bottomLabel && <div className="fps-mark">{chipPlan.bottomLabel}</div>}
                 </section>
 
-                {mode === 'plan' && (
-                  <section className="fpv-seats" aria-label="Units on this plan">{tiles()}</section>
+                {/* The drawing (viewPlan). Other units, and a picked unit on no plan, have none. */}
+                {plans.length > 0 && (
+                  <div className="fpv-planwrap">
+                    {viewPlan ? (
+                      <>
+                        <FloorPlanCanvas className="fpv-stage" image={viewPlan.image} boxes={boxes} label={`${viewPlan.name || 'Floor plan'} of ${proj.name || 'the project'}`}
+                          selectedId={selBoxId} hoverId={hover}
+                          onSelect={(id) => { const r = viewRows.find(x => x.box.id === id); if (r) select(r.code, true); }}
+                          onHover={setHover} />
+                        <div className="fp-legend">
+                          {/* All floors: which floor the drawing is */}
+                          {chip === ALL && <b className="fpv-plan-name">{viewPlan.name || 'Floor plan'}</b>}
+                          {['available', 'hold', 'sold'].map(s => <span key={s}><i className={`fp-sw st-${s}`} />{STATUS[s].label}</span>)}
+                          {customs.map(s => <span key={s.id}><i className="fp-sw has-c" style={{ '--st-c': s.color }} />{s.name}</span>)}
+                          {viewRows.some(r => r.status === 'unlinked') && <span><i className="fp-sw st-unlinked" />Not linked</span>}
+                        </div>
+                      </>
+                    ) : (
+                      <div className="fpv-plan-none"><Mi>map</Mi><span>{chip === OTHER || !cur ? 'These units are on no floor plan.' : `${cur.code} is on no floor plan.`}</span></div>
+                    )}
+                  </div>
                 )}
-              </aside>
 
-              {mode === 'grid' && (
+                <aside className="fpv-side">
+                  <section className="fpv-card" ref={cardRef} aria-live="polite">
+                    {cur ? (
+                      <>
+                        <div className="fpv-eyebrow">{curFloor ? `${curFloor} · ` : ''}{cur.type}</div>
+                        <div className="fpv-name"><h2>{cur.code}</h2><span className={`fp-pill st-${cur.status}${look(cur).color ? ' has-c' : ''}`} style={tint(cur)}>{look(cur).label}</span></div>
+                        <div className="fpv-area">
+                          <span className="big">{cur.size ? cur.size.toLocaleString('en-IN') : '—'}</span><span className="unit">sqft</span>
+                          {cur.size > 0 && <span className="unit">· {(cur.size * SQM).toFixed(1)} m²</span>}
+                        </div>
+                        <dl className="fpv-meta">
+                          <dt>Price</dt><dd>{cur.price ? <>{taka(cur.price)}{cur.size > 0 && <span className="fpv-rate"> · {taka(cur.price / cur.size)}/sqft</span>}</> : '—'}</dd>
+                          <dt>Floor</dt><dd>{curFloor || '—'}</dd>
+                          {cur.loc.unit.clientName && <><dt>Client</dt><dd>{cur.loc.unit.clientName}</dd></>}
+                          {cur.loc.unit.holdUntil
+                            ? <><dt>Booked</dt><dd>Until {new Date(cur.loc.unit.holdUntil).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })}</dd></>
+                            : cur.loc.unit.heldByName && cur.status !== 'available' && <><dt>By</dt><dd>{cur.loc.unit.heldByName}</dd></>}
+                        </dl>
+                        <div className="fpv-nav">
+                          <button type="button" className="btn btn-g btn-sm" onClick={() => step(-1)}><Mi>chevron_left</Mi>Prev</button>
+                          <button type="button" className="btn btn-g btn-sm" onClick={() => step(1)}>Next<Mi>chevron_right</Mi></button>
+                        </div>
+                        {canGo
+                          ? <button type="button" className="btn btn-p btn-sm fpv-open" onClick={() => openConsole(cur)}><Mi>shopping_cart</Mi>Continue with {cur.code}</button>
+                          : <button type="button" className="btn btn-g btn-sm fpv-open" onClick={() => openConsole(null)}><Mi>storefront</Mi>Open project console</button>}
+                      </>
+                    ) : (
+                      <div className="fpv-hint"><Mi>touch_app</Mi><span>{viewPlan ? 'Pick a unit on the plan or in the list to see its details.' : 'Pick an available unit to continue with it.'}</span></div>
+                    )}
+                  </section>
+                </aside>
+
                 <div className="fpv-cta" ref={ctaRef}>
                   {canGo && ctaOn && (
                     <button type="button" className="btn btn-p" onClick={() => openConsole(cur)}>
@@ -423,8 +453,8 @@ export default function AvailableUnitsView() {
                     </button>
                   )}
                 </div>
-              )}
-            </div>
+              </div>
+            </>
           )}
         </>
       )}

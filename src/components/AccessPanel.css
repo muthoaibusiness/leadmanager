@@ -1,0 +1,9 @@
+/* Users & Accounts › Access. Colours and radii are tokens; the px spacing
+   matches the .acc-* rules in index.css, which has no spacing tokens.
+   ds-allow-hardcode: spacing and type sizes follow the existing .acc-* scale. */
+.acc-tabs { align-self: flex-start }
+.acp-row { display: grid; grid-template-columns: 1fr; gap: 12px; margin-bottom: 18px }
+@media (min-width: 760px) { .acp-row { grid-template-columns: 2fr 1fr auto; align-items: end } }
+.acp-f { display: flex; flex-direction: column; gap: 6px; font-size: 12px; font-weight: 600; color: var(--t3) }
+.acp-err { display: flex; align-items: center; gap: 6px; margin-top: 12px; font-size: 13px; color: var(--red) }
+.acp-ft { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 10px; margin-top: 18px }

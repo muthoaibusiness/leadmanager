@@ -1,0 +1,120 @@
+/* Admin › Meta CAPI. Reuses the CRM's own pieces: .rf-ring/.rf-btn (Prospects
+   Refresh), .uct-bar/.uct-btn/.uct-search (Users toolbar), .bulk-bar, .pg-* (shared
+   Pagination), .mov/.modal, ui/loader, .ait-badge/.ait-row/.ait-trace and the
+   .bc-switch toggle. Only what is specific to this page lives here.
+
+   The root is .mcx, not .mc: index.css already owns .mc (the dashboard metric
+   card, with a backdrop blur via the #app card list). A backdrop-filter makes an
+   element the containing block for position: fixed children, so the history
+   dialog rendered inside the 2,800px-tall panel instead of over the viewport.
+
+   ds-allow-hardcode:start. The app defines radius and colour tokens only (no
+   spacing or type-scale tokens, see index.css); radii and colours use them,
+   spacing and sizes match the neighbouring .uct-bar / .uct-btn values. */
+.mcx { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.mcx-head { display: flex; flex-direction: column; gap: 12px; padding: 16px; }
+.mcx-meta { display: flex; gap: 8px 16px; align-items: center; justify-content: space-between; flex-wrap: wrap; }
+.mcx-stats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+@media (min-width: 640px) { .mcx-stats { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+@media (min-width: 1100px) { .mcx-stats { grid-template-columns: repeat(8, minmax(0, 1fr)); } }
+.mcx-stat { padding: 10px 12px; border-radius: var(--r); background: var(--surf2); min-width: 0; }
+.mcx-stat-n { font-size: 20px; font-weight: 700; font-variant-numeric: tabular-nums; min-height: 1.3em; }
+.mcx-stat-l { font-size: 12px; color: var(--t2); }
+.mcx-bots { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; }
+@media (min-width: 720px) { .mcx-bots { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.mcx-bot { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 12px; border-radius: var(--r); background: var(--surf2); min-width: 0; }
+.mcx-note { display: flex; gap: 8px; align-items: flex-start; font-size: 12.5px; color: var(--t2); }
+.mcx-note .mi { font-size: 16px; color: var(--orange); }
+
+/* First load: the loader holds the page's space until everything arrives together. */
+.mcx-boot { min-height: min(70vh, 640px); justify-content: center; }
+
+/* List card: the Users toolbar, one selection bar, table, pager. */
+.mcx-list { display: flex; flex-direction: column; min-width: 0; }
+
+/* The Users toolbar inside the card, held to one line: search takes the
+   slack and shrinks first; Filter, Sort and Export keep their size. */
+.mcx .mcx-bar { margin: 14px 16px 0; flex-wrap: nowrap; }
+.mcx .mcx-bar .uct-search { flex: 1 1 240px; min-width: 0; }
+.mcx .mcx-bar .uct-search input { min-width: 0; }
+.mcx .mcx-bar .uct-bar-r { flex: none; flex-wrap: nowrap; }
+.mcx-bar .uct-btn { white-space: nowrap; }
+/* Created range inside the Filter menu. */
+.mcx-dates { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; padding: 2px 10px 6px; }
+.mcx-dates label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--t2); }
+.mcx-dates input { height: 36px; min-width: 0; padding: 0 8px; border: 1px solid var(--bd); border-radius: var(--r-sm); background: var(--surf); color: var(--t1); font: inherit; font-size: 13px; }
+.mcx-dates input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+/* The Prospects .bulk-bar shape, on the page's neutral surface. Always shown,
+   so ticking a box never shifts the table. */
+.mcx .bulk-bar { margin: 12px 16px 0; background: var(--surf2); border: 1px solid var(--bd); flex-wrap: wrap; }
+.mcx .bulk-ct { color: var(--t1); font-variant-numeric: tabular-nums; }
+.mcx-confirm { display: flex; flex-direction: column; gap: 8px; margin: 12px 16px 0; padding: 12px; border-radius: var(--r); border: 1px solid var(--green); background: var(--surf2); }
+.mcx-confirm.danger { border-color: var(--red); }
+.mcx-results { margin: 12px 16px 0; padding-left: 18px; font-size: 13px; display: flex; flex-direction: column; gap: 2px; }
+
+.mcx-table-wrap { position: relative; overflow-x: auto; -webkit-overflow-scrolling: touch; max-width: 100%; margin-top: 12px; min-height: 240px; }
+.mcx-table-wrap.busy .mcx-table, .mcx-table-wrap.busy .empty { opacity: .45; transition: opacity .12s ease; }
+.mcx-veil { position: absolute; inset: 0; z-index: 1; display: flex; justify-content: center; align-items: flex-start; padding-top: 48px; pointer-events: none; }
+.mcx-busy .mcx-stat-n { opacity: .55; transition: opacity .12s ease; }
+.mcx-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.mcx-table th, .mcx-table td { padding: 10px 12px; text-align: left; border-bottom: 1px solid var(--bd); white-space: nowrap; vertical-align: middle; }
+.mcx-table th { font-weight: 600; font-size: 12px; color: var(--t2); }
+.mcx-table th:first-child, .mcx-table td:first-child { width: 44px; padding-right: 0; }
+.mcx-table input[type="checkbox"] { width: 18px; height: 18px; accent-color: var(--green); cursor: pointer; }
+.mcx-table input[type="checkbox"]:disabled { cursor: not-allowed; opacity: .4; }
+/* Not `.sel`: ui/select.css owns it (inline-flex column) and it turned selected rows into a stack. */
+.mcx-table tr.mcx-row-sel td { background: var(--surf2); }
+.mcx-why { font-size: 12px; color: var(--t3); }
+.mcx-id { font-size: 12px; color: var(--t3); }
+/* The lead id under the name is for matching, not reading: one short line, full id on hover. */
+.mcx-table td .mcx-id { display: block; max-width: 150px; overflow: hidden; text-overflow: ellipsis; }
+.mcx-hist-btn { width: 32px; height: 32px; display: inline-flex; align-items: center; justify-content: center; border: 1px solid var(--bd); border-radius: 50%; background: var(--surf); color: var(--t2); cursor: pointer; }
+.mcx-hist-btn:hover { color: var(--t1); border-color: var(--bd2); }
+.mcx-hist-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.mcx-loading { display: flex; justify-content: center; padding: 24px 0; }
+.mcx .empty .btn { margin-top: 12px; }
+.mcx .pg-wrap { margin-top: 0; }
+
+/* History dialog. */
+.mcx-hist { display: flex; flex-direction: column; gap: 12px; overflow-y: auto; }
+.mcx-kv { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 6px 14px; margin: 0; font-size: 13px; }
+.mcx-kv dt { color: var(--t2); }
+.mcx-kv dd { margin: 0; overflow-wrap: anywhere; }
+.mcx-kv code, .mcx-table code { font-size: 12px; }
+.mcx-pre { margin: 4px 0 0; padding: 8px; border-radius: var(--r-sm); background: var(--surf); border: 1px solid var(--bd); font-size: 12px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); border: 0; }
+
+/* Status text: the hue says which, the mix with the text colour keeps it at
+   AA (4.5:1) on the badge in both themes. Scoped to this page. */
+.mcx .ait-badge.pass, .mov .ait-badge.pass { color: color-mix(in srgb, var(--green) 62%, var(--t1)); }
+.mcx .ait-badge.fail, .mov .ait-badge.fail { color: color-mix(in srgb, var(--red) 58%, var(--t1)); }
+.mcx .ait-badge.inc, .mov .ait-badge.inc { color: color-mix(in srgb, var(--orange) 52%, var(--t1)); }
+
+/* Report preview: the PDF's own header lines and table, nothing else. */
+.mcx-rep { display: flex; flex-direction: column; gap: 12px; }
+.mcx-rep-brand { font-size: 16px; font-weight: 700; }
+.mcx-rep-t { width: 100%; border-collapse: collapse; font-size: 13px; font-variant-numeric: tabular-nums; }
+.mcx-rep-t th, .mcx-rep-t td { padding: 7px 10px; border: 1px solid var(--bd); text-align: left; }
+.mcx-rep-t th { background: var(--surf2); font-weight: 600; }
+.mcx-rep-t th:last-child, .mcx-rep-t td:last-child { text-align: right; }
+/* Prints the generated PDF without showing it; removed when the preview closes. */
+.mcx-print-frame { position: fixed; right: 0; bottom: 0; width: 0; height: 0; border: 0; }
+
+/* Phones: the selection bar as before. Inputs stay 16px so iOS does not zoom. */
+@media (max-width: 767px) {
+  .mcx .bulk-bar { margin: 12px 12px 0; }
+  .mcx .bulk-bar .btn { flex: 1 1 0; justify-content: center; padding: 8px 6px; white-space: nowrap; letter-spacing: .02em; }
+  .mcx .bulk-bar .btn .mi, .mcx .mcx-wide { display: none; }
+  .mcx .bulk-ct { flex: 1 1 100%; }
+  .mcx .mcx-bar .uct-search input, .mcx-dates input { font-size: 16px; }
+}
+/* The Users toolbar's breakpoint: Filter, Sort and Export drop to icons so the
+   bar stays one line; their aria-labels name them. */
+@media (max-width: 640px) {
+  .mcx .mcx-bar, .mcx .mcx-bar .uct-bar-r { gap: 6px; }
+  .mcx .mcx-bar { margin: 12px 12px 0; }
+  .mcx-bar .uct-btn { padding: 0 10px; }
+  .mcx-bar .mcx-lbl, .mcx-bar .uct-chev { display: none; }
+}
+/* ds-allow-hardcode:end */

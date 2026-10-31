@@ -1,8 +1,9 @@
-import { ROLES, normRole, isNiHandler, STATUS_LABELS, SRC_LABELS, PAST_CONTACT, OFFER_MAX } from './constants.js';
+import { ROLES, normRole, isNiHandler, canSelfForward, STATUS_LABELS, SRC_LABELS, PAST_CONTACT, OFFER_MAX } from './constants.js';
 import { setOfferResolver } from './offerRegistry.js';
 import { uid, now_, fmtBDT, fmtDT, curMonth, startOfMonth, rlabel } from './helpers.js';
 import { leadFilterParam, ORDER } from './leadQuery.js';
-import { sbGet, sbGetAll, sbCount, sbPage, hasColumn, sbRpc, sbUpdate, sbInsert, sbUpsert, sbMarkRead, sbDelete, sbDeleteLeads, sbEmailsInUse, sbUserIdsByRole, sbActsForLead, sbLoadActWindow, ACT_WINDOW_DAYS, lToR, rToL, uToR, rToU, tToR, rToT, aToR, rToA, rToN, tgToR, rToTg, pToR, rToP, bkToR, rToBk, cToR, rToC, hrToR, rToHr, sbUpsertNotifs } from './supabase.js';
+import { COUNTED } from './contactPerf.js';
+import { sbGet, sbGetAll, sbCount, sbPage, hasColumn, sbRpc, sbRpcCall, sbUpdate, sbPatchRows, sbInsert, sbUpsert, sbMarkRead, sbDelete, sbDeleteLeads, sbUserIdsByRole, sbActsForLead, sbLoadActWindow, sbLoadLeadUpdates, sbLoadLeadsSince, ACT_WINDOW_DAYS, lToR, rToL, uToR, rToU, tToR, rToT, aToR, rToA, rToN, tgToR, rToTg, pToR, rToP, bkToR, rToBk, cToR, rToC, hrToR, rToHr, sbUpsertNotifs } from './supabase.js';
 // Bumped from propcrm_v1 when the cloud load became tenant-scoped: every
 // existing browser is carrying a full multi-tenant snapshot under the old key,
 // and mergeDB would happily fold it back in on top of the scoped one. A new key
@@ -167,8 +168,9 @@ export function purgeDemoSeed(db) {
   const killUsers = (db.users || []).filter(u => DEMO_SEED_EMAILS.includes((u.email || '').toLowerCase())).map(u => u.id);
   if (killUsers.length) {
     const s = new Set(killUsers);
+    // Cache only: a stray demo account in the cloud is removed by an admin
+    // through access-admin, never by a browser's bulk delete (CR-001 D1).
     db.users = db.users.filter(u => !s.has(u.id));
-    sbDelete('users', killUsers);
     changed = true;
   }
   if (db.teams && db.teams.some(t => t.id === 't1')) {
@@ -327,7 +329,13 @@ export function applyRealtimeEvent(table, eventType, record, oldRecord, user, er
     }
   };
 
-  if (table === 'users') handleArrayEvent('users', rToU, uToR);
+  if (table === 'users') {
+    handleArrayEvent('users', rToU, uToR);
+    // An admin changed my own row (access, role, deactivation): the session
+    // user must follow, or a revoked page stays open until the next reload.
+    const me = user && record && record.id === user.id && _DB.users.find(x => x.id === user.id);
+    if (me && eventType === 'UPDATE') _selfListeners.forEach(fn => fn(me));
+  }
   else if (table === 'teams') handleArrayEvent('teams', rToT, tToR);
   else if (table === 'leads') handleArrayEvent('leads', rToL, lToR);
   else if (table === 'companies') handleArrayEvent('companies', rToC, cToR);
@@ -429,7 +437,7 @@ function persistLocal(db) {
   for (const make of attempts) {
     try {
       localStorage.setItem(KEY, make());
-      const sid = JSON.parse(localStorage.getItem('pcrm_sess') || 'null')?.id;
+      const sid = sessionUserId();
       if (sid) localStorage.setItem(OWNER_KEY, sid);
       return true;
     }
@@ -448,71 +456,38 @@ export function mutate(fn) {
   saveDB(db);
 }
 
+const _selfListeners = new Set();
+export function onSelfChange(fn) { _selfListeners.add(fn); return () => _selfListeners.delete(fn); }
+
 // ── Auth ──
-export function tryLogin(email, pass) {
-  const db = getDB();
-  return db.users.find(u => u.email.toLowerCase() === email.toLowerCase() && u.password === pass) || null;
-}
+// Sign-in, refresh and sign-out are in auth.js (Supabase Auth, CR-001 D1).
+// The stored session is GoTrue's token pair plus `uid`, the CRM account the
+// server resolved for it. A legacy `pcrm_sess` (a bare user id anyone could
+// edit) is never read as a session.
+import { SESSION_KEY } from './supabase.js';
+export { SESSION_KEY };
+const readAuth = () => { try { return JSON.parse(localStorage.getItem(SESSION_KEY) || 'null'); } catch { return null; } };
+// Drop the pre-D1 session key on load: it grants nothing now, and leaving it
+// would let an older cached build trust it.
+try { localStorage.removeItem('pcrm_sess'); } catch { /* storage disabled */ }
+export const sessionUserId = () => {
+  const s = readAuth();
+  if (!s) return null;
+  if (s.legacy && s.uid) return s.uid;
+  return s.access_token && s.refresh_token ? s.uid || null : null;
+};
 
-// Columns login needs. Deliberately explicit: the bulk load must NOT ship
-// `password`, and this filtered lookup is the only place it is fetched.
-const LOGIN_COLS = 'id,name,email,password,phone,role,team_id,company_id,is_active,avatar,projects,allowed_features';
+// "Is there a signed-in session at all", without the network. True only for a
+// token pair whose account was resolved by the server at sign-in or restore.
+export function hasSessionId() { return !!sessionUserId(); }
 
-// Login against the cloud without needing the whole `users` table in memory.
-// Tries the cached DB first (keeps working offline / on a warm cache), then
-// falls back to a single filtered row.
-//
-// `ilike` — not `eq` — because tryLogin's cached comparison is case-insensitive
-// while PostgREST's `eq` is not, so `eq` would reject on a cold cache the exact
-// logins that succeed on a warm one. `ilike` treats `_` (common in emails) and
-// `%` as wildcards, so it can over-match; the match below re-checks the address
-// exactly, making the server-side filter a narrowing hint rather than the test.
-export async function loginRemote(email, pass) {
-  const local = tryLogin(email, pass);
-  if (local) return local;
-  const wanted = String(email).trim().toLowerCase();
-  const rows = await sbGet(`users?email=ilike.${encodeURIComponent(wanted)}&select=${LOGIN_COLS}`);
-  const hit = (rows || []).map(rToU)
-    .find(u => u.email && u.email.toLowerCase() === wanted && u.password === pass);
-  if (hit) return hit;
-
-  // Bootstrap escape hatch. migrateTenancy mints the built-in master account
-  // when no user exists anywhere; it used to run on every cold boot, but that
-  // boot now happens after login, so a brand-new deployment (empty cache AND
-  // empty cloud) would have nothing to sign in with. Only fires when the whole
-  // dataset is empty, so it cannot resurrect a deleted master.
-  const db = getDB();
-  if (!db.users.length && !(rows || []).length) {
-    migrateTenancy(db);
-    saveDB(db);
-    return tryLogin(email, pass);
-  }
-  return null;
-}
-
-// Cheap "is there a session at all" probe. getSession() resolves the stored id
-// against getDB().users, so on a cold visit with an empty cache it returns null
-// even when a valid session exists — it cannot be used to decide whether to
-// skip the initial load.
-export function hasSessionId() {
-  try { return !!JSON.parse(localStorage.getItem('pcrm_sess') || 'null')?.id; }
-  catch { return false; }
-}
-
+// The cached row of the signed-in account, for the warm first paint. App
+// re-verifies the token with restoreSession() right after and signs out if the
+// server disagrees, so this never decides access on its own.
 export function getSession() {
-  try {
-    const s = JSON.parse(localStorage.getItem('pcrm_sess'));
-    if (!s) return null;
-    return getDB().users.find(u => u.id === s.id) || null;
-  } catch { return null; }
+  const id = sessionUserId();
+  return id ? getDB().users.find(u => u.id === id) || null : null;
 }
-
-// Deliberately does NOT stamp OWNER_KEY. The session is set at login, BEFORE
-// the old tenant's snapshot has been cleared, so stamping here would mark the
-// outgoing user's cache as belonging to the incoming one and cacheBelongsTo
-// would wave it through. Only persistLocal stamps, once the data is actually
-// this account's.
-export function setSession(u) { localStorage.setItem('pcrm_sess', JSON.stringify({ id: u.id })); }
 
 // Drop the cached snapshot AND the in-memory singleton. Since the snapshot now
 // only ever holds one company's rows, leaving it behind for the next account to
@@ -525,6 +500,7 @@ export function clearLocalDB() {
 }
 
 export function clearSession() {
+  localStorage.removeItem(SESSION_KEY);
   localStorage.removeItem('pcrm_sess');
   clearLocalDB();
 }
@@ -534,15 +510,6 @@ export function clearSession() {
 // tab crashed, and someone else signs in.
 export function cacheBelongsTo(userId) {
   try { return localStorage.getItem(OWNER_KEY) === userId; } catch { return false; }
-}
-
-// Fetch one user row by id, without needing the users table in memory. Session
-// restore on a cold cache has a stored id but no user, and the scoped load needs
-// the user (for companyId) before it can build its filters — chicken and egg.
-export async function fetchSessionUser(id) {
-  if (!id) return null;
-  const rows = await sbGet(`users?id=eq.${encodeURIComponent(id)}&select=${LOGIN_COLS}`);
-  return (rows && rows[0]) ? rToU(rows[0]) : null;
 }
 
 // ── Queries ──
@@ -1055,6 +1022,24 @@ export function ensureActWindow(user, days = ACT_WINDOW_DAYS) {
   return promise;
 }
 
+// The updates Home's contact tracker counts (lib/contactPerf.js COUNTED:
+// status changes and follow-ups) since `since` (ISO), straight from the cloud.
+// Shaped like updatesFromActs' output; null when the load fails. Nothing is
+// cached in _DB: the rows are a count source, and db.activities keeps feeding
+// the tracker live updates through realtime.
+export async function loadLeadUpdates(user, since) {
+  const rows = await sbLoadLeadUpdates(user, since, [...COUNTED]);
+  return rows && rows.map(r => ({ id: r.id, leadId: r.lead_id, type: r.type, userId: r.user_id, timestamp: r.timestamp, companyId: r.company_id ?? null }));
+}
+// Leads created since `since` (ISO), straight from the cloud, for Home's
+// lead-source card (lib/sourceMix.js): { id, source, createdAt, companyId }
+// only; null when the load fails. Not cached in _DB (the lead book owns
+// db.leads; realtime keeps feeding the card new leads through it).
+export async function loadNewLeads(user, since) {
+  const rows = await sbLoadLeadsSince(user, since);
+  return rows && rows.map(r => ({ id: r.id, source: r.source, createdAt: r.created_at, companyId: r.company_id ?? null }));
+}
+
 // Forget that a lead's history was fully loaded. Must be called wherever
 // db.activities[leadId] is dropped, or a lead id reused after a delete would
 // render an empty timeline and never refetch.
@@ -1186,17 +1171,36 @@ export function userNameById(userId, fallback = null) {
   return (u && u.name) || fallback;
 }
 
-// Update an agent's editable fields (name/phone) and project assignment.
-// projects: 'ALL' (all projects) | array of property ids | [] (none).
-export function updateAgent(userId, fields) {
-  let updated;
+// Save the signed-in account's own profile fields (migration 0054 grants
+// UPDATE on these three only). Sends only what changed, so a stale cached copy
+// can never write old values back over somebody else's newer edit, and waits
+// for the row PostgREST returns: 0 rows means RLS or a deleted row refused it,
+// and the cache stays as it was. Access, role and projects go through
+// access-admin (accessAdmin.js), never through here.
+const PROFILE_FIELDS = { name: 'name', phone: 'phone', avatar: 'avatar' };
+export async function updateProfile(userId, fields) {
+  const cur = getDB().users.find(x => x.id === userId);
+  if (!cur) return { ok: false, error: 'Account not found. Reload and try again.' };
+  const patch = {};
+  for (const [k, col] of Object.entries(PROFILE_FIELDS)) {
+    if (k in fields && (fields[k] ?? '') !== (cur[k] ?? '')) patch[col] = fields[k] ?? '';
+  }
+  if (!Object.keys(patch).length) return { ok: true, user: cur };
+  const r = await sbPatchRows('users', `id=eq.${encodeURIComponent(userId)}`, patch, 'id,name,phone,avatar');
+  if (!r.ok || !r.rows.length) return { ok: false, error: r.error || 'Not saved: the server accepted no change. Reload and try again.' };
+  return { ok: true, user: storeUserRow(r.rows[0]) };
+}
+
+// Lay a users row the server returned over the cached account and persist it.
+export function storeUserRow(row) {
+  let out;
   mutate(db => {
-    const u = db.users.find(x => x.id === userId);
-    if (u) { Object.assign(u, fields); updated = u; }
+    const i = db.users.findIndex(x => x.id === row.id);
+    const merged = rToU(i >= 0 ? { ...uToR(db.users[i]), ...row } : row);
+    if (i >= 0) db.users[i] = merged; else db.users.push(merged);
+    out = merged;
   });
-  // Push to the cloud too. Without this the edit lives only in localStorage and
-  // the next reload wipes it: sbLoad + mergeDB take the remote snapshot wholesale.
-  if (updated) sbUpdate('users', userId, uToR(updated));
+  return out;
 }
 
 // Resolve the projects an agent may deal on ('ALL' or array of ids).
@@ -1664,6 +1668,32 @@ export function bulkTransferLeads(leadIds, target, user) {
   return leadIds.length;
 }
 
+// Self-forward: while nurturing a lead, claim it for yourself instead of
+// waiting on a Management transfer. Meeting Agents always have this; anyone
+// else needs the 'self_forward' feature grant (see canSelfForward() /
+// FEATURE_KEYS in constants.js). Permission lives here (not just the button
+// that calls it) since bulkTransferLeads above trusts its caller completely.
+export function claimLeadForSelf(leadId, user) {
+  if (!leadId || !canSelfForward(user)) return false;
+  const l = getLead(leadId);
+  const prev = l?.previousAssignees || [];
+  updLead(leadId, {
+    teamId: user.teamId,
+    assignedTo: user.id,
+    assignedToName: user.name,
+    assignedRole: user.role,
+    previousAssignees: l && l.assignedTo && !prev.includes(l.assignedTo) ? [...prev, l.assignedTo] : prev,
+  });
+  addAct(leadId, {
+    type: 'FORWARDED',
+    description: `Forwarded to self by ${user.name} (${rlabel(user.role)})`,
+    userId: user.id,
+    userName: user.name,
+    durationSeconds: 0,
+  });
+  return true;
+}
+
 // Remove duplicate leads from the DB (keep newest per phone / name+email). Used
 // as a one-shot cleanup on load so the app stops re-uploading dupes to the cloud.
 export function dedupeLeads(db) {
@@ -1861,75 +1891,137 @@ export function setFollowUpFn(leadId, days, user) {
   addAct(leadId, { type: 'FOLLOW_UP', description: 'Follow-up reminder set for ' + days + ' day' + (days == 1 ? '' : 's') + ' — ' + new Date(iso).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }), userId: user.id, userName: user.name, durationSeconds: 0 });
 }
 
-// Schedule a follow-up at an exact date+time (ISO string).
-export function setFollowUpAt(leadId, iso, user) {
-  updLead(leadId, { nextFollowup: iso });
-  const when = new Date(iso).toLocaleString('en-GB', { weekday: 'short', day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
-  addAct(leadId, { type: 'FOLLOW_UP', description: 'Follow-up scheduled for ' + when, userId: user.id, userName: user.name, durationSeconds: 0 });
+// The follow-up rules (migration 0049). The database enforces the row values
+// (the cap, suppression clearing next_followup, the requested time); these
+// helpers mirror them so the UI shows the same thing before it asks.
+//
+// An attempt is a CALL with no answer (logNoAnswer). A connected call
+// (LogCall) is not one. Changing status resets the count, as before.
+export const MAX_ATTEMPTS = 5;
+const CLOSED = ['DEAL_CLOSED_WON', 'DEAL_CLOSED_LOST'];
+const fuWhen = (iso) => new Date(iso).toLocaleString('en-GB', { weekday: 'short', day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
+
+// Why follow-ups are off for a lead, or null. A count already at 5 or more
+// (leads from before 0049, live up to 7) reads as used up even though 0049 does
+// not suppress them; whether to suppress those rows is a separate decision.
+export function followUpBlock(lead) {
+  if (!lead) return 'closed';
+  if (CLOSED.includes(lead.status)) return 'closed';
+  if (lead.followupSuppressedAt) return lead.followupSuppressedReason || 'NO_LONGER_RESPONDING';
+  if ((lead.noAnswerCount || 0) >= MAX_ATTEMPTS) return 'ATTEMPTS_EXHAUSTED';
+  return null;
 }
 
-// 24h cool-off applied once an agent burns through a batch of attempts.
-const NO_ANSWER_LOCK_MS = 24 * 60 * 60 * 1000;
+// next_followup is text in toISOString() form (verified live). Never earlier
+// than the customer-requested time. Compared by instant, never as strings.
+export function nextFollowupFor(lead, when) {
+  const want = new Date(when).getTime();
+  const floor = lead?.followupNotBefore ? Date.parse(lead.followupNotBefore) : NaN;
+  return new Date(Number.isFinite(floor) && floor > want ? floor : want).toISOString();
+}
 
-// Returns the active lock expiry (a Date in the future) if the lead is currently
-// locked for no-answer, else null. A lock whose time has passed reads as null —
-// the lead is free again and the next attempt starts a fresh batch.
+// Schedule a follow-up at an exact date+time (ISO string). With
+// customerRequested, that time also becomes the earliest any follow-up may be
+// set (followup_not_before). Ignored on a lead whose follow-ups are off.
+export function setFollowUpAt(leadId, iso, user, { customerRequested = false } = {}) {
+  const lead = getLead(leadId);
+  if (lead && lead.followupSuppressedAt) return;
+  const patch = customerRequested
+    ? { nextFollowup: new Date(iso).toISOString(), followupNotBefore: new Date(iso).toISOString() }
+    : { nextFollowup: nextFollowupFor(lead, iso) };
+  updLead(leadId, patch);
+  addAct(leadId, {
+    type: 'FOLLOW_UP',
+    description: (customerRequested ? 'Follow-up set for when the customer asked — ' : 'Follow-up scheduled for ') + fuWhen(patch.nextFollowup),
+    userId: user.id, userName: user.name, durationSeconds: 0,
+  });
+}
+
+// Stop follow-ups because the customer no longer responds. The lead, its
+// status and its history stay. Lifting it is clearFollowupSuppression().
+// Who may do either is a UI rule only (see LeadPanel): every request uses the
+// public key, so the database cannot tell a manager from an agent.
+export function setNoLongerResponding(leadId, user) {
+  updLead(leadId, { followupSuppressedAt: now_(), followupSuppressedReason: 'NO_LONGER_RESPONDING', nextFollowup: null });
+  addAct(leadId, { type: 'FOLLOW_UP', description: 'No longer responding — follow-ups stopped', userId: user.id, userName: user.name, durationSeconds: 0 });
+}
+
+// Lift a suppression the UI allows lifting. NOT_INTERESTED_X2 is permanent:
+// the database keeps it whatever this sends.
+export function clearFollowupSuppression(leadId, user) {
+  updLead(leadId, { followupSuppressedAt: null, followupSuppressedReason: null });
+  addAct(leadId, { type: 'FOLLOW_UP', description: 'Follow-ups resumed', userId: user.id, userName: user.name, durationSeconds: 0 });
+}
+
+// Kept for leads still carrying a lock from before 0049 (it lapses on its own).
 export function noAnswerLock(lead) {
   const until = lead?.noAnswerLockUntil ? new Date(lead.noAnswerLockUntil) : null;
   return until && until > new Date() ? until : null;
 }
 
-// Phase-1 "No Answer": log a 0-min call attempt and auto-schedule a same-time
-// follow-up for tomorrow, keeping status unchanged. After `maxAttempts` no-answers
-// the lead is LOCKED for 24h — its status is NOT changed (no auto-disqualify);
-// once the lock lifts the agent is granted a fresh batch of attempts. Calling
-// while still locked is a no-op that returns { locked: true, lockUntil }.
-// Returns { attempts, hitCap, locked, lockUntil }.
-export function logNoAnswer(leadId, user, maxAttempts = 7) {
-  const lead = getLead(leadId);
-  if (!lead) return { attempts: 0, hitCap: false, locked: false };
+// "No Answer": a 0-min call attempt, a follow-up for tomorrow, status unchanged.
+// The count lives on the server (lead_log_no_answer, 0049): one atomic
+// increment, at most MAX_ATTEMPTS, and the 5th stops follow-ups. Each click
+// gets one request id, reused on a network retry, so a retry never counts
+// twice; a second click while the first is in flight joins it.
+// Returns { attempts, counted, hitCap, suppressed, nextFollowup } or
+// { error: true }.
+const _naInflight = new Map();
+export function logNoAnswer(leadId, user) {
+  if (_naInflight.has(leadId)) return _naInflight.get(leadId);
+  const p = logNoAnswerOnce(leadId, user).finally(() => _naInflight.delete(leadId));
+  _naInflight.set(leadId, p);
+  return p;
+}
 
-  const now = new Date();
-  const lockUntil = lead.noAnswerLockUntil ? new Date(lead.noAnswerLockUntil) : null;
-
-  // Still inside the 24h cool-off → refuse; the lead is locked.
-  if (lockUntil && lockUntil > now) {
-    return { attempts: lead.noAnswerCount || 0, hitCap: true, locked: true, lockUntil: lockUntil.toISOString() };
-  }
-
-  // A lapsed lock means the cool-off elapsed → start a fresh batch of attempts.
-  const prior = lockUntil ? 0 : (lead.noAnswerCount || 0);
-  const attempts = prior + 1;
-  const callTotal = (lead.callCount || 0) + 1;
-  const hitCap = attempts >= maxAttempts;
-
-  const patch = { noAnswerCount: attempts, callCount: callTotal };
-  if (hitCap) {
-    // Lock for 24h without touching status; resurface via a follow-up when it lifts.
-    const until = new Date(now.getTime() + NO_ANSWER_LOCK_MS);
-    patch.noAnswerLockUntil = until.toISOString();
-    patch.nextFollowup = until.toISOString();
-  } else {
-    patch.noAnswerLockUntil = null;
-    const next = new Date(); next.setDate(next.getDate() + 1);
-    patch.nextFollowup = next.toISOString();
-  }
-  updLead(leadId, patch);
-
-  addAct(leadId, {
-    type: 'CALL', result: 'No Answer', durationSeconds: 0,
-    description: 'Call attempt · No Answer (' + attempts + '/' + maxAttempts + ')',
-    userId: user.id, userName: user.name,
+async function logNoAnswerOnce(leadId, user) {
+  const requestId = globalThis.crypto.randomUUID();
+  const res = await sbRpcCall('lead_log_no_answer', { p_lead_id: leadId, p_user_id: user.id, p_user_name: user.name, p_request_id: requestId });
+  if (res.missing) return logNoAnswerLocal(leadId, user);
+  if (res.error) return { error: true };
+  const row = (res.data || [])[0];
+  if (!row) return { error: true };
+  const patch = {
+    noAnswerCount: row.attempts, noAnswerLockUntil: null, nextFollowup: row.next_followup ?? null,
+    followupSuppressedReason: row.suppressed_reason ?? null,
+  };
+  if (row.suppressed_reason) patch.followupSuppressedAt = getLead(leadId)?.followupSuppressedAt || now_();
+  if (row.counted) patch.callCount = (getLead(leadId)?.callCount || 0) + 1;
+  mutate(db => {
+    const i = db.leads.findIndex(l => l.id === leadId);
+    if (i >= 0) db.leads[i] = { ...db.leads[i], ...patch };
   });
-  const when = new Date(patch.nextFollowup).toLocaleString('en-GB', { weekday: 'short', day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
+  // The server wrote the CALL and FOLLOW_UP rows; the timeline refetches them.
+  forgetLeadActs(leadId);
+  return {
+    attempts: row.attempts, counted: !!row.counted,
+    hitCap: row.attempts >= MAX_ATTEMPTS, suppressed: !!row.suppressed_reason,
+    nextFollowup: row.next_followup ?? null,
+  };
+}
+
+// Before 0049 is applied: the old browser-side path, now capped at
+// MAX_ATTEMPTS with no 24h lock. Two devices can still lose a count here,
+// which is what the server function fixes.
+function logNoAnswerLocal(leadId, user) {
+  const lead = getLead(leadId);
+  if (!lead) return { error: true };
+  const prior = lead.noAnswerCount || 0;
+  if (prior >= MAX_ATTEMPTS || followUpBlock(lead) === 'closed') {
+    return { attempts: prior, counted: false, hitCap: prior >= MAX_ATTEMPTS, suppressed: false, nextFollowup: lead.nextFollowup || null };
+  }
+  const attempts = prior + 1;
+  const hitCap = attempts >= MAX_ATTEMPTS;
+  const next = new Date(); next.setDate(next.getDate() + 1);
+  const patch = { noAnswerCount: attempts, callCount: (lead.callCount || 0) + 1, noAnswerLockUntil: null, nextFollowup: hitCap ? null : nextFollowupFor(lead, next) };
+  updLead(leadId, patch);
+  addAct(leadId, { type: 'CALL', durationSeconds: 0, description: 'Call attempt · No Answer (' + attempts + '/' + MAX_ATTEMPTS + ')', userId: user.id, userName: user.name });
   addAct(leadId, {
     type: 'FOLLOW_UP', durationSeconds: 0,
-    description: hitCap
-      ? maxAttempts + ' attempts reached — locked 24h, retry after ' + when
-      : 'Auto follow-up next day — ' + when,
+    description: hitCap ? MAX_ATTEMPTS + ' attempts reached — follow-ups stopped' : 'Auto follow-up next day — ' + fuWhen(patch.nextFollowup),
     userId: user.id, userName: user.name,
   });
-  return { attempts, hitCap, locked: false, lockUntil: hitCap ? patch.noAnswerLockUntil : null };
+  return { attempts, counted: true, hitCap, suppressed: false, nextFollowup: patch.nextFollowup };
 }
 
 // Agent attended the scheduled meeting — flag it + log to the timeline.
@@ -2026,31 +2118,34 @@ export function markLostFn(leadId, reason, user) {
     (userId) => ({ userId, type: 'DEAL_LOST', message: 'Deal lost: ' + l.name, leadId }), user);
 }
 
+// Runs on every app load, in every tab, so each reminder has to be created
+// exactly once. Its id is fixed by lead, recipient and due time: a reload, a
+// second tab or a retry produces the same id, the cloud insert ignores it
+// (ignore-duplicates, so a read reminder stays read), and a rescheduled
+// follow-up gets a new one. nextFollowup is left as it is — the agent clears it
+// (clearFollowup) or reschedules it.
+const NO_REMINDER = ['DEAL_CLOSED_WON', 'DEAL_CLOSED_LOST'];
 export function checkFollowUpReminders(db) {
-  const now = new Date();
-  const notifList = [];
+  const now = Date.now();
+  const toInsert = [];
+  if (!db.notifications) db.notifications = {};
   // `leads` is a cache now, not a guaranteed key — sbLoad no longer ships it.
   (db.leads || []).forEach(lead => {
-    if (!lead.nextFollowup) return;
-    if (new Date(lead.nextFollowup) > now) return;
-    const tl = db.users.find(u => u.id === lead.assignedTo);
-    if (!tl) return;
-    notifList.push({ userId: tl.id, type: 'FOLLOW_UP', message: 'Follow-up reminder: ' + lead.name, leadId: lead.id });
-    lead.nextFollowup = null;
+    const due = Date.parse(lead.nextFollowup);
+    if (!(due <= now)) return; // unset, invalid, or not due yet
+    if (NO_REMINDER.includes(lead.status)) return;
+    // followupSuppressedAt arrives with migration 0049; until then it is never set.
+    if (lead.followupSuppressedAt) return;
+    const to = db.users.find(u => u.id === lead.assignedTo);
+    if (!to) return;
+    const id = `fu-${lead.id}-${to.id}-${due}`;
+    const list = db.notifications[to.id] || (db.notifications[to.id] = []);
+    if (list.some(n => n.id === id)) return;
+    const n = { id, type: 'FOLLOW_UP', message: 'Follow-up reminder: ' + lead.name, leadId: lead.id, timestamp: now_(), read: false, userId: to.id, companyId: lead.companyId ?? to.companyId ?? null };
+    list.unshift(n);
+    toInsert.push(n);
   });
-  if (notifList.length) {
-    if (!db.notifications) db.notifications = {};
-    const ts = now_();
-    notifList.forEach(({ userId, type, message, leadId }) => {
-      if (!db.notifications[userId]) db.notifications[userId] = [];
-      const companyId = db.users.find(u => u.id === userId)?.companyId ?? null;
-      const n = { id: 'n' + uid(), type, message, leadId, timestamp: ts, read: false, userId, companyId };
-      db.notifications[userId].unshift(n);
-    });
-    sbUpsertNotifs(notifList.map(({ userId, type, message, leadId }) => ({
-      id: 'n' + uid(), userId, type, message, leadId, timestamp: ts, read: false,
-    })));
-  }
+  if (toInsert.length) sbUpsertNotifs(toInsert, { ignoreDuplicates: true });
 }
 
 export function addNote(leadId, txt, user) {
@@ -2106,42 +2201,13 @@ export function setTargetFn(userId, val) {
   if (saved) sbUpsert('targets', [tgToR(saved)]);
 }
 
-export function createUserFn(name, email, password, phone, role, currentUser) {
-  const id = 'u' + uid();
-  const companyId = currentUser.companyId; // inherit the admin's company
-  const stamp = now_();
-  const baseUser = { id, name, email, password: password || '1234', phone: phone || '', role, teamId: currentUser.teamId, companyId, isActive: true, createdAt: stamp, updatedAt: stamp };
-
-  // mutate() only writes the in-memory copy and the localStorage cache — it does NOT
-  // reach Supabase. Every create has to push its own row, or the account exists on this
-  // browser only and is gone on the next machine (and on the next sbLoad).
-  if (role === ROLES.TL) {
-    const tid = 't' + uid();
-    const team = { id: tid, name: name + "'s Team", leadId: id, companyId, createdAt: stamp, updatedAt: stamp };
-    const tlUser = { ...baseUser, teamId: tid };
-    mutate(db => {
-      db.teams = db.teams || [];
-      db.teams.push(team);
-      db.users.push(tlUser);
-    });
-    // Team first: the user row's team_id points at it.
-    sbInsert('teams', tToR(team));
-    sbInsert('users', uToR(tlUser));
-  } else {
-    const newUser = role === ROLES.EXEC ? { ...baseUser, allowedFeatures: [] } : baseUser;
-    mutate(db => { db.users.push(newUser); });
-    sbInsert('users', uToR(newUser));
-  }
-  return id;
-}
-
-// Delete a user and persist it: tombstone (so the cloud snapshot can't resurrect
-// it on reload) + hard-delete from Supabase. If a Team Lead is removed, their team
-// is deleted too and its agents are unassigned.
-export function deleteUserFn(userId, currentUser) {
+// After access-admin has deleted an account (accessAdmin.deleteAccount), tidy
+// the local cache: tombstone it so another device's snapshot cannot resurrect
+// it, unassign its cached leads, and drop a Team Lead's team. The users row
+// itself is never deleted from here: only the server may do that.
+export function unassignDeletedUser(userId, currentUser) {
   const db = getDB();
-  const u = db.users.find(x => x.id === userId);
-  if (!u) return;
+  const u = db.users.find(x => x.id === userId) || { id: userId, name: '', role: null };
   const teamToKill = (u.role === ROLES.TL && u.teamId) ? u.teamId : null;
   mutate(d => {
     d.users = d.users.filter(x => x.id !== userId);
@@ -2163,7 +2229,6 @@ export function deleteUserFn(userId, currentUser) {
     d.deletionLog.push({ id: userId, kind: 'user', name: u.name, status: u.role, deletedBy: currentUser?.name || '', deletedAt: now_() });
     if (teamToKill) d.deletionLog.push({ id: teamToKill, kind: 'team', name: u.name + "'s Team", deletedBy: currentUser?.name || '', deletedAt: now_() });
   });
-  sbDelete('users', [userId]);
   if (teamToKill) sbDelete('teams', [teamToKill]);
 }
 
@@ -2202,23 +2267,25 @@ export function companyStats(cid) {
   };
 }
 
-// Create a new company + its first Management (admin) account. Master-only.
-export function createCompany({ name, plan, adminName, adminEmail, password, phone }) {
+// Create a new company, then its first Management account through the
+// access-admin function (Master only, checked there). The company row is
+// written first because the account's company_id points at it.
+export async function createCompany({ name, plan, adminName, adminEmail, password, phone }, createAccount) {
+  if (!password || password.length < 10) return { error: 'Admin password must be at least 10 characters' };
   const cid = 'c' + uid();
-  const aid = 'u' + uid();
-  const exists = getDB().users.some(u => (u.email || '').toLowerCase() === (adminEmail || '').toLowerCase());
-  if (exists) return { error: 'Admin email already in use' };
   const company = { id: cid, name: name.trim(), plan: plan || 'Starter', createdAt: now_(), isActive: true };
-  const admin = { id: aid, name: (adminName || 'Admin').trim(), email: (adminEmail || '').trim(), password: password || '1234', phone: phone || '', role: ROLES.MGMT, teamId: null, companyId: cid, isActive: true };
-  mutate(db => {
-    db.companies = db.companies || [];
-    db.companies.push(company);
-    db.users.push(admin);
-  });
-  // Company first: the admin row's company_id points at it.
-  sbInsert('companies', cToR(company));
-  sbInsert('users', uToR(admin));
-  return { companyId: cid, adminId: aid, adminEmail: (adminEmail || '').trim(), password: password || '1234' };
+  const c = await sbInsert('companies', cToR(company));
+  if (c && c.ok === false) return { error: 'Company not saved' };
+  mutate(db => { db.companies = db.companies || []; db.companies.push(company); });
+  const res = await createAccount({ name: (adminName || 'Admin').trim(), email: (adminEmail || '').trim(), password, phone: phone || '', role: ROLES.MGMT, companyId: cid });
+  if (!res.ok) {
+    // No company without its first admin: a retry would otherwise leave one
+    // more empty company each time.
+    mutate(db => { db.companies = (db.companies || []).filter(c => c.id !== cid); });
+    await sbDelete('companies', [cid]);
+    return { error: res.error };
+  }
+  return { companyId: cid, adminId: res.user.id, adminEmail: res.user.email, password };
 }
 
 export function setCompanyActive(cid, active) {
@@ -2227,65 +2294,6 @@ export function setCompanyActive(cid, active) {
   if (updated) sbUpdate('companies', cid, cToR(updated));
 }
 
-// Provision many accounts in one pass. `rows`: [{name,email,phone,role,password,teamId}].
-// Validates each row (name+email required, valid+unique email incl. within the batch),
-// creates Team Leads with their own team, and agents under the chosen/owner team.
-// Returns { created:[{name,email,pass,roleLabel,role}], errors:[{line,name,reason}] }.
-// Async since the cloud load became tenant-scoped: getDB().users holds one
-// company, so a purely local duplicate-email check can no longer see the other
-// tenants. The server is asked about this batch's addresses first.
-export async function bulkCreateUsers(rows, currentUser) {
-  const created = [];
-  const errors = [];
-  const emailRe = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
-  const candidates = (rows || []).map(r => (r.email || '').trim()).filter(e => emailRe.test(e));
-  const remote = await sbEmailsInUse(candidates);
-  const seen = new Set([...getDB().users.map(u => (u.email || '').toLowerCase()), ...remote]);
-
-  rows.forEach((r, i) => {
-    const line = i + 1;
-    const name = (r.name || '').trim();
-    const email = (r.email || '').trim();
-    const role = normRole(r.role || ROLES.AGENT);
-    const pass = (r.password || '').trim() || '1234';
-    const phone = (r.phone || '').trim();
-
-    if (!name && !email) return; // skip blank rows silently
-    if (!name) { errors.push({ line, name: email || '(row ' + line + ')', reason: 'Name required' }); return; }
-    if (!email) { errors.push({ line, name, reason: 'Email required' }); return; }
-    if (!emailRe.test(email)) { errors.push({ line, name, reason: 'Invalid email' }); return; }
-    if (seen.has(email.toLowerCase())) { errors.push({ line, name, reason: 'Email already in use' }); return; }
-
-    const id = 'u' + uid();
-    seen.add(email.toLowerCase());
-
-    const companyId = r.companyId || currentUser.companyId; // new accounts join the admin's company
-    // As in createUserFn: mutate() is local-only, so each row is pushed to Supabase too.
-    const stamp = now_();
-    if (role === ROLES.TL) {
-      const tid = 't' + uid();
-      const team = { id: tid, name: name + "'s Team", leadId: id, companyId };
-      const u = { id, name, email, password: pass, phone, role, teamId: tid, companyId, isActive: true, createdAt: stamp, updatedAt: stamp };
-      mutate(db => {
-        db.teams = db.teams || [];
-        db.teams.push(team);
-        db.users.push(u);
-      });
-      sbInsert('teams', tToR(team));
-      sbInsert('users', uToR(u));
-    } else {
-      // Management rows carry no team; everyone else inherits the admin's (or the
-      // team picked on the row).
-      const teamId = role === ROLES.MGMT ? undefined : (r.teamId || currentUser.teamId);
-      const u = { id, name, email, password: pass, phone, role, teamId, companyId, isActive: true, createdAt: stamp, updatedAt: stamp };
-      mutate(db => { db.users.push(u); });
-      sbInsert('users', uToR(u));
-    }
-    created.push({ id, name, email, pass, role, roleLabel: rlabel(role) });
-  });
-
-  return { created, errors };
-}
 
 // Normalize a phone to E.164-ish with country code. Bangladesh-aware:
 //   01XXXXXXXXX  -> +8801XXXXXXXXX

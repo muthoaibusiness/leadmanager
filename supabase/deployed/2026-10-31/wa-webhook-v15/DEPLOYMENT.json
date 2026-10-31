@@ -1,0 +1,26 @@
+{
+  "label": "PRODUCTION SNAPSHOT - wa-webhook v15 - rollback bundle",
+  "project_ref": "sbqmougcvnplgjgihpwe",
+  "function": {
+    "slug": "wa-webhook",
+    "id": "1d311ad1-d16d-4979-a8da-24ca08a7d3b5",
+    "version": 15,
+    "status": "ACTIVE",
+    "verify_jwt": false,
+    "import_map": false,
+    "entrypoint": "source/supabase/functions/wa-webhook/index.ts",
+    "updated_at": "2026-10-14T11:49:17Z",
+    "ezbr_sha256": "8711fdc5a35fabb525c4be5c0d152bf66aded8da583b88a0dab99f255d0c63eb"
+  },
+  "retrieval": {
+    "downloaded_at": "2026-10-31T13:28Z",
+    "method": "npx supabase@2 functions download wa-webhook --project-ref sbqmougcvnplgjgihpwe --use-api, into a scratch directory outside the repo; metadata from list_edge_functions before and after, same version and ezbr_sha256 both times",
+    "read_only": true
+  },
+  "git_baseline": {
+    "wa-webhook/index.ts": "byte-identical (CRLF stripped) to commit 6750658 and to HEAD 626abf6",
+    "_shared/wa.ts": "byte-identical (CRLF stripped) to commit e760194 (2026-10-14); 315 lines differ from HEAD. The live webhook has never run the current wa.ts (verifyWebhook, getBotSettings, sendWaMessageMirroredId, canonicalConvJid, isBotEcho)."
+  },
+  "secret_scan": "No credential literal. Secrets read only through Deno.env.get.",
+  "rollback": "Copy wa-webhook/index.ts and _shared/wa.ts from this folder over supabase/functions/ in a scratch checkout, then: npx supabase@2 functions deploy wa-webhook --no-verify-jwt --project-ref sbqmougcvnplgjgihpwe"
+}

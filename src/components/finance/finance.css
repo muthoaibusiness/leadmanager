@@ -1,0 +1,384 @@
+/* Admin → Inventory (finance): budgets, expenses, statements. Scoped to .fin
+   and the finance modals; reuses the app's buttons, fields and modal shell. */
+.fin { display: flex; flex-direction: column; gap: 16px; }
+.fin-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.fin-tabs { display: inline-flex; gap: 2px; padding: 3px; background: var(--surf); border: 1px solid var(--bd); border-radius: 10px; }
+.fin-tabs button { display: inline-flex; align-items: center; gap: 6px; padding: 7px 13px; border: 0; border-radius: 7px; background: transparent; color: var(--t2); font: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer; transition: background var(--tr), color var(--tr); }
+.fin-tabs button .mi { font-size: 17px; }
+.fin-tabs button.on { background: var(--accent); color: var(--on-accent); }
+.fin-tab-n { min-width: 18px; height: 18px; padding: 0 5px; border-radius: 999px; background: var(--orange); color: #1a1205; font-size: 11px; font-weight: 800; display: inline-flex; align-items: center; justify-content: center; }
+.fin-tabs button.on .fin-tab-n { background: var(--on-accent); color: var(--accent); }
+.fin-bar-err { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--orange); }
+.fin-refresh { margin-left: auto; width: 34px; height: 34px; display: inline-flex; align-items: center; justify-content: center; border: 1px solid var(--bd); border-radius: 50%; background: var(--surf); color: var(--t2); cursor: pointer; }
+.fin-refresh:disabled { opacity: .5; cursor: default; }
+.fin-err .btn { margin-top: 12px; }
+/* First load (ui/loader.jsx): centred in the view's space, not hugging the top. */
+.fin-loader { min-height: min(60vh, 520px); }
+@keyframes fin-spin { to { transform: rotate(360deg); } }
+.mi.spin { animation: fin-spin 1s linear infinite; }
+
+/* headline tiles: requested / approved / committed / spent / remaining */
+.fin-kpis { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; }
+.fin-kpi { background: var(--surf); border: 1px solid var(--bd); border-radius: var(--r-lg); padding: 14px 16px; min-width: 0; }
+.fin-kpi .l { font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--t3); }
+.fin-kpi .v { margin-top: 6px; font-family: var(--font-display); font-size: clamp(18px, 1.2vw, 24px); font-weight: 700; color: var(--t1); letter-spacing: -.3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fin-kpi .s { margin-top: 4px; font-size: 12px; color: var(--t3); }
+.fin-kpi.t-good .v { color: var(--green); }
+.fin-kpi.t-warn .v { color: var(--orange); }
+.fin-kpi.t-bad .v { color: var(--red); }
+
+.fin-grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: start; }
+.fin-grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; align-items: start; }
+.fin-card { background: var(--surf); border: 1px solid var(--bd); border-radius: var(--r-lg); overflow: hidden; min-width: 0; }
+.fin-card-hd { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 12px 16px; border-bottom: 1px solid var(--bd); font-size: 13px; font-weight: 700; color: var(--t1); }
+.fin-card-hd .mi { color: var(--accent); font-size: 18px; margin-right: 6px; vertical-align: -4px; }
+.fin-card-hd span.sub { font-size: 12px; font-weight: 500; color: var(--t3); }
+.fin-card-bd { padding: 12px 16px; }
+.fin-empty { padding: 26px 16px; text-align: center; font-size: 13px; color: var(--t3); }
+
+/* bar lists (breakdowns) */
+.fin-bars { display: flex; flex-direction: column; gap: 9px; }
+.fin-bar-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 10px; font-size: 12.5px; }
+.fin-bar-row .n { color: var(--t1); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fin-bar-row .a { color: var(--t2); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.fin-bar-row .t { grid-column: 1 / -1; height: 6px; border-radius: 3px; background: var(--surf2); overflow: hidden; display: flex; }
+.fin-bar-row .t i { display: block; height: 100%; background: var(--accent); }
+.fin-bar-row .t i.c { background: var(--orange); }
+
+/* status pills */
+.fin-pill { display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px; border-radius: 999px; font-size: 11px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; white-space: nowrap; }
+.fin-pill.t-muted { background: var(--surf2); color: var(--t2); }
+.fin-pill.t-warn { background: var(--orange-l); color: var(--orange); }
+.fin-pill.t-good { background: var(--green-l); color: var(--green); }
+.fin-pill.t-bad { background: var(--red-l); color: var(--red); }
+.fin-pill.t-info { background: var(--blue-l); color: var(--chart-1); }
+
+/* tables */
+.fin-tools { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.fin-tools .fin-search { flex: 1 1 220px; max-width: 340px; }
+.fin-tools .sp { flex: 1; }
+.fin-chips { display: flex; gap: 6px; flex-wrap: wrap; }
+.fin-chip { padding: 6px 11px; border: 1px solid var(--bd); border-radius: 999px; background: var(--surf); color: var(--t2); font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; }
+.fin-chip.on { border-color: var(--accent); color: var(--accent); }
+/* Statements: status chips, payment filter, New statement. Wide screens: plain
+   members of .fin-tools (the wrapper adds no box). Phones: one line, in that
+   order, compact and sized to the screen; it scrolls sideways only when even
+   that cannot fit (the narrowest phones). */
+.fin-tools-row { display: contents; }
+@media (max-width: 767px) {
+  .fin-tools-row {
+    --row-h: 36px;
+    --row-fs: clamp(10px, 2.7vw, 12px);
+    --row-px: clamp(6px, 1.85vw, 10px);
+    display: flex; align-items: center; gap: 4px; flex: 1 1 100%; min-width: 0;
+    flex-wrap: nowrap; overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: none;
+    padding: 2px; margin: -2px;   /* room for the focus ring inside the scroller */
+  }
+  .fin-tools-row::-webkit-scrollbar { display: none; }
+  .fin-tools-row > * { flex-shrink: 0; }
+  .fin-tools-row .sp { display: none; }   /* the button's auto margin does its job, without a second gap */
+  .fin-tools-row .fin-chips { flex-wrap: nowrap; gap: 3px; }
+  .fin-tools-row .fin-chip { height: var(--row-h); padding: 0 var(--row-px); font-size: var(--row-fs); white-space: nowrap; }
+  .fin-tools-row .fin-filter { min-width: 0; height: var(--row-h); min-height: var(--row-h); padding: 0 calc(var(--row-px) + 14px) 0 var(--row-px); background-position: right var(--row-px) center; font-size: var(--row-fs); }
+  .fin-tools-row .btn { margin-left: auto; min-height: var(--row-h); height: var(--row-h); padding: 0 var(--row-px); gap: 2px; font-size: var(--row-fs); letter-spacing: .02em; white-space: nowrap; }
+  .fin-tools-row .btn .mi { font-size: 14px; }
+}
+.fin-scroll { overflow-x: auto; }
+.fin-tbl { width: 100%; border-collapse: collapse; font-size: 13px; }
+.fin-tbl .fin-chk { width: 36px; padding-right: 0; }
+.fin-tbl .fin-chk input { width: 16px; height: 16px; cursor: pointer; accent-color: var(--volt, currentColor); }
+.fin-tbl tr.on td { background: color-mix(in srgb, var(--volt, #3b82f6) 8%, transparent); }
+.fin-bulk { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; padding: 8px 12px; border: 1px solid var(--bd); border-radius: var(--r-md, 10px); background: var(--surf); font-size: 13px; }
+.fin-bulk .sp { flex: 1; }
+.fin-bulk .fin-ibtn { width: 32px; height: 32px; padding: 0; justify-content: center; }
+.fin-bulk .fin-ibtn .mi { margin: 0; font-size: 18px; }
+.fin-tbl th { text-align: left; padding: 11px 14px; font-size: 11.5px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--t3); border-bottom: 1px solid var(--bd); white-space: nowrap; }
+.fin-tbl td { padding: 11px 14px; border-bottom: 1px solid var(--bd); color: var(--t1); vertical-align: middle; }
+.fin-tbl tr:last-child td { border-bottom: 0; }
+.fin-tbl .r { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.fin-tbl .m { color: var(--t2); }
+.fin-tbl .w { white-space: nowrap; }
+.fin-tbl tbody tr.click { cursor: pointer; }
+.fin-tbl tbody tr.click:hover { background: var(--surf2); }
+.fin-tbl .over { color: var(--red); font-weight: 700; }
+.fin-tbl .acts { display: flex; gap: 6px; justify-content: flex-end; }
+.fin-tbl .btn.ui-del { opacity: 1; }
+.fin-ttl { font-weight: 600; }
+.fin-sub { display: block; font-size: 12px; color: var(--t3); margin-top: 2px; }
+
+/* budget detail */
+.fin-back { display: inline-flex; align-items: center; gap: 4px; padding: 0; border: 0; background: none; color: var(--t2); font: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer; }
+.fin-back:hover { color: var(--accent); }
+.fin-dhd { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; flex-wrap: wrap; }
+.fin-dhd h2 { margin: 0; font-family: var(--font-display); font-size: 22px; font-weight: 700; color: var(--t1); display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.fin-dmeta { margin-top: 6px; display: flex; gap: 14px; flex-wrap: wrap; font-size: 12.5px; color: var(--t2); }
+.fin-dmeta span { display: inline-flex; align-items: center; gap: 4px; }
+.fin-dmeta .mi { font-size: 15px; color: var(--t3); }
+.fin-dacts { display: flex; gap: 8px; flex-wrap: wrap; }
+.fin-note { white-space: pre-line; font-size: 13px; color: var(--t2); }
+.fin-warn { display: flex; align-items: center; gap: 8px; padding: 10px 14px; border-radius: var(--r); background: var(--red-l); color: var(--red); font-size: 13px; font-weight: 600; }
+.fin-info { display: flex; align-items: center; gap: 8px; padding: 10px 14px; border-radius: var(--r); background: var(--orange-l); color: var(--orange); font-size: 13px; font-weight: 600; }
+.fin-subtabs { display: flex; gap: 2px; border-bottom: 1px solid var(--bd); }
+.fin-subtabs button { padding: 10px 14px; border: 0; border-bottom: 2px solid transparent; margin-bottom: -1px; background: none; color: var(--t2); font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
+.fin-subtabs button.on { color: var(--t1); border-bottom-color: var(--accent); }
+.fin-subtabs button .n { margin-left: 6px; color: var(--t3); font-weight: 600; }
+
+/* attachments */
+.fin-files { display: flex; gap: 6px; flex-wrap: wrap; }
+.fin-file { display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px; border: 1px solid var(--bd); border-radius: 999px; background: var(--surf2); color: var(--t1); font: inherit; font-size: 11.5px; cursor: pointer; max-width: 220px; }
+.fin-file span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fin-file .mi { font-size: 14px; color: var(--t3); flex: none; }
+.fin-file .x { margin-left: 2px; color: var(--t3); }
+
+/* discussion */
+.fin-comments { display: flex; flex-direction: column; gap: 14px; }
+.fin-comment { display: grid; grid-template-columns: 32px 1fr; gap: 10px; }
+.fin-comment .hd { display: flex; align-items: baseline; gap: 8px; font-size: 12.5px; }
+.fin-comment .hd b { color: var(--t1); }
+.fin-comment .hd span { color: var(--t3); font-size: 12px; }
+.fin-comment .bd { margin-top: 3px; font-size: 13.5px; color: var(--t1); white-space: pre-wrap; overflow-wrap: anywhere; }
+.fin-comment .bd mark { background: var(--blue-l); color: var(--chart-1); border-radius: 4px; padding: 0 3px; font-weight: 600; }
+.fin-compose { display: flex; flex-direction: column; gap: 8px; margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--bd); }
+.fin-compose textarea { min-height: 72px; resize: vertical; }
+.fin-compose-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.fin-compose-row .sp { flex: 1; }
+
+/* history */
+.fin-timeline { display: flex; flex-direction: column; }
+.fin-ev { display: grid; grid-template-columns: 22px 1fr; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--bd); }
+.fin-ev:last-child { border-bottom: 0; }
+.fin-ev .dot { width: 22px; height: 22px; border-radius: 50%; background: var(--surf2); color: var(--t2); display: flex; align-items: center; justify-content: center; }
+.fin-ev .dot .mi { font-size: 14px; }
+.fin-ev .dot.good { background: var(--green-l); color: var(--green); }
+.fin-ev .dot.bad { background: var(--red-l); color: var(--red); }
+.fin-ev .dot.warn { background: var(--orange-l); color: var(--orange); }
+.fin-ev .t { font-size: 13px; color: var(--t1); }
+.fin-ev .t b { font-weight: 700; }
+.fin-ev .w { font-size: 12px; color: var(--t3); margin-top: 2px; }
+.fin-ev .d { margin-top: 4px; font-size: 12px; color: var(--t2); display: flex; flex-direction: column; gap: 2px; }
+
+/* forms (inside the app's .modal) */
+.fin-modal { width: min(640px, 96vw); }
+.fin-modal.wide { width: min(860px, 96vw); }
+.fin-form { display: grid; grid-template-columns: 1fr 1fr; gap: 0 14px; }
+.fin-form .full { grid-column: 1 / -1; }
+.fin-form label { display: block; font-size: 12px; font-weight: 600; color: var(--t2); margin-bottom: 5px; }
+.fin-form .fi, .fin-form .fsel { width: 100%; }
+.fin-form .fsel { padding: 0 32px 0 12px; }
+.fin-help { font-size: 12px; color: var(--t3); margin-top: 4px; }
+/* A required field: its * and, once Save finds it empty, the message under it. */
+.fin-req { color: var(--red); }
+.fin-help.fin-field-err { color: var(--red); font-weight: 600; }
+.fsel.fin-invalid, .fi.fin-invalid { border-color: var(--red); }
+.fin-kinds { display: flex; gap: 6px; }
+.fin-kinds button { flex: 1; padding: 9px 10px; border: 1px solid var(--bd); border-radius: var(--r); background: var(--surf); color: var(--t2); font: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer; }
+.fin-kinds button.on { border-color: var(--accent); color: var(--accent); }
+.fin-decide { display: flex; gap: 6px; }
+.fin-decide button { flex: 1; padding: 10px; border: 1px solid var(--bd); border-radius: var(--r); background: var(--surf); color: var(--t2); font: inherit; font-size: 12.5px; font-weight: 700; cursor: pointer; }
+.fin-decide button.on.good { border-color: var(--green); color: var(--green); background: var(--green-l); }
+.fin-decide button.on.bad { border-color: var(--red); color: var(--red); background: var(--red-l); }
+.fin-decide button.on.warn { border-color: var(--orange); color: var(--orange); background: var(--orange-l); }
+.fin-mini { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 14px; }
+.fin-mini div { padding: 10px 12px; border-radius: var(--r); background: var(--surf2); }
+.fin-mini span { display: block; font-size: 11px; color: var(--t3); text-transform: uppercase; letter-spacing: .06em; }
+.fin-mini b { font-size: 15px; color: var(--t1); }
+
+/* statement line editor */
+.fin-lines { display: flex; flex-direction: column; gap: 6px; }
+.fin-line { display: grid; grid-template-columns: minmax(0, 1fr) 70px 130px 36px; gap: 6px; align-items: center; }
+.fin-line .fi { width: 100%; }
+.fin-line .x { width: 36px; height: 36px; display: inline-flex; align-items: center; justify-content: center; border: 1px solid var(--bd); border-radius: var(--r-sm); background: var(--surf); color: var(--t3); cursor: pointer; }
+.fin-line-hd { display: grid; grid-template-columns: minmax(0, 1fr) 70px 130px 36px; gap: 6px; font-size: 11px; color: var(--t3); text-transform: uppercase; letter-spacing: .06em; }
+/* An ad line (Meta): description · amount · CPM · impressions */
+.fin-line.ad, .fin-line-hd.ad { grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr) minmax(0, 1fr) 36px; }
+/* Campaign cards (Meta statement editor) */
+.fin-camps { display: grid; gap: 12px; }
+.fin-camps-hd { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+.fin-camps-hd b { display: block; font-size: 13.5px; }
+.fin-camps-hd span { display: block; font-size: 12px; color: var(--t3); }
+.fin-camp { display: grid; gap: 6px; padding: 12px; border: 1px solid var(--bd); border-radius: var(--r-md, 10px); background: var(--surf2, var(--surf)); }
+.fin-camp-hd { display: grid; grid-template-columns: minmax(0, 1fr) 36px; gap: 6px; margin-bottom: 4px; }
+.fin-camp-hd .x { width: 36px; height: 36px; display: inline-flex; align-items: center; justify-content: center; border: 1px solid var(--bd); border-radius: var(--r-sm); background: var(--surf); color: var(--t3); cursor: pointer; }
+.fin-addset { justify-self: start; display: inline-flex; align-items: center; gap: 4px; border: 0; background: none; padding: 4px 0; font: inherit; font-size: 12.5px; font-weight: 600; color: var(--volt, var(--t1)); cursor: pointer; }
+.fin-addset .mi { font-size: 16px; }
+.fin-unalloc span:last-child { color: var(--red); }
+.fin-pick { max-height: 180px; overflow-y: auto; border: 1px solid var(--bd); border-radius: var(--r); }
+.fin-pick label { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-bottom: 1px solid var(--bd); font-size: 12.5px; color: var(--t1); cursor: pointer; margin: 0; font-weight: 500; }
+.fin-pick label:last-child { border-bottom: 0; }
+.fin-pick label .a { margin-left: auto; color: var(--t2); white-space: nowrap; }
+.fin-pick label.off { opacity: .5; cursor: default; }
+.fin-sumline { display: flex; justify-content: flex-end; gap: 16px; font-size: 14px; font-weight: 700; color: var(--t1); padding-top: 8px; }
+
+/* statement document: the shared renderer's page in a DocPreview frame,
+   inside the offer overlay (.inv-ov / .inv-doc / .inv-bar) */
+.fin-docbar { flex-wrap: wrap; gap: 8px; }
+.fin-docbar .inv-bar-t { white-space: nowrap; gap: 10px; }
+.fin-docbar .inv-bar-a { flex-wrap: wrap; justify-content: flex-end; margin-left: auto; }
+.fin-docframe { display: block; width: 100%; height: 480px; border: 0; background: #fff; }
+
+/* statement editor: a split workspace, the form on the left and the document
+   canvas on the right, sized to the viewport. The modal itself never scrolls:
+   its header (title, then Cancel / Save draft at the top right; no ✕, no
+   footer) stays put, the form column scrolls only when its fields
+   need more room, and the canvas (DocPreview fit="canvas") scrolls its pages
+   under its own toolbar. Selectors carry .mov so the app-wide `.mov .modal`
+   phone rule (max-height 92vh) can't win, and nothing here touches other
+   modals. */
+/* The window takes most of the screen (capped), inside the overlay's 20px. */
+.mov .modal.fin-modal.xwide {
+  width: min(92vw, 1440px); max-width: none;
+  height: min(calc(100vh - 40px), 960px); height: min(calc(100dvh - 40px), 960px); max-height: none;
+}
+.fin-modal.xwide .m-hd { gap: 12px; padding: 8px 12px 8px 14px; }
+.fin-modal.xwide .m-ttl { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 15px; }
+.fin-modal .m-hd-a { display: flex; flex: none; align-items: center; gap: 8px; }
+.fin-modal.xwide .m-body { display: flex; flex-direction: column; min-height: 0; overflow: hidden; padding: 10px 12px; }
+/* form · divider · canvas; the form's share (--fin-l) is set by the divider */
+.fin-split { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, var(--fin-l, 1fr)) 10px minmax(0, var(--fin-r, 1fr)); }
+.fin-split-form { min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 2px 10px 2px 2px; }
+.fin-split-preview { min-height: 0; overflow: hidden; border: 1px solid var(--bd); border-radius: var(--r); background: #e9ebee; }
+.fin-divider { position: relative; cursor: col-resize; touch-action: none; outline: none; }
+.fin-divider::before { content: ''; position: absolute; top: 0; bottom: 0; left: 4px; width: 2px; border-radius: 1px; background: var(--bd); transition: background .15s; }
+.fin-divider span { position: absolute; top: 50%; left: 1px; width: 8px; height: 36px; margin-top: -18px; border-radius: 4px; background: var(--bd); transition: background .15s; }
+.fin-divider:hover::before, .fin-divider:hover span, .fin-divider:focus-visible::before, .fin-divider:focus-visible span, .fin-split.dragging .fin-divider::before, .fin-split.dragging .fin-divider span { background: var(--accent); }
+.fin-split.dragging { user-select: none; cursor: col-resize; }
+.fin-split.dragging iframe { pointer-events: none; } /* the frame must not swallow the drag */
+/* The canvas: a slim toolbar, then the pages on a grey sheet that scrolls. */
+.fin-doccanvas { display: flex; flex-direction: column; width: 100%; height: 100%; min-height: 0; }
+.fin-doctb { flex: none; display: flex; flex-wrap: wrap; align-items: center; gap: 2px 10px; padding: 3px 6px; border-bottom: 1px solid var(--bd); background: var(--surf); color: var(--t2); font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.fin-doctb .g { display: inline-flex; align-items: center; gap: 1px; }
+.fin-doctb .nav { margin-left: auto; }
+.fin-doctb .pct { min-width: 42px; text-align: center; }
+.fin-doctb .pg { padding: 0 6px; font-weight: 500; }
+.fin-doctb .pg b { font-weight: 700; color: var(--t1); }
+.fin-tb { width: 28px; height: 28px; display: inline-flex; align-items: center; justify-content: center; padding: 0; border: 1px solid transparent; border-radius: 7px; background: none; color: var(--t2); font: inherit; cursor: pointer; }
+.fin-tb:hover { background: var(--surf2); color: var(--t1); }
+.fin-tb.on { border-color: var(--accent); color: var(--accent); }
+.fin-tb:disabled { opacity: .35; cursor: default; background: none; }
+.fin-tb .mi { font-size: 19px; }
+.fin-doccanvas-s { flex: 1; min-height: 0; overflow: auto; scrollbar-gutter: stable; overscroll-behavior: contain; }
+/* phones / tablets: a plain A4 preview, only the page navigation, centred */
+.fin-doccanvas.compact .fin-doctb { justify-content: center; }
+.fin-doccanvas.compact .fin-doctb .nav { margin-left: 0; }
+.fin-doccanvas-s .fin-docpages-in { margin: 12px auto; }
+/* The editor's form: compact controls, less air between fields. */
+.fin-split-form .fin-form { column-gap: 12px; }
+.fin-split-form .fg { margin-bottom: 8px; }
+.fin-split-form .fin-form label { margin-bottom: 3px; font-size: 11.5px; }
+.fin-split-form .fin-help { margin-top: 2px; font-size: 11.5px; }
+.fin-split-form .fi, .fin-split-form .fsel { height: 34px; font-size: 13px; }
+.fin-split-form .fi { padding: 6px 10px; border-width: 1px; }
+.fin-split-form textarea.fi { height: auto; min-height: 34px; padding: 7px 10px; line-height: 1.4; }
+.fin-split-form input[type="color"].fi { padding: 3px; }
+.fin-split-form .fsel { padding: 0 30px 0 12px; background-position: right 11px center; }
+.fin-split-form .fin-kinds button { padding: 6px 8px; font-size: 12px; }
+.fin-split-form .fin-line, .fin-split-form .fin-line-hd { grid-template-columns: minmax(0, 1fr) 64px 112px 34px; }
+.fin-split-form .fin-line .x { width: 34px; height: 34px; }
+.fin-split-form .fin-tpl-note { padding: 7px 10px; font-size: 11.5px; }
+.fin-inline-check { display: inline-flex; align-items: center; gap: 8px; font-size: 12.5px; font-weight: 500; color: var(--t2); cursor: pointer; margin: 6px 0 0; }
+/* Meta editor: Advanced ▾ and Time ▾ side by side, each opening its fields underneath */
+.fin-disc-row { display: flex; flex-wrap: wrap; gap: 6px; }
+.fin-disc { display: inline-flex; align-items: center; gap: 6px; min-width: 0; padding: 6px 6px 6px 10px; border: 1px solid var(--bd); border-radius: var(--r); background: var(--surf); color: var(--t2); font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; }
+.fin-disc .v { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; color: var(--t3); }
+.fin-disc .chev { font-size: 18px; transition: transform .15s; }
+.fin-disc[aria-expanded="true"] { border-color: var(--accent); color: var(--accent); }
+.fin-disc[aria-expanded="true"] .chev { transform: rotate(180deg); }
+.fin-disc-panel { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); column-gap: 12px; padding: 10px 10px 8px; border: 1px solid var(--bd); border-radius: var(--r); background: var(--surf2); }
+.fin-disc-panel .fin-help.full { grid-column: 1 / -1; margin-top: 0; }
+.fin-disc-panel.fin-ids { grid-template-columns: minmax(0, 2fr) minmax(0, 3fr); } /* the Transaction ID is 35 characters */
+.fin-idsrc { margin-left: 6px; font-weight: 500; color: var(--t3); }
+.fin-idlock { display: inline-flex; align-items: center; gap: 3px; font-size: 11.5px; font-weight: 600; color: var(--t3); }
+.fin-idlock .mi { font-size: 14px; }
+/* locked fields (issued IDs, a saved statement's category): readable, plainly not editable */
+.fin-ids .fi[readonly], .fin-form .fsel.fin-locked, .fin-form input[aria-label="Custom category"][readonly] { background-color: var(--surf2); color: var(--t2); cursor: default; opacity: 1; }
+.fin-time12 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+.fin-split-form .fin-time12 .fsel { padding: 0 24px 0 9px; background-position: right 7px center; }
+@media (max-width: 560px) {
+  .fin-disc-panel, .fin-disc-panel.fin-ids { grid-template-columns: minmax(0, 1fr); }
+  /* the header's Cancel / Save draft: text only, so the statement number fits beside them */
+  .fin-modal.xwide .m-hd { gap: 8px; padding-left: 12px; padding-right: 10px; }
+  .fin-modal.xwide .m-ttl { font-size: 14px; }
+  .fin-modal .m-hd-a { gap: 6px; }
+  .fin-modal .m-hd-a .btn { padding-left: 10px; padding-right: 10px; }
+  .fin-modal .m-hd-a .btn .mi { display: none; }
+}
+/* DocPreview: the A4-wide frame, scaled from its top-left corner inside a box
+   cut to the scaled size. fit="height" (statement view) shows every page, one
+   under the other, on the same grey as the gaps between them. */
+.fin-docpages { padding: 16px; background: #e9ebee; }
+.fin-docpages-in { position: relative; margin: 0 auto; overflow: hidden; }
+.fin-docpages-in .fin-docframe { position: absolute; top: 0; left: 0; transform-origin: 0 0; }
+.fin-panes { display: none; gap: 6px; margin-bottom: 10px; }
+.fin-panes button { flex: 1; display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 9px 10px; border: 1px solid var(--bd); border-radius: var(--r); background: var(--surf); color: var(--t2); font: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer; }
+.fin-panes button.on { border-color: var(--accent); color: var(--accent); }
+.fin-panes .mi { font-size: 16px; }
+/* Narrow screens: one side at a time (Edit / Preview), each the full height. */
+@media (max-width: 979px) {
+  .mov .modal.fin-modal.xwide { width: 100%; height: calc(100vh - 24px); height: calc(100dvh - 24px); } /* .mov pads 12px here */
+  .fin-modal.xwide .m-body { padding: 12px 14px; }
+  .fin-split { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }
+  .fin-panes { display: flex; }
+  .fin-divider, .fin-split.on-edit .fin-split-preview, .fin-split.on-preview .fin-split-form { display: none; }
+  /* The preview pane gives up its frame; the canvas carries it and hugs the
+     pages (up to the pane's height, then it scrolls). */
+  .fin-split-preview { border: 0; border-radius: 0; background: none; }
+  .fin-doccanvas.compact { height: auto; max-height: 100%; border: 1px solid var(--bd); border-radius: var(--r); background: #e9ebee; overflow: hidden; }
+  .fin-doccanvas.compact .fin-doccanvas-s { flex: 0 1 auto; }
+}
+/* Phones: one field per row, so inputs stay full size and readable. */
+@media (max-width: 560px) {
+  .fin-split-form .fin-form { grid-template-columns: minmax(0, 1fr); }
+}
+/* Phase 2: filters, category picker, linked lines, statement panels */
+.fin-filter { width: auto; min-width: 150px; height: 36px; padding: 0 30px 0 11px; font-size: 12.5px; }
+.fin-check { display: inline-flex; align-items: center; gap: 7px; font-size: 12.5px; font-weight: 600; color: var(--t2); cursor: pointer; }
+.fin-linkbtn { border: 0; background: none; padding: 0; font: inherit; font-size: 12px; font-weight: 600; color: var(--accent); cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
+.fin-pick-hd { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.fin-pick-hd label { margin-bottom: 5px; }
+.fin-fg-gap { min-height: 1px; }
+.fin-line-wrap { display: flex; flex-direction: column; gap: 4px; }
+.fin-line-note { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 10px; font-size: 11.5px; color: var(--t3); padding-left: 2px; }
+.fin-line-note .mi { font-size: 15px; }
+.fin-line-note.stale { color: var(--red); }
+.fin-doc-warn { margin: 12px 16px 0; }
+.fin-doc-panel { margin: 16px; }
+.fin-doc-panel-ft { padding: 10px 14px; border-top: 1px solid var(--bd); }
+.fin-budget-pick { max-height: 360px; }
+.fin-budget-pick button { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; padding: 10px 12px; border: 0; border-bottom: 1px solid var(--bd); background: none; color: var(--t1); font: inherit; font-size: 13px; text-align: left; cursor: pointer; }
+.fin-budget-pick button:last-child { border-bottom: 0; }
+.fin-budget-pick button:hover { background: var(--surf2); }
+.fin-budget-pick .a { color: var(--t2); white-space: nowrap; }
+.fin-subtabs .n.fin-n-draft { background: var(--orange-l); color: var(--orange); }
+.fin-stale { display: inline-flex !important; align-items: center; gap: 4px; color: var(--red) !important; }
+.fin-stale .mi { font-size: 14px; }
+.fin-row-archived td { opacity: .65; }
+.fin-fix { margin-top: 8px; display: flex; flex-direction: column; gap: 6px; max-width: 520px; }
+.fin-fix-row { display: flex; gap: 6px; justify-content: flex-end; }
+
+.fin-share { display: flex; flex-direction: column; gap: 10px; }
+.fin-share-url { display: flex; gap: 6px; }
+.fin-share-url .fi { flex: 1; font-size: 12px; }
+.fin-share-row { display: flex; gap: 8px; flex-wrap: wrap; }
+
+@media (max-width: 1023px) {
+  .fin-kpis { grid-template-columns: repeat(3, 1fr); }
+  .fin-grid3 { grid-template-columns: 1fr; }
+}
+@media (max-width: 767px) {
+  .fin-kpis { grid-template-columns: repeat(2, 1fr); }
+  .fin-grid2 { grid-template-columns: 1fr; }
+  .fin-form { grid-template-columns: 1fr; }
+  .fin-tabs { width: 100%; }
+  .fin-tabs button { flex: 1; justify-content: center; padding: 8px 6px; }
+  .fin-tabs button .mi { display: none; }
+  .fin-refresh { display: none; }   /* every action reloads; the button only took a line of its own here */
+  .fin-line, .fin-line-hd { grid-template-columns: minmax(0, 1fr) 56px 100px 36px; }
+  .fin-line.ad, .fin-line-hd.ad { grid-template-columns: 1fr 1fr 36px; }
+  .fin-line.ad > .fi:first-child { grid-column: 1 / -1; }
+  .fin-line-hd.ad span:first-child { display: none; }
+  .fin-mini { grid-template-columns: 1fr; }
+}
+
+/* statement editor: the note under Category when a vendor template applies */
+.fin-tpl-note { display: flex; align-items: flex-start; gap: 8px; margin: -4px 0 12px; padding: 9px 11px; border-radius: var(--r); background: var(--surf2); color: var(--t2); }
+.fin-tpl-note .mi { font-size: 16px; margin-top: 1px; }

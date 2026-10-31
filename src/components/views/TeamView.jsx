@@ -18,7 +18,7 @@ export default function TeamView() {
   useLeadBook();
   const { user, dbVersion, setPanLead } = useApp();
   const db = getDB();
-  const agents = db.users.filter(u => u.role === ROLES.AGENT && u.teamId === user.teamId);
+  const agents = db.users.filter(u => (u.role === ROLES.AGENT || u.role === ROLES.MA) && u.teamId === user.teamId);
   // Executives are created here too, so they have to be visible here — otherwise a Team
   // Lead adds one and it vanishes. They get a plain row rather than an AgentCard: that
   // card is all targets, calls and conversions, none of which apply to an Executive.

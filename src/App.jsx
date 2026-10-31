@@ -1,11 +1,13 @@
 import { useState, useEffect, useRef, Suspense } from 'react';
 import { useApp } from './context/AppContext.jsx';
-import { getDB, getUnreadCount, getSession, setSession, loginRemote, hasSessionId, saveDBDeferred, checkFollowUpReminders, getProperties, expireHolds, migrateTenancy, mergeDB, purgeDemoSeed, dedupeLeads, reconcileDeletions, applyRealtimeEvent, clearLocalDB, cacheBelongsTo, fetchSessionUser } from './lib/db.js';
+import { getDB, getUnreadCount, getSession, hasSessionId, saveDBDeferred, checkFollowUpReminders, getProperties, expireHolds, migrateTenancy, mergeDB, purgeDemoSeed, dedupeLeads, reconcileDeletions, applyRealtimeEvent, clearLocalDB, cacheBelongsTo } from './lib/db.js';
+import { signIn as authSignIn, restoreSession, consumeAuthRedirect, mustSetPassword, openedFromAuthLink } from './lib/auth.js';
+import SetPasswordCard from './components/SetPasswordCard.jsx';
 import { seedDB, SEED_PROPERTIES, DEMO_PROPERTIES } from './lib/seed.js';
 import { sbLoad, sbSubscribeAll } from './lib/supabase.js';
 import { waLoadSettings } from './lib/wa.js';
 import { pushUnreadSummary, requestNotifyPermission } from './lib/pushNotify.js';
-import { rlabel, kbd } from './lib/helpers.js';
+import { kbd } from './lib/helpers.js';
 import { ROLES, canSee, effectiveRole, DRAWER_MQ } from './lib/constants.js';
 import { VIEW_TITLES, homeView } from './lib/navHistory.js';
 import useMediaQuery from './hooks/useMediaQuery.js';
@@ -22,6 +24,7 @@ import NotifBell from './components/NotifBell.jsx';
 import UserMenu from './components/UserMenu.jsx';
 import Toast from './components/Toast.jsx';
 import DateRangePicker from './components/DateRangePicker.jsx';
+import { HeaderSearch, AiMenu } from './components/HeaderTools.jsx';
 import BackButton from './components/BackButton.jsx';
 import BellowsCrumb from './components/ui/bellows-crumb.jsx';
 import { Menu, MenuItem } from './components/ui/menu.jsx';
@@ -46,6 +49,9 @@ const PAGES = {
   CalendarView: () => import('./components/views/CalendarView.jsx'),
   TeamView: () => import('./components/views/TeamView.jsx'),
   AccountsView: () => import('./components/views/AccountsView.jsx'),
+  RelayView: () => import('./components/views/RelayView.jsx'),
+  AiTrainerView: () => import('./components/views/AiTrainerView.jsx'),
+  MetaCapiView: () => import('./components/views/MetaCapiView.jsx'),
   RequestsView: () => import('./components/views/RequestsView.jsx'),
   ProfileView: () => import('./components/views/ProfileView.jsx'),
   PropertiesView: () => import('./components/views/PropertiesView.jsx'),
@@ -55,6 +61,8 @@ const PAGES = {
   ClientsView: () => import('./components/views/ClientsView.jsx'),
   ReportsView: () => import('./components/views/ReportsView.jsx'),
   AgentPerformanceView: () => import('./components/views/AgentPerformanceView.jsx'),
+  PerfReportsView: () => import('./components/views/PerfReportsView.jsx'),
+  InventoryView: () => import('./components/views/InventoryView.jsx'),
   ConversationsView: () => import('./components/views/ConversationsView.jsx'),
 };
 const OVERLAYS = {
@@ -83,11 +91,12 @@ const OVERLAYS = {
   BookingModal: () => import('./components/modals/BookingModal.jsx'),
   TransferLeadModal: () => import('./components/modals/TransferLeadModal.jsx'),
   ChatSettingsModal: () => import('./components/modals/ChatSettingsModal.jsx'),
+  LeadChatModal: () => import('./components/chat/LeadChatModal.jsx'),
 };
 
 const lazyAll = (loaders) => Object.fromEntries(Object.entries(loaders).map(([k, f]) => [k, lazyChunk(f)]));
 
-const { AgentDash, TeamLeadDash, ManagementDash, MasterDash, LeadsView, CalendarView, TeamView, AccountsView, RequestsView, ProfileView, PropertiesView, AvailableUnitsView, BookingsView, PipelineView, ClientsView, ReportsView, AgentPerformanceView, ConversationsView } = lazyAll(PAGES);
+const { AgentDash, TeamLeadDash, ManagementDash, MasterDash, LeadsView, CalendarView, TeamView, AccountsView, RelayView, AiTrainerView, MetaCapiView, RequestsView, ProfileView, PropertiesView, AvailableUnitsView, BookingsView, PipelineView, ClientsView, ReportsView, AgentPerformanceView, PerfReportsView, InventoryView, ConversationsView } = lazyAll(PAGES);
 const OVERLAY_COMPONENTS = Object.entries(lazyAll(OVERLAYS));
 const LandingPage = lazyChunk(() => import('./components/LandingPage.jsx'));
 const SignIn1 = lazyChunk(() => import('./components/ui/modern-stunning-sign-in.jsx').then(m => ({ default: m.SignIn1 })));
@@ -98,9 +107,9 @@ const ProjectsToaster = lazyChunk(() => import('./components/project/ProjectsToa
 // one slow chunk never holds up another, and once mounted they stay mounted
 // (closed modals still render their backdrop for the open transition).
 function Overlays() {
-  const { user, modal, panLead } = useApp();
+  const { user, modal, panLead, chatTarget } = useApp();
   const [mounted, setMounted] = useState(false);
-  if (!mounted && (modal || panLead)) setMounted(true);
+  if (!mounted && (modal || panLead || chatTarget)) setMounted(true);
   useEffect(() => {
     if (mounted || !user) return;
     let idleId = 0;
@@ -140,22 +149,21 @@ function PostLoginLoader() {
 }
 
 // ── Login page ─────────────────────────────────────────────────────────────
-function LoginPage({ onLogin, onBack }) {
+function LoginPage({ onLogin, onBack, initialError = '' }) {
   const [email, setEmail] = useState('');
   const [pw, setPw] = useState('');
-  const [err, setErr] = useState('');
+  const [err, setErr] = useState(initialError);
   const [loading, setLoading] = useState(false);
 
   const doLogin = async () => {
     if (!email || !pw) { setErr('Enter email and password.'); return; }
     setLoading(true);
     setErr('');
-    // loginRemote checks the cached DB first, then falls back to a single
-    // filtered row — so nothing has to be downloaded before this screen paints.
-    const u = await loginRemote(email, pw);
+    // Supabase Auth checks the password; the CRM account is the row linked to
+    // the verified sign-in (auth.js). Nothing is downloaded before this.
+    const { user: u, error } = await authSignIn(email, pw);
     setLoading(false);
-    if (!u) { setErr('Incorrect email or password.'); return; }
-    setSession(u);
+    if (!u) { setErr(error || 'Incorrect email or password.'); return; }
     onLogin(u);
   };
 
@@ -193,9 +201,12 @@ function LoginPage({ onLogin, onBack }) {
 // `shown`: the sidebar is on screen. `showBtnRef`: the show button, which the
 // shell moves focus onto when the sidebar hides with focus inside it.
 function PageHeader({ shown, showBtnRef }) {
-  const { setSidebarShown, navTrail } = useApp();
+  const { setSidebarShown, navTrail, view, user } = useApp();
+  // Any page but the account's home: phones (CSS) hide the account, tools and
+  // bell there and show only a round Back button.
+  const sub = view !== homeView(user);
   return (
-    <header className="pg-head">
+    <header className={`pg-head${sub ? ' pg-head-sub' : ''}`}>
       {/* Show-sidebar button, same glyph as the sidebar's hide button: always
           there for the 768–1023px drawer, on desktop only while collapsed, and
           hidden on phones, where the bottom bar's More opens the drawer (CSS). */}
@@ -209,18 +220,24 @@ function PageHeader({ shown, showBtnRef }) {
       <BackButton />
       <BellowsCrumb className="hd-crumb" items={navTrail} onNavigate={(item) => item.go()} />
       {/* theme → date filter → notifications → account. Phones (CSS) hide the
-          theme button and move the account to the left, after the show button. */}
+          theme button and move the account to the left, after the show button.
+          There, search → AI → date filter share one pill (.hd-grp); on wider
+          screens the group is display: contents and search/AI are hidden. */}
       <ThemeToggle />
-      <DateRangePicker />
+      <div className="hd-grp">
+        <HeaderSearch />
+        <AiMenu />
+        <DateRangePicker />
+      </div>
       <NotifBell />
       <UserMenu />
     </header>
   );
 }
 
-// ── In-body hero header (eyebrow + big title + subtitle + actions) ───────────
+// ── In-body hero header (title + subtitle + actions) ────────────────────────
 function PageHero() {
-  const { user, view, agentFilter, teamFilter, openModal, setCreateUserRoles, leadCounts, projTab, setProjTab, planSel } = useApp();
+  const { user, view, agentFilter, teamFilter, openModal, setCreateUserRoles, leadCounts, projTab, setProjTab, planSel, pageRefresh } = useApp();
   const pnav = useProjectNav();
 
   // The Customers count is NOT computed here. It has to agree with the table
@@ -239,7 +256,8 @@ function PageHero() {
   const tlUser = teamFilter ? db.users.find(u => u.role === 'TEAM_LEAD' && u.teamId === teamFilter) : null;
   const drilled = !!(agentFilter || teamFilter);
 
-  // eyebrow / title / subtitle per view
+  // title / subtitle per view. No eyebrow label above the title: the
+  // breadcrumb in the header bar already says where the page sits.
   const props = getProperties();
   // units still for sale, counted from the catalog's blocks like the Projects KPIs
   const propAvail = props.reduce((s, p) => s + projectInventory(p).available, 0);
@@ -247,24 +265,27 @@ function PageHero() {
 
   // Titles come from VIEW_TITLES, which also labels the Back link to each page.
   const META = {
-    dashboard: { eyebrow: rlabel(user.role), sub: '' },
-    leads: { eyebrow: 'Pipeline', sub: leadCounts?.total == null ? 'Counting…' : `${leadCounts.total} prospects ·${leadCounts.active ?? 0} active` },
-    calendar: { eyebrow: 'Schedule', sub: 'Your scheduled meetings' },
-    pipeline: { eyebrow: 'Sales', sub: 'Drag deals across stages' },
-    clients: { eyebrow: 'Relationships', sub: '360° customer view' },
-    properties: { eyebrow: 'Catalog', sub: `${props.length} project${props.length === 1 ? '' : 's'} · ${propAvail} unit${propAvail === 1 ? '' : 's'} available` },
-    reports: { eyebrow: 'Insights', sub: 'Live sales analytics' },
-    agentperf: { eyebrow: 'Insights', sub: 'Per-role scorecards & funnels' },
-    bookings: { eyebrow: 'Sales', sub: 'Payments, instalments & dues' },
-    team: { eyebrow: 'Team', sub: `${teamAgents} agents` },
-    accounts: { eyebrow: 'Administration', sub: 'Team list · create & manage accounts' },
-    requests: { eyebrow: 'Administration', sub: 'Approve agent unit holds' },
-    profile: { eyebrow: 'Account', sub: 'Manage your details & avatar' },
-    companies: { eyebrow: 'Master Admin', sub: 'Company-wise overview' },
+    dashboard: { sub: '' },
+    leads: { sub: leadCounts?.total == null ? 'Counting…' : `${leadCounts.total} prospects ·${leadCounts.active ?? 0} active` },
+    calendar: { sub: 'Your scheduled meetings' },
+    pipeline: { sub: 'Drag deals across stages' },
+    clients: { sub: '360° customer view' },
+    properties: { sub: `${props.length} project${props.length === 1 ? '' : 's'} · ${propAvail} unit${propAvail === 1 ? '' : 's'} available` },
+    reports: { sub: 'Live sales analytics' },
+    agentperf: { sub: 'Per-role scorecards & funnels' },
+    perfreports: { sub: '' },
+    bookings: { sub: 'Payments, instalments & dues' },
+    team: { sub: `${teamAgents} agents` },
+    accounts: { sub: 'Team list · create & manage accounts' },
+    requests: { sub: 'Approve agent unit holds' },
+    inventory: { sub: '' },
+    profile: { sub: 'Manage your details & avatar' },
+    companies: { sub: 'Company-wise overview' },
+    metacapi: { sub: 'Lead events reported to Meta' },
   };
   for (const k in META) META[k].title = VIEW_TITLES[k];
-  let { eyebrow, title, sub } = META[view] || { eyebrow: '', title: view, sub: '' };
-  if (user.role === ROLES.MASTER) ({ eyebrow, title, sub } = META.companies); // master only ever sees the company overview
+  let { title, sub } = META[view] || { title: view, sub: '' };
+  if (user.role === ROLES.MASTER) ({ title, sub } = META.companies); // master only ever sees the company overview
   if (drilled) {
     title = agentFilter && agentName ? agentName : (tlUser?.name || 'Team') + "'s Team";
     // A drill-down is the case where the count matters most, and it is now the
@@ -283,15 +304,17 @@ function PageHero() {
   let actions = [];
   // Customers: re-fetch the list, for every role that can open the view.
   if (view === 'leads') actions.push(<RefreshButton key="refresh" />);
+  // Meta CAPI: the same button, reloading that page's own data (pageRefresh).
+  if (view === 'metacapi' && pageRefresh) actions.push(<RefreshButton key="refresh" onClick={pageRefresh.run} busy={pageRefresh.busy} label="Refresh Meta CAPI" />);
   if (view === 'leads' && canSee(user, 'add_customer')) {
     actions.push(<button key="add-lead" className="btn btn-p" onClick={() => openModal('add-lead')}><Mi>add</Mi>Add Customer</button>);
     actions.push(<button key="import" className="btn btn-g" onClick={() => openModal('import')}><Mi>upload</Mi>Import</button>);
   }
   // Duplicate checker button removed — dedup runs automatically on load/import.
   // Executives are created by a Team Lead, alongside Agents, so they land
-  // in that Team Lead's team (createUserFn stamps the creator's teamId). Management only
+  // in that Team Lead's team (access-admin puts a Team Lead's creations in its team). Management only
   // creates Team Leads, each of which starts a team of its own.
-  if (view === 'team' && user.role === ROLES.TL) actions.push(<button key="add-agent" className="btn btn-p" onClick={() => { setCreateUserRoles([ROLES.AGENT, ROLES.EXEC]); openModal('create-user'); }}><Mi>person_add</Mi>Add Agent</button>);
+  if (view === 'team' && user.role === ROLES.TL) actions.push(<button key="add-agent" className="btn btn-p" onClick={() => { setCreateUserRoles([ROLES.AGENT, ROLES.MA, ROLES.EXEC]); openModal('create-user'); }}><Mi>person_add</Mi>Add Agent</button>);
   // Projects: two tabs, the list and Available Units. Management's actions sit
   // in one Manage menu: here on the list; on Available Units in its toolbar,
   // where the project and floor in view are known (AvailableUnitsView).
@@ -318,7 +341,6 @@ function PageHero() {
   return (
     <div className={`hero${view === 'pipeline' ? ' hero-compact' : ''}`}>
       <div className="hero-main">
-        <div className="hero-eyebrow">{eyebrow}</div>
         <h1 className="hero-title">{title}</h1>
         {sub && <div className="hero-sub">{sub}</div>}
       </div>
@@ -350,8 +372,13 @@ function PageBody() {
   if (view === 'bookings') return <BookingsView />;
   if (view === 'reports') return <ReportsView />;
   if (view === 'agentperf') return <AgentPerformanceView />;
+  if (view === 'perfreports') return <PerfReportsView />;
   if (view === 'team') return <TeamView />;
   if (view === 'accounts') return <AccountsView />;
+  if (view === 'relay') return <RelayView />;
+  if (view === 'aitrainer') return <AiTrainerView />;
+  if (view === 'metacapi') return <MetaCapiView />;
+  if (view === 'inventory') return <InventoryView />;
   if (view === 'requests') return <RequestsView />;
   if (view === 'profile') return <ProfileView />;
   return null;
@@ -446,6 +473,9 @@ export default function App() {
   const [loading, setLoading] = useState(needsBootFetch);
   const [loadVisible, setLoadVisible] = useState(needsBootFetch);
   const [showLogin, setShowLogin] = useState(false); // landing → login gate
+  // A one-time link signed the account in without a password of its own yet.
+  const [needPassword, setNeedPassword] = useState(mustSetPassword);
+  const [linkError, setLinkError] = useState('');
   const [waCheckedFor, setWaCheckedFor] = useState(null); // account whose chat allow-list has answered
   const [entering, setEntering] = useState(false);    // brief loader after login
   const initialized = useRef(false);
@@ -655,32 +685,49 @@ export default function App() {
     if (initialized.current) return;
     initialized.current = true;
 
-    // No session id: Landing/Login are already on screen via the seeded state
-    // above. Nothing is fetched until the user submits credentials — see
-    // loginRemote, which pulls a single filtered row instead of every user.
-    if (!hasSessionId()) return;
-
-    const cached = getSession(); // resolves the stored id against the cached users
-    if (cached) {
-      // Warm cache: the shell is already rendering from it (AppProvider seeded
-      // `user` from the same read). Just ask for push permission and refresh
-      // the data underneath.
-      requestNotifyPermission();
-      hydrateFromCloud(cached).finally(() => summarizeUnread(cached));
+    // A one-time recovery or invite link (#access_token=...&type=recovery):
+    // it becomes the session, then the account sets its own password.
+    if (openedFromAuthLink()) {
+      (async () => {
+        const r = await consumeAuthRedirect();
+        if (r && r.user) { setNeedPassword(true); enterApp(r.user); return; }
+        if (r && r.error) { setLinkError(r.error); setShowLogin(true); }
+        revealApp();
+      })();
       return;
     }
 
-    // Session id present but the cache is cold (cleared storage, new device, or
-    // a snapshot trimmed by persistLocal's quota fallback). The session cannot
-    // be resolved without the users table, so this is the one path that waits.
-    //
-    // The load is scoped by company, so it needs the user before it can build
-    // its filters — and the cache is exactly what cannot supply one here. Fetch
-    // that single row by primary key first; falling back to the unfiltered load
-    // if it fails keeps a broken network from locking anyone out.
+    // No session: Landing/Login are already on screen via the seeded state
+    // above. Nothing is fetched until the user submits credentials (auth.js).
+    if (!hasSessionId()) return;
+
+    const cached = getSession(); // the signed-in account's cached row, if any
+    if (cached) {
+      // Warm cache: the shell is already rendering from it (AppProvider seeded
+      // `user` from the same read). The token is re-verified first; a session
+      // the server no longer honours (expired, revoked, account deactivated)
+      // signs out instead of carrying on from the cache.
+      requestNotifyPermission();
+      (async () => {
+        const u = await restoreSession();
+        if (u && u.offline) return; // server unreachable: keep the cached shell, the session stays
+        if (!u) { clearLocalDB(); setUser(null); return; }
+        if (u.id !== cached.id) { clearLocalDB(); setUser(null); return; }
+        setUser(u);
+        hydrateFromCloud(u).finally(() => summarizeUnread(u));
+      })();
+      return;
+    }
+
+    // Session present but the cache is cold (cleared storage, new device, or
+    // a snapshot trimmed by persistLocal's quota fallback): the one path that
+    // waits. restoreSession verifies the token and fetches the account's own
+    // row, which the company-scoped load needs before it can build its filters.
+    // A session the server rejects lands on the login screen.
     (async () => {
-      const sid = JSON.parse(localStorage.getItem('pcrm_sess') || 'null')?.id;
-      const who = await fetchSessionUser(sid);
+      const who = await restoreSession();
+      // Offline with a cold cache: nothing to show, but the session is kept for a reload.
+      if (!who || who.offline) { revealApp(); return; }
       await hydrateFromCloud(who);
       const u = getSession();
       if (u) signIn(u);
@@ -695,8 +742,11 @@ export default function App() {
       <GlobalLoadingBar />
       {loadVisible && <LoadingScreen visible={loading} />}
       {!user && !loading && !showLogin && <Suspense fallback={null}><LandingPage onEnter={() => setShowLogin(true)} /></Suspense>}
-      {!user && !loading && showLogin && <LoginPage onLogin={enterApp} onBack={() => setShowLogin(false)} />}
-      {user && <AppShell />}
+      {!user && !loading && showLogin && <LoginPage onLogin={enterApp} onBack={() => setShowLogin(false)} initialError={linkError} />}
+      {user && needPassword && (
+        <div id="login"><div className="ln-right"><SetPasswordCard email={user.email} onDone={() => setNeedPassword(false)} /></div></div>
+      )}
+      {user && !needPassword && <AppShell />}
       {entering && <PostLoginLoader />}
       <Overlays />
       <Toast />

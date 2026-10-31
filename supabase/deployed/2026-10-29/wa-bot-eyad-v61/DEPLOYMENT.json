@@ -1,0 +1,87 @@
+{
+  "label": "PRODUCTION SNAPSHOT - wa-bot-eyad v61 - read-only evidence and rollback bundle",
+  "project_ref": "sbqmougcvnplgjgihpwe",
+  "function": {
+    "slug": "wa-bot-eyad",
+    "id": "f5d3c910-09cd-4598-88a6-ce98e40c7b91",
+    "version": 61,
+    "status": "ACTIVE",
+    "verify_jwt": false,
+    "import_map": false,
+    "entrypoint": "source/supabase/functions/wa-bot-eyad/index.ts",
+    "created_at": "2026-10-14T06:06:51.706Z",
+    "updated_at": "2026-10-19T20:03:49.926Z",
+    "ezbr_sha256": "7cd431da1a965fb0494e374199d3dd596f7d7517897f6fd98cc97620c9a4ac22"
+  },
+  "previous_snapshot": "../../2026-10-19/wa-bot-eyad-v59",
+  "retrieval": {
+    "downloaded_at": "2026-10-29T09:33:30Z",
+    "metadata_read_before_download": "2026-10-29T09:33:14Z",
+    "metadata_read_after_download": "2026-10-29T09:33:36Z",
+    "metadata_unchanged_across_download": true,
+    "method": "npx supabase functions download wa-bot-eyad --project-ref sbqmougcvnplgjgihpwe --use-api (CLI 2.122.0); metadata from supabase functions list -o json",
+    "read_only": true,
+    "cross_check": "Byte-identical to an independent download of the same version at 2026-10-29T07:28:42Z"
+  },
+  "git_baseline": {
+    "note": "Deployment metadata records no git commit or deployer. v61 = v59 plus the ad-lead welcome rule (wa-bot-eyad/index.ts) and the no-project prompt rule (_shared/ai.ts), which exist in no commit before CR-002. See docs/changes/CR-002-eyad-trainer-whatsapp-test.md."
+  },
+  "secret_scan": "No credential-shaped literal and no .env value present. Reads secrets only via Deno.env.get. Contains the Meta pixel id 869790160551668 and page id 104718884272119 (identifiers, not credentials; already in git in earlier snapshots).",
+  "integrity": {
+    "manifest": "SHA256SUMS",
+    "verify": "cd supabase/deployed/2026-10-29/wa-bot-eyad-v61 && sha256sum -c SHA256SUMS",
+    "gitattributes": "* -text (bytes stored as downloaded)"
+  },
+  "rollback": "Deployable only for rollback of a later wa-bot-eyad deploy: from a scratch copy laid out as supabase/functions/{_shared,wa-bot-eyad}/, run `npx supabase functions deploy wa-bot-eyad --no-verify-jwt --project-ref sbqmougcvnplgjgihpwe`. Never edit these files in place.",
+  "files": [
+    {
+      "path": "_shared/ai.ts",
+      "sha256": "dd3fbfdf7aab77fbf5f7c5eefe1e3bed8ad8f61e9e9c2c151ce533106f768fb7",
+      "bytes": 26208,
+      "line_endings": "CRLF",
+      "vs_previous_snapshot": "changed vs wa-bot-eyad-v59"
+    },
+    {
+      "path": "_shared/trainer-core.ts",
+      "sha256": "01a80bb5c69a0dd0749548ed1033a9a3e591e10f277bdef2cb8f42e95ea80939",
+      "bytes": 37512,
+      "line_endings": "CRLF",
+      "vs_previous_snapshot": "byte-identical to wa-bot-eyad-v59"
+    },
+    {
+      "path": "_shared/trainer-deno.ts",
+      "sha256": "c381c8f0cb32ec602f2766b264916279734610026b3bb22cdaf42a5f0bf1ae50",
+      "bytes": 4340,
+      "line_endings": "CRLF",
+      "vs_previous_snapshot": "byte-identical to wa-bot-eyad-v59"
+    },
+    {
+      "path": "_shared/trainer-handler.ts",
+      "sha256": "f4a8b68825f85ea7e3e6d85c0c0da3842c4002ed488225b0ca4eef12a108a1fa",
+      "bytes": 38770,
+      "line_endings": "CRLF",
+      "vs_previous_snapshot": "byte-identical to wa-bot-eyad-v59"
+    },
+    {
+      "path": "_shared/trainer-live.ts",
+      "sha256": "1d32437fc0661592176af5cdbb18898eaeed087f0a78fcac867468873ff8ff23",
+      "bytes": 7412,
+      "line_endings": "CRLF",
+      "vs_previous_snapshot": "byte-identical to wa-bot-eyad-v59"
+    },
+    {
+      "path": "_shared/wa.ts",
+      "sha256": "3c6911a750998a2bbfcb6a3b73a53e7efd7f8d72e0b64f8849f5327608ae212b",
+      "bytes": 22705,
+      "line_endings": "CRLF",
+      "vs_previous_snapshot": "byte-identical to wa-bot-eyad-v59"
+    },
+    {
+      "path": "wa-bot-eyad/index.ts",
+      "sha256": "876702a29a5163a03c8b3661ee24396441406d3ea260a771bdbda544b0433b89",
+      "bytes": 37342,
+      "line_endings": "CRLF",
+      "vs_previous_snapshot": "changed vs wa-bot-eyad-v59"
+    }
+  ]
+}

@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import Mi from '../Mi.jsx';
 import { avc, ini } from '../../lib/helpers.js';
+import { WA_ACCOUNTS, WA_ACCOUNT_LABEL } from '../../lib/wa.js';
 
 const fmtWhen = (iso) => {
   if (!iso) return '';
@@ -16,22 +17,34 @@ const fmtWhen = (iso) => {
 
 // Conversation rail. Ordering is driven purely by last_message_at, so a realtime
 // insert naturally lifts its thread to the top without extra bookkeeping.
-export default function ChatList({ conversations, activeId, onSelect, connState, loading }) {
+export default function ChatList({ conversations, activeId, onSelect, connState, loading, canLoadMore, loadingMore, onLoadMore }) {
   const [q, setQ] = useState('');
   const [onlyUnread, setOnlyUnread] = useState(false);
+  const [account, setAccount] = useState('all');
+
+  // Which WhatsApp numbers the viewer has threads on; the picker only shows
+  // when there is more than one to choose between.
+  const accountCounts = useMemo(() => {
+    const m = {};
+    for (const c of conversations) m[c.account] = (m[c.account] || 0) + 1;
+    return m;
+  }, [conversations]);
+  const accounts = WA_ACCOUNTS.filter(a => accountCounts[a]);
 
   const rows = useMemo(() => {
     const ql = q.trim().toLowerCase();
     return conversations
+      .filter(c => account === 'all' || c.account === account)
       .filter(c => !onlyUnread || c.unreadCount > 0)
       .filter(c => !ql
         || (c.name || '').toLowerCase().includes(ql)
         || (c.phone || '').includes(ql)
         || (c.lastMessagePreview || '').toLowerCase().includes(ql))
       .sort((a, b) => new Date(b.lastMessageAt || 0) - new Date(a.lastMessageAt || 0));
-  }, [conversations, q, onlyUnread]);
+  }, [conversations, q, onlyUnread, account]);
 
-  const totalUnread = conversations.reduce((s, c) => s + (c.unreadCount || 0), 0);
+  const scoped = account === 'all' ? conversations : conversations.filter(c => c.account === account);
+  const totalUnread = scoped.reduce((s, c) => s + (c.unreadCount || 0), 0);
 
   return (
     <aside className="wa-list">
@@ -53,6 +66,16 @@ export default function ChatList({ conversations, activeId, onSelect, connState,
             Unread{totalUnread > 0 ? ` (${totalUnread})` : ''}
           </button>
         </div>
+        {accounts.length > 1 && (
+          <div className="wa-filters" role="group" aria-label="WhatsApp number">
+            <button className={`ftab${account === 'all' ? ' on' : ''}`} onClick={() => setAccount('all')}>Both ({conversations.length})</button>
+            {accounts.map(a => (
+              <button key={a} className={`ftab${account === a ? ' on' : ''}`} onClick={() => setAccount(a)}>
+                {(WA_ACCOUNT_LABEL[a] || a).replace(' WhatsApp', '')} ({accountCounts[a]})
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       <div className="wa-list-body">
@@ -93,7 +116,7 @@ export default function ChatList({ conversations, activeId, onSelect, connState,
               <div className="wa-ci-bot">
                 <span className="wa-ci-prev">
                   {c.lastMessageDir === 'OUT' && <Mi className="wa-ci-out">reply</Mi>}
-                  {c.lastMessagePreview || '—'}
+                  {c.lastMessagePreview || '-'}
                 </span>
                 {c.unreadCount > 0 && <span className="wa-ci-badge">{c.unreadCount > 99 ? '99+' : c.unreadCount}</span>}
               </div>
@@ -104,6 +127,13 @@ export default function ChatList({ conversations, activeId, onSelect, connState,
           </button>
         ))}
       </div>
+
+      {canLoadMore && (
+        <button type="button" className="btn btn-g btn-sm"
+          disabled={loadingMore} onClick={onLoadMore}>
+          {loadingMore ? 'Loading...' : 'Load more chats'}
+        </button>
+      )}
     </aside>
   );
 }
