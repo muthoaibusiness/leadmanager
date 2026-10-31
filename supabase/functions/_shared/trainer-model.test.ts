@@ -209,3 +209,34 @@ test("review2: an error inside an HTTP 200 keeps its meaning: 401/403 auth, 402 
     assert.equal(r.code, code, String(c));
   }
 });
+
+// Playground 2026-10-31 14:41 (deepseek-v4-flash-0731 on a long prompt): the
+// model ignored the effort hint, thought for the whole budget and returned no
+// reply. The same request with reasoning off answers.
+test("chatCompletion (openrouter): an empty reply on the token limit is retried once with reasoning off", async () => {
+  const cfg = { provider: "openrouter" as const, base_url: "", model: "deepseek/x" };
+  const big = { ...REQ, max_tokens: 2000 };
+  const bodies: any[] = [];
+  const length = { choices: [{ finish_reason: "length", message: { content: null, reasoning: "thinking..." } }] };
+  const answer = { choices: [{ finish_reason: "stop", message: { content: "ok reply" } }], usage: { prompt_tokens: 7, completion_tokens: 3 } };
+  const recover: any = await chatCompletion(cfg, KEY, big, io(async (_u, init) => { bodies.push(JSON.parse(init.body)); return res(200, bodies.length === 1 ? length : answer); }));
+  assert.deepEqual(recover, { ok: true, text: "ok reply", prompt_tokens: 7, completion_tokens: 3 });
+  assert.equal(bodies.length, 2, "exactly one retry");
+  assert.deepEqual(bodies[0].reasoning, { effort: "low" });
+  assert.deepEqual(bodies[1].reasoning, { enabled: false });
+  assert.equal(bodies[1].max_tokens, 2000, "same budget, no extra spend");
+
+  // A model that cannot run without reasoning refuses the second try: the
+  // original, accurate "length" error stands.
+  let n = 0;
+  const mandatory: any = await chatCompletion(cfg, KEY, big, io(async () => (++n === 1 ? res(200, length) : res(400, {}))));
+  assert.equal(mandatory.ok, false); assert.equal(mandatory.code, "length"); assert.equal(n, 2);
+
+  // Not retried for a non-OpenRouter provider (no such field), or a good answer.
+  let c = 0;
+  await chatCompletion({ provider: "custom", base_url: "https://api.example.com/v1", model: "m" }, KEY, big, io(async () => { c++; return res(200, length); }));
+  assert.equal(c, 1);
+  c = 0;
+  await chatCompletion(cfg, KEY, big, io(async () => { c++; return res(200, answer); }));
+  assert.equal(c, 1);
+});

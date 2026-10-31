@@ -263,6 +263,10 @@ export interface BotSettings {
   // chat's number is in its test_numbers: the AI Trainer answers instead of
   // the legacy FAQ agent. Always false for every other chat.
   trainerTest: boolean;
+  // The project this bot's current ad campaign is about (migration 0050). Empty =
+  // the bot's own built-in default. A prelead's property_interest is only a
+  // default for contacts the ad did not name, so it cannot stand in for this.
+  campaignProject: string;
 }
 
 // Each bot reads its own wa_bot_settings row (migration 0034). A missing row or
@@ -284,7 +288,7 @@ export async function getBotSettings(bot: BotName, phone?: string): Promise<BotS
     return { // fail closed for customers; agent commands stay usable
       autoForwardEnabled: false, autoForwardAfterMessages: 3, faqAgentEnabled: false, aiMediaEnabled: false,
       welcomeEnabled: false, welcomeMessage: "", manualForwardEnabled: true, docsCommandEnabled: true,
-      takeoverEnabled: true, notesEnabled: true, customerNotifyEnabled: false, metaCapiEnabled: false, trainerTest: false,
+      takeoverEnabled: true, notesEnabled: true, customerNotifyEnabled: false, metaCapiEnabled: false, trainerTest: false, campaignProject: "",
     };
   }
   const row = botRows[0];
@@ -301,7 +305,7 @@ export async function getBotSettings(bot: BotName, phone?: string): Promise<BotS
       faqAgentEnabled: true, aiMediaEnabled: true, welcomeEnabled: true, welcomeMessage: src.welcome_message || "",
       manualForwardEnabled: true, docsCommandEnabled: true, takeoverEnabled: true, notesEnabled: true,
       customerNotifyEnabled: true, metaCapiEnabled: true,
-      trainerTest: row?.trainer_test_mode === true,
+      trainerTest: row?.trainer_test_mode === true, campaignProject: String(row?.campaign_project || ""),
     };
   }
   return {
@@ -318,6 +322,7 @@ export async function getBotSettings(bot: BotName, phone?: string): Promise<BotS
     customerNotifyEnabled: on(src.customer_notify_enabled),
     metaCapiEnabled: on(src.meta_capi_enabled),
     trainerTest: false,
+    campaignProject: String(src.campaign_project || ""),
   };
 }
 
