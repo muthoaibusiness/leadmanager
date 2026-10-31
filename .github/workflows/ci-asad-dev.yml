@@ -1,0 +1,29 @@
+name: CI (asad-dev)
+
+on:
+  push:
+    branches: [asad-dev]
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      # Isolated suites only: stubbed fetch / happy-dom / PGlite, no network,
+      # no Supabase credentials, no writes to production.
+      - name: Isolated tests
+        run: |
+          set -e
+          npx vite-node --config .gate-harness/vite.config.mjs scripts/leadpanel-interested.test.mjs
+          npx vite-node --config .gate-harness/vite.config.mjs scripts/followup-rules.test.mjs
+          npx vite-node --config .gate-harness/vite.config.mjs scripts/followup-reminders.test.mjs
+          node --test scripts/company-time.test.mjs
+          npx vite-node --config .gate-harness/vite.config.mjs scripts/forward.test.mjs
+          node scripts/test-0049.mjs
+      - name: Build
+        run: npm run build

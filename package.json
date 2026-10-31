@@ -27,7 +27,10 @@
     "test:ingest": "node --test scripts/ingest.test.mjs",
     "eval:docs": "node scripts/eval-docs.ts",
     "test:live": "node --test supabase/functions/_shared/trainer-live.test.ts supabase/functions/_shared/wa-settings.test.ts supabase/functions/_shared/phone.test.ts supabase/functions/_shared/wa-webhook-auth.test.ts supabase/functions/_shared/ai-flow.test.ts",
-    "test:ui:pillnav": "vite-node scripts/aitrainer-ui/pillnav.flow.test.mjs"
+    "test:ui:pillnav": "vite-node scripts/aitrainer-ui/pillnav.flow.test.mjs",
+    "test:followup": "vite-node scripts/followup-reminders.test.mjs",
+    "test:followup-rules": "vite-node scripts/followup-rules.test.mjs && node --test scripts/company-time.test.mjs",
+    "test:0049": "node scripts/test-0049.mjs"
   },
   "dependencies": {
     "@ark-ui/react": "^5.37.2",

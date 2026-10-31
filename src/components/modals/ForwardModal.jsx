@@ -2,11 +2,15 @@ import { useState, useEffect, useId } from 'react';
 import Mi from '../Mi.jsx';
 import { useApp } from '../../context/AppContext.jsx';
 import useChanged from '../../hooks/useChanged.js';
-import { getDB, fwdLead, getProperties, updLead, offerComplete, setMeeting } from '../../lib/db.js';
+import { getDB, fwdLead, getProperties, updLead, offerComplete, setMeeting, getLead, claimLeadForSelf } from '../../lib/db.js';
 import { sbGetUsersLite, rToU } from '../../lib/supabase.js';
 import { avc, ini, rlabel, fmtBDT } from '../../lib/helpers.js';
-import { ROLES, OFFER_MAX } from '../../lib/constants.js';
+import { ROLES, OFFER_MAX, canSelfForward } from '../../lib/constants.js';
 import useLeadBook from '../../hooks/useLeadBook.js';
+import { useProjectToast } from '../project/projectToast.js';
+import useDiscardGuard from '../../hooks/useDiscardGuard.js';
+import { toastMsg } from '../../lib/toastMap.js';
+import { forwardDirty } from '../../lib/forwardDirty.js';
 
 // Things the agent may have already shared with the client (clickable).
 const SHARED_OPTS = [
@@ -22,19 +26,23 @@ const HOURS = { ONLINE: { min: 10, max: 22, label: '10 AM – 10 PM' }, OFFLINE:
 // same color everywhere in the app.
 const ROLE_BADGE_CLS = { AGENT: 's-new', TEAM_LEAD: 's-negotiating', MANAGEMENT: 's-deal_closed_won', EXECUTIVE: 's-negotiating' };
 
-// Three flows share this modal:
-//   forward-tl     pick a Team Lead, then the offer (the lead changes hands)
-//   forward-agent  pick another agent on the team; the lead changes hands at
-//                  its current stage, no second step
+// One modal, two uses:
 //   set-meeting  the Agent books the client meeting on their own lead — no
 //                hand-off, so it opens straight on the meeting step
+//   forward-agent one top-level Forward action. Step 1 chooses the destination:
+//                an agent/team member (plain hand-off at the current stage), a
+//                Team Lead (closing hand-off, offer required), or Self Forward
+//                (claimLeadForSelf, shown as the user's own account). Every
+//                path changes only ownership and logs the hand-off; everything
+//                else on the lead stays.
+const SELF = '__self__';
 export default function ForwardModal() {
-  const { modal, closeModal, user, panLead, refreshDB, showToast } = useApp();
+  const { modal, closeModal, user, panLead, refreshDB } = useApp();
+  const toast = useProjectToast({ always: true });
   const uid = useId(); // field ids, so each <label htmlFor> points at its field
   const isMA = modal === 'set-meeting';
-  const isTL = modal === 'forward-tl';
   const isAG = modal === 'forward-agent';
-  const isOpen = isMA || isTL || isAG;
+  const isOpen = isMA || isAG;
   // Gated on isOpen: this modal is mounted on every page (App.jsx renders it
   // unconditionally and it returns null when closed), so an ungated call pulled
   // the entire lead book on every screen in the app — including before login,
@@ -43,6 +51,7 @@ export default function ForwardModal() {
 
   const [step, setStep] = useState(1);
   const [selected, setSelected] = useState(null);
+  const [dest, setDest] = useState('agent');
   const [projectId, setProjectId] = useState('');
   const [ourOffer, setOurOffer] = useState('');
   const [clientOffer, setClientOffer] = useState('');
@@ -59,28 +68,54 @@ export default function ForwardModal() {
   const [targets, setTargets] = useState([]);
   const [pq, setPq] = useState('');
 
-  const targetRole = isAG ? ROLES.AGENT : ROLES.TL;
+  const lead = panLead ? getLead(panLead) : null;
+  const status = lead?.status;
+  // The same route rules the Lead Panel uses to decide whether the single
+  // "Forward to Agent" button shows; inside the modal they decide which
+  // destination options are offered.
+  const teamRoute = user.role !== ROLES.MA && status && !['NEGOTIATING', 'DEAL_CLOSED_WON', 'DEAL_CLOSED_LOST', 'NOT_INTERESTED'].includes(status) && lead?.assignedTo === user.id;
+  const tlRoute = status === 'SITE_VISIT_DONE';
+  const selfRoute = canSelfForward(user) && lead?.assignedTo !== user.id;
+
+  const dests = [
+    { key: 'agent', label: 'Agent / team member', eligible: teamRoute },
+    { key: 'tl', label: 'Team Lead', eligible: tlRoute },
+    { key: 'self', label: 'Self Forward', eligible: selfRoute },
+  ].filter(d => d.eligible);
+
   const toggleShared = (k) => setShared(s => s.includes(k) ? s.filter(x => x !== k) : [...s, k]);
 
   if (useChanged(isOpen && modal) && isOpen) {
     setSelected(null); setStep(isMA ? 2 : 1); setProjectId(''); setOurOffer(''); setClientOffer(''); setTotalSft(''); setOfferNotes('');
     setMeetingType('ONLINE'); setMeetingAt(''); setMeetingLink(''); setShared([]); setTargets([]); setPq('');
+    setDest(dests.length ? dests[0].key : 'agent');
   }
+
+  // Guard every close path (backdrop, the X button, Cancel, Escape): a form
+  // with any destination/offer/meeting input asks before discarding via the
+  // goey confirmation. Step navigation (Back/Next) never counts as dirty.
+  const dirty = () => isOpen && forwardDirty({ selected, pq, meetingAt, meetingLink, shared, meetingType, projectId, ourOffer, clientOffer, totalSft, offerNotes });
+  const g = useDiscardGuard({
+    isOpen,
+    isDirty: dirty,
+    onClose: closeModal,
+    ask: { title: 'Discard forward?', description: 'Your unsaved forward details will be lost.' },
+  });
 
   const db = getDB();
 
   useEffect(() => {
-    if (!(isTL || isAG) || !user?.teamId) return;
+    if (!isAG || !user?.teamId || dest === 'self') return;
     let live = true;
-    // Agent hand-off: every other agent on the team, including the Team Lead —
-    // Executives work leads as agents too (see effectiveRole), so they are
-    // valid recipients. (This is a plain reassignment, not the SITE_VISIT_DONE
-    // → Team Lead closing hand-off below, which still requires an offer.)
-    const roleQ = isAG ? `role=in.(${ROLES.AGENT},${ROLES.EXEC},${ROLES.TL})` : `role=eq.${targetRole}`;
+    // Agent/team-member hand-off: every other agent on the team, including the
+    // Team Lead — Executives work leads as agents too (see effectiveRole), so
+    // they are valid recipients. The Team Lead destination is a closing
+    // hand-off (SITE_VISIT_DONE) that still requires an offer.
+    const roleQ = dest === 'tl' ? `role=eq.${ROLES.TL}` : `role=in.(${ROLES.AGENT},${ROLES.EXEC},${ROLES.TL})`;
     sbGetUsersLite(`${roleQ}&team_id=eq.${user.teamId}&is_active=not.eq.false`)
       .then(rows => { if (live) setTargets((rows || []).map(rToU).filter(u => u.id !== user.id).sort((a, b) => (a.name || '').localeCompare(b.name || ''))); });
     return () => { live = false; };
-  }, [isTL, isAG, targetRole, user?.teamId, user?.id]);
+  }, [isAG, dest, user?.teamId, user?.id]);
 
   // Project catalog + live demand (how many leads already interested in each project)
   const projects = [...getProperties()].sort((a, b) => a.name.localeCompare(b.name));
@@ -95,17 +130,23 @@ export default function ForwardModal() {
   // than the submit, so the number on screen is the number that gets sent.
   const onRate = (set) => (e) => { const v = e.target.value; if (v === '' || (/^\d{1,5}(\.\d*)?$/.test(v) && parseFloat(v) <= OFFER_MAX)) set(v); };
 
-  // Shared by Set Meeting and Forward to Agent (which books the meeting
-  // before the hand-off) — validates the working-hour window and, for an
+  // Shared by Set Meeting — validates the working-hour window and, for an
   // online meeting, that a join link was given.
   const buildMeetingData = () => {
-    if (!meetingAt) { showToast('Pick a meeting date & time', 'err'); return null; }
+    if (!meetingAt) { toastMsg(toast, 'Pick a meeting date & time', 'err'); return null; }
     const d = new Date(meetingAt);
     const h = d.getHours() + d.getMinutes() / 60;
     const w = HOURS[meetingType];
-    if (h < w.min || h > w.max) { showToast(`${meetingType === 'ONLINE' ? 'Online' : 'Offline'} meetings must be within ${w.label}`, 'err'); return null; }
-    if (meetingType === 'ONLINE' && !meetingLink.trim()) { showToast('Add the online meeting link', 'err'); return null; }
+    if (h < w.min || h > w.max) { toastMsg(toast, `${meetingType === 'ONLINE' ? 'Online' : 'Offline'} meetings must be within ${w.label}`, 'err'); return null; }
+    if (meetingType === 'ONLINE' && !meetingLink.trim()) { toastMsg(toast, 'Add the online meeting link', 'err'); return null; }
     return { meetingType, meetingAt: d.toISOString(), meetingLink: meetingType === 'ONLINE' ? meetingLink.trim() : '', meetingShared: shared };
+  };
+
+  const submitSelf = () => {
+    if (!claimLeadForSelf(panLead, user)) { toastMsg(toast, 'Could not forward this lead', 'err'); return; }
+    closeModal();
+    refreshDB();
+    toastMsg(toast, 'Lead forwarded to you', 'ok');
   };
 
   const submit = () => {
@@ -117,22 +158,18 @@ export default function ForwardModal() {
       setMeeting(panLead, meetingData, user);
       closeModal();
       refreshDB();
-      showToast('Meeting set', 'ok');
+      toastMsg(toast, 'Meeting set', 'ok');
       return;
     }
 
     const toUser = selected ? targets.find(u => u.id === selected) : null;
     if (!toUser) return;
 
-    // Forward to Agent also books the meeting first, same as Set Meeting —
-    // the lead moves to Meeting Set, then hands off.
-    if (isAG) {
-      const meetingData = buildMeetingData();
-      if (!meetingData) return;
-      setMeeting(panLead, meetingData, user);
-    }
-
-    const offerData = isTL ? {
+    // A forward changes only the owner (and, on a Team Lead closing hand-off,
+    // attaches the offer). Status, follow-ups, attempts, meeting/visit data,
+    // notes and suppression all stay — booking a meeting is a separate action
+    // (Set Meeting) and is not part of forwarding.
+    const offerData = dest === 'tl' ? {
       ourOffer: parseFloat(ourOffer) || 0,
       clientOffer: parseFloat(clientOffer) || 0,
       totalSft: parseFloat(totalSft) || 0,
@@ -144,72 +181,103 @@ export default function ForwardModal() {
     // A Team Lead hand-off carries an offer or it does not happen: the closing
     // pipeline only lists leads with one, so a lead forwarded without it would
     // land nowhere. fwdLead enforces the same rule.
-    if (isTL && !offerComplete(offerData)) {
+    if (dest === 'tl' && !offerComplete(offerData)) {
       const overCap = offerData.ourOffer > OFFER_MAX || offerData.clientOffer > OFFER_MAX;
-      showToast(overCap
+      toastMsg(toast, overCap
         ? `Offer rates are per SFT — 5 digits at most (${OFFER_MAX})`
         : 'Enter our rate, the client rate and total SFT before forwarding', 'err');
       return;
     }
-    if (!fwdLead(panLead, toUser, user, offerData)) { showToast('Could not forward this lead', 'err'); return; }
-    if (isTL && project) updLead(panLead, { dealProjectId: project.id, dealProjectName: project.name, propertyInterest: project.name });
+    if (!fwdLead(panLead, toUser, user, offerData)) { toastMsg(toast, 'Could not forward this lead', 'err'); return; }
+    if (dest === 'tl' && project) updLead(panLead, { dealProjectId: project.id, dealProjectName: project.name, propertyInterest: project.name });
     closeModal();
     refreshDB();
-    showToast('Lead forwarded to ' + toUser.name, 'ok');
+    toastMsg(toast, 'Lead forwarded to ' + toUser.name, 'ok');
   };
 
   const selectedUser = selected ? targets.find(u => u.id === selected) : null;
 
   return (
-    <div className={`mov${isOpen ? ' on' : ''}`} onClick={e => { if (e.target === e.currentTarget) closeModal(); }}>
-      <div className="modal">
+    <div className={`mov${isOpen ? ' on' : ''}`} {...g.backdropProps}>
+      <div className="modal" {...g.modalProps}>
         <div className="m-hd">
-          <div className="m-ttl">{isMA ? 'Set Meeting' : isAG ? 'Forward to Teammate' : 'Forward to ' + rlabel(targetRole)}</div>
-          <button className="m-x" onClick={closeModal}><Mi>close</Mi></button>
+          <div className="m-ttl">{isMA ? 'Set Meeting' : 'Forward to Agent'}</div>
+          <button className="m-x" onClick={g.requestClose}><Mi>close</Mi></button>
         </div>
 
-        {/* Step 1 — select agent */}
-        {step === 1 && (
+        {/* Step 1 — forward: choose a destination, then a person (agent/TL) */}
+        {step === 1 && isAG && (
           <>
             <div className="m-body">
-              <label htmlFor={`${uid}target`} className="fwd-label">{isAG ? 'Select teammate' : 'Select ' + rlabel(targetRole)}</label>
-              <div className="fwd-search">
-                <Mi>search</Mi>
-                <input
-                  id={`${uid}target`}
-                  placeholder={isAG ? 'Search teammate…' : 'Search ' + rlabel(targetRole).toLowerCase() + '…'}
-                  value={pq} onChange={e => setPq(e.target.value)} autoFocus
-                />
+              <div className="m-hint" style={{ marginBottom: '14px' }}>
+                <Mi>swap_horiz</Mi>The lead changes hands as-is: status, follow-ups, attempts, meeting/visit data and notes all stay; only the owner changes.
               </div>
-              <div className="fwd-list">
-                {targets
-                  .filter(u => { const q = pq.trim().toLowerCase(); return !q || u.name.toLowerCase().includes(q) || u.email.toLowerCase().includes(q); })
-                  .map(u => (
-                    <button type="button" key={u.id} className={`fwd-row${selected === u.id ? ' on' : ''}`} onClick={() => setSelected(u.id)}>
-                      <div className="fwd-av" style={{ background: avc(u.name) }}>{ini(u.name)}</div>
-                      <div className="fwd-mid">
-                        <div className="fwd-name">{u.name}</div>
-                        <div className="fwd-email">{u.email}</div>
-                      </div>
-                      <span className={`bdg ${ROLE_BADGE_CLS[u.role] || 's-new'}`}>{rlabel(u.role)}</span>
-                      <Mi className="fwd-ck">{selected === u.id ? 'check_circle' : 'radio_button_unchecked'}</Mi>
+              <div className="fl">
+                <label>Forward to</label>
+                <div className="seg">
+                  {dests.map(d => (
+                    <button key={d.key} type="button" className={`seg-b${dest === d.key ? ' on' : ''}`} onClick={() => { setDest(d.key); setSelected(null); setPq(''); setStep(1); }}>
+                      {d.label}
                     </button>
                   ))}
-                {!targets.length && <div className="fwd-empty"><Mi>group_off</Mi>No other teammates yet</div>}
-                {!!targets.length && !targets.some(u => !pq.trim() || u.name.toLowerCase().includes(pq.trim().toLowerCase()) || u.email.toLowerCase().includes(pq.trim().toLowerCase())) && (
-                  <div className="fwd-empty"><Mi>search_off</Mi>No match for "{pq}"</div>
-                )}
+                </div>
               </div>
+              {dest !== 'self' ? (
+                <>
+                  <label htmlFor={`${uid}target`} className="fwd-label">{dest === 'tl' ? 'Select Team Lead' : 'Select teammate'}</label>
+                  <div className="fwd-search">
+                    <Mi>search</Mi>
+                    <input
+                      id={`${uid}target`}
+                      placeholder={dest === 'tl' ? 'Search team lead…' : 'Search teammate…'}
+                      value={pq} onChange={e => setPq(e.target.value)} autoFocus
+                    />
+                  </div>
+                  <div className="fwd-list">
+                    {targets
+                      .filter(u => { const q = pq.trim().toLowerCase(); return !q || u.name.toLowerCase().includes(q) || u.email.toLowerCase().includes(q); })
+                      .map(u => (
+                        <button type="button" key={u.id} className={`fwd-row${selected === u.id ? ' on' : ''}`} onClick={() => setSelected(u.id)}>
+                          <div className="fwd-av" style={{ background: avc(u.name) }}>{ini(u.name)}</div>
+                          <div className="fwd-mid">
+                            <div className="fwd-name">{u.name}</div>
+                            <div className="fwd-email">{u.email}</div>
+                          </div>
+                          <span className={`bdg ${ROLE_BADGE_CLS[u.role] || 's-new'}`}>{rlabel(u.role)}</span>
+                          <Mi className="fwd-ck">{selected === u.id ? 'check_circle' : 'radio_button_unchecked'}</Mi>
+                        </button>
+                      ))}
+                    {!targets.length && <div className="fwd-empty"><Mi>group_off</Mi>No other teammates yet</div>}
+                    {!!targets.length && !targets.some(u => !pq.trim() || u.name.toLowerCase().includes(pq.trim().toLowerCase()) || u.email.toLowerCase().includes(pq.trim().toLowerCase())) && (
+                      <div className="fwd-empty"><Mi>search_off</Mi>No match for "{pq}"</div>
+                    )}
+                  </div>
+                </>
+              ) : (
+                <div className="fwd-list">
+                  <button type="button" className={`fwd-row${selected === SELF ? ' on' : ''}`} onClick={() => setSelected(SELF)}>
+                    <div className="fwd-av" style={{ background: avc(user.name) }}>{ini(user.name)}</div>
+                    <div className="fwd-mid">
+                      <div className="fwd-name">{user.name}</div>
+                      <div className="fwd-email">{user.email}</div>
+                    </div>
+                    <span className={`bdg ${ROLE_BADGE_CLS[user.role] || 's-new'}`}>{rlabel(user.role)}</span>
+                    <Mi className="fwd-ck">{selected === SELF ? 'check_circle' : 'radio_button_unchecked'}</Mi>
+                  </button>
+                </div>
+              )}
             </div>
             <div className="m-ft">
-              <button className="btn btn-g" onClick={closeModal}>Cancel</button>
-              <button className="btn btn-p" disabled={!selected} onClick={() => setStep(2)}>Next</button>
+              <button className="btn btn-g" onClick={g.requestClose}>Cancel</button>
+              {dest === 'self'
+                ? <button className="btn btn-p" disabled={selected !== SELF} onClick={submitSelf}><Mi>swap_horiz</Mi>Forward</button>
+                : <button className="btn btn-p" disabled={!selected} onClick={() => setStep(2)}>Next</button>}
             </div>
           </>
         )}
 
-        {/* Step 2 — offer details (TL only) */}
-        {step === 2 && isTL && (
+        {/* Step 2 — offer details (Team Lead destination only) */}
+        {step === 2 && isAG && dest === 'tl' && (
           <>
             <div className="m-body">
               <div className="m-hint" style={{ marginBottom: '14px' }}>
@@ -261,71 +329,76 @@ export default function ForwardModal() {
               </div>
             </div>
             <div className="m-ft">
-              <button className="btn btn-g" onClick={() => setStep(1)}>Back</button>
+              <button className="btn btn-g" onClick={() => { setStep(1); setSelected(null); }}>Back</button>
               <button className="btn btn-p" disabled={!offerReady} onClick={submit}>Forward</button>
             </div>
           </>
         )}
 
-        {/* Step 2 — meeting + already-shared details (Set Meeting, and Forward to Agent before the hand-off) */}
-        {step === 2 && (isMA || isAG) && (
+        {/* Step 2 — meeting details (Set Meeting) or a plain hand-off confirm (Agent/team-member) */}
+        {step === 2 && (isMA || (isAG && dest === 'agent')) && (
           <>
             <div className="m-body">
-              <div className="m-hint" style={{ marginBottom: '14px' }}>
-                <Mi>event</Mi>
-                {isMA
-                  ? 'Book the client meeting. The lead stays with you and moves to Meeting Set.'
-                  : `Book the client meeting before handing off — it moves to Meeting Set, then over to ${selectedUser?.name}.`}
-              </div>
+              {isMA ? (
+                <>
+                  <div className="m-hint" style={{ marginBottom: '14px' }}>
+                    <Mi>event</Mi>Book the client meeting. The lead stays with you and moves to Meeting Set.
+                  </div>
 
-              {/* Meeting type */}
-              <div className="fl">
-                <label>Meeting type</label>
-                <div className="seg">
-                  <button type="button" className={`seg-b${meetingType === 'ONLINE' ? ' on' : ''}`} onClick={() => setMeetingType('ONLINE')}>
-                    <Mi>videocam</Mi>Online
-                  </button>
-                  <button type="button" className={`seg-b${meetingType === 'OFFLINE' ? ' on' : ''}`} onClick={() => setMeetingType('OFFLINE')}>
-                    <Mi>store</Mi>Offline
-                  </button>
-                </div>
-              </div>
+                  {/* Meeting type */}
+                  <div className="fl">
+                    <label>Meeting type</label>
+                    <div className="seg">
+                      <button type="button" className={`seg-b${meetingType === 'ONLINE' ? ' on' : ''}`} onClick={() => setMeetingType('ONLINE')}>
+                        <Mi>videocam</Mi>Online
+                      </button>
+                      <button type="button" className={`seg-b${meetingType === 'OFFLINE' ? ' on' : ''}`} onClick={() => setMeetingType('OFFLINE')}>
+                        <Mi>store</Mi>Offline
+                      </button>
+                    </div>
+                  </div>
 
-              {/* Meeting time within working hours */}
-              <div className="fl">
-                <label>Meeting time</label>
-                <input className="finp" type="datetime-local" value={meetingAt} onChange={e => setMeetingAt(e.target.value)} />
-                <div className="fi-hint"><Mi>schedule</Mi>Within working hours · {HOURS[meetingType].label}</div>
-              </div>
+                  {/* Meeting time within working hours */}
+                  <div className="fl">
+                    <label>Meeting time</label>
+                    <input className="finp" type="datetime-local" value={meetingAt} onChange={e => setMeetingAt(e.target.value)} />
+                    <div className="fi-hint"><Mi>schedule</Mi>Within working hours · {HOURS[meetingType].label}</div>
+                  </div>
 
-              {/* Online meetings need a join link */}
-              {meetingType === 'ONLINE' && (
-                <div className="fl">
-                  <label>Meeting link</label>
-                  <input className="finp" type="url" placeholder="https://meet.google.com/… or Zoom link" value={meetingLink} onChange={e => setMeetingLink(e.target.value)} />
-                  <div className="fi-hint"><Mi>link</Mi>Saved on the lead</div>
+                  {/* Online meetings need a join link */}
+                  {meetingType === 'ONLINE' && (
+                    <div className="fl">
+                      <label>Meeting link</label>
+                      <input className="finp" type="url" placeholder="https://meet.google.com/… or Zoom link" value={meetingLink} onChange={e => setMeetingLink(e.target.value)} />
+                      <div className="fi-hint"><Mi>link</Mi>Saved on the lead</div>
+                    </div>
+                  )}
+
+                  {/* Already shared */}
+                  <div className="fl">
+                    <label>Already shared with client</label>
+                    <div className="chip-grid">
+                      {SHARED_OPTS.map(o => (
+                        <button type="button" key={o.key} className={`chip-sel${shared.includes(o.key) ? ' on' : ''}`} onClick={() => toggleShared(o.key)}>
+                          <Mi>{o.icon}</Mi>{o.label}
+                          {shared.includes(o.key) && <Mi className="chip-ck">check</Mi>}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </>
+              ) : (
+                <div className="m-hint" style={{ marginBottom: '14px' }}>
+                  <Mi>swap_horiz</Mi>Forward to <strong>{selectedUser?.name}</strong> as-is. Status, follow-ups, attempts, meeting/visit history and notes all stay; only the owner changes.
                 </div>
               )}
-
-              {/* Already shared */}
-              <div className="fl">
-                <label>Already shared with client</label>
-                <div className="chip-grid">
-                  {SHARED_OPTS.map(o => (
-                    <button type="button" key={o.key} className={`chip-sel${shared.includes(o.key) ? ' on' : ''}`} onClick={() => toggleShared(o.key)}>
-                      <Mi>{o.icon}</Mi>{o.label}
-                      {shared.includes(o.key) && <Mi className="chip-ck">check</Mi>}
-                    </button>
-                  ))}
-                </div>
-              </div>
             </div>
             <div className="m-ft">
               {isAG
                 ? <button className="btn btn-g" onClick={() => setStep(1)}>Back</button>
-                : <button className="btn btn-g" onClick={closeModal}>Cancel</button>}
+                : <button className="btn btn-g" onClick={g.requestClose}>Cancel</button>}
               <button className="btn btn-p" onClick={submit}>
-                <Mi>{isAG ? 'swap_horiz' : 'event_available'}</Mi>{isAG ? 'Set Meeting & Forward' : 'Set Meeting'}
+                <Mi>{isAG ? 'swap_horiz' : 'event_available'}</Mi>{isAG ? 'Forward' : 'Set Meeting'}
               </button>
             </div>
           </>

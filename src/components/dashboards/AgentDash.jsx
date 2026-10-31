@@ -15,6 +15,8 @@ import { or, and, eq, is, lt, KPI, forwardedToRole } from '../../lib/leadQuery.j
 import { panelConfigFor } from '../../lib/funnel.js';
 import useActWindow from '../../hooks/useActWindow.js';
 import useLeadCounts from '../../hooks/useLeadCounts.js';
+import useIsPhone from '../../hooks/useIsPhone.js';
+import { PeriodSelect, CustomRange, SecHead } from './MobileBits.jsx';
 
 const CLOSED = ['DEAL_CLOSED_WON', 'DEAL_CLOSED_LOST', 'NOT_INTERESTED'];
 
@@ -40,6 +42,7 @@ export default function AgentDash() {
   useActWindow(); // pull the recent-activity window; activities are not in the boot load
   const { user, dbVersion, setPanLead, setChatTarget, chatOk, nav, refreshDB, showToast, dateRange } = useApp();
   const [detail, setDetail] = useState(null);
+  const phone = useIsPhone();
   void dbVersion; // re-render when DB changes
   const db = getDB();
 
@@ -184,14 +187,222 @@ export default function AgentDash() {
   const periodSub = periodLabel(dateRange);
   const panelCfg = panelConfigFor(user.role);
 
+  // Shared by the desktop layout and the phone layout below, so both render
+  // the same thing.
+  const greetSub = [
+    view.queue.length > 0 ? `${view.queue.length} ${view.queue.length === 1 ? 'lead' : 'leads'} to work today` : "You're all caught up.",
+    view.todayVisits.length > 0 ? `${view.todayVisits.length} ${view.todayVisits.length === 1 ? 'visit' : 'visits'} today` : '',
+  ].filter(Boolean).join(' · ');
+  const markDone = (id) => { clearFollowup(id, user); refreshDB(); showToast('Follow-up completed', 'ok'); };
+
+  // Meeting → visit pipeline
+  const pipelineBlock = (
+      <div className="mpipe">
+        {STAGES.map((s, i) => (
+          <button key={s.key} className="mpipe-seg" onClick={() => setDetail({ title: s.label, query: pipeQ[s.key], total: pipe[s.key] })}>
+            <span className="mpipe-step">Step {i + 1}</span>
+            <span className="mpipe-num" style={pipe[s.key] && s.color ? { color: s.color } : undefined}>
+              {pipe[s.key] == null ? <Spinner size={16} /> : pipe[s.key]}
+            </span>
+            <span className="mpipe-lbl">{s.label}</span>
+            <span className="mpipe-bar" style={{ background: s.color || 'var(--t3)' }} />
+          </button>
+        ))}
+      </div>
+  );
+
+  // Where leads drop off, and the last 30 days of stage events
+  const conversionBlock = (
+      <ConversionPanel
+        leads={[]}
+        activities={db.activities || {}}
+        dateRange={dateRange}
+        stages={panelCfg.stages}
+        seriesKeys={panelCfg.seriesKeys}
+        title={panelCfg.title}
+      />
+  );
+
+  const todayVisitsCard = (
+          <div className="iad-queue">
+            <div className="iad-q-hd">
+              <span className="iad-q-ttl">Today's visits</span>
+              {pipe.overdue > 0 && (
+                <button className="iad-q-ct ag-overdue" onClick={() => setDetail({ title: 'Overdue Visits', query: pipeQ.overdue, total: pipe.overdue })}>
+                  {pipe.overdue} overdue
+                </button>
+              )}
+            </div>
+            {visitRows === null ? (
+              <LoadingBlock label="Loading visits…" />
+            ) : view.todayVisits.length === 0 ? (
+              <div className="iad-q-empty iad-q-empty-quiet"><span>No visits scheduled today.</span></div>
+            ) : (
+              <div className="iad-q-list">
+                {view.todayVisits.map(l => (
+                  <div key={l.id} className="iad-q-row" onClick={() => setPanLead(l.id)}>
+                    <div className="iad-mt-time">{new Date(l.meetingDate).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })}</div>
+                    <div className="iad-q-info">
+                      <div className="iad-q-name">{l.name}</div>
+                      <div className="iad-q-meta">{l.meetingLocation || 'Site visit'} · {l.propertyInterest || 'No project'}</div>
+                    </div>
+                    <a className="iad-q-call" href={`tel:${l.phone}`} title="Call" onClick={e => e.stopPropagation()}><Mi>call</Mi></a>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+  );
+
+  const upcomingVisitsCard = (
+          <div className="iad-queue">
+            <div className="iad-q-hd">
+              <span className="iad-q-ttl">Upcoming visits</span>
+              {view.upcoming.length > 0 && <span className="iad-q-ct">{view.upcoming.length}</span>}
+            </div>
+            {view.upcoming.length === 0 ? (
+              <div className="iad-q-empty iad-q-empty-quiet"><span>No future visits scheduled.</span></div>
+            ) : (
+              <div className="iad-q-list">
+                {view.upcoming.slice(0, 6).map(l => (
+                  <div key={l.id} className="iad-q-row" onClick={() => setPanLead(l.id)}>
+                    <div className="iad-mt-time">{new Date(l.meetingDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })}</div>
+                    <div className="iad-q-info">
+                      <div className="iad-q-name">{l.name}</div>
+                      <div className="iad-q-meta">{l.meetingLocation || 'Site visit'} · {leadDisplayStatus(l).label}</div>
+                    </div>
+                    <a className="iad-q-call" href={`tel:${l.phone}`} title="Call" onClick={e => e.stopPropagation()}><Mi>call</Mi></a>
+                  </div>
+                ))}
+                <div className="iad-q-more" onClick={() => nav('calendar')}>Open calendar</div>
+              </div>
+            )}
+          </div>
+  );
+
+  const sheet = <KpiSheet detail={detail} onClose={() => setDetail(null)} onLead={(id) => { setDetail(null); setPanLead(id); }} />;
+
+  // ── Phone (<768px): the soft Home. The same counts, lists and actions as the
+  // desktop layout, as cards: Today (work queue, call outcomes, target), the
+  // KPI tiles, follow-ups, the call list, then pipeline, conversion, success
+  // rate and visits. Every tile opens the same drill-down sheet as on desktop.
+  const renderPhone = () => {
+    // `tone` tints the value exactly as the desktop StatCards do.
+    const tile = (label, val, sub, open, tone) => (
+      <button key={label} type="button" className={`mh-card mh-tile${tone ? ' mh-tone-' + tone : ''}`} onClick={open}>
+        <span className="mh-lbl">{label}</span>
+        <b>{val}</b>
+        {sub && <span className="mh-tile-sub">{sub}</span>}
+      </button>
+    );
+    const miniTone = { connected: counts.connected ? 'accent' : '', interested: counts.interested ? 'good' : '', meetings: counts.meetings ? 'good' : '' };
+    return (
+      <div className="mh">
+        <DashGreeting user={user} sub={greetSub} />
+
+        <section className="mh-card mh-hero" aria-label="Today">
+          <div className="mh-hero-top">
+            <span className="mh-ttl">Overview</span>
+            <PeriodSelect />
+          </div>
+          <CustomRange />
+          <div className="mh-hero-row">
+            <div className="mh-big">
+              <span className="mh-lbl">Leads to work today</span>
+              <span className="mh-num">{bookReady ? view.queue.length : '—'}</span>
+            </div>
+            {shown.length > 0 && (
+              <button type="button" className="mh-btn mh-btn-lg" onClick={() => setPanLead(shown[0].l.id)}>
+                <Mi aria-hidden="true">call</Mi>Start calling
+              </button>
+            )}
+          </div>
+          <div className="mh-mini">
+            {[['connected', 'Connected', 'Connected'], ['interested', 'Interested', 'Interested'], ['meetings', 'Meetings set', 'Meetings Set']].map(([k, label, title]) => (
+              <button key={k} type="button" className={`mh-mini-it${miniTone[k] ? ' mh-tone-' + miniTone[k] : ''}`} onClick={() => setDetail({ title, query: cardQ[k], total: counts[k] })}>
+                <span>{label}</span><b>{n(k)}</b>
+              </button>
+            ))}
+          </div>
+          <TargetCard user={user} variant="soft" />
+        </section>
+
+        <div className="mh-tiles">
+          {tile('Total leads', n('leads'), periodSub, () => setDetail({ title: 'Total Leads', query: cardQ.leads, total: counts.leads }))}
+          {tile('Conversion rate', counts.sourced == null ? '—' : contactRate + '%', 'contacted ÷ sourced', () => setDetail({ title: 'Conversion · sourced leads', query: cardQ.sourced, total: counts.sourced }), contactRate >= 50 ? 'good' : contactRate >= 25 ? 'accent' : '')}
+          {tile('Untouched', n('untouched'), view.oldestUntouchedAt ? 'oldest ' + view.oldestUntouchedAt.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : 'all called', () => setDetail({ title: 'Untouched · oldest first', query: cardQ.untouched, total: counts.untouched, sort: 'oldest' }), counts.untouched ? 'warn' : '')}
+          {tile('Follow-up pending', n('followPending'), 'scheduled in pipeline', () => setDetail({ title: 'Follow-Up Pending', query: cardQ.followPending, total: counts.followPending }), counts.followPending ? 'accent' : '')}
+          {tile('Not interested', n('notInterested'), 'disqualified', () => setDetail({ title: 'Not Interested', query: cardQ.notInterested, total: counts.notInterested }), counts.notInterested ? 'danger' : '')}
+        </div>
+
+        <section className="mh-sec" aria-label="Follow-ups due today">
+          <SecHead title="Follow-ups due today" count={view.followToday.length} />
+          {!bookReady ? <LoadingBlock label="Loading follow-ups…" />
+            : view.followToday.length === 0 ? <p className="mh-note">No follow-ups due today. Scheduled ones show here when their day arrives.</p>
+            : view.followToday.map(l => {
+              const fu = new Date(l.nextFollowup);
+              const overdue = fu < view.todayStart;
+              const time = fu.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+              const day = fu.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' });
+              return (
+                <article key={l.id} className="mh-card mh-row">
+                  <button type="button" className="mh-row-main" onClick={() => setPanLead(l.id)}>
+                    <span className="mh-row-name">{l.name}</span>
+                    <span className="mh-row-meta">{[l.phone, SRC_LABELS[l.source] || l.source].filter(Boolean).join(' · ')}</span>
+                    <span className="mh-row-meta"><span className={`mh-due${overdue ? ' over' : ''}`}>{overdue ? `Overdue · ${day}` : `Due ${time}`}</span> · {leadDisplayStatus(l).label}</span>
+                  </button>
+                  <a className="mh-act dark" href={`tel:${l.phone}`} aria-label={`Call ${l.name}`}><Mi aria-hidden="true">call</Mi></a>
+                  <button type="button" className="mh-act" aria-label={`Mark follow-up done: ${l.name}`} onClick={() => markDone(l.id)}><Mi aria-hidden="true">check</Mi></button>
+                </article>
+              );
+            })}
+        </section>
+
+        <section className="mh-sec" aria-label="Today's call list">
+          <SecHead title="Today's call list" count={view.queue.length} action={view.queue.length > QUEUE_CAP ? 'See all' : null} onAction={() => nav('leads')} />
+          {!bookReady ? <LoadingBlock label="Building your call list…" />
+            : shown.length === 0 ? <p className="mh-note">All caught up. No leads waiting to be called.</p>
+            : (
+              <div className="mh-card mh-list">
+                {shown.map(({ l, r, score }) => {
+                  const sl = scoreLabel(score);
+                  return (
+                    <div key={l.id} className="mh-list-row">
+                      <button type="button" className="mh-row-main" onClick={() => setPanLead(l.id)}>
+                        <span className="mh-row-name">{l.name}</span>
+                        <span className="mh-row-meta">{[l.phone, SRC_LABELS[l.source] || l.source].filter(Boolean).join(' · ')}</span>
+                        <span className="mh-tags"><span className={`mh-status mh-rs ${r.cls}`}>{r.label}</span><span className="mh-score" style={{ color: sl.color }}>{sl.label}</span></span>
+                      </button>
+                      <a className="mh-act" href={`tel:${l.phone}`} aria-label={`Call ${l.name}`}><Mi aria-hidden="true">call</Mi></a>
+                      {l.phone && chatOk && (
+                        <button type="button" className="mh-act" aria-label={`WhatsApp ${l.name}`} onClick={() => setChatTarget(l)}><Mi aria-hidden="true">chat</Mi></button>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+        </section>
+
+        <section className="mh-sec" aria-label="Meetings and visits">
+          <SecHead title="Meetings & visits" />
+          {pipelineBlock}
+        </section>
+        {conversionBlock}
+        <SuccessGauge user={user} />
+        {todayVisitsCard}
+        {upcomingVisitsCard}
+      </div>
+    );
+  };
+
+  if (phone) return <>{renderPhone()}{sheet}</>;
+
   return (
     <>
       <div className="iad-page">
       {/* Greeting */}
-      <DashGreeting user={user} sub={[
-        view.queue.length > 0 ? `${view.queue.length} ${view.queue.length === 1 ? 'lead' : 'leads'} to work today` : "You're all caught up.",
-        view.todayVisits.length > 0 ? `${view.todayVisits.length} ${view.todayVisits.length === 1 ? 'visit' : 'visits'} today` : '',
-      ].filter(Boolean).join(' · ')} />
+      <DashGreeting user={user} sub={greetSub} />
 
       {/* All-time totals — every lead received / actioned.
           Each value is a server-side count and each click fetches that set one
@@ -219,28 +430,10 @@ export default function AgentDash() {
       </div>
 
       {/* Meeting → visit pipeline */}
-      <div className="mpipe">
-        {STAGES.map((s, i) => (
-          <button key={s.key} className="mpipe-seg" onClick={() => setDetail({ title: s.label, query: pipeQ[s.key], total: pipe[s.key] })}>
-            <span className="mpipe-step">Step {i + 1}</span>
-            <span className="mpipe-num" style={pipe[s.key] && s.color ? { color: s.color } : undefined}>
-              {pipe[s.key] == null ? <Spinner size={16} /> : pipe[s.key]}
-            </span>
-            <span className="mpipe-lbl">{s.label}</span>
-            <span className="mpipe-bar" style={{ background: s.color || 'var(--t3)' }} />
-          </button>
-        ))}
-      </div>
+      {pipelineBlock}
 
       {/* Where leads drop off, and the last 30 days of stage events */}
-      <ConversionPanel
-        leads={[]}
-        activities={db.activities || {}}
-        dateRange={dateRange}
-        stages={panelCfg.stages}
-        seriesKeys={panelCfg.seriesKeys}
-        title={panelCfg.title}
-      />
+      {conversionBlock}
 
       {/* Follow-ups due today — task list */}
       <div className="iad-fu">
@@ -270,7 +463,7 @@ export default function AgentDash() {
                       <div className="fut-act">
                         <a className="fut-ico" href={`tel:${l.phone}`} title="Call" onClick={e => e.stopPropagation()}><Mi>call</Mi></a>
                         <button className="fut-ico fut-done" title="Mark done"
-                          onClick={e => { e.stopPropagation(); clearFollowup(l.id, user); refreshDB(); showToast('Follow-up completed', 'ok'); }}>
+                          onClick={e => { e.stopPropagation(); markDone(l.id); }}>
                           <Mi>check</Mi>
                         </button>
                       </div>
@@ -331,62 +524,13 @@ export default function AgentDash() {
         <aside className="iad-rail">
           <TargetCard user={user} />
           <SuccessGauge user={user} />
-          <div className="iad-queue">
-            <div className="iad-q-hd">
-              <span className="iad-q-ttl">Today's visits</span>
-              {pipe.overdue > 0 && (
-                <button className="iad-q-ct ag-overdue" onClick={() => setDetail({ title: 'Overdue Visits', query: pipeQ.overdue, total: pipe.overdue })}>
-                  {pipe.overdue} overdue
-                </button>
-              )}
-            </div>
-            {visitRows === null ? (
-              <LoadingBlock label="Loading visits…" />
-            ) : view.todayVisits.length === 0 ? (
-              <div className="iad-q-empty iad-q-empty-quiet"><span>No visits scheduled today.</span></div>
-            ) : (
-              <div className="iad-q-list">
-                {view.todayVisits.map(l => (
-                  <div key={l.id} className="iad-q-row" onClick={() => setPanLead(l.id)}>
-                    <div className="iad-mt-time">{new Date(l.meetingDate).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })}</div>
-                    <div className="iad-q-info">
-                      <div className="iad-q-name">{l.name}</div>
-                      <div className="iad-q-meta">{l.meetingLocation || 'Site visit'} · {l.propertyInterest || 'No project'}</div>
-                    </div>
-                    <a className="iad-q-call" href={`tel:${l.phone}`} title="Call" onClick={e => e.stopPropagation()}><Mi>call</Mi></a>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-          <div className="iad-queue">
-            <div className="iad-q-hd">
-              <span className="iad-q-ttl">Upcoming visits</span>
-              {view.upcoming.length > 0 && <span className="iad-q-ct">{view.upcoming.length}</span>}
-            </div>
-            {view.upcoming.length === 0 ? (
-              <div className="iad-q-empty iad-q-empty-quiet"><span>No future visits scheduled.</span></div>
-            ) : (
-              <div className="iad-q-list">
-                {view.upcoming.slice(0, 6).map(l => (
-                  <div key={l.id} className="iad-q-row" onClick={() => setPanLead(l.id)}>
-                    <div className="iad-mt-time">{new Date(l.meetingDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })}</div>
-                    <div className="iad-q-info">
-                      <div className="iad-q-name">{l.name}</div>
-                      <div className="iad-q-meta">{l.meetingLocation || 'Site visit'} · {leadDisplayStatus(l).label}</div>
-                    </div>
-                    <a className="iad-q-call" href={`tel:${l.phone}`} title="Call" onClick={e => e.stopPropagation()}><Mi>call</Mi></a>
-                  </div>
-                ))}
-                <div className="iad-q-more" onClick={() => nav('calendar')}>Open calendar</div>
-              </div>
-            )}
-          </div>
+          {todayVisitsCard}
+          {upcomingVisitsCard}
         </aside>
       </div>
 
       </div>
-      <KpiSheet detail={detail} onClose={() => setDetail(null)} onLead={(id) => { setDetail(null); setPanLead(id); }} />
+      {sheet}
     </>
   );
 }

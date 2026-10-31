@@ -3,6 +3,7 @@ import { getLeads, getBookings, bookingPaid } from '../../lib/db.js';
 import { fmtBDT } from '../../lib/helpers.js';
 import useLeadBook from '../../hooks/useLeadBook.js';
 import StatTrend from '../StatTrend.jsx';
+import { Ring, Meter, PeriodSelect, CustomRange } from './MobileBits.jsx';
 
 // The four headline KPIs — Revenue, New Customers, Collected, Win Rate — as
 // one row of StatTrend cards on the Management Home. The row scopes itself to
@@ -17,7 +18,10 @@ import StatTrend from '../StatTrend.jsx';
 
 const alive = (arr) => arr.filter(v => v > 0).length >= 2;
 
-export default function KpiRow() {
+// `variant="hero"` (the phone Home): the same numbers as one summary card —
+// revenue won with the card's change line, collected / booked / new, and the
+// win rate as a ring. Nothing is counted differently.
+export default function KpiRow({ variant }) {
   useLeadBook(); // the row reduces over the scope's leads; they are not in the boot load
   const { user, dateRange, dbVersion } = useApp();
   void dbVersion; // re-read the store when a save or realtime changes it
@@ -76,6 +80,39 @@ export default function KpiRow() {
     { label: 'Collected', value: fmtBDT(collected), sub: booked ? `${paidPct}% of ${fmtBDT(booked)} booked` : 'Nothing booked yet', pct: paidPct, kind: 'pill', icon: 'down' },
     { label: 'Win Rate', value: wr + '%', sub: `${won.length} won · ${lost.length} lost${closedGraph.window ? ' · ' + closedGraph.window.replace('-', '').replace('week trend', 'w').replace('month trend', 'm') : ''}`, points: closedGraph.points, kind: 'dots', icon: 'refresh' },
   ];
+
+  if (variant === 'hero') {
+    const delta = revGraph.window ? null : revGraph.delta;
+    return (
+      <section className="mh-card mh-hero" aria-label="Overview">
+        <div className="mh-hero-top">
+          <span className="mh-ttl">Overview</span>
+          <PeriodSelect />
+        </div>
+        <CustomRange />
+        <div className="mh-big">
+          <span className="mh-lbl">Revenue won</span>
+          <span className="mh-num">{fmtBDT(rev)}</span>
+          {delta != null && (
+            <span className={`mh-delta ${delta >= 0 ? 'up' : 'down'}`}>{delta >= 0 ? '+' : '−'}{Math.abs(delta)}% vs last week</span>
+          )}
+        </div>
+        <div className="mh-trio">
+          <div><span className="mh-lbl">Collected</span><b>{fmtBDT(collected)}</b></div>
+          <div><span className="mh-lbl">Booked</span><b>{fmtBDT(booked)}</b></div>
+          <div><span className="mh-lbl">New · 14 days</span><b>{newCount}</b></div>
+        </div>
+        <div className="mh-hero-foot">
+          <Ring pct={wr} label={`Win rate ${wr} percent`} />
+          {/* Win rate | Collected of booked, side by side */}
+          <div className="mh-meters mh-meters-row">
+            <Meter label="Win rate" value={`${won.length} won · ${lost.length} lost`} pct={wr} />
+            <Meter label="Collected of booked" value={booked ? `${paidPct}%` : 'Nothing booked yet'} pct={paidPct} />
+          </div>
+        </div>
+      </section>
+    );
+  }
 
   return (
     <div className="grid-4 kpi-cards">

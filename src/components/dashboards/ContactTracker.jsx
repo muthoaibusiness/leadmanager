@@ -3,6 +3,9 @@ import { useApp } from '../../context/AppContext.jsx';
 import { getDB, loadLeadUpdates } from '../../lib/db.js';
 import { CONTACT_PERIODS, contactPerf, updatesFromActs, periodSince } from '../../lib/contactPerf.js';
 import ProgressMetricCard from '../ui/progress-metric-card.jsx';
+import { PeriodSelect } from '../ui/metric-controls.jsx';
+import { canSee } from '../../lib/constants.js';
+import Mi from '../Mi.jsx';
 
 // Home › Performance Reports: every status change and follow-up any person in
 // the company logged on a prospect, prospects still in New left out (see
@@ -15,9 +18,18 @@ import ProgressMetricCard from '../ui/progress-metric-card.jsx';
 // already in db.activities (realtime, this browser's own) are merged in, which
 // keeps it live. Current statuses come from the lead book, which
 // ManagementDash loads (useLeadBook).
-export default function ContactTracker() {
-  const { user, dbVersion } = useApp();
-  const [period, setPeriod] = useState(CONTACT_PERIODS[0]);
+//
+// `variant="soft"` (the phone Home) renders the same numbers as a compact card:
+// the count, the change, one square per bucket shaded by its count, and Check
+// now at the foot (styled like Lead sources' View all).
+//
+// `period` (optional) sets the period from outside — the phone Home's
+// Performance Overview picks one for both its cards — and hides the card's own
+// picker.
+export default function ContactTracker({ variant, period: fixed }) {
+  const { user, dbVersion, nav } = useApp();
+  const [picked, setPeriod] = useState(CONTACT_PERIODS[0]);
+  const period = fixed || picked;
   const [loaded, setLoaded] = useState({}); // period label → updates from the cloud
   const cloud = loaded[period.label];
 
@@ -47,6 +59,35 @@ export default function ContactTracker() {
   const diff = total - prevTotal;
   const trend = diff > 0 ? 'up' : diff < 0 ? 'down' : 'flat';
   const percent = prevTotal ? `${Math.abs((diff / prevTotal) * 100).toFixed(1)}%` : total ? 'New' : '0.0%';
+
+  if (variant === 'soft') {
+    // Shade: none / up to half the busiest bucket / over half / the busiest.
+    const max = Math.max(0, ...points.map(p => p.value));
+    const level = (v) => (v <= 0 || !max ? 0 : v >= max ? 3 : v / max > 0.5 ? 2 : 1);
+    const cols = points.length >= 24 ? 12 : points.length >= 14 ? 7 : points.length >= 10 ? 10 : Math.max(points.length, 1);
+    return (
+      <section className="mh-card mh-contact" aria-label="Prospects contacted">
+        <div className="mh-contact-main">
+          <span className="mh-card-hd">
+            <span className="mh-card-t">Prospects Contacted</span>
+            <span className="mh-card-s">Lead updates by your team</span>
+          </span>
+          {!fixed && <PeriodSelect value={period.label} options={CONTACT_PERIODS} onChange={setPeriod} />}
+          <span className="mh-num mh-num-md">{cloud ? total : '—'}</span>
+          {cloud && (
+            <span className={`mh-pill ${trend}`}>
+              {trend === 'up' ? '+' : trend === 'down' ? '−' : ''}{percent}
+              <span className="mh-pill-sub"> vs previous {period.span}</span>
+            </span>
+          )}
+        </div>
+        <div className="mh-heat" aria-hidden="true" style={{ gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))` }}>
+          {points.map((p, i) => <span key={i} className={`mh-heat-c l${level(p.value)}`} title={`${p.date}: ${p.value}`} />)}
+        </div>
+        {canSee(user, 'agentperf') && <button type="button" className="mh-more" onClick={() => nav('agentperf')}>Check now<Mi aria-hidden="true">chevron_right</Mi></button>}
+      </section>
+    );
+  }
 
   return (
     <ProgressMetricCard
