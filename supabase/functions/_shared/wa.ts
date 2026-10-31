@@ -467,6 +467,53 @@ export const canonicalConvJid = (remote: string, phone: string): string => {
   return r;
 };
 
+// Click-to-WhatsApp ad referral. Wasender surfaces this either pre-flattened or
+// nested on contextInfo.externalAdReply — accept both. Besides the ad creative,
+// capture Meta's structured identifiers (ad/campaign/adcreative/click) when the
+// payload carries them, so an ad can be traced to its campaign, not just its
+// creative text. Empty fields fall through; returns null when nothing ad-like
+// is present.
+export function extractAdReply(msg: any, payload: any): Record<string, unknown> | null {
+  const ctx =
+    msg?.extendedTextMessage?.contextInfo?.externalAdReply ??
+    msg?.imageMessage?.contextInfo?.externalAdReply ??
+    msg?.contextInfo?.externalAdReply ??
+    payload?.externalAdReply ??
+    payload?.adReply ??
+    null;
+  if (!ctx) return null;
+  const r = payload?.referral ?? null;
+  const ad: Record<string, unknown> = {
+    title: ctx.title ?? ctx.adTitle ?? "",
+    description: ctx.description ?? ctx.adDescription ?? "",
+    body: ctx.body ?? ctx.adText ?? ctx.text ?? "",
+    conversionSource: ctx.conversionSource ?? ctx.sourceType ?? ctx.source ?? "",
+    sourceUrl: ctx.sourceUrl ?? ctx.url ?? "",
+    greetingMessageBody: ctx.greetingMessageBody ?? ctx.greeting ?? "",
+    thumbnailUrl: ctx.thumbnailUrl ?? ctx.thumbnail ?? "",
+    adId: ctx.adId ?? ctx.ad_id ?? r?.ad_id ?? "",
+    campaignId: ctx.campaignId ?? ctx.campaign_id ?? r?.campaign_id ?? "",
+    adcreativeId: ctx.adcreativeId ?? ctx.adcreative_id ?? r?.adcreative_id ?? "",
+    clickId: ctx.clickId ?? ctx.click_id ?? r?.click_id ?? ctx.ctwaClid ?? "",
+  };
+  return Object.values(ad).some(Boolean) ? ad : null;
+}
+
+// First real, dialable Bangladeshi number among payload JID/sender candidates,
+// normalized to the international 880 form (the form leads are stored in). A
+// LID's digits are not a real number and are never returned.
+export function realPhoneFrom(candidates: unknown[]): string {
+  for (const c of candidates) {
+    const d = String(c ?? "").replace(/\D/g, "");
+    if (!d) continue;
+    const n = d.length === 11 && d.startsWith("01") ? "880" + d.slice(1)
+      : d.length === 10 && d.startsWith("1") ? "880" + d
+      : d;
+    if (looksLikeRealPhone(n)) return n;
+  }
+  return "";
+}
+
 // Wasender echoes a bot's own send back as a fromMe message whose key.id is not
 // the msgId the send API returned, so the wa_id index never catches it. The
 // echo is the same OUT text, in the same thread, seconds after a bot-sent row.

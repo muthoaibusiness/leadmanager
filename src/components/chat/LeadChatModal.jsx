@@ -16,7 +16,6 @@ export default function LeadChatModal() {
 
   const [conv, setConv] = useState(null);
   const [msgs, setMsgs] = useState([]);
-  const [loading, setLoading] = useState(false);
   const [err, setErr] = useState('');
 
   const convIdRef = useRef(null);
@@ -28,16 +27,9 @@ export default function LeadChatModal() {
 
   // Initialize or fetch the conversation for this lead
   useEffect(() => {
-    if (!isOpen || !chatTarget || !canAccess) {
-      setConv(null);
-      setMsgs([]);
-      setErr('');
-      return;
-    }
+    if (!isOpen || !chatTarget || !canAccess) return;
 
     let active = true;
-    setLoading(true);
-    setErr('');
 
     (async () => {
       try {
@@ -45,16 +37,16 @@ export default function LeadChatModal() {
         if (!active) return;
         if (!res.ok || !res.conversation) {
           setErr(res.error || 'Could not find or open chat for this lead.');
-          setLoading(false);
           return;
         }
 
         const c = res.conversation;
-        setConv(c);
+        setConv({ ...c, targetId: chatTarget.id });
 
         const list = await waLoadMessages(c.id);
         if (!active) return;
         setMsgs(list);
+        setErr('');
 
         if (c.unreadCount > 0) {
           waMarkRead(c.id);
@@ -62,15 +54,13 @@ export default function LeadChatModal() {
       } catch (e) {
         if (!active) return;
         setErr(e.message || 'Error loading conversation.');
-      } finally {
-        if (active) setLoading(false);
       }
     })();
 
     return () => {
       active = false;
     };
-  }, [isOpen, chatTarget?.id, chatTarget?.phone, canAccess, user]);
+  }, [isOpen, chatTarget, canAccess, user]);
 
   // Realtime subscription for incoming/outgoing updates on this conversation
   useEffect(() => {
@@ -121,13 +111,22 @@ export default function LeadChatModal() {
 
   if (!isOpen) return null;
 
-  const currentAccount = conv?.account || waAccountForUser(user, chatTarget);
+  // conv/msgs/err belong to whatever target they were fetched for. Gate display
+  // on the current target so a just-reopened modal never flashes the previous
+  // lead's conversation while its own fetch is in flight.
+  const ready = !!conv && conv.targetId === chatTarget?.id;
+  const loading = !ready;
+  const shownConv = ready ? conv : null;
+  const shownMsgs = ready ? msgs : [];
+  const shownErr = ready ? err : '';
+
+  const currentAccount = shownConv?.account || waAccountForUser(user, chatTarget);
   const accountLabel = WA_ACCOUNT_LABEL[currentAccount] || 'WhatsApp';
 
   // The send endpoint is fixed at build time (WA_RELAY_URL), so it is never missing.
   const disabledReason = !waSettings?.enabled
     ? 'Chat is disabled globally.'
-    : !conv
+    : !shownConv
       ? 'Preparing conversation…'
       : '';
 
@@ -205,22 +204,22 @@ export default function LeadChatModal() {
               You can only view and participate in chats for leads that are assigned or forwarded to you.
             </p>
           </div>
-        ) : err ? (
+        ) : shownErr ? (
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '40px 20px', textAlign: 'center', gap: '10px' }}>
             <Mi style={{ fontSize: '42px', color: 'var(--red)' }}>error_outline</Mi>
-            <div style={{ color: 'var(--red)', fontSize: '14px', fontWeight: 600 }}>{err}</div>
+            <div style={{ color: 'var(--red)', fontSize: '14px', fontWeight: 600 }}>{shownErr}</div>
             <button className="btn btn-g btn-sm" onClick={() => setChatTarget({ ...chatTarget })}>
               <Mi>refresh</Mi> Try again
             </button>
           </div>
         ) : (
           <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', background: 'var(--surf2)' }}>
-            <ChatThread messages={msgs} loading={loading} onRetry={handleRetry} />
+            <ChatThread messages={shownMsgs} loading={loading} onRetry={handleRetry} />
           </div>
         )}
 
         {/* Composer Footer */}
-        {canAccess && !err && (
+        {canAccess && !shownErr && (
           <div style={{
             padding: '12px 16px',
             borderTop: '1px solid var(--bd)',
@@ -228,7 +227,7 @@ export default function LeadChatModal() {
             flexShrink: 0,
           }}>
             <ChatComposer
-              disabled={!conv || loading || !!disabledReason}
+              disabled={!shownConv || loading || !!disabledReason}
               disabledReason={disabledReason}
               onSend={handleSend}
             />

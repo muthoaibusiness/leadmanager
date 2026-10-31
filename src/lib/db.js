@@ -470,7 +470,12 @@ const readAuth = () => { try { return JSON.parse(localStorage.getItem(SESSION_KE
 // Drop the pre-D1 session key on load: it grants nothing now, and leaving it
 // would let an older cached build trust it.
 try { localStorage.removeItem('pcrm_sess'); } catch { /* storage disabled */ }
-export const sessionUserId = () => { const s = readAuth(); return s && s.access_token && s.refresh_token ? s.uid || null : null; };
+export const sessionUserId = () => {
+  const s = readAuth();
+  if (!s) return null;
+  if (s.legacy && s.uid) return s.uid;
+  return s.access_token && s.refresh_token ? s.uid || null : null;
+};
 
 // "Is there a signed-in session at all", without the network. True only for a
 // token pair whose account was resolved by the server at sign-in or restore.

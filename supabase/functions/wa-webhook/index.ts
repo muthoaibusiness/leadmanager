@@ -11,6 +11,7 @@
 import {
   CORS, json, SUPABASE_URL, SERVICE_KEY, claimEvent, getCredentials,
   jidToPhone, sbPatch, sbRpc, sbSelect, sbUpsert, safeEqual, canonicalConvJid, isBotEcho,
+  extractAdReply, realPhoneFrom,
 } from "../_shared/wa.ts";
 
 const BUCKET = "wa-media";
@@ -56,29 +57,6 @@ function extractMedia(m: any): { type: string; url?: string; mime?: string; name
     return { type: flat, url: flatUrl, mime: m.mimetype ?? "", name: m.fileName ?? flat, size: Number(m.fileLength) || 0 };
   }
   return { type: "text" };
-}
-
-// Click-to-WhatsApp ad referral. Wasender surfaces this either pre-flattened or
-// nested on contextInfo.externalAdReply — accept both.
-function extractAd(msg: any, payload: any): Record<string, unknown> | null {
-  const ctx =
-    msg?.extendedTextMessage?.contextInfo?.externalAdReply ??
-    msg?.imageMessage?.contextInfo?.externalAdReply ??
-    msg?.contextInfo?.externalAdReply ??
-    payload?.externalAdReply ??
-    payload?.adReply ??
-    null;
-  if (!ctx) return null;
-  const ad = {
-    title: ctx.title ?? ctx.adTitle ?? "",
-    description: ctx.description ?? ctx.adDescription ?? "",
-    body: ctx.body ?? ctx.adText ?? ctx.text ?? "",
-    conversionSource: ctx.conversionSource ?? ctx.sourceType ?? ctx.source ?? "",
-    sourceUrl: ctx.sourceUrl ?? ctx.url ?? "",
-    greetingMessageBody: ctx.greetingMessageBody ?? ctx.greeting ?? "",
-    thumbnailUrl: ctx.thumbnailUrl ?? ctx.thumbnail ?? "",
-  };
-  return Object.values(ad).some(Boolean) ? ad : null;
 }
 
 // WhatsApp media links expire and need auth, so mirror the file into Storage and
@@ -200,14 +178,19 @@ Deno.serve(async (req) => {
     data?.from,
   ].filter(Boolean).map(String);
   const phoneJid = phoneJidCandidates.find((j) => j.endsWith("@s.whatsapp.net")) ?? "";
-  const phone = jidToPhone(phoneJid || jid);
+  const phoneKey = jidToPhone(phoneJid || jid);
   // Conversation PK matches the client's waConvId(account, jid) convention
   // (src/lib/wa.js) — without the prefix, Dubai and Eyad threads for the same
   // number would collide, and the app's own account-scoped lookups would miss
   // the row entirely. Canonicalize so a LID chat and the phone-JID chat of the
   // same customer land in one thread instead of two.
-  const convId = `${account}:${canonicalConvJid(jid, phone)}`;
-  const ad = extractAd(inner, data);
+  const convId = `${account}:${canonicalConvJid(jid, phoneKey)}`;
+  // Prefer a real, dialable number when the payload carries one (a LID-only
+  // thread gets the customer's real number once WhatsApp exposes it), so the
+  // lead match and the phone column work instead of comparing LID digits. The
+  // conversation key stays on the JID form above, so history is never split.
+  const phone = realPhoneFrom(phoneJidCandidates) || phoneKey;
+  const ad = extractAdReply(inner, data);
   const pushName: string = msgNode?.pushName ?? data?.pushName ?? "";
   const tsSeconds = Number(msgNode?.messageTimestamp ?? data?.timestamp ?? 0);
   const at = tsSeconds ? new Date(tsSeconds * 1000).toISOString() : new Date().toISOString();

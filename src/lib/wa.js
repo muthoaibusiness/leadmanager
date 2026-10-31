@@ -199,15 +199,23 @@ export function isLeadAssignedOrForwardedTo(lead, user) {
 }
 
 // ── reads ───────────────────────────────────────────────────────────────────
-export async function waLoadConversations({ limit = 200 } = {}) {
-  const rows = await sbGet(`wa_conversations?archived=is.false&order=last_message_at.desc.nullslast&limit=${limit}`);
+export async function waLoadConversations({ limit = 200, offset = 0 } = {}) {
+  const rows = await sbGet(`wa_conversations?archived=is.false&order=last_message_at.desc.nullslast&limit=${limit}&offset=${offset}`);
   return (rows || []).map(rToConv);
 }
 
-export async function waLoadMessages(conversationId, { limit = 300 } = {}) {
+export async function waLoadMessages(conversationId, { limit = 300, before = null, beforeId = null } = {}) {
   if (!conversationId) return [];
+  // Keyset pagination on (wa_timestamp, id) ordered descending: strictly before
+  // the oldest loaded message, so messages sharing its exact timestamp are not
+  // dropped or repeated at the page boundary.
+  const beforeParam = before
+    ? beforeId
+      ? `&or=(wa_timestamp.lt.${encodeURIComponent(before)},and=(wa_timestamp.eq.${encodeURIComponent(before)},id.lt.${encodeURIComponent(beforeId)}))`
+      : `&wa_timestamp=lt.${encodeURIComponent(before)}`
+    : '';
   const rows = await sbGet(
-    `wa_messages?conversation_id=eq.${encodeURIComponent(conversationId)}&order=wa_timestamp.desc&limit=${limit}`
+    `wa_messages?conversation_id=eq.${encodeURIComponent(conversationId)}&order=wa_timestamp.desc,id.desc&limit=${limit}${beforeParam}`
   );
   return (rows || []).map(rToMsg).reverse(); // oldest → newest for rendering
 }
@@ -245,6 +253,24 @@ export async function waLinkLead(conversationId, leadId) {
     });
     return true;
   } catch { return false; }
+}
+
+// AI reply + takeover state for one conversation, for the Conversations UI.
+// The reply switch is wa_bot_settings.faq_agent_enabled on the bot's row; a
+// human takeover is an active ai_handoffs row for this thread.
+export async function waAiState(conversationId) {
+  const bot = String(conversationId || '').split(':')[0] || 'eyad';
+  const [s, h] = await Promise.all([
+    sbGet(`wa_bot_settings?bot=eq.${bot}&select=faq_agent_enabled,trainer_test_mode`),
+    sbGet(`ai_handoffs?conversation_id=eq.${encodeURIComponent(conversationId)}&select=status&limit=1`),
+  ]);
+  const row = s?.[0];
+  return {
+    bot,
+    repliesOn: row ? row.faq_agent_enabled !== false : null,
+    trainerTest: !!row?.trainer_test_mode,
+    takeover: !!(h?.[0]),
+  };
 }
 
 export const waClientRef = () => 'c' + Math.random().toString(36).slice(2, 10) + Date.now().toString(36);

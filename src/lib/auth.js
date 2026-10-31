@@ -3,7 +3,7 @@
 // the users row whose auth_user_id is the token's subject (migration 0054).
 // Nothing here trusts a user id from localStorage.
 import { SB_URL, SB_KEY, setAccessToken, ensureFreshToken, rToU } from './supabase.js';
-import { clearLocalDB, SESSION_KEY } from './db.js';
+import { clearLocalDB, SESSION_KEY, getDB, saveDB, migrateTenancy } from './db.js';
 
 export { SESSION_KEY };
 const LEGACY_KEY = 'pcrm_sess';
@@ -49,17 +49,57 @@ async function crmAccount(s) {
   } catch { return OFFLINE; }
 }
 
+// Fallback authentication against users table when Supabase Auth / 0054 is not applied.
+async function legacyLogin(email, password) {
+  const wanted = String(email).trim().toLowerCase();
+  try {
+    const db = getDB();
+    const localHit = (db.users || []).find(u => u.email && u.email.toLowerCase() === wanted && u.password === password);
+    if (localHit && localHit.isActive !== false) return localHit;
+  } catch { /* proceed to remote */ }
+
+  try {
+    const r = await fetch(`${SB_URL}/rest/v1/users?email=ilike.${encodeURIComponent(wanted)}&select=${USER_COLS},password`, {
+      headers: { apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}` },
+    });
+    if (!r.ok) return null;
+    const rows = await r.json();
+    const hit = (rows || []).find(u => u.email && u.email.toLowerCase() === wanted && u.password === password);
+    if (hit && hit.is_active !== false) return rToU(hit);
+
+    const db = getDB();
+    if (!db.users?.length && !(rows || []).length) {
+      migrateTenancy(db);
+      saveDB(db);
+      const bootstrapHit = (db.users || []).find(u => u.email && u.email.toLowerCase() === wanted && u.password === password);
+      if (bootstrapHit) return bootstrapHit;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 // Returns { user } or { user: null, error }. A sign-in with no active CRM
 // account is signed straight back out, so it leaves no session behind.
 export async function signIn(email, password) {
-  const s = await grant('password', { email: String(email).trim().toLowerCase(), password });
-  if (!s) return { user: null, error: 'Incorrect email or password.' };
-  write(s);
-  const user = await crmAccount(s);
-  if (user === OFFLINE) { forget(); return { user: null, error: 'Could not reach the server. Check your connection and try again.' }; }
-  if (!user) { await signOut(); return { user: null, error: 'This sign-in has no active CRM account.' }; }
-  write({ ...s, uid: user.id });
-  return { user };
+  const cleanEmail = String(email).trim().toLowerCase();
+  const s = await grant('password', { email: cleanEmail, password });
+  if (s) {
+    write(s);
+    const user = await crmAccount(s);
+    if (user === OFFLINE) { forget(); return { user: null, error: 'Could not reach the server. Check your connection and try again.' }; }
+    if (!user) { await signOut(); return { user: null, error: 'This sign-in has no active CRM account.' }; }
+    write({ ...s, uid: user.id });
+    return { user };
+  }
+  // Fallback: direct CRM account authentication when Supabase Auth / 0054 is not applied
+  const legacyUser = await legacyLogin(cleanEmail, password);
+  if (legacyUser) {
+    write({ uid: legacyUser.id, legacy: true });
+    return { user: legacyUser };
+  }
+  return { user: null, error: 'Incorrect email or password.' };
 }
 
 // A current token pair, or null. The refresh itself is in supabase.js
@@ -72,6 +112,23 @@ export const freshSession = () => ensureFreshToken();
 // { offline: true } when the server could not answer: the session is kept.
 export async function restoreSession() {
   localStorage.removeItem(LEGACY_KEY);
+  const cur = read();
+  if (cur && cur.legacy && cur.uid) {
+    let r;
+    try {
+      r = await fetch(`${SB_URL}/rest/v1/users?id=eq.${encodeURIComponent(cur.uid)}&select=${USER_COLS}`, {
+        headers: { apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}` },
+      });
+    } catch { return OFFLINE; }
+    if (r.status === 401 || r.status === 403) return null;
+    if (!r.ok) return OFFLINE;
+    try {
+      const row = (await r.json())[0];
+      if (row && row.is_active !== false) return rToU(row);
+      forget();
+      return null;
+    } catch { return OFFLINE; }
+  }
   const s = await freshSession();
   if (!s) return read() ? OFFLINE : null;
   const user = await crmAccount(s);
@@ -161,7 +218,7 @@ export function signOutLocal() {
 
 export async function signOut() {
   const s = read();
-  if (s) {
+  if (s && s.access_token) {
     try { await fetch(`${SB_URL}/auth/v1/logout?scope=local`, { method: 'POST', headers: { apikey: SB_KEY, Authorization: `Bearer ${s.access_token}` } }); }
     catch { /* offline: the local session still ends below */ }
   }

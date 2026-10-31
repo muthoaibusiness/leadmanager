@@ -173,6 +173,21 @@ test("test mode switched off after the model call and before the send stops the 
   assert.deepEqual(f.t.ai_turns[0].trace.send_errors, ["recipient no longer allowed"]);
 });
 
+test("production activation (allowNonTest) replies to a non-test customer when AI replies are on", async () => {
+  const f = fakes({ numbers: [] });
+  f.t.wa_bot_settings[0].faq_agent_enabled = true;
+  const r = await runTestTurn(input({ allowNonTest: true }), f.ports);
+  assert.equal(r.outcome, "ok"); assert.equal(r.sent, 1);
+});
+
+test("production activation is gated by the AI-replies switch (fail closed)", async () => {
+  const f = fakes({ numbers: [] });
+  f.t.wa_bot_settings[0].faq_agent_enabled = false;
+  const r = await runTestTurn(input({ allowNonTest: true }), f.ports);
+  assert.equal(r.sent, 0); assert.equal(f.modelReqs.length, 0);
+  assert.equal(f.t.ai_turns[0].outcome, "blocked_not_test_number");
+});
+
 test("a failed settings read blocks the turn (fail closed)", async () => {
   const f = fakes(); const real = f.ports.select;
   f.ports.select = async (p) => (p.startsWith("wa_bot_settings") ? [] : real(p));

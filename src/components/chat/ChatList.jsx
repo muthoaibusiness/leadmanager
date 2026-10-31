@@ -16,7 +16,7 @@ const fmtWhen = (iso) => {
 
 // Conversation rail. Ordering is driven purely by last_message_at, so a realtime
 // insert naturally lifts its thread to the top without extra bookkeeping.
-export default function ChatList({ conversations, activeId, onSelect, connState, loading }) {
+export default function ChatList({ conversations, activeId, onSelect, connState, loading, canLoadMore, loadingMore, onLoadMore }) {
   const [q, setQ] = useState('');
   const [onlyUnread, setOnlyUnread] = useState(false);
 
@@ -93,7 +93,7 @@ export default function ChatList({ conversations, activeId, onSelect, connState,
               <div className="wa-ci-bot">
                 <span className="wa-ci-prev">
                   {c.lastMessageDir === 'OUT' && <Mi className="wa-ci-out">reply</Mi>}
-                  {c.lastMessagePreview || '—'}
+                  {c.lastMessagePreview || '-'}
                 </span>
                 {c.unreadCount > 0 && <span className="wa-ci-badge">{c.unreadCount > 99 ? '99+' : c.unreadCount}</span>}
               </div>
@@ -104,6 +104,13 @@ export default function ChatList({ conversations, activeId, onSelect, connState,
           </button>
         ))}
       </div>
+
+      {canLoadMore && (
+        <button type="button" className="btn btn-g btn-sm"
+          disabled={loadingMore} onClick={onLoadMore}>
+          {loadingMore ? 'Loading...' : 'Load more chats'}
+        </button>
+      )}
     </aside>
   );
 }

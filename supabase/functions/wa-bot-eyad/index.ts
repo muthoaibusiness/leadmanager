@@ -327,6 +327,19 @@ async function handleInbound(p: ParsedEvent): Promise<void> {
   const status = statusRows?.[0] ?? {};
   const msgCount = Array.isArray(status.message_logs) ? status.message_logs.length : 0;
 
+  // ── AI Trainer: the primary responder for every eligible customer text ───
+  // Runs before any legacy/canned flow. When it is eligible, the legacy reply
+  // branches below are skipped, so the AI Trainer is never trumped by a canned
+  // answer; their business side-effects (flow-stage bookkeeping, forwarding,
+  // region sync) still run afterwards. Pause and agent-takeover are enforced
+  // inside the trainer turn.
+  const trainerEligible = !!(settings.faqAgentEnabled && p.text && upsert.takeover !== true && p.remote);
+  if (trainerEligible) {
+    const r = await runTrainerTestTurn({ bot: "eyad", convId: `eyad:${p.convJid}`, phone: p.phone, to: p.target, text: p.text,
+      ad: { isAd: p.isAd, adText: p.adText }, allowMedia: settings.aiMediaEnabled, production: true });
+    console.log("trainer turn", { phone: p.phone, outcome: r.outcome, sent: r.sent, blocked: r.blocked, turnId: r.turnId });
+  }
+
   // ── New Contact? → Welcome ──────────────────────────────────────────────
   // The n8n graph suppressed the welcome whenever should_drip was true (an
   // ad click with a project interest), because that branch went to a drip
@@ -347,7 +360,7 @@ async function handleInbound(p: ParsedEvent): Promise<void> {
   const landOffer = !!p.text && isLandOffer(p.text);
   // A defaulted property_interest is not a Jolshiri lead (leadContext in ai.ts).
   const lead = leadContext({ named, isAd: p.isAd, status, propertyInterest: upsert.property_interest });
-  if (settings.welcomeEnabled && upsert.takeover !== true && upsert.is_new === true) {
+  if (!trainerEligible && settings.welcomeEnabled && upsert.takeover !== true && upsert.is_new === true) {
     if (lead.jolshiriLead && !landOffer) {
       // Jolshiri lead (ad or named): the admin welcome and the follow-up
       // clock — 5 minutes of silence asks about the profiles, an hour of
@@ -364,7 +377,7 @@ async function handleInbound(p: ParsedEvent): Promise<void> {
 
   // ── Follow-up flow stage 3 — "yes" to the stage 2a profile offer sends
   // the bundle right away instead of waiting for the next cron tick.
-  if (status.flow_stage === "asked_profile" && upsert.takeover !== true && isProfileConsent(p.text, p.quoted)) {
+  if (!trainerEligible && status.flow_stage === "asked_profile" && upsert.takeover !== true && isProfileConsent(p.text, p.quoted)) {
     const convId = `eyad:${p.convJid}`;
     const bundle = buildJolshiriBundle(await getActiveProjects(), FLOW_AUTO_PROFILE_TEXT);
     if (bundle) {
@@ -390,7 +403,7 @@ async function handleInbound(p: ParsedEvent): Promise<void> {
   // ── Follow-up flow stage 4 — "yes" to the dedicated-agent question gets a
   // one-line acknowledgement and closes the flow. Deliberately no auto
   // lead/forward here: a human reads the thread and acts.
-  if (status.flow_stage === "asked_agent" && upsert.takeover !== true && isAffirmative(p.text)) {
+  if (!trainerEligible && status.flow_stage === "asked_agent" && upsert.takeover !== true && isAffirmative(p.text)) {
     await sendWaMessageMirrored("eyad", p.target, `eyad:${p.convJid}`, p.phone, { type: "text", text: FLOW_AGENT_YES_TEXT });
     await sbPatchJson("preleads", `id=eq.${encodeURIComponent(preleadId)}`, {
       flow_stage: "agent_ack", stage_at: new Date().toISOString(), stage_msg_count: msgCount,
@@ -401,33 +414,12 @@ async function handleInbound(p: ParsedEvent): Promise<void> {
   // Price / payment question (not the very first ad message — that one gets
   // the greeting + brochure flow): offer a dedicated agent, jump to stage 4.
   const agentAlreadyOffered = ["asked_agent", "agent_ack", "agent_assigned"].includes(status.flow_stage);
-  if (upsert.is_new !== true && p.text && isPriceQuestion(p.text) && !agentAlreadyOffered && upsert.takeover !== true) {
+  if (!trainerEligible && upsert.is_new !== true && p.text && isPriceQuestion(p.text) && !agentAlreadyOffered && upsert.takeover !== true) {
     await sendWaMessageMirrored("eyad", p.target, `eyad:${p.convJid}`, p.phone, { type: "text", text: FLOW_PRICE_AGENT_TEXT });
     await sbPatchJson("preleads", `id=eq.${encodeURIComponent(preleadId)}`, {
       flow_stage: "asked_agent", stage_at: new Date().toISOString(), stage_msg_count: msgCount,
     }).catch(() => {});
     return;
-  }
-
-  // Once the profiles are out (keyword, stage 2b or stage 3) the bundle is
-  // never sent again — the gated LLM answer still runs for other questions.
-  const profilesAlreadySent = ["profile_sent", "asked_agent", "agent_ack", "agent_assigned"].includes(status.flow_stage);
-  if (settings.faqAgentEnabled && p.text && upsert.takeover !== true && p.remote && settings.trainerTest) {
-    // Test mode on and an allow-listed number (getBotSettings): the AI Trainer
-    // core answers instead of the legacy agent. Everything else above and
-    // below runs unchanged.
-    const r = await runTrainerTestTurn({ bot: "eyad", convId: `eyad:${p.convJid}`, phone: p.phone, to: p.target, text: p.text,
-      ad: { isAd: p.isAd, adText: p.adText }, allowMedia: settings.aiMediaEnabled });
-    console.log("trainer test turn", { phone: p.phone, outcome: r.outcome, sent: r.sent, turnId: r.turnId });
-  } else if (settings.faqAgentEnabled && p.text && upsert.takeover !== true && p.remote) {
-    const sent = await runFaqAgent("eyad", p.phone, p.target, p.convJid, p.text, {
-      adProject: lead.adProject, profilesAlreadySent: profilesAlreadySent || landOffer, allowMedia: settings.aiMediaEnabled,
-    });
-    if (sent) {
-      await sbPatchJson("preleads", `id=eq.${encodeURIComponent(preleadId)}`, {
-        flow_stage: "profile_sent", stage_at: new Date().toISOString(), stage_msg_count: msgCount,
-      }).catch(() => {});
-    }
   }
 
   const phoneDigits = p.phone.replace(/\D/g, "");

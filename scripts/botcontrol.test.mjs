@@ -33,6 +33,16 @@ test('a published pointer is never shown as live while the bots do not read it',
   assert.equal(wired.live.kind, 'version'); assert.equal(wired.live.version_no, 3);
 });
 
+test('eyad reads the pointer: a published snapshot IS what customers get', () => {
+  const v = botControlView({ bot: 'eyad', settings: { faq_agent_enabled: true }, pointer: { mode: 'snapshot', snapshot_id: 's3' },
+    snapshots: [snap('s3', 3, 'published', { published_at: '2026-10-19' })], runs: [] });
+  assert.equal(v.live.kind, 'version'); assert.equal(v.live.version_no, 3);
+  // Dubai is not wired: same rows still read as legacy.
+  const d = botControlView({ bot: 'dubai', settings: { faq_agent_enabled: true }, pointer: { mode: 'snapshot', snapshot_id: 's3' },
+    snapshots: [snap('s3', 3, 'published')], runs: [] });
+  assert.deepEqual(d.live, { kind: 'legacy' });
+});
+
 test('candidate tests: running, failing, incomplete and passing decide whether Publish is enabled', () => {
   const base = { bot: 'eyad', settings: {}, pointer: { mode: 'legacy' }, snapshots: [snap('s2', 2, 'candidate')] };
   const at = (runs) => botControlView({ ...base, runs });

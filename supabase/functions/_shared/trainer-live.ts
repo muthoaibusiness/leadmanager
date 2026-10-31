@@ -43,6 +43,10 @@ export type LivePorts = Ports & {
 export type LiveInput = {
   bot: Bot; convId: string; phone: string; to: string; text: string;
   ad: { isAd: boolean; adText?: string }; replyModel: string; allowMedia: boolean;
+  // Production activation (CR-002): when true, the test-number allow-list is
+  // skipped and the AI-replies switch (faq_agent_enabled) gates sends instead.
+  // Pause and agent-takeover are still enforced by isPaused.
+  allowNonTest?: boolean;
 };
 export type LiveResult = { outcome: string; turnId: string | null; sent: number; blocked?: string };
 
@@ -90,9 +94,14 @@ export async function writeRecapNote(ports: LivePorts, phone: string, descriptio
 
 // The current wa_bot_settings row, read again just before each send so a
 // number removed from the list (or test mode switched off) mid-turn is honoured.
-async function stillAllowed(ports: LivePorts, bot: Bot, phone: string, to: string): Promise<boolean> {
-  const row = (await ports.select(`wa_bot_settings?bot=eq.${bot}&select=trainer_test_mode,test_numbers`))[0];
-  return !!row && row.trainer_test_mode === true && isTestNumber(row.test_numbers, phone) && samePhone(to, phone);
+async function stillAllowed(ports: LivePorts, bot: Bot, phone: string, to: string, allowNonTest = false): Promise<boolean> {
+  const row = (await ports.select(`wa_bot_settings?bot=eq.${bot}&select=trainer_test_mode,test_numbers,faq_agent_enabled`))[0];
+  if (!row) return false;
+  // Production path (allowNonTest): gate on the AI-replies switch. Pause and
+  // agent-takeover are enforced separately by isPaused. Test mode keeps the
+  // number allow-list.
+  if (allowNonTest) return samePhone(to, phone) && row.faq_agent_enabled !== false;
+  return row.trainer_test_mode === true && isTestNumber(row.test_numbers, phone) && samePhone(to, phone);
 }
 
 export async function runTestTurn(a: LiveInput, ports: LivePorts): Promise<LiveResult> {
@@ -105,7 +114,7 @@ export async function runTestTurn(a: LiveInput, ports: LivePorts): Promise<LiveR
     const turn = await ports.insert("ai_turns", { bot: a.bot, conversation_id: a.convId, core_version: CORE_VERSION, model: a.replyModel, outcome: "running" });
     turnId = turn?.id ?? null;
     if (!turnId) throw new Error("could not log the turn");
-    if (!(await stillAllowed(ports, a.bot, a.phone, a.to))) {
+    if (!(await stillAllowed(ports, a.bot, a.phone, a.to, a.allowNonTest))) {
       await finish("blocked_not_test_number", { phone_key: phoneKey(a.phone) });
       return { outcome: "blocked_not_test_number", turnId, sent: 0, blocked: "not a test number" };
     }
@@ -140,7 +149,7 @@ export async function runTestTurn(a: LiveInput, ports: LivePorts): Promise<LiveR
     // same allow-list and pause checks as every other send. With media off
     // there is no sender, so files are checked and the reply says "ready".
     const sendDocument = a.allowMedia ? async (m: { type: "document"; text: string; mediaUrl: string; fileName: string }) => {
-      if (!(await stillAllowed(ports, a.bot, a.phone, a.to))) { sendErrors.push("recipient no longer allowed"); return null; }
+      if (!(await stillAllowed(ports, a.bot, a.phone, a.to, a.allowNonTest))) { sendErrors.push("recipient no longer allowed"); return null; }
       if (await isPaused(ports, key, a.convId, a.phone)) { sendErrors.push("paused during the turn"); return null; }
       if (sent) await ports.sleep(5500);
       const id = await ports.send(a.to, m);
@@ -158,7 +167,7 @@ export async function runTestTurn(a: LiveInput, ports: LivePorts): Promise<LiveR
     // Brochures were already sent by the brochure path; only images remain here.
     if (a.allowMedia && !stopped) for (const m of r.media) if (m.kind !== "brochure") out.push({ type: m.type, text: m.caption, mediaUrl: m.url, fileName: m.type === "document" ? `${m.caption}.pdf` : undefined });
     for (let i = 0; i < out.length; i++) {
-      if (!(await stillAllowed(ports, a.bot, a.phone, a.to))) { sendErrors.push("recipient no longer allowed"); break; }
+      if (!(await stillAllowed(ports, a.bot, a.phone, a.to, a.allowNonTest))) { sendErrors.push("recipient no longer allowed"); break; }
       if (await isPaused(ports, key, a.convId, a.phone) && !r.handoff) { sendErrors.push("paused during the turn"); break; }
       // Wasender allows 1 message per 5s per session.
       if (sent) await ports.sleep(5500);
