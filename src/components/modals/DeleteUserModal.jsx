@@ -1,6 +1,7 @@
 import Mi from '../Mi.jsx';
 import { useApp } from '../../context/AppContext.jsx';
-import { getDB, deleteUserFn } from '../../lib/db.js';
+import { getDB, unassignDeletedUser } from '../../lib/db.js';
+import { deleteAccount } from '../../lib/accessAdmin.js';
 import { useProjectToast } from '../project/projectToast.js';
 
 export default function DeleteUserModal() {
@@ -13,9 +14,13 @@ export default function DeleteUserModal() {
   const db = getDB();
   const u = deleteUserId ? db.users.find(x => x.id === deleteUserId) : null;
 
-  const submit = () => {
+  // The access-admin function removes the account and its sign-in; only then
+  // are its cached leads unassigned and the tombstone written.
+  const submit = async () => {
     if (!deleteUserId) return;
-    deleteUserFn(deleteUserId, user); // tombstone + cloud delete + unassign their leads
+    const r = await deleteAccount(deleteUserId);
+    if (!r.ok) { toast.error('Not removed', r.error); return; }
+    unassignDeletedUser(deleteUserId, user);
     setDeleteUserId(null);
     closeModal();
     refreshDB();

@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useState } from 'react';
 import Mi from '../Mi.jsx';
 import { Select as SelectRoot, SelectTrigger, SelectValue, SelectPopover, SelectListBox, SelectItem } from '../ui/select.jsx';
+import { botReadsPointer } from '../../lib/botControl.js';
+
+const liveNote = (bot) => botReadsPointer(bot)
+  ? 'This goes live for customers as soon as it is published.'
+  : 'Customers still get the legacy bot: this bot is not wired to read published versions yet.';
 
 // Per-bot state (legacy or published snapshot), freeze, stepped test runs,
 // results, gated publish and rollback. Publish is refused by the server while
@@ -51,9 +56,9 @@ export default function QualityTab({ api, showToast }) {
   const activeOn = (id) => status.pointers.filter(p => p.mode === 'snapshot' && p.snapshot_id === id).map(p => p.bot);
 
   const publish = async () => {
-    if (!window.confirm(`Set ${bot} to v${snapById[snapId]?.version_no ?? '?'}? Customers still get the legacy bot: no bot reads published versions yet.`)) return;
+    if (!window.confirm(`Set ${bot} to v${snapById[snapId]?.version_no ?? '?'}? ${liveNote(bot)}`)) return;
     setBusy(true); setBlocked(null);
-    try { await api('publish', { snapshot_id: snapId, bot, expected_snapshot_id: expectedFor(bot) }); showToast(`${bot} is set to this version, but it is not live yet: customers still get the legacy bot.`, 'ok'); reload(); }
+    try { await api('publish', { snapshot_id: snapId, bot, expected_snapshot_id: expectedFor(bot) }); showToast(`${bot} is set to this version. ${liveNote(bot)}`, 'ok'); reload(); }
     catch (e) { if (e.code === 'gate') setBlocked(e.details || [e.message]); else showToast(conflictMsg(e), 'err'); }
     finally { setBusy(false); }
   };
@@ -84,7 +89,7 @@ export default function QualityTab({ api, showToast }) {
           <div key={p.bot} className="analytics-card" style={{ minWidth: 240 }}>
             <b>{p.bot}</b>
             <div>{p.mode === 'legacy' ? 'Legacy: unversioned live reads, not a published version' : `Snapshot v${snapById[p.snapshot_id]?.version_no ?? '?'} · ${snapById[p.snapshot_id]?.checksum?.slice(0, 12) ?? ''}`}</div>
-            <div className="meta">Customers still get the legacy bot: no bot reads published versions yet.</div>
+            <div className="meta">{liveNote(p.bot)}</div>
             <div className="meta">changed {new Date(p.changed_at).toLocaleString()}{p.changed_by_claimed ? ` · claimed by ${p.changed_by_claimed}` : ''}</div>
             {p.mode === 'snapshot' && <button className="btn btn-g btn-sm" onClick={() => rollback(p.bot, true)}><Mi>undo</Mi>Back to legacy</button>}
           </div>

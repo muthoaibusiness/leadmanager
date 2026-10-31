@@ -12,7 +12,8 @@ export type Provider = keyof typeof PROVIDERS;
 
 export type ModelConfig = { provider: Provider; base_url: string; model: string };
 export type ChatReq = { model: string; max_tokens: number; system: string; messages: { role: string; content: string }[] };
-export type ChatRes = { ok: true; text: string; prompt_tokens: number; completion_tokens: number } | { ok: false; error: string; code?: string };
+// A failure carries usage when the provider still billed tokens ("length").
+export type ChatRes = { ok: true; text: string; prompt_tokens: number; completion_tokens: number } | { ok: false; error: string; code?: string; prompt_tokens?: number; completion_tokens?: number };
 export type Fetch = (url: string, init: { method: string; headers: Record<string, string>; body: string; signal: AbortSignal; redirect: "manual" }) =>
   Promise<{ ok: boolean; status: number; headers: { get(k: string): string | null }; json(): Promise<any> }>;
 // Resolves a host name to its addresses, so a public name that points at a
@@ -26,10 +27,23 @@ export const REPLY_LIMITS = { max_tokens: 2000, effort: "low" } as const;
 
 // The chat/completions body. `reasoning` is an OpenRouter field, so other
 // providers never receive it; tiny probes (the key test) skip it too.
-export function requestBody(req: ChatReq, provider: Provider = "openrouter") {
-  const reasoning = provider === "openrouter" && req.max_tokens >= 1024 ? { reasoning: { effort: REPLY_LIMITS.effort } } : {};
+//
+// `reasoningOff` is the retry mode: some models (DeepSeek V4 Flash) ignore the
+// effort hint and still think for the whole budget on a long prompt, which
+// returns no reply (finish "length"). Switching reasoning off made the same
+// question answer in 72 tokens with 0 spent on thinking.
+export function requestBody(req: ChatReq, provider: Provider = "openrouter", opts: { reasoningOff?: boolean } = {}) {
+  const reasoning = provider !== "openrouter" ? {}
+    : opts.reasoningOff ? { reasoning: { enabled: false } }
+    : req.max_tokens >= 1024 ? { reasoning: { effort: REPLY_LIMITS.effort } } : {};
   return { model: req.model, max_tokens: req.max_tokens, ...reasoning, messages: [{ role: "system", content: req.system }, ...req.messages] };
 }
+
+// Retries a reply that came back empty on the token limit, once, with
+// reasoning off. A model that cannot run without reasoning refuses that with
+// an error, and the caller then keeps the original "length" result.
+export const shouldRetryWithoutReasoning = (r: { ok: boolean; code?: string }, provider: Provider) =>
+  provider === "openrouter" && !r.ok && r.code === "length";
 
 const MODEL_RE = /^[A-Za-z0-9][A-Za-z0-9._:\/@+-]{0,127}$/;
 const KEY_RE = /^[\x21-\x7e]{8,512}$/;
@@ -100,6 +114,15 @@ function providerError(status: number): { code: string; error: string } {
 // One chat completion against an OpenAI-compatible endpoint. Resolves the host
 // before every call and refuses private targets; does not follow redirects.
 export async function chatCompletion(cfg: ModelConfig, key: string, req: ChatReq, io: { fetch: Fetch; resolve: Resolve; timeoutMs?: number }): Promise<ChatRes> {
+  const first = await chatOnce(cfg, key, req, io, false);
+  if (!shouldRetryWithoutReasoning(first, cfg.provider)) return first;
+  const second = await chatOnce(cfg, key, req, io, true);
+  // Both passes are billed by the provider, so both count against the budget.
+  const used = { prompt_tokens: (first.prompt_tokens || 0) + (second.prompt_tokens || 0), completion_tokens: (first.completion_tokens || 0) + (second.completion_tokens || 0) };
+  return second.ok ? { ...second, ...used } : { ...first, ...used };
+}
+
+async function chatOnce(cfg: ModelConfig, key: string, req: ChatReq, io: { fetch: Fetch; resolve: Resolve; timeoutMs?: number }, reasoningOff: boolean): Promise<ChatRes> {
   const v = validateConfig(cfg);
   if (!v.ok) return { ok: false, code: "config", error: v.errors.join("; ") };
   // OpenRouter and OpenAI are pinned to their public hosts; only a custom host
@@ -120,7 +143,7 @@ export async function chatCompletion(cfg: ModelConfig, key: string, req: ChatReq
   try {
     const r = await io.fetch(`${v.value.base_url}/chat/completions`, {
       method: "POST", headers, signal: ctl.signal, redirect: "manual",
-      body: JSON.stringify(requestBody(req, v.value.provider)),
+      body: JSON.stringify(requestBody(req, v.value.provider, { reasoningOff })),
     });
     if (!r.ok) return { ok: false, ...providerError(r.status) };
     let j: any;
@@ -144,7 +167,8 @@ export async function chatCompletion(cfg: ModelConfig, key: string, req: ChatReq
     const text = choice.message?.content;
     if (typeof text !== "string" || !text.trim()) {
       const why = String(choice.finish_reason || "");
-      if (why === "length") return { ok: false, code: "length", error: "The model used its whole token limit (most likely on reasoning) and returned no reply" };
+      if (why === "length") return { ok: false, code: "length", error: "The model used its whole token limit (most likely on reasoning) and returned no reply",
+        prompt_tokens: Number(j?.usage?.prompt_tokens) || 0, completion_tokens: Number(j?.usage?.completion_tokens) || 0 };
       if (why === "content_filter") return { ok: false, code: "refused", error: "The provider's content filter blocked the reply" };
       if (typeof text === "string") return { ok: false, code: "empty", error: "The model returned an empty reply" };
       return { ok: false, code: "format", error: "Provider response has no choices[0].message.content; it may not be OpenAI-compatible" };

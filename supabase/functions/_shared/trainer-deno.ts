@@ -6,7 +6,7 @@ import { _internals, type Db, type Llm } from "./trainer-handler.ts";
 import { runTestTurn, type LiveResult } from "./trainer-live.ts";
 import type { Bot } from "./trainer-core.ts";
 import { SUPABASE_URL, SERVICE_KEY, sbSelect, sbUpsert, sendWaMessageMirroredId } from "./wa.ts";
-import { chatCompletion, requestBody, embedRequest, embedWithConfig, type ModelConfig } from "./trainer-model.ts";
+import { chatCompletion, requestBody, embedRequest, embedWithConfig, type ModelConfig, type ChatRes } from "./trainer-model.ts";
 import { httpProbe } from "./trainer-brochure.ts";
 
 const H = { apikey: SERVICE_KEY, Authorization: `Bearer ${SERVICE_KEY}`, "Content-Type": "application/json" };
@@ -35,23 +35,36 @@ export const llm: Llm = {
   async chat(req) {
     const key = Deno.env.get("OPENROUTER_API_KEY") ?? "";
     if (!key) return { ok: false, error: "OPENROUTER_API_KEY not configured" };
-    const ctl = new AbortController();
-    const timer = setTimeout(() => ctl.abort(), 30_000);
-    try {
-      // Override only for a local dev stack (e.g. a stub model); unset in production.
-      const r = await fetch(Deno.env.get("AI_TRAINER_LLM_URL") || "https://openrouter.ai/api/v1/chat/completions", {
-        method: "POST", signal: ctl.signal,
-        headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json", "HTTP-Referer": "https://wepro.app", "X-Title": "WEPRO AI Trainer" },
-        body: JSON.stringify(requestBody(req, "openrouter")),
-      });
-      if (!r.ok) return { ok: false, error: `OpenRouter ${r.status}` };
-      const j = await r.json();
-      return { ok: true, text: String(j?.choices?.[0]?.message?.content ?? ""), prompt_tokens: j?.usage?.prompt_tokens ?? 0, completion_tokens: j?.usage?.completion_tokens ?? 0 };
-    } catch (e) {
-      return { ok: false, error: e instanceof Error ? e.message : String(e) };
-    } finally {
-      clearTimeout(timer);
+    // Second pass only when the first came back empty on the token limit
+    // (a reasoning model that spent the budget thinking): same request with
+    // reasoning off. A model that cannot run without reasoning refuses that
+    // pass, and the empty first answer stands.
+    let first: ChatRes | null = null;
+    for (const reasoningOff of [false, true]) {
+      const ctl = new AbortController();
+      const timer = setTimeout(() => ctl.abort(), 30_000);
+      try {
+        // Override only for a local dev stack (e.g. a stub model); unset in production.
+        const r = await fetch(Deno.env.get("AI_TRAINER_LLM_URL") || "https://openrouter.ai/api/v1/chat/completions", {
+          method: "POST", signal: ctl.signal,
+          headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json", "HTTP-Referer": "https://wepro.app", "X-Title": "WEPRO AI Trainer" },
+          body: JSON.stringify(requestBody(req, "openrouter", { reasoningOff })),
+        });
+        if (!r.ok) return first ?? { ok: false, error: `OpenRouter ${r.status}` };
+        const j = await r.json();
+        const text = String(j?.choices?.[0]?.message?.content ?? "");
+        // Usage is cumulative: the empty first pass was billed too.
+        const res: ChatRes = { ok: true, text, prompt_tokens: (first?.ok ? first.prompt_tokens : 0) + (j?.usage?.prompt_tokens ?? 0),
+          completion_tokens: (first?.ok ? first.completion_tokens : 0) + (j?.usage?.completion_tokens ?? 0) };
+        if (text.trim() || String(j?.choices?.[0]?.finish_reason || "") !== "length") return res;
+        first = res;
+      } catch (e) {
+        return first ?? { ok: false, error: e instanceof Error ? e.message : String(e) };
+      } finally {
+        clearTimeout(timer);
+      }
     }
+    return first!;
   },
 };
 
@@ -119,12 +132,17 @@ export const embedder = env.embeddingModel
 
 // One test-number turn on a bot's real chat. Model calls draw on the trainer's
 // daily budget, like the Playground.
-export function runTrainerTestTurn(a: {
-  bot: Bot; convId: string; phone: string; to: string; text: string; ad: { isAd: boolean; adText?: string }; allowMedia: boolean;
+export async function runTrainerTestTurn(a: {
+  bot: Bot; convId: string; phone: string; to: string; text: string; ad: { isAd: boolean; adText?: string }; allowMedia: boolean; production?: boolean;
 }): Promise<LiveResult> {
   const { callModel, inventory } = _internals.portsFor({ db, llm, env });
-  return runTestTurn({ ...a, replyModel: env.replyModel }, {
-    callModel, inventory, probeDocument: probe, probeImage: probe,
+  // The same approved-document search as the Playground, so a test number is
+  // answered from the uploaded FAQs and fact sheets too.
+  // A failed setup is traced on the turn, never thrown into the bot.
+  const searchDocs = await _internals.docSearchPort({ db, llm, env, embedWith } as Parameters<typeof _internals.docSearchPort>[0])
+    .catch((e) => async () => { throw e; });
+  return runTestTurn({ ...a, replyModel: env.replyModel, allowNonTest: !!a.production }, {
+    callModel, inventory, searchDocs, probeDocument: probe, probeImage: probe,
     select: db.select, insert: db.insert, patch: db.patch,
     upsert: (table, row) => sbUpsert(table, [row], table === "ai_conversation_state" ? "conversation_id" : "id"),
     send: (to, msg) => sendWaMessageMirroredId(a.bot, to, a.convId, a.phone, msg, { senderName: "AI Trainer", storeWaId: true }),

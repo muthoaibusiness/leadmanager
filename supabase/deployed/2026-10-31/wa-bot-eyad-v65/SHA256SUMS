@@ -1,0 +1,16 @@
+199ef6c8face92e4af0dfce8ecd151bbe1c5ee7761fc1b9446c118c3270e7704  ./_shared/ai.ts
+7165d2f05799a3eaf311ef63e2febdf4c72aa137ae32311c15cd63dc007ae245  ./_shared/phone.ts
+42f012297ecc654480c158d851da84b66bbf23ff8b9962b5a4a76ef4f7f3d23b  ./_shared/trainer-brochure.ts
+7115c19f9ee5e68a3a8ec0d4aad54b6bfc36aa32ad7a2ca276b8a75f3e242f16  ./_shared/trainer-core.ts
+1f24c76b4db6e591ced9a7598d9ed5708940b4055994acefa04beb76416bcd83  ./_shared/trainer-deno.ts
+e5988588ce27c5a542d6e508ad0d14db3ff1b5fbc8cc37619810cd4c0e2bc4a0  ./_shared/trainer-docs.ts
+11a245b7b2ea51099a831edfb9853aa22f10004840da6a55798a9d86dea3fceb  ./_shared/trainer-handler.ts
+a05f33173133878825989893cb140b3dced5b743e01a60688ca3c7f30a4b99af  ./_shared/trainer-index.ts
+fefe20745368c3888ecb09cd11879e693e068d47e885354b8e8cde7868c81020  ./_shared/trainer-inventory.ts
+b53a09c1f32ca8185db0507b43f8da8a16755062be99f4fd2a545fa624ecc327  ./_shared/trainer-live.ts
+74ccaa265f113eab338ebe6bef0f033d4273ca1485d7314aec8a7b84ba266af0  ./_shared/trainer-media.ts
+579bc200d28c5136acf4f1a879bc21dd46730041d66c7ad65fb5e3cea1d3157f  ./_shared/trainer-model.ts
+a6b1f369e374a20d5df041c074a9e1acabec2056a3eb2b7c866e75b4fff5ffb5  ./_shared/trainer-prompt.ts
+f2c21dd086a8014f07c2a90077fd7e31c1f5c9c03c655c2b6e51cd08ca8bf776  ./_shared/trainer-words.ts
+12f095e1ac8f50c1cd77db056aa35c55e8b128ee3d244d9fae696f7c74ca381b  ./_shared/wa.ts
+f5a739ec62604bcad087bcedba8531d3187800022ef312666b5079eb60efa3b8  ./wa-bot-eyad/index.ts

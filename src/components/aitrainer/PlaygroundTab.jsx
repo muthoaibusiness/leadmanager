@@ -288,7 +288,7 @@ export default function PlaygroundTab({ api, showToast }) {
             <SelectTrigger><SelectValue /></SelectTrigger>
             <SelectPopover><SelectListBox>
               <SelectItem value="drafts">Current drafts</SelectItem>
-              {snapshots.map(s => <SelectItem key={s.id} value={s.id}>v{s.version_no} ({s.status})</SelectItem>)}
+              {snapshots.map(s => <SelectItem key={s.id} value={s.id}>v{s.version_no} ({s.status}, frozen {new Date(s.created_at).toLocaleDateString()})</SelectItem>)}
             </SelectListBox></SelectPopover>
           </SelectRoot>
           <label style={{ display: 'inline-flex', gap: 6 }}><input type="checkbox" disabled={locked} checked={setup.isAd} onChange={e => setSetup(v => ({ ...v, isAd: e.target.checked }))} />Came from an ad</label>

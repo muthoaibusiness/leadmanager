@@ -7,7 +7,9 @@ import { defineConfig, globalIgnores } from 'eslint/config'
 export default defineConfig([
   // config/ holds n8n Code-node snippets: they run inside n8n (top-level
   // return), are not part of the app, and do not parse as modules.
-  globalIgnores(['dist', 'config']),
+  // .gate-harness/ is the UI-gate diagnostic scaffold (built dist/, inline
+  // harness pages, stubs), not production source.
+  globalIgnores(['dist', 'config', '.gate-harness']),
   {
     files: ['**/*.{js,jsx}'],
     extends: [

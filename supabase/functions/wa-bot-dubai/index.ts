@@ -45,7 +45,7 @@ import {
 import {
   askAgent, resolveMedia, fixGrammar, matchJolshiriBundle, buildJolshiriBundle,
   FLOW_AUTO_PROFILE_TEXT, FLOW_AGENT_YES_TEXT, GENERIC_WELCOME_TEXT, isAffirmative, isProfileConsent,
-  isJolshiriProject, matchNamedProject, isPriceQuestion, isLandOffer, FLOW_PRICE_AGENT_TEXT, brochureCaption,
+  leadContext, matchNamedProject, isPriceQuestion, isLandOffer, FLOW_PRICE_AGENT_TEXT, brochureCaption,
 } from "../_shared/ai.ts";
 import { runTrainerTestTurn } from "../_shared/trainer-deno.ts";
 
@@ -412,7 +412,7 @@ async function handleInbound(evt: ParsedEvent): Promise<void> {
   // (A1) Should Drip?
   const shouldDrip = prelead.should_drip === true;
   const takeover = prelead.takeover === true;
-  const flowRows = await sbSelectJson(`preleads?id=eq.${encodeURIComponent(prelead.id)}&select=message_logs,flow_stage`);
+  const flowRows = await sbSelectJson(`preleads?id=eq.${encodeURIComponent(prelead.id)}&select=message_logs,flow_stage,ctwa_clid,wa_ad_id`);
   const flowStatus = flowRows?.[0] ?? {};
   const msgCount = Array.isArray(flowStatus.message_logs) ? flowStatus.message_logs.length : 0;
 
@@ -433,8 +433,10 @@ async function handleInbound(evt: ParsedEvent): Promise<void> {
   // A land seller who happened to click an ad is not a Jolshiri buyer:
   // generic hello, no brochure flow; the LLM's land rule keeps the rest silent.
   const landOffer = !!evt.text && isLandOffer(evt.text);
+  // A defaulted property_interest is not a Jolshiri lead (leadContext in ai.ts).
+  const ctx = leadContext({ named, isAd: evt.isAd, status: flowStatus, propertyInterest: prelead.property_interest });
   if (settings.welcomeEnabled && !takeover && prelead.is_new === true) {
-    if (isJolshiriProject(prelead.property_interest) && !landOffer) {
+    if (ctx.jolshiriLead && !landOffer) {
       // Jolshiri lead (ad or named): the admin welcome and the follow-up clock —
       // 5 minutes of silence asks about the profiles, an hour of silence
       // after that asks about a dedicated agent. No auto-forward.
@@ -513,7 +515,7 @@ async function handleInbound(evt: ParsedEvent): Promise<void> {
       return;
     }
     const sent = await runFaqAgent("dubai", evt.waTo, evt.remote, evt.text, {
-      adProject: prelead.property_interest || undefined, profilesAlreadySent: profilesAlreadySent || landOffer, allowMedia: settings.aiMediaEnabled,
+      adProject: ctx.adProject, profilesAlreadySent: profilesAlreadySent || landOffer, allowMedia: settings.aiMediaEnabled,
     });
     if (sent) {
       await sbPatchFireAndForget("preleads", `id=eq.${encodeURIComponent(prelead.id)}`, {

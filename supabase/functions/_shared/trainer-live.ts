@@ -43,6 +43,10 @@ export type LivePorts = Ports & {
 export type LiveInput = {
   bot: Bot; convId: string; phone: string; to: string; text: string;
   ad: { isAd: boolean; adText?: string }; replyModel: string; allowMedia: boolean;
+  // Production activation (CR-002): when true, the test-number allow-list is
+  // skipped and the AI-replies switch (faq_agent_enabled) gates sends instead.
+  // Pause and agent-takeover are still enforced by isPaused.
+  allowNonTest?: boolean;
 };
 export type LiveResult = { outcome: string; turnId: string | null; sent: number; blocked?: string };
 
@@ -66,11 +70,38 @@ async function isPaused(ports: LivePorts, key: string, convId: string, phone: st
   return leads.some((l) => samePhone(l.phone, phone) && (l.takeover === true || l.takeover === "true"));
 }
 
+export const RECAP_NOTE_SOURCE = "Eyad Bot (recap)";
+
+// The recap for a phone's lead is one NOTE row, updated in place (owner rule:
+// reuse/update the existing customer note, never duplicate). Finds the latest
+// recap NOTE on the lead resolved by phone and replaces it; inserts the first
+// one when none exists. No-op when the phone has no lead yet — the recap then
+// stays in conversation state until routing/forward creates the lead.
+export async function writeRecapNote(ports: LivePorts, phone: string, description: string): Promise<boolean> {
+  const tail = normPhone(phone).slice(-9);
+  if (tail.length < 8) return false;
+  // The suffix query is only a candidate fetch: a 9-digit tail is shared across
+  // country codes, so the lead is accepted only on a full-number match, and a
+  // tail that matches two different numbers writes nowhere.
+  const rows = await ports.select(`leads?phone=like.*${encodeURIComponent(tail)}&select=id,company_id,phone&order=created_at.desc&limit=20`);
+  const same = rows.filter((l) => samePhone(l.phone, phone));
+  if (new Set(same.map((l) => normPhone(l.phone))).size !== 1) return false;
+  const lead = same[0];
+  const existing = (await ports.select(`activities?lead_id=eq.${encodeURIComponent(lead.id)}&type=eq.NOTE&user_name=eq.${encodeURIComponent(RECAP_NOTE_SOURCE)}&select=id&order=timestamp.desc&limit=1`))[0];
+  if (existing) return ports.patch("activities", `id=eq.${encodeURIComponent(existing.id)}`, { description, timestamp: new Date().toISOString() });
+  return ports.upsert("activities", { id: crypto.randomUUID(), lead_id: lead.id, type: "NOTE", description, user_id: null, user_name: RECAP_NOTE_SOURCE, duration_seconds: 0, timestamp: new Date().toISOString(), company_id: lead.company_id ?? null });
+}
+
 // The current wa_bot_settings row, read again just before each send so a
 // number removed from the list (or test mode switched off) mid-turn is honoured.
-async function stillAllowed(ports: LivePorts, bot: Bot, phone: string, to: string): Promise<boolean> {
-  const row = (await ports.select(`wa_bot_settings?bot=eq.${bot}&select=trainer_test_mode,test_numbers`))[0];
-  return !!row && row.trainer_test_mode === true && isTestNumber(row.test_numbers, phone) && samePhone(to, phone);
+async function stillAllowed(ports: LivePorts, bot: Bot, phone: string, to: string, allowNonTest = false): Promise<boolean> {
+  const row = (await ports.select(`wa_bot_settings?bot=eq.${bot}&select=trainer_test_mode,test_numbers,faq_agent_enabled`))[0];
+  if (!row) return false;
+  // Production path (allowNonTest): gate on the AI-replies switch. Pause and
+  // agent-takeover are enforced separately by isPaused. Test mode keeps the
+  // number allow-list.
+  if (allowNonTest) return samePhone(to, phone) && row.faq_agent_enabled !== false;
+  return row.trainer_test_mode === true && isTestNumber(row.test_numbers, phone) && samePhone(to, phone);
 }
 
 export async function runTestTurn(a: LiveInput, ports: LivePorts): Promise<LiveResult> {
@@ -83,7 +114,7 @@ export async function runTestTurn(a: LiveInput, ports: LivePorts): Promise<LiveR
     const turn = await ports.insert("ai_turns", { bot: a.bot, conversation_id: a.convId, core_version: CORE_VERSION, model: a.replyModel, outcome: "running" });
     turnId = turn?.id ?? null;
     if (!turnId) throw new Error("could not log the turn");
-    if (!(await stillAllowed(ports, a.bot, a.phone, a.to))) {
+    if (!(await stillAllowed(ports, a.bot, a.phone, a.to, a.allowNonTest))) {
       await finish("blocked_not_test_number", { phone_key: phoneKey(a.phone) });
       return { outcome: "blocked_not_test_number", turnId, sent: 0, blocked: "not a test number" };
     }
@@ -118,7 +149,7 @@ export async function runTestTurn(a: LiveInput, ports: LivePorts): Promise<LiveR
     // same allow-list and pause checks as every other send. With media off
     // there is no sender, so files are checked and the reply says "ready".
     const sendDocument = a.allowMedia ? async (m: { type: "document"; text: string; mediaUrl: string; fileName: string }) => {
-      if (!(await stillAllowed(ports, a.bot, a.phone, a.to))) { sendErrors.push("recipient no longer allowed"); return null; }
+      if (!(await stillAllowed(ports, a.bot, a.phone, a.to, a.allowNonTest))) { sendErrors.push("recipient no longer allowed"); return null; }
       if (await isPaused(ports, key, a.convId, a.phone)) { sendErrors.push("paused during the turn"); return null; }
       if (sent) await ports.sleep(5500);
       const id = await ports.send(a.to, m);
@@ -136,12 +167,19 @@ export async function runTestTurn(a: LiveInput, ports: LivePorts): Promise<LiveR
     // Brochures were already sent by the brochure path; only images remain here.
     if (a.allowMedia && !stopped) for (const m of r.media) if (m.kind !== "brochure") out.push({ type: m.type, text: m.caption, mediaUrl: m.url, fileName: m.type === "document" ? `${m.caption}.pdf` : undefined });
     for (let i = 0; i < out.length; i++) {
-      if (!(await stillAllowed(ports, a.bot, a.phone, a.to))) { sendErrors.push("recipient no longer allowed"); break; }
+      if (!(await stillAllowed(ports, a.bot, a.phone, a.to, a.allowNonTest))) { sendErrors.push("recipient no longer allowed"); break; }
       if (await isPaused(ports, key, a.convId, a.phone) && !r.handoff) { sendErrors.push("paused during the turn"); break; }
       // Wasender allows 1 message per 5s per session.
       if (sent) await ports.sleep(5500);
       const id = await ports.send(a.to, out[i]);
       if (id) { sent++; waIds.push(id); } else sendErrors.push(`send ${i + 1} failed`);
+    }
+    // On a handoff, persist the recap as the lead's one note (updated in place).
+    // The model's recap field is the source; until the core emits it this is a
+    // no-op, so the wiring ships before the content.
+    if (r.handoff) {
+      const recap = (r.trace as any)?.recap?.text;
+      if (typeof recap === "string" && recap.trim()) await writeRecapNote(ports, a.phone, recap.trim());
     }
     // The turn's outcome is what reached the customer; the brochure path's own
     // verdict (which files were checked and sent) is kept beside it.

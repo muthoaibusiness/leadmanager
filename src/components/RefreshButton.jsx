@@ -5,13 +5,16 @@ import { useApp } from '../context/AppContext.jsx';
 // which LeadsView already refetches on -- the page, its counts and the Last
 // Follow-up column. LeadsView publishes leadCounts as null while a page is
 // loading, so the icon spins exactly while the list is being fetched.
-export default function RefreshButton() {
+//
+// Another page can use the same button by passing its own `onClick` and `busy`
+// (Meta CAPI does); `label` names what is refreshed for screen readers.
+export default function RefreshButton({ onClick, busy: busyProp, label = 'Refresh customers' }) {
   const { refreshDB, leadCounts } = useApp();
-  const busy = leadCounts == null;
+  const busy = busyProp ?? leadCounts == null;
   return (
     <div className="rf-ring">
-      <button type="button" className={`rf-btn${busy ? ' busy' : ''}`} onClick={() => refreshDB()}
-        title="Refresh customers" aria-label="Refresh customers" aria-busy={busy}>
+      <button type="button" className={`rf-btn${busy ? ' busy' : ''}`} onClick={() => (onClick ? onClick() : refreshDB())}
+        title={label} aria-label={label} aria-busy={busy}>
         {/* Phones (CSS) hide the word and keep a round icon button. */}
         <Mi aria-hidden="true">sync</Mi><span className="rf-lbl">Refresh</span>
       </button>

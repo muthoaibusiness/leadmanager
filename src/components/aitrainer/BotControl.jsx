@@ -3,7 +3,7 @@ import Mi from '../Mi.jsx';
 import { sbGet } from '../../lib/supabase.js';
 import { BOTS } from '../wa/relayBots.js';
 import { Menu, MenuRadio, MenuRadioGroup } from '../ui/menu.jsx';
-import { BOT_FILTER_ALL, botControlView, filterBots } from '../../lib/botControl.js';
+import { BOT_FILTER_ALL, botControlView, botReadsPointer, filterBots } from '../../lib/botControl.js';
 
 // One card per bot: the customer-reply switch (wa_bot_settings.faq_agent_enabled,
 // the same row WA Relay edits), what customers get today, the candidate version
@@ -146,7 +146,7 @@ export default function BotControl({ api, showToast }) {
   };
 
   const publish = async (b, view) => {
-    if (!window.confirm(`Publish v${view.candidate.version_no} to ${b.name}? The bots do not read published versions yet, so customers are not affected until that is switched on.`)) return;
+    if (!window.confirm(`Publish v${view.candidate.version_no} to ${b.name}? ${botReadsPointer(b.bot) ? 'This goes live for customers as soon as it is published.' : 'Customers are not affected until this bot is wired to read published versions.'}`)) return;
     setBotBusy(b.bot, 'publish');
     try { await api('publish', { snapshot_id: view.candidate.id, bot: b.bot, expected_snapshot_id: data.status.pointers.find((p) => p.bot === b.bot)?.snapshot_id ?? null }); showToast(`Published v${view.candidate.version_no} to ${b.name}`, 'ok'); }
     catch (e) { showToast(e.code === 'gate' ? `Publish blocked: ${(e.details || [e.message]).join('; ')}` : e.message, 'err'); }

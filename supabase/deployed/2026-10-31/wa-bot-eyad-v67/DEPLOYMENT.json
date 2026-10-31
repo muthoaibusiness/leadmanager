@@ -1,0 +1,24 @@
+{
+  "label": "PRODUCTION SNAPSHOT - wa-bot-eyad v67 - rollback bundle",
+  "project_ref": "sbqmougcvnplgjgihpwe",
+  "function": {
+    "slug": "wa-bot-eyad",
+    "id": "f5d3c910-09cd-4598-88a6-ce98e40c7b91",
+    "version": 67,
+    "status": "ACTIVE",
+    "verify_jwt": false,
+    "import_map": false,
+    "entrypoint": "source/supabase/functions/wa-bot-eyad/index.ts",
+    "updated_at": "2026-10-31T09:42:10Z",
+    "ezbr_sha256": "27135b795b13f180c233f4393c38765ec8fef97bfb2067024c0e8eaeaba7975f"
+  },
+  "previous_snapshot": "./wa-bot-eyad-v65",
+  "retrieval": {
+    "downloaded_at": "2026-10-31T13:28Z",
+    "method": "npx supabase@2 functions download wa-bot-eyad --project-ref sbqmougcvnplgjgihpwe --use-api, into a scratch directory outside the repo; metadata from list_edge_functions before and after, same version and ezbr_sha256 both times",
+    "read_only": true
+  },
+  "git_baseline": "All 17 bundled files are byte-identical (CRLF stripped) to commit 4e5d678. HEAD 626abf6 differs only in _shared/trainer-handler.ts (1024-token model probe, 16 lines).",
+  "secret_scan": "No credential literal. Secrets read only through Deno.env.get. Meta pixel id 869790160551668 and page id 104718884272119 are identifiers, not credentials.",
+  "rollback": "Copy wa-bot-eyad/index.ts and _shared/* from this folder over supabase/functions/ in a scratch checkout, then: npx supabase@2 functions deploy wa-bot-eyad --no-verify-jwt --project-ref sbqmougcvnplgjgihpwe"
+}

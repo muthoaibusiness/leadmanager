@@ -9,6 +9,7 @@ import {
   type Ports, type ConvState,
 } from "./trainer-core.ts";
 import { PROVIDERS, REPLY_LIMITS, validateConfig, validKey, maskKey, hostOf, type ModelConfig } from "./trainer-model.ts";
+import { hasFeature } from "./access-rules.js";
 import { withSystemPrompt, promptLimits, type SystemPrompt } from "./trainer-prompt.ts";
 import { indexItems, vectorRetrieval } from "./trainer-index.ts";
 import { markdownChunks } from "./trainer-docs.ts";
@@ -24,7 +25,7 @@ export type Db = {
 };
 export type Llm = {
   chat(req: { model: string; max_tokens: number; system: string; messages: { role: string; content: string }[] }):
-    Promise<{ ok: true; text: string; prompt_tokens: number; completion_tokens: number } | { ok: false; error: string; code?: string }>;
+    Promise<{ ok: true; text: string; prompt_tokens: number; completion_tokens: number } | { ok: false; error: string; code?: string; prompt_tokens?: number; completion_tokens?: number }>;
 };
 // companyId scopes the live inventory read; without it the trainer states no live stock.
 // embeddingModel/embeddingDim switch on vector indexing (task 5); unset keeps every snapshot on "full".
@@ -35,21 +36,25 @@ export type Env = { budgetUsd: number; replyModel: string; judgeModel: string; p
 // embedder enables vector retrieval; without it every turn uses "full".
 export type Embedder = (model: string, text: string) => Promise<{ ok: true; vector: number[]; tokens: number } | { ok: false; error: string }>;
 // probe checks a brochure URL (first bytes only); without it no brochure is offered.
-type Deps = { db: Db; llm: Llm; env: Env; now?: () => Date; probe?: Probe; modelLlm?: (cfg: ModelConfig, key: string) => Llm; embedder?: Embedder ; embedWith?: (cfg: ModelConfig & { dim: number }, key: string) => (text: string) => Promise<{ ok: true; vector: number[]; tokens: number } | { ok: false; error: string }> };
+type Deps = { db: Db; llm: Llm; env: Env; actor: (req: { headers: Headers }) => Promise<{ id: string; name: string; role: string; is_active: boolean; allowed_features?: string[] | null }>; now?: () => Date; probe?: Probe; modelLlm?: (cfg: ModelConfig, key: string) => Llm; embedder?: Embedder ; embedWith?: (cfg: ModelConfig & { dim: number }, key: string) => (text: string) => Promise<{ ok: true; vector: number[]; tokens: number } | { ok: false; error: string }> };
 type Res = { status: number; body: any };
 
 const ok = (data: unknown): Res => ({ status: 200, body: { ok: true, data } });
 const fail = (status: number, code: string, message: string, details?: unknown): Res =>
   ({ status, body: { ok: false, error: { code, message, details } } });
 
-// The CRM has no Supabase Auth session, so access is the acting user's role in
-// the users table, the same check as wa-send (isAdminUser in wa.ts, which this
-// Deno-free file cannot import). The id is claimed by the browser: this stops
-// a non-Management account, not someone holding the anon key.
-async function isManager(db: Db, userId: unknown): Promise<boolean> {
-  if (typeof userId !== "string" || !userId) return false;
-  const u = (await db.select(`users?id=eq.${encodeURIComponent(userId)}&select=role,is_active`))[0];
-  return !!u && u.is_active !== false && (u.role === "MANAGEMENT" || u.role === "MASTER");
+// Access is the verified caller (deps.actor, decision D1) holding the AI
+// Trainer feature by the same rule the browser shows (access-rules.js), or a
+// Master. body.user_id and actor_claimed are ignored; audit rows carry the
+// verified account's name.
+// Only an unverifiable session counts toward the IP lockout. A sign-in service
+// outage (5xx) is "unavailable"; a verified account without trainer access is
+// "denied": neither is a guess at a credential.
+async function managerFrom(deps: Deps, req: { headers: Headers }): Promise<{ id: string; name: string } | null | "unavailable" | "denied"> {
+  let u;
+  try { u = await deps.actor(req); }
+  catch (e: any) { return typeof e?.status === "number" && e.status >= 500 ? "unavailable" : e?.status === 403 ? "denied" : null; }
+  return u.is_active !== false && (u.role === "MASTER" || hasFeature(u, "aitrainer")) ? u : "denied";
 }
 
 // Failed sign-ins per IP: 10 in 10 minutes locks that IP out for 10 minutes.
@@ -88,7 +93,8 @@ function portsFor(deps: Deps, llm: Llm = deps.llm): Ports {
       const chars = req.system.length + req.messages.reduce((n, m) => n + m.content.length, 0);
       const r = await withBudget(deps, estimate(deps.env, chars, req.max_tokens), async () => {
         const x = await llm.chat(req);
-        if (!x.ok) return { value: x, actualUsd: null };
+        // A failure the provider still billed (e.g. "length") is settled, not released.
+        if (!x.ok) return { value: x, actualUsd: x.prompt_tokens || x.completion_tokens ? cost(deps.env, x.prompt_tokens || 0, x.completion_tokens || 0) : null };
         return { value: x, actualUsd: cost(deps.env, x.prompt_tokens, x.completion_tokens) };
       });
       if (r === "over_budget") throw new BudgetError();
@@ -438,9 +444,19 @@ async function modelConfigTest(deps: Deps, actor: string): Promise<Res> {
   if ("error" in pm) return pm.error;
   if (!pm.cfg) return fail(422, "model_config", "Save the Playground model settings before testing.");
   const started = Date.now();
-  const x = await pm.llm.chat({ model: pm.cfg.model, max_tokens: 5, system: "Reply with the single word OK.", messages: [{ role: "user", content: "ping" }] });
-  const result = { ok: x.ok, at: new Date().toISOString(), ms: Date.now() - started, provider: pm.cfg.provider, model: pm.cfg.model,
-    ...(x.ok ? {} : { code: (x as any).code || "provider", error: x.error }) };
+  // 1024 is the floor at which requestBody asks OpenRouter for low reasoning
+  // effort. With the old 5-token probe a reasoning model (e.g. DeepSeek) spent
+  // every token thinking and the test failed with "length" although the key
+  // and model were fine.
+  const x = await pm.llm.chat({ model: pm.cfg.model, max_tokens: 1024, system: "Reply with the single word OK.", messages: [{ role: "user", content: "ping" }] });
+  // The test asks "did the provider authenticate us and run this model?". A
+  // completion that stopped on the token limit proves both, so it passes; the
+  // real reply budget is larger (REPLY_LIMITS).
+  const spentOnReasoning = !x.ok && (x as any).code === "length";
+  const passed = x.ok || spentOnReasoning;
+  const result = { ok: passed, at: new Date().toISOString(), ms: Date.now() - started, provider: pm.cfg.provider, model: pm.cfg.model,
+    ...(spentOnReasoning ? { note: "The model answered but used the test's small token budget on reasoning. Key and model work; real replies get a larger budget." } : {}),
+    ...(passed ? {} : { code: (x as any).code || "provider", error: (x as any).error }) };
   await deps.db.patch("ai_model_configs", "scope=eq.playground", { last_test: result });
   await deps.db.insert("ai_trainer_audit", { entity: "model_config", entity_id: "playground", action: "test", after: result, actor_claimed: actor });
   return ok(result);
@@ -840,12 +856,15 @@ export async function handleTrainer(req: { method: string; headers: Headers; ip:
   if (req.method !== "POST") return fail(405, "method", "POST only");
   const now = (deps.now?.() ?? new Date()).getTime();
   if (limited(req.ip, now)) return fail(429, "rate_limited", "Too many failed sign-ins. Try again in 10 minutes.");
-  const { action, payload: p = {}, actor_claimed, user_id } = req.body || {};
-  if (!(await isManager(deps.db, user_id))) {
+  const { action, payload: p = {} } = req.body || {};
+  const who = await managerFrom(deps, req);
+  if (who === "unavailable") return fail(503, "unavailable", "Sign-in service unavailable. Try again shortly.");
+  if (who === "denied") return fail(401, "unauthorized", "Only an active Management or Master account can use the AI Trainer.");
+  if (!who) {
     fails.set(req.ip, [...(fails.get(req.ip) || []), now]);
     return fail(401, "unauthorized", "Only an active Management or Master account can use the AI Trainer.");
   }
-  const actor = String(actor_claimed || "unknown").slice(0, 120);
+  const actor = String(who.name || who.id).slice(0, 120);
   try {
     switch (action) {
       case "auth.check": return ok({ core_version: CORE_VERSION });
@@ -1124,6 +1143,6 @@ async function handleRunsAndPublish(action: string, p: any, actor: string, deps:
   }
 }
 
-export const _internals = { contentFor, portsFor: (deps: Deps) => portsFor(deps), withBudget, saveItem, canonicalJson, buildJudgePrompt, parseJudge,
+export const _internals = { contentFor, portsFor: (deps: Deps) => portsFor(deps), docSearchPort, withBudget, saveItem, canonicalJson, buildJudgePrompt, parseJudge,
   judgeVerdict, finalVerdict, runChecks, publishGate, RUBRIC_V1, freezeContent, checksumOf };
 export type { Bot, TestSpec };

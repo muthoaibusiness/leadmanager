@@ -14,6 +14,19 @@ const deps = (companyId?: string) => {
   return { db, llm: { chat: async () => ({ ok: false as const, error: "unused" }) }, env: { budgetUsd: 1, replyModel: "m", judgeModel: "j", pricePerMTok: { in: 1, out: 1 }, companyId } };
 };
 
+test("a billed model failure (tokens spent, no reply) is settled against the budget, an unbilled one released", async () => {
+  const d: any = deps("c1");
+  const rpcs: any[] = [];
+  d.db.rpc = async (fn: string, a: any) => { rpcs.push([fn, a]); return { ok: true, data: fn === "ai_budget_reserve" ? "r1" : null }; };
+  d.llm = { chat: async () => ({ ok: false, code: "length", error: "e", prompt_tokens: 1e6, completion_tokens: 2e6 }) };
+  const req = { model: "m", max_tokens: 2000, system: "s", messages: [{ role: "user" as const, content: "q" }] };
+  assert.equal((await _internals.portsFor(d).callModel(req)).ok, false);
+  assert.deepEqual(rpcs.at(-1), ["ai_budget_settle", { p_id: "r1", p_actual: 3 }]);
+  d.llm = { chat: async () => ({ ok: false, error: "OpenRouter 500" }) };
+  await _internals.portsFor(d).callModel(req);
+  assert.equal(rpcs.at(-1)[0], "ai_budget_release");
+});
+
 test("the inventory port reads the linked property within the configured company", async () => {
   const d = deps("c1");
   const inv = await _internals.portsFor(d as any).inventory!("prop-1");

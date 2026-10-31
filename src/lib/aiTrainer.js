@@ -1,17 +1,17 @@
 // Browser side of the AI Trainer. Every call goes to the ai-trainer Edge
 // Function with the signed-in CRM user's id; the server allows it only for an
 // active Management or Master account.
-import { SB_URL, SB_KEY } from './supabase.js';
+import { SB_URL, SB_KEY, bearer, ensureFreshToken } from './supabase.js';
 
 export const TRAINER_URL = `${SB_URL}/functions/v1/ai-trainer`;
 
 export async function trainerCall(user, action, payload = {}) {
   let r;
   try {
-    r = await fetch(TRAINER_URL, {
+    await ensureFreshToken(); r = await fetch(TRAINER_URL, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', apikey: SB_KEY },
-      body: JSON.stringify({ action, payload, user_id: user?.id, actor_claimed: user?.name || user?.email || 'unknown' }),
+      headers: { 'Content-Type': 'application/json', apikey: SB_KEY, Authorization: bearer() },
+      body: JSON.stringify({ action, payload }),
     });
   } catch {
     throw Object.assign(new Error('Could not reach the AI Trainer service. It may not be deployed yet.'), { code: 'network' });

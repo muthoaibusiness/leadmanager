@@ -124,7 +124,7 @@ similar question comes up again, instead of repeating the original mistake:
 ${corrections.map((c) => `- Customer asked: "${c.customer_message}" → correct reply: "${c.corrected_reply}"`).join("\n")}\n`;
 }
 
-const SYSTEM_PROMPT = (
+export const SYSTEM_PROMPT = (
   projects: ProjectRow[],
   adProject: string | undefined,
   knowledge: { title: string; body: string }[],
@@ -135,7 +135,7 @@ below — never invent a project, price, or fact that isn't in it.
 
 Projects:
 ${projectsBlock(projects)}
-${adProject ? `\nThis customer came in through an ad for: ${adProject}. Every answer stays about THIS project — don't bring up, compare to, or suggest another one on your own. Only discuss a different project if the customer names it themselves; after that, treat the one they just named as "their" project instead. Whenever they say "this project" or don't name one, it means ${adProject} (or whichever project they most recently named).\n` : ""}
+${adProject ? `\nThis customer came in through an ad for: ${adProject}. Every answer stays about THIS project — don't bring up, compare to, or suggest another one on your own. Only discuss a different project if the customer names it themselves; after that, treat the one they just named as "their" project instead. Whenever they say "this project" or don't name one, it means ${adProject} (or whichever project they most recently named).\n` : `\nNo project is known for this customer yet (no ad, none named). Do not assume one — see the "which project" rule below.\n`}
 Reply style (match the brand's existing WhatsApp templates):
 - Short. A few sentences at most — this is a chat, not an email.
 - Friendly, direct. No emoji at all.
@@ -145,6 +145,15 @@ Reply style (match the brand's existing WhatsApp templates):
 - If the customer asks for or clearly wants a photo, floor plan, or
   brochure, say so briefly AND set "send" so it's attached — don't just
   describe the document in text.
+- When NO project is in context (no ad project line above, the customer
+  hasn't named one, and the history doesn't settle it) and they ask
+  something project-specific — location, price, details, brochure, floor,
+  size, availability — do not guess a project. Ask which one, listing the
+  catalog projects as "name — short address (area/sector, city)", one per
+  line, e.g. "Wecon Osman Bellevue — Sector 16, Jolshiri Abashon, Dhaka".
+  Leave out any project the admin rules say to stay silent about. Set
+  "confident": true for this list. Ask it once; if the list is already in
+  the history and they still haven't named a project, reply "".
 - "Details", "information", "profile", "know more", "বিস্তারিত", "ডিটেইলস"
   about a project = send its brochure in that same reply (type "brochure")
   along with the one-line summary. NEVER ask "would you like the brochure?"
@@ -369,6 +378,19 @@ export interface JolshiriBundle {
 // so each comma-separated part is checked.
 export const isJolshiriProject = (name: string | null | undefined): boolean =>
   !!name && name.split(",").some((part) => JOLSHIRI_BUNDLE_NAMES.some((n) => n.toLowerCase() === part.trim().toLowerCase()));
+
+// property_interest alone proves nothing: wa_upsert_prelead fills it with
+// wa_settings.default_project (Osman) for every contact without an ad, so a
+// direct "Dhanmondi koto number" knock looked like a Jolshiri ad lead. Only a
+// real ad signal, or the customer naming a Jolshiri project, counts; and a
+// defaulted property_interest must not steer the model toward Osman.
+// Ported from the deployed bots (wa-bot-eyad v61, wa-bot-dubai v58).
+export function leadContext(a: { named: { name: string } | null; isAd: boolean; status: { ctwa_clid?: unknown; wa_ad_id?: unknown }; propertyInterest?: string | null }) {
+  const adLead = a.isAd || !!a.status.ctwa_clid || !!a.status.wa_ad_id;
+  const jolshiriLead = a.named ? isJolshiriProject(a.named.name) : (adLead && isJolshiriProject(a.propertyInterest));
+  const adProject = (a.named || adLead) ? (a.propertyInterest || undefined) : undefined;
+  return { adLead, jolshiriLead, adProject };
+}
 
 // Catalog keywords that are ordinary words; alone they never name a project.
 const GENERIC_KEYWORDS = new Set(["summer", "orchid", "iqbal", "arcade", "heritage", "molla", "healthcare", "helthcare"]);
