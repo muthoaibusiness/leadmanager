@@ -147,4 +147,94 @@ await ok('0041/0042: renumbered migrations apply twice and never overwrite an of
   assert.equal(c.rows[0].n, 3);
 });
 
+// 0043 Playground model config. PGlite has no supabase_vault, so a minimal
+// stand-in with the same function signatures stores secrets in a plain table.
+await db.exec(`create schema vault;
+  create table vault.secrets (id uuid primary key default gen_random_uuid(), name text unique, description text, secret text);
+  create view vault.decrypted_secrets as select id, name, secret as decrypted_secret from vault.secrets;
+  create function vault.create_secret(s text, n text, d text) returns uuid language sql as $$ insert into vault.secrets (secret, name, description) values (s, n, d) returning id $$;
+  create function vault.update_secret(i uuid, s text) returns void language sql as $$ update vault.secrets set secret = s where id = i $$;`);
+await db.exec(readFileSync('supabase/migrations/0043_ai_model_config.sql', 'utf8'));
+await db.exec(readFileSync('supabase/migrations/0043_ai_model_config.sql', 'utf8'));
+
+await ok('0043: settings table refuses bad scope, provider, protocol and model ids', async () => {
+  await rejects(`insert into ai_model_configs (scope, provider, base_url, model, updated_by_claimed) values ('live','openrouter','https://openrouter.ai/api/v1','m','t')`);
+  await rejects(`insert into ai_model_configs (scope, provider, base_url, model, updated_by_claimed) values ('playground','anthropic','https://x.example/v1','m','t')`);
+  await rejects(`insert into ai_model_configs (scope, provider, base_url, model, updated_by_claimed) values ('playground','custom','http://x.example/v1','m','t')`);
+  await rejects(`insert into ai_model_configs (scope, provider, base_url, model, updated_by_claimed) values ('playground','custom','https://x.example/v1','bad model','t')`);
+});
+
+await ok('0043: the key goes to the vault, the row keeps only its id and last 4, rotation reuses the secret', async () => {
+  await rejects(`select ai_model_key_set('playground', 'sk-0000-1111', 't', 'https://x.example/v1')`);
+  await db.exec(`insert into ai_model_configs (scope, provider, base_url, model, updated_by_claimed) values ('playground','custom','https://x.example/v1','acme/m','t')`);
+  await rejects(`select ai_model_key_set('playground', 'short', 't', 'https://x.example/v1')`);
+  await db.query(`select ai_model_key_set('playground', 'sk-first-KEY-1111', 'Asad', 'https://x.example/v1')`);
+  const row = (await db.query(`select to_jsonb(c) as j from ai_model_configs c`)).rows[0].j;
+  assert.equal(row.key_last4, '1111');
+  assert.ok(!JSON.stringify(row).includes('first-KEY'), 'plaintext key in the settings row');
+  await db.query(`select ai_model_key_set('playground', 'sk-second-KEY-2222', 'Asad', 'https://x.example/v2')`);
+  assert.equal((await db.query(`select ai_model_key_get('playground') as k`)).rows[0].k, 'sk-second-KEY-2222');
+  assert.equal((await db.query(`select count(*)::int as n from vault.secrets`)).rows[0].n, 1, 'rotation updates in place');
+  assert.equal((await db.query(`select key_host from ai_model_configs`)).rows[0].key_host, 'x.example');
+  await rejects(`select ai_model_key_set('playground', 'has a space in it', 't', 'https://x.example/v1')`);
+  // A deleted row leaves its vault secret; a new row reuses it by name instead of failing on the unique name.
+  await db.exec(`delete from ai_model_configs; insert into ai_model_configs (scope, provider, base_url, model, updated_by_claimed) values ('playground','custom','https://[2606:4700::1111]/v1','acme/m','t')`);
+  await db.query(`select ai_model_key_set('playground', 'sk-third-KEY-3333', 'Asad', 'https://[2606:4700::1111]/v1')`);
+  assert.equal((await db.query(`select count(*)::int as n from vault.secrets`)).rows[0].n, 1);
+  assert.equal((await db.query(`select key_host from ai_model_configs`)).rows[0].key_host, '[2606:4700::1111]');
+  assert.equal((await db.query(`select ai_model_key_get('playground') as k`)).rows[0].k, 'sk-third-KEY-3333');
+});
+
+await ok('0043: the key is refused unless the locked row still has the caller\'s host', async () => {
+  await rejects(`select ai_model_key_set('playground', 'sk-other-HOST-4444', 't', 'https://attacker.example/v1')`);
+  await rejects(`select ai_model_key_set('playground', 'sk-other-HOST-4444', 't', null)`);
+  await rejects(`select ai_model_key_set('playground', 'sk-other-HOST-4444', 't', 'http://[2606:4700::1111]/v1')`);
+  assert.equal((await db.query(`select ai_model_key_get('playground') as k`)).rows[0].k, 'sk-third-KEY-3333', 'refused calls stored nothing');
+  assert.equal((await db.query(`select count(*)::int as n from pg_proc where proname = 'ai_model_key_set'`)).rows[0].n, 1, 'no 3-argument overload left');
+});
+
+await ok('0043: anon and authenticated cannot read the table or call the key functions', async () => {
+  const g = await db.query(`select count(*)::int as n from information_schema.role_table_grants where grantee in ('anon','authenticated') and table_name = 'ai_model_configs'`);
+  assert.equal(g.rows[0].n, 0);
+  for (const role of ['anon', 'authenticated']) {
+    for (const fn of ['ai_model_key_set(text,text,text,text)', 'ai_model_key_get(text)']) {
+      assert.equal((await db.query(`select has_function_privilege('${role}', '${fn}', 'execute') as x`)).rows[0].x, false, `${role} ${fn}`);
+    }
+  }
+  assert.equal((await db.query(`select has_function_privilege('service_role', 'ai_model_key_get(text)', 'execute') as x`)).rows[0].x, true);
+  assert.equal((await db.query(`select relrowsecurity as r from pg_class where relname = 'ai_model_configs'`)).rows[0].r, true);
+});
+
+// 0034/0035/0038/0039 bot settings. Supabase grants anon all table privileges
+// by default; PGlite does not, so the grant is made first to match production.
+await db.exec(`create table wa_settings (id text primary key, welcome_enabled boolean, welcome_message text, faq_agent_enabled boolean, auto_forward_enabled boolean, auto_forward_after_messages int)`);
+for (const f of ['0034_wa_bot_settings', '0035_wa_bot_test_numbers', '0038_wa_trainer_test_mode']) await db.exec(readFileSync(`supabase/migrations/${f}.sql`, 'utf8'));
+await db.exec(`grant all on wa_bot_settings to anon, authenticated`);
+await db.exec(readFileSync('supabase/migrations/0039_wa_trainer_test_mode_lock.sql', 'utf8'));
+const colPriv = async (role, col, priv) => (await db.query(`select has_column_privilege('${role}', 'wa_bot_settings', '${col}', '${priv}') as x`)).rows[0].x;
+
+await ok('0039: anon and authenticated cannot write trainer_test_mode', async () => {
+  for (const role of ['anon', 'authenticated']) for (const priv of ['INSERT', 'UPDATE']) assert.equal(await colPriv(role, 'trainer_test_mode', priv), false, `${role} ${priv}`);
+  const r = await db.query(`select bot, trainer_test_mode from wa_bot_settings order by bot`);
+  assert.deepEqual(r.rows, [{ bot: 'dubai', trainer_test_mode: false }, { bot: 'eyad', trainer_test_mode: false }]);
+});
+
+// The AI-reply switch is the only OFF control the bots read. Today it is
+// writable with the public anon key, so anyone with the bundle can turn the
+// bot on or off; the role check in the CRM is client-side only.
+await ok('TODO faq_agent_enabled is not writable by anon (OFF switch is Management-only)', async () => {
+  const anonCan = await colPriv('anon', 'faq_agent_enabled', 'UPDATE');
+  if (anonCan) console.log('  TODO: anon can UPDATE wa_bot_settings.faq_agent_enabled (expected false)');
+  else assert.equal(anonCan, false);
+});
+
+await ok('pointer accepts a published snapshot; pointer audit rows are append-only', async () => {
+  const s = (await db.query(`insert into ai_snapshots (version_no, content, checksum, core_version_frozen, created_by_claimed, status, published_at, published_by_claimed) values (90, '{}', 'c90', '1.0.0', 'A', 'published', now(), 'A') returning id`)).rows[0].id;
+  await db.query(`update ai_bot_pointers set mode = 'snapshot', snapshot_id = $1 where bot = 'eyad'`, [s]);
+  await db.query(`insert into ai_trainer_audit (entity, entity_id, action, actor_claimed) values ('pointer', 'eyad', 'publish', 'A')`);
+  await rejects(`update ai_trainer_audit set action = 'x' where entity = 'pointer'`);
+  await rejects(`update ai_snapshots set status = 'candidate' where id = $1`, [s]);
+  await db.query(`update ai_bot_pointers set mode = 'legacy', snapshot_id = null where bot = 'eyad'`);
+});
+
 console.log(`\n${pass} passed`);

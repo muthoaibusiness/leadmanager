@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Mi from '../Mi.jsx';
 import useNavState from '../../hooks/useNavState.js';
+import { Select as SelectRoot, SelectLabel, SelectTrigger, SelectValue, SelectPopover, SelectListBox, SelectItem } from '../ui/select.jsx';
+import { retrievedDocs } from '../../lib/traceDocs.js';
 
 // Multi-turn chat against drafts or any snapshot, through the same core the
 // bots will run. Nothing is sent on WhatsApp. Each bot reply shows its trace,
@@ -52,6 +54,40 @@ function MarkWrong({ turn, history, bot, api, showToast, onClose }) {
 }
 
 // A saved turn (server row) in the shape the chat and MarkWrong use.
+// The Knowledge sections retrieval put in the prompt for this reply, with
+// their similarity score. Collapsed so the chat stays readable.
+function RetrievedDocs({ docs }) {
+  const v = retrievedDocs(docs);
+  if (v.kind === 'none') return null;
+  if (v.kind === 'error') return <div className="ait-trace ait-err">Knowledge search failed: {v.error}</div>;
+  if (v.kind === 'empty') return <div className="ait-trace">Knowledge retrieved: none matched</div>;
+  return (
+    <details className="ait-docs">
+      <summary className="ait-trace">Knowledge retrieved ({v.hits.length})</summary>
+      <ul aria-label="Knowledge sections retrieved for this reply">
+        {v.hits.map((h) => <li key={h.key}><span>{h.label}</span><span className="ait-docs-score" title="Similarity to the message (0 to 1)">{h.score}</span></li>)}
+      </ul>
+    </details>
+  );
+}
+
+// The brochure path's own record (trainer-brochure.ts): which files were
+// checked, and why any could not be shared. The Playground never sends.
+const BROCHURE_WHY = { missing: 'no file in the catalog', not_pdf: 'link is not a PDF', unreachable: 'file could not be reached',
+  invalid_link: 'link is not allowed', conflict: 'same file listed on another project', unverified: 'file not checked',
+  unknown_project: 'unknown project', send_failed: 'send failed' };
+function BrochureCheck({ b }) {
+  if (!b || (!b.ready?.length && !b.sent?.length && !b.failed?.length)) return null;
+  return (
+    <ul className="ait-trace" aria-label="Brochure check for this reply" style={{ margin: '4px 0', paddingLeft: 18 }}>
+      {b.sent?.map((r) => <li key={r.project_ref}>{r.project}: sent</li>)}
+      {b.ready?.map((r) => <li key={r.project_ref}>{r.project}: PDF verified, not sent from the Playground</li>)}
+      {b.failed?.map((r) => <li key={r.project_ref} className="ait-err">{r.project || r.project_ref}: {BROCHURE_WHY[r.status] || r.status}{r.detail ? ` (${r.detail})` : ''}</li>)}
+    </ul>
+  );
+}
+const OK_OUTCOMES = ['ok', 'brochure_sent', 'brochure_ready_not_sent'];
+
 const fromRow = (r, history) => ({
   id: r.id, seq: r.seq, customer: r.customer_text, reply: r.reply || '', media: r.media || [], handoff: r.handoff,
   outcome: r.outcome, trace: r.trace || {}, error: r.error, checksum: r.checksum, at: r.created_at, finishedAt: r.finished_at,
@@ -108,6 +144,7 @@ export default function PlaygroundTab({ api, showToast }) {
   const [conv, setConv] = useState(null);
   const [bot, setBot] = useState('eyad');
   const [source, setSource] = useState('drafts');
+  const [promptSel, setPromptSel] = useState('published'); // which System Prompt drives a drafts turn
   const [snapshots, setSnapshots] = useState([]);
   const [setup, setSetup] = useState(SETUP);
   const [turns, setTurns] = useState([]);
@@ -118,6 +155,9 @@ export default function PlaygroundTab({ api, showToast }) {
   const [wrong, setWrong] = useState(null);
   const [names, setNames] = useState({});
   const opening = useRef(null);
+  // Set before the first await, so a second submit in the same tick (Enter
+  // plus click) sees it; `busy` state only updates on the next render.
+  const inFlight = useRef(false);
 
   useEffect(() => {
     api('snapshot.list').then(setSnapshots).catch(() => {});
@@ -155,11 +195,13 @@ export default function PlaygroundTab({ api, showToast }) {
   // A retry reuses the same client turn id, so the server returns the saved
   // turn instead of running the model again if the first attempt got through.
   const submit = async (msg, clientTurnId) => {
+    if (inFlight.current) return;
+    inFlight.current = true;
     setBusy(true); setFailed(null);
     const isSnap = source !== 'drafts';
     try {
       const d = await api('playground.turn', { conversation_id: conv?.id, client_turn_id: clientTurnId, bot,
-        source: isSnap ? 'snapshot' : 'drafts', snapshot_id: isSnap ? source : undefined, text: msg, setup });
+        source: isSnap ? 'snapshot' : 'drafts', snapshot_id: isSnap ? source : undefined, text: msg, setup, prompt: isSnap ? undefined : promptSel });
       setConv(d.conversation);
       setTurns(v => (v.some(t => t.id === d.turn.id) ? v : [...v, fromRow(d.turn, history)]));
       if (!conv) { opening.current = d.conversation_id; setConvId(d.conversation_id); }
@@ -168,7 +210,7 @@ export default function PlaygroundTab({ api, showToast }) {
       if (x.code === 'freeze') showToast(`Drafts have errors: ${(x.details || []).join('; ')}`, 'err');
       else if (x.code === 'not_found') { showToast(x.message, 'err'); startNew(); }
       else setFailed({ text: msg, clientTurnId, message: x.message });
-    } finally { setBusy(false); }
+    } finally { inFlight.current = false; setBusy(false); }
   };
   const send = (e) => { e.preventDefault(); if (text.trim()) submit(text, newTurnId()); };
 
@@ -189,16 +231,19 @@ export default function PlaygroundTab({ api, showToast }) {
               <div className="ait-msg customer">{t.customer}<div className="ait-trace">#{t.seq} · {fmt(t.at)}</div></div>
               <div className="ait-msg bot">
                 {t.reply || <i>(no reply: {t.outcome})</i>}
-                {t.media?.map((m, i) => <div key={i} className="ait-trace"><Mi>{m.type === 'document' ? 'description' : 'image'}</Mi> {m.caption}</div>)}
+                {t.media?.map((m, i) => <div key={i} className="ait-trace"><Mi>{m.type === 'document' ? 'description' : 'image'}</Mi> {m.caption} · would be sent on WhatsApp{m.url ? <> · <a href={m.url} target="_blank" rel="noopener noreferrer">open</a></> : null}</div>)}
                 <div className="ait-trace">
-                  <span className={`ait-badge ${t.outcome === 'ok' ? 'pass' : /fallback|error/.test(t.outcome) ? 'fail' : 'inc'}`}>{t.outcome}</span>
+                  <span className={`ait-badge ${OK_OUTCOMES.includes(t.outcome) ? 'pass' : /fallback|error|unavailable|partial/.test(t.outcome) ? 'fail' : 'inc'}`}>{t.outcome}</span>
                   {t.handoff ? ' · handoff' : ''} · {fmt(t.finishedAt)} · project: {(t.trace?.project?.projects || []).map(id => names[id] || id).join(', ') || 'none'}
                   {/* used_item_ids is what the model says it used, not a retrieval log. */}
                   {' '}· sources the model reports using: {(t.trace?.used_item_ids || []).length ? t.trace.used_item_ids.map(id => names[id] || id).join(', ') : 'none'}
                   {t.trace?.guard_errors?.length ? ` · guards: ${t.trace.guard_errors.join(', ')}` : ''}
+                  {' '}· prompt: {t.trace?.system_prompt ? `v${t.trace.system_prompt.version_no}` : 'built-in'}{t.trace?.model ? ` · ${t.trace.model}` : ''}
                   {t.trace?.media_missing?.length ? ` · missing media: ${t.trace.media_missing.join(', ')}` : ''}
                   {t.error ? <span className="ait-err"> · error: {t.error}</span> : ''}
                 </div>
+                <BrochureCheck b={t.trace?.brochure} />
+                <RetrievedDocs docs={t.trace?.documents} />
                 <button className="btn btn-g btn-sm" onClick={() => setWrong({ turn: t, history: t.historyBefore })}><Mi>edit</Mi>Mark wrong</button>
               </div>
             </div>
@@ -220,16 +265,37 @@ export default function PlaygroundTab({ api, showToast }) {
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 16, minWidth: 0 }}>
         <div className="analytics-card" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          <label>Bot <select className="fi" value={bot} disabled={locked} onChange={e => setBot(e.target.value)}><option value="eyad">eyad</option><option value="dubai">dubai</option></select></label>
-          <label>Version <select className="fi" value={source} disabled={locked} onChange={e => setSource(e.target.value)}>
-            <option value="drafts">Current drafts</option>
-            {snapshots.map(s => <option key={s.id} value={s.id}>v{s.version_no} ({s.status})</option>)}
-          </select></label>
+          <SelectRoot value={bot} onChange={setBot} disabled={locked}>
+            <SelectLabel>Bot</SelectLabel>
+            <SelectTrigger><SelectValue /></SelectTrigger>
+            <SelectPopover><SelectListBox>
+              <SelectItem value="eyad">eyad</SelectItem>
+              <SelectItem value="dubai">dubai</SelectItem>
+            </SelectListBox></SelectPopover>
+          </SelectRoot>
+          {source === 'drafts' && (
+            <SelectRoot value={promptSel} onChange={setPromptSel}>
+              <SelectLabel>System Prompt</SelectLabel>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectPopover><SelectListBox>
+                <SelectItem value="published">Published</SelectItem>
+                <SelectItem value="draft">Latest draft</SelectItem>
+              </SelectListBox></SelectPopover>
+            </SelectRoot>
+          )}
+          <SelectRoot value={source} onChange={setSource} disabled={locked}>
+            <SelectLabel>Version</SelectLabel>
+            <SelectTrigger><SelectValue /></SelectTrigger>
+            <SelectPopover><SelectListBox>
+              <SelectItem value="drafts">Current drafts</SelectItem>
+              {snapshots.map(s => <SelectItem key={s.id} value={s.id}>v{s.version_no} ({s.status})</SelectItem>)}
+            </SelectListBox></SelectPopover>
+          </SelectRoot>
           <label style={{ display: 'inline-flex', gap: 6 }}><input type="checkbox" disabled={locked} checked={setup.isAd} onChange={e => setSetup(v => ({ ...v, isAd: e.target.checked }))} />Came from an ad</label>
           {setup.isAd && <input className="fi" disabled={locked} placeholder="Ad text" value={setup.adText} onChange={e => setSetup(v => ({ ...v, adText: e.target.value }))} />}
           <label style={{ display: 'inline-flex', gap: 6 }}><input type="checkbox" disabled={locked} checked={setup.returning} onChange={e => setSetup(v => ({ ...v, returning: e.target.checked }))} />Returning contact</label>
           {locked && <div className="ait-trace">Bot, version and setup are fixed for this conversation. Start a new one to change them.</div>}
-          <div className="ait-trace">State: {state ? `project ${names[state.active_project] || state.active_project || 'none'}, language ${state.language || '—'}` : 'new conversation'}</div>
+          <div className="ait-trace">State: {state ? `project ${names[state.active_project] || state.active_project || 'none'}, language ${state.language || 'unknown'}` : 'new conversation'}</div>
         </div>
         <div className="analytics-card">
           <History api={api} bot={bot} current={conv} onOpen={choose} onNew={startNew} />

@@ -3,6 +3,8 @@
 // Everything that touches a credential lives on this side of the wire. The
 // browser bundle never imports this file.
 
+import { samePhone } from "./phone.ts";
+
 // Override only for a local dev stack (a fake Wasender); unset in production.
 export const WASENDER_BASE = Deno.env.get("WASENDER_BASE") || "https://wasenderapi.com/api";
 
@@ -27,6 +29,15 @@ const svcHeaders = () => ({
   Authorization: `Bearer ${SERVICE_KEY}`,
   "Content-Type": "application/json",
 });
+
+// Like sbSelect but null on error, so a failed read is not mistaken for "no rows".
+export async function sbSelectOrNull(path: string): Promise<any[] | null> {
+  try {
+    const r = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, { headers: svcHeaders() });
+    if (!r.ok) { console.error("sbSelect failed", path, r.status, await r.text()); return null; }
+    return await r.json();
+  } catch (e) { console.error("sbSelect threw", path, e); return null; }
+}
 
 export async function sbSelect(path: string): Promise<any[]> {
   const r = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, { headers: svcHeaders() });
@@ -254,9 +265,6 @@ export interface BotSettings {
   trainerTest: boolean;
 }
 
-// Last 10 digits of a phone: 8801XXXXXXXXX, 01XXXXXXXXX and +880 1XXX… all agree.
-const phoneKey = (v: unknown) => String(v ?? "").replace(/\D/g, "").slice(-10);
-
 // Each bot reads its own wa_bot_settings row (migration 0034). A missing row or
 // table falls back to the old global wa_settings values, so the functions work
 // before the migration is run. Every toggle defaults to ON except Eyad's
@@ -268,18 +276,25 @@ const phoneKey = (v: unknown) => String(v ?? "").replace(/\D/g, "").slice(-10);
 // for customers.
 export async function getBotSettings(bot: BotName, phone?: string): Promise<BotSettings> {
   const [botRows, globalRows] = await Promise.all([
-    sbSelect(`wa_bot_settings?bot=eq.${bot}&select=*`),
+    sbSelectOrNull(`wa_bot_settings?bot=eq.${bot}&select=*`),
     sbSelect("wa_settings?id=eq.default&select=auto_forward_enabled,auto_forward_after_messages,faq_agent_enabled,welcome_enabled,welcome_message"),
   ]);
-  const row = botRows?.[0];
+  if (botRows === null) {
+    console.error("getBotSettings: read failed, customer automations OFF", bot);
+    return { // fail closed for customers; agent commands stay usable
+      autoForwardEnabled: false, autoForwardAfterMessages: 3, faqAgentEnabled: false, aiMediaEnabled: false,
+      welcomeEnabled: false, welcomeMessage: "", manualForwardEnabled: true, docsCommandEnabled: true,
+      takeoverEnabled: true, notesEnabled: true, customerNotifyEnabled: false, metaCapiEnabled: false, trainerTest: false,
+    };
+  }
+  const row = botRows[0];
   const g = globalRows?.[0] ?? {};
   const src = row ?? {
     ...g,
     auto_forward_enabled: bot === "dubai" ? true : g.auto_forward_enabled === true,
   };
   const on = (v: unknown) => v !== false; // defaults on if the row/column is missing
-  const key = phoneKey(phone);
-  if (key.length === 10 && Array.isArray(row?.test_numbers) && row.test_numbers.some((n: unknown) => phoneKey(n) === key)) {
+  if (Array.isArray(row?.test_numbers) && row.test_numbers.some((n: unknown) => samePhone(n, phone))) {
     return {
       autoForwardEnabled: true,
       autoForwardAfterMessages: Number.isFinite(src.auto_forward_after_messages) ? src.auto_forward_after_messages : 3,
@@ -304,6 +319,11 @@ export async function getBotSettings(bot: BotName, phone?: string): Promise<BotS
     metaCapiEnabled: on(src.meta_capi_enabled),
     trainerTest: false,
   };
+}
+
+// Re-read just before each customer send so an OFF toggle mid-turn is honoured.
+export async function aiStillOn(bot: BotName, phone?: string): Promise<boolean> {
+  return (await getBotSettings(bot, phone)).faqAgentEnabled;
 }
 
 // {name} in the admin-set welcome text → the customer's name, same "there"
@@ -449,4 +469,16 @@ export function safeEqual(a: string, b: string): boolean {
   let diff = 0;
   for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
   return diff === 0;
+}
+
+// Same rule as wa-webhook: with a secret configured the header must match it;
+// none configured → accepted as before. `strong` = verified against a secret.
+export async function verifyWebhook(account: string, headers: Headers): Promise<{ ok: boolean; strong: boolean }> {
+  const { webhookSecret } = await getCredentials(account);
+  if (!webhookSecret) {
+    console.warn(`verifyWebhook: no webhook secret for ${account}, accepting unauthenticated`);
+    return { ok: true, strong: false };
+  }
+  const sig = headers.get("x-webhook-signature") ?? headers.get("x-wasender-signature") ?? "";
+  return { ok: safeEqual(sig, webhookSecret), strong: true };
 }

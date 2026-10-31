@@ -22,7 +22,7 @@
 import {
   CORS, json, SUPABASE_URL, SERVICE_KEY, WASENDER_BASE,
   claimEvent, getCredentials, getActiveProjects, getRecentHistory, sendWaMessageMirrored, getKnowledge, getCorrections,
-  findLeadForNote, logNoteActivity, getBotSettings, getProjectBySendCode, fillWelcomeTemplate, fixLeadPhoneFromNote, splitPhoneFromNote,
+  findLeadForNote, logNoteActivity, getBotSettings, aiStillOn, verifyWebhook, getProjectBySendCode, fillWelcomeTemplate, fixLeadPhoneFromNote, splitPhoneFromNote,
   logConversationHistory,
 } from "../_shared/wa.ts";
 import type { BotSettings } from "../_shared/wa.ts";
@@ -244,10 +244,12 @@ async function runFaqAgent(account: string, phone: string, target: string, remot
 
     const bundle = opts.profilesAlreadySent ? null : matchJolshiriBundle(text, projects);
     if (bundle) {
+      if (!(await aiStillOn("eyad", phone))) return false;
       await sendWaMessageMirrored(account, target, convId, phone, { type: "text", text: bundle.message });
       for (let i = 0; i < bundle.brochures.length; i++) {
         await new Promise((r) => setTimeout(r, 5500));
         const b = bundle.brochures[i];
+        if (!(await aiStillOn("eyad", phone))) return false;
         await sendWaMessageMirrored(account, target, convId, phone, {
           type: "document", mediaUrl: b.url, fileName: `${b.project.name} Brochure.pdf`, text: brochureCaption(b.project),
         });
@@ -262,6 +264,7 @@ async function runFaqAgent(account: string, phone: string, target: string, remot
     if (!result.reply && !send) return false;
 
     if (result.reply) {
+      if (!(await aiStillOn("eyad", phone))) return false;
       await sendWaMessageMirrored(account, target, convId, phone, { type: "text", text: result.reply });
       // Wasender's account-protection rate limit is 1 message per 5s.
       if (opts.allowMedia && send) await new Promise((r) => setTimeout(r, 5500));
@@ -270,7 +273,8 @@ async function runFaqAgent(account: string, phone: string, target: string, remot
       const mediaList = resolveMedia(send, projects);
       for (let i = 0; i < mediaList.length; i++) {
         const media = mediaList[i];
-        await sendWaMessageMirrored(account, target, convId, phone, {
+        if (!(await aiStillOn("eyad", phone))) return false;
+      await sendWaMessageMirrored(account, target, convId, phone, {
           type: media.type, mediaUrl: media.url, fileName: media.fileName, text: media.caption,
         });
         if (i < mediaList.length - 1) await new Promise((r) => setTimeout(r, 5500));
@@ -313,7 +317,7 @@ async function handleInbound(p: ParsedEvent): Promise<void> {
   // below needs message_logs/flow_stage before deciding what to send) ────
   if (!preleadId) return;
   const [statusRows, projects] = await Promise.all([
-    sbSelectJson(`preleads?id=eq.${encodeURIComponent(preleadId)}&select=forwarded,message_logs,flow_stage,ctwa_clid,wa_ad_id`),
+    sbSelectJson(`preleads?id=eq.${encodeURIComponent(preleadId)}&select=forwarded,message_logs,flow_stage`),
     sbSelectJson("wa_projects?select=name,region,keywords,brochure_url"),
   ]);
   const status = statusRows?.[0] ?? {};
@@ -337,14 +341,8 @@ async function handleInbound(p: ParsedEvent): Promise<void> {
   // an ad is not a Jolshiri buyer: generic hello, no brochure flow, and the
   // LLM's land rule keeps everything else silent for a human to pick up.
   const landOffer = !!p.text && isLandOffer(p.text);
-  // property_interest alone proves nothing: wa_upsert_prelead fills it with
-  // wa_settings.default_project (Osman) for every contact without an ad, so
-  // a direct "Dhanmondi koto number" knock looked like a Jolshiri ad lead.
-  // Only a real ad signal, or the customer naming a Jolshiri project, counts.
-  const adLead = p.isAd || !!status.ctwa_clid || !!status.wa_ad_id;
-  const jolshiriLead = named ? isJolshiriProject(named.name) : (adLead && isJolshiriProject(upsert.property_interest));
   if (settings.welcomeEnabled && upsert.takeover !== true && upsert.is_new === true) {
-    if (jolshiriLead && !landOffer) {
+    if (isJolshiriProject(upsert.property_interest) && !landOffer) {
       // Jolshiri lead (ad or named): the admin welcome and the follow-up
       // clock — 5 minutes of silence asks about the profiles, an hour of
       // silence after that asks about a dedicated agent. No auto-forward.
@@ -417,9 +415,7 @@ async function handleInbound(p: ParsedEvent): Promise<void> {
     console.log("trainer test turn", { phone: p.phone, outcome: r.outcome, sent: r.sent, turnId: r.turnId });
   } else if (settings.faqAgentEnabled && p.text && upsert.takeover !== true && p.remote) {
     const sent = await runFaqAgent("eyad", p.phone, p.target, p.remote, p.text, {
-      // A defaulted property_interest must not steer the model toward Osman.
-      adProject: (named || adLead) ? (upsert.property_interest || undefined) : undefined,
-      profilesAlreadySent: profilesAlreadySent || landOffer, allowMedia: settings.aiMediaEnabled,
+      adProject: upsert.property_interest || undefined, profilesAlreadySent: profilesAlreadySent || landOffer, allowMedia: settings.aiMediaEnabled,
     });
     if (sent) {
       await sbPatchJson("preleads", `id=eq.${encodeURIComponent(preleadId)}`, {
@@ -669,15 +665,15 @@ Deno.serve(async (req) => {
   if (req.method !== "POST") return json({ error: "Method not allowed" }, 405);
 
   const rawBody = await req.text();
-  forwardToMirror(rawBody, req.headers);
 
-  // No signature check here, deliberately — the source "WhatsApp Webhook"
-  // node has no auth at all (options:{}) and accepts any POST. Adding one
-  // would silently drop real traffic if Wasender's delivery to this specific
-  // endpoint doesn't carry a header matching wa_secrets.webhook_secret. If
-  // you want this endpoint authenticated, confirm Wasender actually sends
-  // that header for this bot subscription first, then reintroduce the same
-  // check wa-webhook uses (getCredentials + safeEqual).
+  // Same rule as wa-webhook (shared verifyWebhook): with a webhook secret configured the
+  // X-Webhook-Signature header must equal it. Unset secret → accepted with a warning.
+  const auth = await verifyWebhook("eyad", req.headers);
+  if (!auth.ok) {
+    console.warn("wa-bot-eyad: rejected webhook: bad signature");
+    return json({ error: "Invalid signature" }, 401);
+  }
+  forwardToMirror(rawBody, req.headers);
 
   let payload: any;
   try { payload = JSON.parse(rawBody); } catch { return json({ error: "Invalid JSON" }, 400); }
@@ -694,7 +690,7 @@ Deno.serve(async (req) => {
   // format for the SAME delivery fanned out to both functions — not to
   // reintroduce a per-event key, which would defeat the original's whole
   // reason for keying on id alone).
-  const isReplay = (req.headers.get("x-replay") ?? "") === "1";
+  const isReplay = auth.strong && (req.headers.get("x-replay") ?? "") === "1"; // only a verified sender may skip dedupe
   if (p.kind !== "ignore" && p.deliveryId && !isReplay) {
     const fresh = await claimEvent(`eyadbot:${p.deliveryId}`, p.event);
     if (!fresh) return json({ ok: true, duplicate: true });

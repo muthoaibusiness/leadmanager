@@ -3,6 +3,7 @@ import Mi from '../Mi.jsx';
 import ItemEditor from './ItemEditor.jsx';
 import ItemList from './ItemList.jsx';
 import { useItems } from './useItems.js';
+import DocumentsPanel from './DocumentsPanel.jsx';
 
 // Projects, facts and rules. Everything here is a draft until published from
 // Quality & Publish. The legacy import copies wa_projects, wa_knowledge and
@@ -83,6 +84,7 @@ export default function KnowledgeTab({ api, showToast }) {
   return (
     <div className="ait">
       <ImportWizard api={api} showToast={showToast} onDone={reload} />
+      <DocumentsPanel api={api} showToast={showToast} />
       {section('project', 'Projects')}
       {section('fact', 'Facts')}
       {section('rule', 'Business rules')}

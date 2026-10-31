@@ -95,6 +95,12 @@ for (const [code, name] of SEND) {
   });
 }
 
+test("eyad /send brochure caption names the sector for a Jolshiri address (v59+)", () => {
+  const project = { name: "Wecon Nuznan", address: "Plot No 001, Road 504C, Sector 16, Jolshiri Abashon, Dhaka", brochure_url: "https://x/b.pdf", photos: [] };
+  const e = routeCommand("eyad", parseEyad(payload({ fromMe: true, text: "/sendnz" })), { settings: ALL_ON, project });
+  assert.equal(e.send[0].caption, "Wecon Nuznan (Sector 16, Jolshiri Abashon) — Brochure");
+});
+
 test("eyad CC-39 missing brochure or photos", () => {
   const p = (c: string) => parseEyad(payload({ fromMe: true, text: c }));
   assert.deepEqual(routeCommand("eyad", p("/sendmm"), { settings: ALL_ON, project: { name: "Momtaz Manor", photos: ["https://x/1.jpg"] } }).send.map((s) => s.kind), ["image"]);
@@ -144,7 +150,7 @@ const pins: [string, string, string][] = [
   ["eyad", EYAD, `if (cmdSettings.manualForwardEnabled) await handleCreateLead(p, cmdSettings);`],
   ["eyad", EYAD, `if (cmdSettings.docsCommandEnabled) await handleSendDocs(p);`],
   ["eyad", EYAD, `for (const url of (project.photos || []).slice(0, 3)) items.push({ type: "image", url, caption: project.name });`],
-  ["eyad", EYAD, "if (project.brochure_url) items.push({ type: \"document\", url: project.brochure_url, fileName: `${project.name} Brochure.pdf`, caption: `${project.name} — Brochure` });"],
+  ["eyad", EYAD, "if (project.brochure_url) items.push({ type: \"document\", url: project.brochure_url, fileName: `${project.name} Brochure.pdf`, caption: brochureCaption(project) });"],
   ["dubai", DUBAI, `} else if (fromMe && text.startsWith("/")) {`],
   ["dubai", DUBAI, `if (!phone || remote.endsWith("@g.us")) {`],
   ["dubai", DUBAI, `if (evt.command === "/t") {`],

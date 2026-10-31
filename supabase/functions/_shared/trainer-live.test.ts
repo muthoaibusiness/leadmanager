@@ -23,6 +23,7 @@ function fakes(opts: { testMode?: boolean; numbers?: string[]; items?: any[]; me
       const [table, q] = path.split("?");
       let rows = [...(t[table] || [])];
       for (const part of (q || "").split("&")) { const m = /^(\w+)=eq\.(.+)$/.exec(part); if (m) rows = rows.filter((r) => String(r[m[1]]) === decodeURIComponent(m[2])); }
+      for (const part of (q || "").split("&")) { const m = /^(\w+)=like\.\*(.+)$/.exec(part); if (m) rows = rows.filter((r) => String(r[m[1]] ?? "").endsWith(decodeURIComponent(m[2]))); }
       if (/order=wa_timestamp\.desc/.test(q || "")) rows.sort((a, b) => String(b.wa_timestamp).localeCompare(String(a.wa_timestamp)));
       return rows;
     },
@@ -154,4 +155,184 @@ test("an exception is caught and logged, never thrown into the bot", async () =>
   const f = fakes(); f.ports.select = async () => { throw new Error("db down"); };
   const r = await runTestTurn(input(), f.ports);
   assert.equal(r.outcome, "error"); assert.equal(f.t.ai_turns[0].outcome, "error");
+});
+
+test("test mode switched off after the model call and before the send stops the send", async () => {
+  const f = fakes({ model: () => { f.t.wa_bot_settings[0].trainer_test_mode = false; return reply(); } });
+  const r = await runTestTurn(input(), f.ports);
+  assert.equal(f.sent.length, 0); assert.equal(r.sent, 0);
+  assert.deepEqual(f.t.ai_turns[0].trace.send_errors, ["recipient no longer allowed"]);
+});
+
+test("a failed settings read blocks the turn (fail closed)", async () => {
+  const f = fakes(); const real = f.ports.select;
+  f.ports.select = async (p) => (p.startsWith("wa_bot_settings") ? [] : real(p));
+  const r = await runTestTurn(input(), f.ports);
+  assert.equal(r.outcome, "blocked_not_test_number"); assert.equal(f.sent.length, 0); assert.equal(f.modelReqs.length, 0);
+});
+
+test("a conversation paused by a trainer handoff gets no further reply", async () => {
+    const f = fakes();
+    f.t.ai_conversation_state.push({ conversation_id: input().convId, bot: "eyad", state: { paused: true }, paused: true });
+    await runTestTurn(input(), f.ports);
+    assert.equal(f.sent.length, 0); assert.equal(f.modelReqs.length, 0);
+  });
+
+test("memory follows the customer across WhatsApp thread ids (@lid and phone JID)", async () => {
+  const f = fakes({ model: () => reply({ intent: "info", project_ref: "p1", reply: "Wecon Nuznan is in Dhaka.", clarify: false }) });
+  await runTestTurn(input({ convId: "eyad:8801711000001@s.whatsapp.net", text: "Nuznan location?" }), f.ports);
+  assert.equal(f.t.ai_conversation_state.length, 1);
+  assert.equal(f.t.ai_conversation_state[0].conversation_id, "eyad:8801711000001", "keyed by bot and phone, not by thread");
+  assert.equal(f.t.ai_conversation_state[0].state.active_project, "p1");
+  // Same person, now arriving on a LID thread: the remembered project carries over.
+  const r = await runTestTurn(input({ convId: "eyad:98765432109876@lid", text: "and the price?" }), f.ports);
+  assert.equal(f.t.ai_conversation_state.length, 1, "no second memory row");
+  assert.equal((f.t.ai_turns.at(-1)!.trace as any).project.source, "state");
+  assert.ok(r.turnId);
+});
+
+test("a pause written under the old per-thread key is still honoured", async () => {
+  const f = fakes();
+  f.t.ai_conversation_state.push({ conversation_id: input().convId, bot: "eyad", state: { paused: true }, paused: true });
+  const r = await runTestTurn(input(), f.ports);
+  assert.equal(r.outcome, "skipped_paused"); assert.equal(f.t.ai_turns[0].outcome, "skipped_paused");
+});
+
+test("an agent takeover (/t) pauses the trainer too", async () => {
+  const f = fakes(); f.t.preleads = [{ phone: "+880 1711000001", takeover: "true" }];
+  const r = await runTestTurn(input(), f.ports);
+  assert.equal(r.outcome, "skipped_paused"); assert.equal(f.modelReqs.length, 0);
+});
+
+test("another customer's takeover sharing the last 10 digits does not pause this one", async () => {
+  const f = fakes(); f.t.preleads = [{ phone: "971711000001", takeover: true }];
+  const r = await runTestTurn(input(), f.ports);
+  assert.notEqual(r.outcome, "skipped_paused");
+});
+
+test("a pause applied while the model is answering stops the send", async () => {
+  const f = fakes({ model: () => { f.t.preleads = [{ phone: "8801711000001", takeover: true }]; return reply(); } });
+  const r = await runTestTurn(input(), f.ports);
+  assert.equal(f.sent.length, 0); assert.equal(r.sent, 0);
+});
+
+test("a foreign number sharing the last 10 digits is not a test number",
+  () => {
+    assert.equal(isTestNumber(["8801501234567"], "971501234567"), false);
+  });
+
+test("a test-number turn uses the bot's published System Prompt, never a draft or another bot's", async () => {
+  const f = fakes();
+  f.t.ai_system_prompts = [
+    { id: "e1", bot: "eyad", company_id: "c1", version_no: 2, status: "published", body: "EYAD-PUBLISHED-PROMPT", sha256: "h1" },
+    { id: "e2", bot: "eyad", company_id: "c1", version_no: 3, status: "draft", body: "EYAD-DRAFT-PROMPT", sha256: "h2" },
+    { id: "d1", bot: "dubai", company_id: "c1", version_no: 1, status: "published", body: "DUBAI-PROMPT", sha256: "h3" },
+  ];
+  f.t.ai_system_prompt_pointers = [{ bot: "eyad", company_id: "c1", prompt_id: "e1" }, { bot: "dubai", company_id: "c1", prompt_id: "d1" }];
+  await runTestTurn(input(), f.ports);
+  const sys = f.modelReqs[0].system;
+  assert.ok(sys.includes("EYAD-PUBLISHED-PROMPT"));
+  assert.ok(!sys.includes("EYAD-DRAFT-PROMPT") && !sys.includes("DUBAI-PROMPT"));
+  assert.deepEqual(f.t.ai_turns[0].trace.system_prompt, { id: "e1", version_no: 2, sha256: "h1" });
+  assert.ok(!JSON.stringify(f.t.ai_turns[0]).includes("EYAD-PUBLISHED-PROMPT"), "prompt text not logged");
+});
+
+test("with no published System Prompt the built-in persona is used and the trace says so", async () => {
+  const f = fakes();
+  await runTestTurn(input(), f.ports);
+  assert.ok(!f.modelReqs[0].system.includes("Operator instructions"));
+  assert.equal(f.t.ai_turns[0].trace.system_prompt, null);
+});
+
+// ── brochures on a test number ──────────────────────────────────────────────
+const BRO = { ...NUZ, body: { ...NUZ.body, media: { brochure: "https://wecon.test/Wecon-Nuznan-Profile.pdf" } } };
+const NOFILE = { ...NUZ, id: "p2", body: { name: "Momtaz Manor", aliases: { banglish: ["momtaz"] }, region: "Chattogram", media: {} } };
+const pdfProbe = async () => ({ ok: true, status: 206, contentType: "application/pdf", magic: "%PDF-", bytes: 100 });
+const withProbe = (f: ReturnType<typeof fakes>, probe: any = pdfProbe) => ({ ...f.ports, probeDocument: probe });
+
+test("a brochure ask on a test number sends the verified PDF as a document, then the reply; no model call", async () => {
+  const f = fakes({ items: [BRO] });
+  const r = await runTestTurn(input({ text: "nuznan er brochure pathan" }), withProbe(f));
+  assert.equal(f.modelReqs.length, 0);
+  assert.deepEqual(f.sent.map((s) => [s.type, s.mediaUrl, s.fileName]), [
+    ["document", "https://wecon.test/Wecon-Nuznan-Profile.pdf", "Wecon Nuznan Brochure.pdf"],
+    ["text", undefined, undefined],
+  ]);
+  assert.equal(r.outcome, "brochure_sent");
+  const tr = f.t.ai_turns[0].trace;
+  assert.deepEqual(tr.brochure.sent.map((d: any) => [d.project_ref, d.wa_id]), [["p1", "wa1"]]);
+  assert.deepEqual(tr.wa_ids, ["wa1", "wa2"]);
+});
+
+test("a brochure that fails to send is send_failed with a handoff, and the reply says so", async () => {
+  const f = fakes({ items: [BRO], sendOk: false });
+  const r = await runTestTurn(input({ text: "nuznan er brochure pathan" }), withProbe(f));
+  assert.equal(r.outcome, "send_failed");
+  assert.equal(f.t.ai_turns[0].trace.brochure_outcome, "brochure_unavailable");
+  const tr = f.t.ai_turns[0].trace;
+  assert.deepEqual(tr.brochure.failed.map((d: any) => d.status), ["send_failed"]);
+  assert.equal(tr.handoff, true);
+  assert.match(f.sent.at(-1).text, /consultant/i);
+  assert.ok(f.t.ai_conversation_state[0].state.paused, "the bot stops so a person can follow up");
+});
+
+test("a missing brochure sends no document, only the honest reply", async () => {
+  const f = fakes({ items: [NOFILE] });
+  const r = await runTestTurn(input({ text: "momtaz er brochure" }), withProbe(f));
+  assert.deepEqual(f.sent.map((s) => s.type), ["text"]);
+  assert.equal(r.outcome, "brochure_unavailable");
+  assert.match(f.sent[0].text, /Momtaz Manor/);
+});
+
+test("with ai media off, a brochure is not sent and the reply does not claim it was", async () => {
+  const f = fakes({ items: [BRO] });
+  const r = await runTestTurn(input({ text: "nuznan er brochure pathan", allowMedia: false }), withProbe(f));
+  assert.deepEqual(f.sent.map((s) => s.type), ["text"]);
+  assert.doesNotMatch(f.sent[0].text, /here is|eikhane|এখানে/i);
+  assert.equal(r.outcome, "brochure_ready_not_sent");
+});
+
+test("a number removed from the list mid-turn stops the brochure; it is never sent to anyone else", async () => {
+  const f = fakes({ items: [BRO], onSend: () => {} });
+  f.t.wa_bot_settings[0].test_numbers = ["8801711000001"];
+  const ports = withProbe(f, async () => { f.t.wa_bot_settings[0].test_numbers = []; return pdfProbe(); });
+  const r = await runTestTurn(input({ text: "nuznan er brochure pathan" }), ports);
+  assert.equal(f.sent.length, 0);
+  assert.equal(r.sent, 0);
+});
+
+test("review: a brochure turn where nothing reached the customer is send_failed, whatever the brochure outcome", async () => {
+  const f = fakes({ items: [BRO], sendOk: false });
+  const r = await runTestTurn(input({ text: "nuznan er brochure pathan" }), withProbe(f));
+  assert.equal(r.outcome, "send_failed");
+  assert.equal(f.t.ai_turns[0].trace.brochure_outcome, "brochure_unavailable");
+});
+
+test("review: a document sent but the reply text refused is recorded as a partial send, not a clean success", async () => {
+  let n = 0;
+  const f = fakes({ items: [BRO] });
+  const ports = { ...withProbe(f), send: async (to: string, m: any) => { f.sent.push({ to, ...m }); return ++n === 1 ? "wa1" : null; } };
+  const r = await runTestTurn(input({ text: "nuznan er brochure pathan" }), ports);
+  assert.equal(r.outcome, "send_partial");
+  assert.equal(f.t.ai_turns[0].trace.brochure_outcome, "brochure_sent");
+});
+
+test("review: a recipient removed mid-turn leaves the conversation unpaused, since nothing was said to them", async () => {
+  const f = fakes({ items: [BRO] });
+  const ports = withProbe(f, async () => { f.t.wa_bot_settings[0].test_numbers = []; return pdfProbe(); });
+  await runTestTurn(input({ text: "nuznan er brochure pathan" }), ports);
+  assert.equal(f.sent.length, 0);
+  assert.notEqual(f.t.ai_conversation_state[0]?.state?.paused, true);
+});
+
+test("a 'send the brochure and tell me X' turn on a test number answers, then sends the checked PDF, and says it was sent", async () => {
+  const f = fakes({ items: [BRO], model: () => reply({ intent: "info", project_ref: "p1", reply: "Wecon Nuznan is a residential project in Dhaka.", clarify: false }) });
+  const r = await runTestTurn(input({ text: "send the nuznan brochure and tell me where it is" }), withProbe(f));
+  assert.equal(f.modelReqs.length, 1);
+  assert.deepEqual(f.sent.map((s) => s.type), ["document", "text"]);
+  assert.match(f.sent[1].text, /residential project in Dhaka/);
+  assert.match(f.sent[1].text, /Here is the brochure for Wecon Nuznan/);
+  assert.doesNotMatch(f.sent[1].text, /ready to share/);
+  assert.equal(r.outcome, "brochure_sent");
+  assert.equal(f.t.ai_turns[0].trace.answer_outcome, "ok");
 });

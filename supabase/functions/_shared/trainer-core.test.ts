@@ -306,10 +306,109 @@ test("publishGate", () => {
   assert.equal(publishGate({ ...base, coreVersion: "2.0.0" }).ok, false);
 });
 
+test("publishGate: a run that covered no tests certifies nothing", () => {
+  const base = { snapshot: { id: "s", checksum: "c" }, bot: "eyad" as const, coreVersion: "1.0.0",
+    run: { snapshot_checksum: "c", status: "complete", core_version: "1.0.0", bot: "eyad" }, results: [] };
+  const none = publishGate({ ...base, activeTests: [] });
+  assert.equal(none.ok, false);
+  assert.deepEqual(none.reasons, ["no active tests for eyad: add at least one regression test, then run them"]);
+  // Tests that exist only for the other bot do not count either.
+  assert.equal(publishGate({ ...base, activeTests: [{ id: "t2", revision: 1, bots: ["dubai"] as any }] }).ok, false);
+});
+
 test("redactTurns", () => {
   const r = redactTurns([{ role: "customer", text: "ami Rahim, number +880 1712-345678, mail a@b.com" }, { role: "agent", text: "/fdh note" }], ["Rahim"]);
   assert.equal(r.rejected, false);
   assert.equal(r.turns.length, 1);
   assert.ok(!/1712|a@b|Rahim/.test(r.turns[0].text));
   assert.ok(r.turns[0].text.includes("{customer}"));
+});
+
+// ── migration-readiness checks (behaviour, tone, verified facts, unknowns) ──
+const BEH = { id: "b1", kind: "behaviour", revision: 1, status: "active", bots: ["eyad", "dubai"], project_ref: null,
+  body: { aspect: "tone", instruction: "Short, warm, two sentences at most; never pushy." } } as ItemRow;
+const BEH_DUBAI = { id: "b2", kind: "behaviour", revision: 1, status: "active", bots: ["dubai"], project_ref: null,
+  body: { aspect: "language", instruction: "Answer in English." } } as ItemRow;
+const C2 = freezeContent([NUZM, RULE, FACT, BEH, BEH_DUBAI], { reply_model: "m", max_tokens: 600, rubric_version: 1 }).content;
+
+test("behaviour and tone items reach the prompt, scoped per bot", () => {
+  const e = buildPrompt(C2, "eyad", [], "dam koto?", emptyState(), ["p-nuz"], "banglish").system;
+  assert.ok(e.includes("[b1] tone: Short, warm"));
+  assert.ok(!e.includes("[b2]"), "dubai-only behaviour stays out of eyad");
+  assert.ok(buildPrompt(C2, "dubai", [], "price?", emptyState(), ["p-nuz"], "en").system.includes("[b2] language: Answer in English."));
+});
+
+test("a price, size or number not in the verified facts is rejected and never sent", async () => {
+  const s = stub(out({ reply: "Nuznan er dam 2.5 crore", project_ref: "p-nuz" }), out({ reply: "Nuznan 1850 sqft", project_ref: "p-nuz" }));
+  const r = await runTurn({ content: CONTENT, bot: "eyad", text: "nuznan er dam koto?", history: [], state: emptyState(), ad: { isAd: false }, returning: false, ports: s.ports });
+  assert.equal(r.outcome, "fallback_invalid_output"); assert.equal(r.handoff, true);
+  assert.ok(!/2\.5|1850/.test(r.reply), "unverified figure reached the customer");
+  assert.deepEqual(r.trace.guard_errors, ["number"]);
+});
+
+test("a figure that IS in the verified facts is allowed", async () => {
+  const s = stub(out({ reply: "Jolshiri te 3-4 crore er moddhe. Ekta meeting set korbo?", project_ref: "p-nuz", used_item_ids: ["r1"] }));
+  const r = await runTurn({ content: CONTENT, bot: "eyad", text: "nuznan er dam koto?", history: [], state: emptyState(), ad: { isAd: false }, returning: false, ports: s.ports });
+  assert.equal(r.outcome, "ok"); assert.match(r.reply, /3-4 crore/);
+});
+
+test("an unknown answer becomes the fallback with handoff, not an invented reply or silence", async () => {
+  const s = stub(out({ reply: "Ami eta bolte parbo na" }), out({ reply: "Eta confirm korte parbo na" }));
+  const r = await runTurn({ content: CONTENT, bot: "eyad", text: "parking koto ta?", history: [], state: emptyState(), ad: { isAd: false }, returning: false, ports: s.ports });
+  assert.equal(r.reply, FALLBACK.banglish); assert.equal(r.handoff, true); assert.equal(r.stateNext.paused, true);
+});
+
+test("an agent command in the history is never shown to the model as customer text", async () => {
+  const s = stub(out({ reply: "Sector 16, Jolshiri Abashon", project_ref: "p-nuz" }));
+  const history = [{ role: "customer", text: "nuznan kothay?" }, { role: "agent", text: "/fdh wants a morning call 01730078392" }, { role: "agent", text: "/sendnz" }];
+  await runTurn({ content: CONTENT, bot: "eyad", text: "location?", history, state: emptyState(), ad: { isAd: false }, returning: true, ports: s.ports });
+  const sent = JSON.stringify(s.calls[0]);
+  assert.ok(!sent.includes("/fdh") && !sent.includes("/sendnz") && !sent.includes("01730078392"));
+});
+
+test("project identity: a different project named mid-conversation replaces the remembered one", () => {
+  const OSM = P("p-osm", "Wecon Osman Bellevue", { banglish: ["osman"] });
+  const st = { ...emptyState(), active_project: "p-nuz", active_source: "explicit" as const };
+  const r = resolveProject("osman er kotha bolun", st, { isAd: false }, [NUZM, OSM].map((x) => ({ id: x.id, body: x.body })) as any);
+  assert.deepEqual(r.projects, ["p-osm"]);
+});
+
+test("guardReply: a Bangla or Banglish reply that sends a photo is not a claim; one that says a brochure is sent is", () => {
+  const g = (reply: string, language = "banglish") => guardReply(parseModelOutput(out({ language, reply, media: [{ type: "photo", project_ref: "p-nuz" }] }))!, CONTENT, ["p-nuz"], "");
+  assert.deepEqual(g("Nuznan er chobi pathacchi"), []);
+  assert.deepEqual(g("নুজনানের ছবি পাঠাচ্ছি", "bn"), []);
+  assert.ok(g("Nuznan er brochure pathacchi").includes("claim"));
+  assert.ok(g("নুজনানের ব্রোশিওর পাঠিয়ে দিয়েছি", "bn").includes("claim"));
+});
+
+// Production 2026-10-19: about 8% of Playground turns ended "fallback_model_error"
+// because the reasoning model returned no reply. One retry for a transient
+// failure (no reply, timeout, 5xx) saves the turn; a key or billing error does not retry.
+test("runTurn: a transient model failure is retried once; a permanent one is not", async () => {
+  const seq = (...rs: any[]) => { const calls: any[] = []; return { calls, ports: { callModel: async (req: any) => { calls.push(req); return rs.shift(); } } }; };
+  const good = { ok: true as const, text: out({ reply: "Wecon Nuznan is in Sector 16, Jolshiri Abashon.", project_ref: "p-nuz" }), cost_usd: 0.001 };
+  for (const code of ["timeout", "provider", "network", "rate_limited"]) {
+    const s = seq({ ok: false, code, error: `transient ${code}` }, good);
+    const r = await runTurn({ content: CONTENT, bot: "eyad", text: "nuznan kothay?", history: [], state: emptyState(), ad: { isAd: false }, returning: false, ports: s.ports as any });
+    assert.equal(r.outcome, "ok", code); assert.equal(s.calls.length, 2, code);
+    assert.equal(r.trace.model_retry, `transient ${code}`);
+  }
+  // "length"/"empty": the same request fails the same way, so no paid second call.
+  for (const code of ["auth", "billing", "config", "model", "request", "length", "empty"]) {
+    const s = seq({ ok: false, code, error: `permanent ${code}` }, good);
+    const r = await runTurn({ content: CONTENT, bot: "eyad", text: "nuznan kothay?", history: [], state: emptyState(), ad: { isAd: false }, returning: false, ports: s.ports as any });
+    assert.equal(r.outcome, "fallback_model_error", code); assert.equal(s.calls.length, 1, code);
+  }
+  const twice = seq({ ok: false, code: "timeout", error: "a" }, { ok: false, code: "timeout", error: "b" });
+  const r2 = await runTurn({ content: CONTENT, bot: "eyad", text: "nuznan kothay?", history: [], state: emptyState(), ad: { isAd: false }, returning: false, ports: twice.ports as any });
+  assert.equal(r2.outcome, "fallback_model_error"); assert.equal(twice.calls.length, 2, "never more than one retry");
+});
+
+test("review3: one turn makes at most one transient retry in total, so a timeout storm costs 3 calls, not 4", async () => {
+  const calls: any[] = [];
+  const rs: any[] = [{ ok: false, code: "timeout", error: "t1" }, { ok: true, text: "not json", cost_usd: 0 }, { ok: false, code: "timeout", error: "t2" }, { ok: true, text: out({ reply: "x" }), cost_usd: 0 }];
+  const r = await runTurn({ content: CONTENT, bot: "eyad", text: "nuznan kothay?", history: [], state: emptyState(), ad: { isAd: false }, returning: false,
+    ports: { callModel: async (req: any) => { calls.push(req); return rs.shift(); } } as any });
+  assert.equal(calls.length, 3);
+  assert.equal(r.outcome, "fallback_model_error");
 });

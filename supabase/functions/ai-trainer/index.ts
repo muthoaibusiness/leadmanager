@@ -11,7 +11,7 @@
 // --no-verify-jwt because the CRM mints no Supabase JWT; access is the acting
 // user's Management/Master role in the users table (trainer-handler.ts).
 import { handleTrainer } from "../_shared/trainer-handler.ts";
-import { db, llm, env } from "../_shared/trainer-deno.ts";
+import { db, llm, env, modelLlm, embedder, embedWith, probe } from "../_shared/trainer-deno.ts";
 
 const CORS = {
   "Access-Control-Allow-Origin": Deno.env.get("ALLOWED_ORIGIN") ?? "*",
@@ -24,6 +24,6 @@ Deno.serve(async (req) => {
   let body: unknown = null;
   try { body = await req.json(); } catch { /* handled below */ }
   const ip = req.headers.get("x-forwarded-for")?.split(",")[0].trim() || "unknown";
-  const res = await handleTrainer({ method: req.method, headers: req.headers, ip, body }, { db, llm, env });
+  const res = await handleTrainer({ method: req.method, headers: req.headers, ip, body }, { db, llm, env, probe, modelLlm, embedder, embedWith });
   return new Response(JSON.stringify(res.body), { status: res.status, headers: { ...CORS, "Content-Type": "application/json" } });
 });

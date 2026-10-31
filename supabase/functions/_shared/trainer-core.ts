@@ -6,7 +6,13 @@
 // Bump CORE_VERSION on any change that can alter a reply, a verdict or a
 // checksum. Test runs and published snapshots are certified per version.
 
-export const CORE_VERSION = "1.0.0";
+export const CORE_VERSION = "1.9.0";
+
+import { docExcerpts, type DocHit } from "./trainer-docs.ts";
+import { GENERIC } from "./trainer-words.ts";
+import { inventoryEvidence, type Inventory } from "./trainer-inventory.ts";
+import { afterBrochure, brochureRequest, deliverBrochures, projectWords, type DocMessage, type Probe } from "./trainer-brochure.ts";
+import { floorLabel, missingMediaText, partialMediaText, verifyImages, withoutLostMedia, type ImageProbe } from "./trainer-media.ts";
 
 export type Kind = "project" | "fact" | "rule" | "behaviour" | "example";
 export type Bot = "eyad" | "dubai";
@@ -42,7 +48,7 @@ const SHAPES: Record<Kind, Shape> = {
   project: {
     name: ["string", true], aliases: ["aliases", true], region: ["string", false], type: ["string", false],
     address: ["string", false], size_text: ["string", false], tags: ["string[]", false], media: ["media", true],
-    send_code: ["string", false], legacy_wa_project_id: ["number", false],
+    send_code: ["string", false], legacy_wa_project_id: ["number", false], crm_property_id: ["string", false],
   },
   fact: { topic: ["string", true], text: ["string", true], source: ["string", false], languages: ["string[]", false] },
   rule: {
@@ -127,10 +133,15 @@ export type ItemRow = {
   id: string; kind: Kind; revision: number; status: "active" | "retired";
   bots: Bot[]; project_ref: string | null; body: any;
 };
+// "vector" pins the embedding model and the exact chunk ids (spec 4.3 rule 2),
+// so a rollback reproduces retrieval scope as well as content.
+export type Retrieval = { mode: "full" } | { mode: "vector"; embedding_model: string; embedding_dim: number; chunk_ids: string[]; k: number };
 export type SnapshotContent = {
-  schema: 1; projects: ItemRow[]; items: ItemRow[]; retrieval: { mode: "full" };
+  schema: 1; projects: ItemRow[]; items: ItemRow[]; retrieval: Retrieval;
   model_config: { reply_model: string; max_tokens: number }; prompt_version: string;
   rubric: { key: string; version: number };
+  // The operator's System Prompt per bot (migration 0046), absent when none is set.
+  system_prompts?: Partial<Record<Bot, { id: string; version_no: number; sha256: string; body: string }>>;
 };
 export const PROMPT_VERSION = "p1";
 
@@ -197,14 +208,17 @@ export type Turn = { role: "customer" | "bot" | "agent"; text: string };
 export type ConvState = {
   active_project: string | null; active_source: "explicit" | "ad" | "state" | null;
   language: "bn" | "banglish" | "en" | null; first_price_at: Record<string, string>; asked: string[]; paused: boolean;
+  // The projects whose brochures the last turn sent or prepared, so "abar
+  // pathan" can resend them. Set only from the brochure path's own result,
+  // never from a reply's wording. Optional: older saved states lack it.
+  last_brochure?: string[];
 };
 export const emptyState = (): ConvState => ({
   active_project: null, active_source: null, language: null, first_price_at: {}, asked: [], paused: false,
 });
 
-// A word that is a common English word never resolves a project on its own;
-// it only counts as part of a longer alias such as "summer breeze".
-const GENERIC = new Set(["summer", "arcade", "heritage", "breeze", "wecon", "mall", "manor", "orchid", "dale"]);
+// Common English words never resolve a project alone (trainer-words.ts).
+export { GENERIC } from "./trainer-words.ts";
 
 // \p{M} is kept: Bangla vowel signs and the hasanta are combining marks, and
 // dropping them would split a word like "ওসমান" in two.
@@ -220,6 +234,9 @@ function mentioned(text: string, projects: ItemRow[]): string[] {
   }
   return [...hit];
 }
+
+// The projects a text names by alias. Exported for the brochure path.
+export const namedProjects = (text: string, projects: ItemRow[]) => mentioned(text, projects);
 
 export function resolveProject(
   text: string, state: ConvState, ad: { isAd: boolean; adText?: string }, projects: ItemRow[],
@@ -245,6 +262,107 @@ export function buildHistory(rows: Turn[], limit = 20): Turn[] {
     .slice(-limit);
 }
 
+// Retrieval, spec 5.1 "full" mode: rules, behaviour and facts in full; examples ranked.
+const STOP = new Set(["the", "is", "an", "of", "to", "and", "in", "er", "ki", "na", "কি", "এর"]);
+const tokensOf = (s: string) => new Set(norm(s).split(/[^\p{L}\p{M}\p{N}]+/u)
+  .filter((w) => [...w].length >= 2 && !STOP.has(w)));
+const exampleText = (e: ItemRow) => `${e.body?.conversation?.filter((t: Turn) => t.role === "customer").at(-1)?.text ?? ""} ${e.body?.ideal_reply ?? ""}`;
+
+// Shared tokens plus 2 when query and document name the same project.
+// Sales intents a customer asks about, in English, Banglish and Bangla. A query
+// and a document that share an intent score as if they shared 3 words, so a
+// paraphrase ("koto taka lagbe") still finds the price fact. Patterns are
+// matched on normalised text; Bangla needs no word boundary.
+const INTENTS: Record<string, RegExp[]> = {
+  price: [/\b(price|prices|pricing|cost|costs|pay|budget|rate|how much|total)\b/, /\b(dam|daam|taka|koto taka|budget)\b/, /(দাম|টাকা|খরচ|মূল্য|বাজেট)/],
+  location: [/\b(where|location|located|address|area|neighbou?rhood|whereabouts)\b/, /\b(kothay|kothai|jayga|jaiga|thikana|kon dike|kon elaka|elaka)\b/, /(কোথায়|ঠিকানা|এলাকা|অবস্থান|লোকেশন)/],
+  size: [/\b(size|sqft|square|feet|big|large|bedroom|bed|katha)\b/, /\b(koto boro|boro|sqft|ghor|rum|room|katha)\b/, /(সাইজ|বড়|স্কয়ার|ফিট|কাঠা|বেডরুম|রুম)/],
+  amenities: [/\b(amenit\w*|facilit\w*|pool|swim|gym|parking|park|lift|elevator|generator|garden|playground|mosque|security)\b/, /\b(suvidha|subidha|gari|lift|generator)\b/, /(সুবিধা|গাড়ি|পার্কিং|লিফট|জেনারেটর|সুইমিং|জিম)/],
+  availability: [/\b(available|availability|left|vacant|unsold|in stock|remaining|still)\b/, /\b(baki|khali|ache ki|paowa jabe|pawa jabe|ekhono)\b/, /(বাকি|খালি|পাওয়া|এখনো|এখনও)/],
+  media: [/\b(photo|photos|picture|pictures|pic|pics|image|images|brochure|video)\b/, /\b(chobi|chhobi|photo|pic)\b/, /(ছবি|ব্রোশিওর|ভিডিও|ফটো)/],
+};
+export function intentsOf(text: string): Set<string> {
+  const t = norm(text);
+  return new Set(Object.entries(INTENTS).filter(([, rs]) => rs.some((r) => r.test(t))).map(([k]) => k));
+}
+
+export function lexicalScore(query: string, doc: string, projects: ItemRow[]): number {
+  const q = tokensOf(query);
+  let n = 0;
+  for (const w of tokensOf(doc)) if (q.has(w)) n++;
+  const qi = intentsOf(query);
+  if (qi.size) for (const i of intentsOf(doc)) if (qi.has(i)) n += 3;
+  const qp = mentioned(query, projects);
+  return n + (qp.length && mentioned(doc, projects).some((id) => qp.includes(id)) ? 2 : 0);
+}
+
+export function rankByScore(rows: ItemRow[], text: (r: ItemRow) => string, query: string, projects: ItemRow[]): { row: ItemRow; score: number }[] {
+  return rows.map((row) => ({ row, score: lexicalScore(query, text(row), projects) }))
+    .sort((a, b) => b.score - a.score || (a.row.id < b.row.id ? -1 : a.row.id > b.row.id ? 1 : 0));
+}
+
+// Synchronous "full" selection. Vector snapshots go through retrieve(), which
+// falls back here; calling this directly on one is a programming error.
+export function retrieveContext(content: SnapshotContent, bot: Bot, text: string, resolved: string[]): {
+  items: ItemRow[]; examples: ItemRow[]; trace: { mode: "full"; examples: { id: string; score: number }[] };
+} {
+  if ((content.retrieval?.mode as string) !== "full") throw new Error(`retrieval mode "${content.retrieval?.mode}" is not implemented`);
+  return fullSelection(content, bot, text, resolved);
+}
+
+function fullSelection(content: SnapshotContent, bot: Bot, text: string, resolved: string[]) {
+  const scoped = content.items.filter((i) => itemApplies(i, bot, resolved));
+  const top = rankByScore(scoped.filter((i) => i.kind === "example"), exampleText, text, content.projects).slice(0, 6);
+  return {
+    items: scoped.filter((i) => i.kind !== "example"), examples: top.map((x) => x.row),
+    trace: { mode: "full" as const, examples: top.map((x) => ({ id: x.row.id, score: x.score })) },
+  };
+}
+
+// Facts and examples become chunks (spec 5.2); rules and behaviour are always
+// sent in full and never chunked. 1,600 characters stays under 512 tokens.
+export type Chunk = { item_id: string; item_revision: number; chunk_no: number; chunk_text: string };
+const CHUNK_CHARS = 1600;
+export function chunksFor(item: ItemRow): Chunk[] {
+  const text = item.kind === "fact" ? `${item.body.topic}: ${item.body.text}`
+    : item.kind === "example" ? exampleText(item) : "";
+  if (!text.trim()) return [];
+  const words = text.split(/\s+/); const parts: string[] = []; let cur = "";
+  for (const w of words) {
+    if (cur && cur.length + 1 + w.length > CHUNK_CHARS) { parts.push(cur); cur = ""; }
+    cur = cur ? `${cur} ${w}` : w.slice(0, CHUNK_CHARS);
+  }
+  if (cur) parts.push(cur);
+  return parts.map((chunk_text, chunk_no) => ({ item_id: item.id, item_revision: item.revision, chunk_no, chunk_text }));
+}
+
+export type RetrievalTrace = { mode: "full" | "vector"; examples?: { id: string; score: number }[]; chunks?: { id: string; score: number }[]; fallback?: string };
+
+// Per-turn selection. Vector mode needs both ports; any failure falls back to
+// "full" for this turn (spec 6.6 ok_retrieval_fallback), never to nothing.
+export async function retrieve(content: SnapshotContent, bot: Bot, text: string, resolved: string[], ports: Ports): Promise<{ items: ItemRow[]; examples: ItemRow[]; trace: RetrievalTrace }> {
+  const r = content.retrieval;
+  if (r.mode !== "vector") return fullSelection(content, bot, text, resolved);
+  const fallback = (why: string) => { const f = fullSelection(content, bot, text, resolved); return { ...f, trace: { ...f.trace, fallback: why } }; };
+  if (!ports.embed || !ports.matchChunks) return fallback("no vector ports");
+  try {
+    const q = await ports.embed(r.embedding_model, text);
+    if (q.length !== r.embedding_dim) return fallback(`embedding has ${q.length} dimensions, snapshot expects ${r.embedding_dim}`);
+    const hits = await ports.matchChunks({ chunkIds: r.chunk_ids, model: r.embedding_model, query: q, bot, projects: resolved, k: r.k });
+    const scoped = content.items.filter((i) => itemApplies(i, bot, resolved));
+    // A hit counts only when it is a chunk of an item revision frozen in this snapshot.
+    const pinned = new Map(scoped.map((i) => [`${i.id}@${i.revision}`, i]));
+    const hitItems = [...new Map(hits.map((h) => pinned.get(`${h.item_id}@${h.item_revision}`)).filter((i): i is ItemRow => !!i).map((i) => [i.id, i])).values()];
+    return {
+      items: [...scoped.filter((i) => i.kind === "rule" || i.kind === "behaviour"), ...hitItems.filter((i) => i.kind === "fact")],
+      examples: hitItems.filter((i) => i.kind === "example").slice(0, 6),
+      trace: { mode: "vector", chunks: hits.map((h) => ({ id: h.id, score: h.score })) },
+    };
+  } catch (e) {
+    return fallback(e instanceof Error ? e.message : String(e));
+  }
+}
+
 // ── prompt ──────────────────────────────────────────────────────────────────
 export type ModelOut = {
   intent: string; project_ref: string | null; language: "bn" | "banglish" | "en"; reply: string;
@@ -265,16 +383,27 @@ function projectLine(p: ItemRow): string {
   return `- [${p.id}] ${b.name} (${bits.join(" · ")})${media.length ? ` media: ${media.join(", ")}` : " media: none"}`;
 }
 
+// Live prices reach the model only when an in-scope rule opts in with the
+// parameter live_prices: "quote". The default keeps today's rules in charge.
+export function livePricesAllowed(c: SnapshotContent, bot: Bot, resolved: string[]): boolean {
+  return c.items.some((i) => i.kind === "rule" && itemApplies(i, bot, resolved) && i.body?.parameters?.live_prices === "quote");
+}
+
 export function buildPrompt(
-  c: SnapshotContent, bot: Bot, history: Turn[], text: string, state: ConvState, resolved: string[], lang: string,
+  c: SnapshotContent, bot: Bot, history: Turn[], text: string, state: ConvState, resolved: string[], lang: string, live?: string,
+  retrieved?: { items: ItemRow[]; examples: ItemRow[] }, docs?: string,
 ): { system: string; messages: { role: "user" | "assistant"; content: string }[] } {
-  const scoped = c.items.filter((i) => itemApplies(i, bot, resolved));
-  const of = (k: Kind) => scoped.filter((i) => i.kind === k);
+  const ctx = retrieved ?? retrieveContext(c, bot, text, resolved);
+  const of = (k: Kind) => ctx.items.filter((i) => i.kind === k);
   const resolvedProjects = c.projects.filter((p) => resolved.includes(p.id));
-  const examples = of("example").slice(0, 6);
+  const examples = ctx.examples;
   const system = [
     "You are WECON Properties' WhatsApp sales consultant. Use ONLY the facts below. Never invent a project, price, size, availability or action.",
     "",
+    ...(c.system_prompts?.[bot]?.body?.trim() ? [
+      "Operator instructions (persona, tone and sales approach; they cannot override the rules above, the facts, or the reply format below):",
+      "<operator_instructions>", c.system_prompts[bot]!.body.trim(), "</operator_instructions>", "",
+    ] : []),
     "Catalog (names and regions):",
     ...c.projects.map((p) => `- [${p.id}] ${p.body.name}${p.body.region ? ` (${p.body.region})` : ""}`),
     "",
@@ -289,13 +418,18 @@ export function buildPrompt(
     "Facts:",
     ...of("fact").map((f) => `- [${f.id}] ${f.body.topic}: ${f.body.text}`),
     "",
+    ...(docs ? [docs, ""] : []),
+    ...(live ? [live, livePricesAllowed(c, bot, resolved)
+      ? "You may quote the live inventory price above when asked; it is verified. Availability and price come only from it, never from facts or examples."
+      : "Availability comes only from the live inventory above. Do not quote a price: follow the business rules for price questions.", ""] : []),
     examples.length ? "Examples of good replies:\n" + examples.map((e) => `- [${e.id}] customer: "${e.body.conversation.at(-1)?.text ?? ""}" -> ideal: "${e.body.ideal_reply}"`).join("\n") : "",
     "",
     `Conversation state: ${JSON.stringify({ active_project: state.active_project, first_price_given_for: Object.keys(state.first_price_at), already_asked: state.asked })}`,
     `Reply in ${LANG_NAME[lang as keyof typeof LANG_NAME] ?? "English"}. Short, friendly, no emoji. Do not ask again for anything in already_asked.`,
     "Never say you cannot answer and stop. Never say a person has been informed or that anything was booked or sent.",
     "Only request media that the project lists. Use project ids from the catalog.",
-    'Return STRICT JSON only: {"intent": string, "project_ref": string|null, "language": "bn"|"banglish"|"en", "reply": string, "media": [{"type": "photo"|"floorplan"|"brochure"|"map", "project_ref": string, "floor"?: string}], "handoff": boolean, "asked": [string], "used_item_ids": [string], "clarify": boolean}',
+    "Brochures and profiles are sent by the system, not by you: never say a brochure is attached, sent or on its way, and never put one in media.",
+    'Return STRICT JSON only: {"intent": string, "project_ref": string|null, "language": "bn"|"banglish"|"en", "reply": string, "media": [{"type": "photo"|"floorplan"|"map", "project_ref": string, "floor"?: string}], "handoff": boolean, "asked": [string], "used_item_ids": [string], "clarify": boolean}',
   ].join("\n");
   const messages = [
     ...history.map((h) => ({ role: (h.role === "customer" ? "user" : "assistant") as "user" | "assistant",
@@ -326,15 +460,52 @@ export function parseModelOutput(raw: string): ModelOut | null {
 const REFUSAL = [/parbo\s*na/i, /bolte\s*parbo/i, /confirm\s*korte\s*parbo/i, /can'?t\s+(tell|discuss|share|say)/i,
   /cannot\s+(tell|discuss|share|say)/i, /বলতে\s*পারব\s*না/, /পারব\s*না/];
 const CLAIM = [/\binformed\b/i, /\bnotified\b/i, /jaanie\s*dichi/i, /janiye\s*dichi/i, /\bbooked\b/i, /have\s+sent/i,
-  /জানিয়ে\s*দিয়েছি/];
+  /জানিয়ে\s*দিয়েছি/,
+  // A model reply never carries a file, so it must not say it does (E2E C1, 2026-10-19).
+  /\b(attach(ed|ing)?|sending|sent)\b[^.!?\n]{0,40}\b(brochure|profile|pdf|file|document)s?\b/i,
+  /\b(brochure|profile|pdf)s?\b[^.!?\n]{0,30}\b(attached|is on its way|coming)\b/i,
+  /\b(brochure|profile|pdf)s?\b[^.!?\n]{0,30}(pathacchi|pathiye\s*dichi|pathalam|attach\s*korchi|attach\s*kore\s*dichi)/i,
+  /(ব্রো?শি?[উও]?র|ব্রোশার|প্রোফাইল|পিডিএফ)[^.!?।\n]{0,30}(পাঠাচ্ছি|পাঠিয়ে\s*দিয়েছি|পাঠালাম|সংযুক্ত)/];
+// "I can't say the price, but I can set a meeting" is the rule's own answer;
+// the guard targets a reply that refuses and stops (spec 6.2 step 8).
+const NEXT_STEP = [/meeting/i, /\bagent\b/i, /consultant/i, /brochure/i, /\bcall\b/i, /মিটিং/, /এজেন্ট/, /কনসালট্যান্ট/, /ব্রোশি?উ?র/];
+const refusesAndStops = (r: string) => REFUSAL.some((x) => x.test(r)) && !NEXT_STEP.some((x) => x.test(r));
+
+// The model transliterates "Wecon" as ওয়েকন (both encodings of য়); the
+// company writes উইকন. Fixed in code because a prompt instruction did not hold.
+const brandSpelling = (s: string) => s.replace(/ও(?:য়|য়)েকন/g, "উইকন");
+
+// Bangla digits (০-৯) fold to ASCII so "৫০" is checked as "50".
+const asciiDigits = (s: string) => s.replace(/[০-৯]/g, (d) => String(d.charCodeAt(0) - 0x09e6));
+
+// "3-4 crore" yields "3 crore" and "4 crore"; units fold to one spelling.
+const MONEY_UNIT: Record<string, string> = { crore: "crore", cr: "crore", "কোটি": "crore", lakh: "lakh", lac: "lakh", lakhs: "lakh", "লাখ": "lakh", "লক্ষ": "lakh",
+  taka: "taka", tk: "taka", bdt: "taka", "টাকা": "taka", "৳": "taka" };
+function moneyIn(s: string): string[] {
+  const out: string[] = [];
+  const re = /(\d+(?:[.,]\d+)?)(?:\s*(?:-|–|to|থেকে)\s*(\d+(?:[.,]\d+)?))?\s*(crore|cr|lakhs?|lac|taka|tk|bdt|কোটি|লাখ|লক্ষ|টাকা|৳)(?![a-z])/gi;
+  for (const m of asciiDigits(s).matchAll(re)) {
+    const u = MONEY_UNIT[m[3].toLowerCase()] ?? m[3];
+    out.push(`${m[1]} ${u}`); if (m[2]) out.push(`${m[2]} ${u}`);
+  }
+  for (const m of asciiDigits(s).matchAll(/৳\s*(\d+(?:[.,]\d+)?)/g)) out.push(`${m[1]} taka`);
+  return out;
+}
 
 export function guardReply(out: ModelOut, c: SnapshotContent, resolved: string[], evidenceText: string): string[] {
   const errs: string[] = [];
   const r = out.reply;
-  if (REFUSAL.some((x) => x.test(r))) errs.push("refusal");
+  if (refusesAndStops(r)) errs.push("refusal");
   if (CLAIM.some((x) => x.test(r))) errs.push("claim");
-  const nums = r.match(/\d+(?:[.,]\d+)?/g) || [];
-  if (nums.some((n) => !evidenceText.includes(n))) errs.push("number");
+  const numbersIn = (s: string) => asciiDigits(s).match(/\d+(?:[.,]\d+)?/g) || [];
+  const ev = new Set(numbersIn(evidenceText));
+  if (numbersIn(r).some((n) => !ev.has(n))) errs.push("number");
+  // A money figure needs the same figure with a money unit in the evidence, so
+  // "16 crore" is not grounded by "Sector 16" nor "2 lakh" by "2 available".
+  else {
+    const evMoney = new Set(moneyIn(evidenceText));
+    if (moneyIn(r).some((m) => !evMoney.has(m))) errs.push("number");
+  }
   const ids = new Set(c.projects.map((p) => p.id));
   if ((out.project_ref && !ids.has(out.project_ref)) || out.media.some((m) => !resolved.includes(m.project_ref))) errs.push("project");
   if (r.trim()) {
@@ -364,7 +535,12 @@ export function resolveMedia(out: ModelOut, c: SnapshotContent): { actions: Medi
       if (md.brochure) actions.push({ type: "document", url: md.brochure, caption: `${name} brochure`, kind: "brochure", project_ref: p.id });
       else missing.push("brochure");
     } else {
-      const plans: { url: string; label?: string }[] = md.floor_plans || [];
+      // A plan with no catalog label takes the floor its file name states;
+      // a URL listed twice is offered once.
+      const seen = new Set<string>();
+      const plans: { url: string; label?: string }[] = (md.floor_plans || [])
+        .filter((f: { url: string }) => !seen.has(f.url) && seen.add(f.url))
+        .map((f: { url: string; label?: string }) => (f.label ? f : { ...f, label: floorLabel(f.url) ?? undefined }));
       if (!plans.length) { missing.push("floorplan"); continue; }
       const want = norm(m.floor || "");
       if (want === "all" || want === "sob" || want === "shob") {
@@ -376,13 +552,33 @@ export function resolveMedia(out: ModelOut, c: SnapshotContent): { actions: Medi
       else clarify = `Which floor plan would you like for ${name}: ${plans.map((f) => f.label || "unlabelled").join(", ")}?`;
     }
   }
-  return { actions, missing, clarify };
+  // The model can list one request twice; each image goes out once.
+  const seen = new Set<string>();
+  return { actions: actions.filter((x) => !seen.has(x.url) && !!seen.add(x.url)), missing: [...new Set(missing)], clarify };
 }
 
 // ── turn ────────────────────────────────────────────────────────────────────
 export type Ports = {
   callModel: (req: { model: string; max_tokens: number; system: string; messages: { role: "user" | "assistant"; content: string }[] }) =>
-    Promise<{ ok: true; text: string; cost_usd: number } | { ok: false; error: string }>;
+    Promise<{ ok: true; text: string; cost_usd: number } | { ok: false; error: string; code?: string }>;
+  // Live stock and price for a project's crm_property_id; null when unavailable.
+  inventory?: (crmPropertyId: string) => Promise<Inventory | null>;
+  // Vector retrieval (migration 0045 ai_match_chunks). Both or neither.
+  embed?: (model: string, text: string) => Promise<number[]>;
+  // Approved Markdown documents (migration 0047): the server embeds the query
+  // with the configured embedding model and returns scoped chunks.
+  searchDocs?: (a: { text: string; bot: Bot; projects: string[] }) => Promise<DocHit[]>;
+  matchChunks?: (a: { chunkIds: string[]; model: string; query: number[]; bot: Bot; projects: string[]; k: number }) =>
+    Promise<{ id: string; item_id: string; item_revision: number; chunk_no: number; chunk_text: string; score: number }[]>;
+  // Brochures (trainer-brochure.ts). probeDocument checks that a URL is a
+  // reachable PDF; without it no brochure is ever offered. sendDocument sends
+  // one on WhatsApp and returns the message id or null; only a real chat
+  // passes it, so the Playground and test runs check files and send nothing.
+  probeDocument?: Probe;
+  sendDocument?: (m: DocMessage) => Promise<string | null>;
+  // Checks that a photo, floor plan or map URL is a reachable image
+  // (trainer-media.ts). Without it media is offered unchecked, as before.
+  probeImage?: ImageProbe;
 };
 export type TurnResult = { reply: string; media: MediaAction[]; handoff: boolean; stateNext: ConvState; outcome: string; trace: Record<string, unknown> };
 
@@ -401,8 +597,11 @@ export async function runTurn(a: {
   ad: { isAd: boolean; adText?: string }; returning: boolean; ports: Ports;
 }): Promise<TurnResult> {
   const lang = detectLanguage(a.text);
-  const trace: Record<string, unknown> = { core_version: CORE_VERSION, language: lang };
-  const base = { ...a.state, language: lang };
+  const sp = a.content.system_prompts?.[a.bot];
+  const trace: Record<string, unknown> = { core_version: CORE_VERSION, language: lang,
+    system_prompt: sp ? { id: sp.id, version_no: sp.version_no, sha256: sp.sha256 } : null };
+  // last_brochure lives for one turn: only the brochure path sets it again.
+  const base = { ...a.state, language: lang, last_brochure: undefined };
   const t = norm(a.text);
   if (GREETING.some((g) => g.test(t))) {
     trace.pre = "greeting";
@@ -412,18 +611,128 @@ export async function runTurn(a: {
     trace.pre = "wants_person";
     return { reply: FALLBACK[lang], media: [], handoff: true, stateNext: { ...base, paused: true }, outcome: "handoff_requested", trace };
   }
-  const res = resolveProject(a.text, a.state, a.ad, a.content.projects);
+  // Brochure and profile requests are answered by code, never by the model:
+  // the projects come from the catalog, each file is checked, and the reply
+  // states only what was checked and sent (trainer-brochure.ts).
+  // Only the turn right before this one counts as "the bot just asked".
+  const lastBot = a.history.at(-1)?.role === "bot" ? a.history.at(-1)!.text : undefined;
+  // Right after a brochure turn: resend, correct to another project, or thanks.
+  // The projects come from the saved state of that turn, not from its wording.
+  const prior = a.state.last_brochure?.filter((id) => a.content.projects.some((p) => p.id === id)) ?? [];
+  const after = prior.length ? afterBrochure(a.text, { match: (s) => mentioned(s, a.content.projects), words: projectWords(a.content.projects) }) : null;
+  if (after?.kind === "ack") {
+    trace.pre = "acknowledgement";
+    // A thanks keeps the brochure in play, so "abar pathan" still works after it.
+    return { reply: "", media: [], handoff: false, stateNext: { ...base, last_brochure: prior }, outcome: "skipped_acknowledgement", trace };
+  }
+  if (after) {
+    const ids = after.kind === "correct" ? after.projects : prior;
+    trace.brochure_intent = after.kind === "correct" ? "send" : "resend";
+    const d = await deliverBrochures(ids, a.content.projects, { probe: a.ports.probeDocument ?? null, send: a.ports.sendDocument ?? null }, lang);
+    trace.project = { projects: ids, source: "explicit", ambiguous: false };
+    trace.brochure = { request: { kind: "projects", projects: ids, scope: after.kind === "correct" ? "named" : "state", intent: "send" }, sent: d.sent, ready: d.ready, failed: d.failed };
+    return { reply: d.reply, media: d.actions, handoff: d.handoff, outcome: d.outcome, trace,
+      stateNext: { ...base, active_project: ids.length === 1 ? ids[0] : a.state.active_project, active_source: ids.length === 1 ? "explicit" : a.state.active_source,
+        last_brochure: d.actions.map((x) => x.project_ref), paused: d.handoff ? true : a.state.paused } };
+  }
+  const ask = brochureRequest(a.text, a.state, a.content.projects, { match: (s) => mentioned(s, a.content.projects), lastBot, lang });
+  // A question about what a brochure says is answered like any other
+  // question, from retrieved evidence; "both" also sends the PDF afterwards.
+  if (ask?.kind === "projects" && ask.intent !== "send") {
+    trace.brochure_intent = ask.intent;
+    const answered = await groundedTurn(a, lang, trace, base, ask.projects.length ? ask.projects : undefined);
+    // A handed-off turn sends nothing more; a person takes it from here.
+    if (ask.intent === "question" || answered.outcome.startsWith("fallback") || answered.handoff) return answered;
+    const d = await deliverBrochures(ask.projects, a.content.projects, { probe: a.ports.probeDocument ?? null, send: a.ports.sendDocument ?? null }, lang);
+    trace.brochure = { request: ask, sent: d.sent, ready: d.ready, failed: d.failed };
+    // The turn's outcome is the brochure's (what was sent); the answer's is kept beside it.
+    trace.answer_outcome = answered.outcome;
+    const sentProject = ask.projects.length === 1 ? ask.projects[0]
+      : ask.projects.includes(answered.stateNext.active_project ?? "") ? answered.stateNext.active_project : a.state.active_project;
+    return { ...answered, reply: [answered.reply, d.reply].filter((x) => x.trim()).join("\n"), media: [...answered.media, ...d.actions],
+      handoff: answered.handoff || d.handoff, outcome: d.outcome,
+      stateNext: { ...answered.stateNext, active_project: sentProject, last_brochure: d.actions.map((x) => x.project_ref), paused: answered.stateNext.paused || d.handoff } };
+  }
+  if (ask) {
+    if (ask.kind === "clarify") {
+      trace.brochure = { request: ask };
+      const keep = ask.projects?.length === 1 ? { active_project: ask.projects[0], active_source: "explicit" as const } : {};
+      return { reply: ask.question, media: [], handoff: false, stateNext: { ...base, ...keep }, outcome: "brochure_clarify", trace };
+    }
+    trace.brochure_intent = "send";
+    const d = await deliverBrochures(ask.projects, a.content.projects, { probe: a.ports.probeDocument ?? null, send: a.ports.sendDocument ?? null }, lang);
+    trace.project = { projects: ask.projects, source: ask.scope === "named" ? "explicit" : ask.scope === "state" ? "state" : null, ambiguous: false };
+    trace.brochure = { request: ask, sent: d.sent, ready: d.ready, failed: d.failed };
+    const active = ask.projects.length === 1 ? ask.projects[0] : a.state.active_project;
+    const source = ask.scope === "named" ? "explicit" : ask.scope === "state" ? a.state.active_source : "state";
+    return { reply: d.reply, media: d.actions, handoff: d.handoff, outcome: d.outcome, trace,
+      stateNext: { ...base, active_project: active, active_source: ask.projects.length === 1 ? source : a.state.active_source,
+        last_brochure: d.actions.map((x) => x.project_ref), paused: d.handoff ? true : a.state.paused } };
+  }
+  return groundedTurn(a, lang, trace, base);
+}
+
+// The model path: project resolution, live stock, retrieval, the reply, the
+// guards. `scope` overrides project resolution with the brochure path's own
+// (a city or "all" request), so retrieval is filtered to those projects.
+async function groundedTurn(a: Parameters<typeof runTurn>[0], lang: "bn" | "banglish" | "en", trace: Record<string, unknown>, base: ConvState, scope?: string[]): Promise<TurnResult> {
+  const r0 = resolveProject(a.text, a.state, a.ad, a.content.projects);
+  const res = scope?.length ? { projects: scope, source: r0.source ?? ("state" as const), ambiguous: false } : r0;
   trace.project = res;
   const history = buildHistory(a.history);
-  const prompt = buildPrompt(a.content, a.bot, history, a.text, a.state, res.projects, lang);
-  const scoped = a.content.items.filter((i) => itemApplies(i, a.bot, res.projects));
+  // Live stock and price only for a single resolved project linked to a CRM property.
+  const linked = res.projects.length === 1 ? a.content.projects.find((p) => p.id === res.projects[0])?.body?.crm_property_id : undefined;
+  const NO_LIVE = "Live inventory: unavailable. Do not state current availability or price; offer a consultant.";
+  let live: string | undefined;
+  if (linked) {
+    live = NO_LIVE;
+    trace.inventory = { property: linked, unavailable: true };
+    try {
+      const inv = a.ports.inventory ? await a.ports.inventory(linked) : null;
+      if (inv) {
+        live = inventoryEvidence(inv, { prices: livePricesAllowed(a.content, a.bot, res.projects) });
+        trace.inventory = { property: inv.propertyId, as_of: inv.asOf, available: inv.counts.available, total: inv.counts.total };
+      }
+    } catch (e) {
+      trace.inventory = { property: linked, error: e instanceof Error ? e.message : String(e) };
+    }
+  }
+  const ctx = await retrieve(a.content, a.bot, a.text, res.projects, a.ports);
+  // Approved document chunks for this turn; a failed search is traced and the
+  // turn continues on the snapshot alone, never on invented text.
+  let docHits: DocHit[] = [];
+  if (a.ports.searchDocs) {
+    try {
+      docHits = await a.ports.searchDocs({ text: a.text, bot: a.bot, projects: res.projects });
+      trace.documents = docHits.map((h) => ({ id: h.id, document_id: h.document_id, version: h.document_version, chunk_no: h.chunk_no, title: h.title, section: h.section, score: h.score }));
+    } catch (e) { trace.documents = { error: e instanceof Error ? e.message : String(e) }; }
+  }
+  const prompt = buildPrompt(a.content, a.bot, history, a.text, a.state, res.projects, lang, live, ctx, docExcerpts(docHits));
+  const scoped = [...ctx.items, ...ctx.examples];
   trace.items_in_scope = scoped.map((i) => `${i.id}@${i.revision}`);
-  const evidence = [...scoped.map((i) => JSON.stringify(i.body)), ...a.content.projects.filter((p) => res.projects.includes(p.id)).map((p) => JSON.stringify(p.body)), ...history.map((h) => h.text), a.text].join("\n");
+  trace.retrieval = ctx.trace;
+  // Snapshot content and this turn's live read only: a figure the customer typed is not evidence.
+  const evidence = [...scoped.map((i) => JSON.stringify(i.body)), ...a.content.projects.filter((p) => res.projects.includes(p.id)).map((p) => JSON.stringify(p.body)),
+    ...docHits.map((h) => h.chunk_text), live ?? ""].join("\n");
   const req = { model: a.content.model_config.reply_model, max_tokens: a.content.model_config.max_tokens, system: prompt.system, messages: prompt.messages };
   let cost = 0; let errors: string[] = []; let parsed: ModelOut | null = null;
+  // A transient failure (no reply, timeout, provider 5xx, network) is retried
+  // once with the same request; a key, billing or config error is not.
+  // "length" and "empty" are left out: the same request runs out of tokens the
+  // same way, so a retry only doubles the cost.
+  const TRANSIENT = new Set(["timeout", "provider", "network", "rate_limited"]);
+  // At most one transient retry per turn, across both validation attempts,
+  // so a slow provider costs 3 calls at worst, never 4.
+  let retried = false;
+  const call = async (r: typeof req) => {
+    const x = await a.ports.callModel(r);
+    if (x.ok || retried || !TRANSIENT.has(String(x.code || ""))) return x;
+    retried = true; trace.model_retry = x.error;
+    return a.ports.callModel(r);
+  };
   for (let attempt = 0; attempt < 2; attempt++) {
     const msgs = attempt === 0 ? req.messages : [...req.messages, { role: "user" as const, content: `Your previous answer was rejected (${errors.join(", ")}). Return corrected STRICT JSON only.` }];
-    const r = await a.ports.callModel({ ...req, messages: msgs });
+    const r = await call({ ...req, messages: msgs });
     if (!r.ok) { trace.model_error = r.error; trace.cost_usd = cost; return { reply: FALLBACK[lang], media: [], handoff: true, stateNext: { ...base, paused: true }, outcome: "fallback_model_error", trace }; }
     cost += r.cost_usd;
     parsed = parseModelOutput(r.text);
@@ -434,9 +743,31 @@ export async function runTurn(a: {
   if (!parsed || errors.length) {
     return { reply: FALLBACK[lang], media: [], handoff: true, stateNext: { ...base, paused: true }, outcome: "fallback_invalid_output", trace };
   }
-  const media = resolveMedia(parsed, a.content);
-  trace.media_missing = media.missing; trace.used_item_ids = parsed.used_item_ids; trace.intent = parsed.intent;
-  const reply = media.clarify ? `${parsed.reply}${parsed.reply ? "\n" : ""}${media.clarify}` : parsed.reply;
+  // A brochure goes out only through the checked path above, never because
+  // the model asked for one: the model cannot know that the file exists.
+  const dropped = parsed.media.filter((m) => m.type === "brochure");
+  if (dropped.length) trace.media_dropped = dropped.map((m) => ({ type: m.type, project_ref: m.project_ref }));
+  const media = resolveMedia({ ...parsed, media: parsed.media.filter((m) => m.type !== "brochure") }, a.content);
+  // Each image URL is checked before it is offered; a failed one is reported.
+  let images = media.actions;
+  if (a.ports.probeImage && images.length) {
+    const v = await verifyImages(images, a.ports.probeImage);
+    images = v.ok;
+    if (v.failed.length) trace.media_failed = v.failed;
+  }
+  // The model's citations are kept only when they name something it was shown.
+  const shown = new Set([...scoped.map((i) => i.id), ...res.projects]);
+  trace.media_missing = media.missing; trace.used_item_ids = parsed.used_item_ids.filter((id) => shown.has(id)); trace.intent = parsed.intent;
+  const text0 = brandSpelling(parsed.reply);
+  // The model wrote its reply believing the media would go. When none of a
+  // requested kind can be sent, that sentence is replaced, never kept.
+  const failedKinds = ((trace.media_failed as { kind: string }[] | undefined) || []).map((f) => f.kind);
+  const lostKinds = [...new Set([...media.missing, ...failedKinds])].filter((k) => !images.some((m) => m.kind === k));
+  // Some of a kind went and some did not: the reply keeps its words and says so.
+  const partKinds = [...new Set(failedKinds)].filter((k) => images.some((m) => m.kind === k));
+  const text = lostKinds.length ? [withoutLostMedia(text0, lostKinds), missingMediaText(lang, lostKinds)].filter(Boolean).join(" ")
+    : partKinds.length ? [text0, partialMediaText(lang, partKinds)].filter(Boolean).join(" ") : text0;
+  const reply = media.clarify ? `${text}${text ? "\n" : ""}${media.clarify}` : text;
   const active = res.projects.length === 1 ? res.projects[0] : (parsed.project_ref && res.projects.includes(parsed.project_ref) ? parsed.project_ref : a.state.active_project);
   const stateNext: ConvState = {
     ...base, active_project: active, active_source: res.projects.length ? res.source : a.state.active_source,
@@ -445,7 +776,7 @@ export async function runTurn(a: {
       ? { ...a.state.first_price_at, [active]: "now" } : a.state.first_price_at,
     paused: parsed.handoff ? true : a.state.paused,
   };
-  return { reply, media: media.actions, handoff: parsed.handoff, stateNext, outcome: "ok", trace };
+  return { reply, media: images, handoff: parsed.handoff, stateNext, outcome: "ok", trace };
 }
 
 // ── tests and verdicts ──────────────────────────────────────────────────────
@@ -481,7 +812,7 @@ export function validateTestSpec(s: unknown): string[] {
 export function runChecks(spec: TestSpec, r: TurnResult): { type: string; pass: boolean; detail?: string }[] {
   const out: { type: string; pass: boolean; detail?: string }[] = [];
   const lang = (r.trace.language as string) || detectLanguage(r.reply);
-  out.push({ type: "mandatory:refusal", pass: !REFUSAL.some((x) => x.test(r.reply)) });
+  out.push({ type: "mandatory:refusal", pass: !refusesAndStops(r.reply) });
   out.push({ type: "mandatory:claim", pass: !CLAIM.some((x) => x.test(r.reply)) });
   out.push({ type: "mandatory:outcome", pass: !["fallback_invalid_output"].includes(r.outcome), detail: r.outcome });
   const resolved = ((r.trace.project as any)?.projects as string[]) || [];
@@ -560,7 +891,10 @@ export function publishGate(a: {
   if (a.run.snapshot_checksum !== a.snapshot.checksum) reasons.push("run was for different content");
   if (a.run.bot !== a.bot) reasons.push("run was for the other bot");
   if (a.run.core_version !== a.coreVersion) reasons.push(`run used core ${a.run.core_version}, current is ${a.coreVersion}`);
-  for (const t of a.activeTests.filter((x) => x.bots.includes(a.bot))) {
+  const mine = a.activeTests.filter((x) => x.bots.includes(a.bot));
+  // A run over zero tests completes with 0/0/0; that certifies nothing.
+  if (!mine.length) reasons.push(`no active tests for ${a.bot}: add at least one regression test, then run them`);
+  for (const t of mine) {
     const r = a.results.find((x) => x.test_id === t.id && x.test_revision === t.revision);
     if (!r) reasons.push(`test ${t.id} rev ${t.revision} not run`);
     else if (r.verdict !== "PASS") reasons.push(`test ${t.id} is ${r.verdict}`);

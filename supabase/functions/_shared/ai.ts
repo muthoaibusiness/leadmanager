@@ -28,6 +28,7 @@ export async function fixGrammar(text: string): Promise<string> {
   if (!apiKey) return raw;
   try {
     const res = await fetch(OPENROUTER_URL, {
+      signal: AbortSignal.timeout(30_000),
       method: "POST",
       headers: {
         Authorization: `Bearer ${apiKey}`,
@@ -134,7 +135,7 @@ below — never invent a project, price, or fact that isn't in it.
 
 Projects:
 ${projectsBlock(projects)}
-${adProject ? `\nThis customer came in through an ad for: ${adProject}. Every answer stays about THIS project — don't bring up, compare to, or suggest another one on your own. Only discuss a different project if the customer names it themselves; after that, treat the one they just named as "their" project instead. Whenever they say "this project" or don't name one, it means ${adProject} (or whichever project they most recently named).\n` : `\nNo project is known for this customer yet (no ad, none named). Do not assume one — see the "which project" rule below.\n`}
+${adProject ? `\nThis customer came in through an ad for: ${adProject}. Every answer stays about THIS project — don't bring up, compare to, or suggest another one on your own. Only discuss a different project if the customer names it themselves; after that, treat the one they just named as "their" project instead. Whenever they say "this project" or don't name one, it means ${adProject} (or whichever project they most recently named).\n` : ""}
 Reply style (match the brand's existing WhatsApp templates):
 - Short. A few sentences at most — this is a chat, not an email.
 - Friendly, direct. No emoji at all.
@@ -144,21 +145,6 @@ Reply style (match the brand's existing WhatsApp templates):
 - If the customer asks for or clearly wants a photo, floor plan, or
   brochure, say so briefly AND set "send" so it's attached — don't just
   describe the document in text.
-- When NO project is in context (no ad project line above, the customer
-  hasn't named one, and the history doesn't settle it) and they ask
-  something project-specific — location, price, details, brochure, floor,
-  size, availability — do not guess a project. Ask which one, listing ONLY
-  the projects that fit what they asked for, as "name — short address
-  (area/sector, city)", one per line:
-    · shop / dokan / দোকান / office / showroom / market / mall → only
-      projects with type Commercial;
-    · flat / apartment / ফ্ল্যাট / বাসা / home → only type Residential;
-    · a city or area named (Dhaka, Jolshiri, Chattogram, Cumilla…) → only
-      projects in that region.
-  Never dump the whole catalog — a list longer than 4 lines means you did
-  not filter. Leave out any project the admin rules say to stay silent
-  about. Set "confident": true for this list. Ask it once; if the list is
-  already in the history and they still haven't named a project, reply "".
 - "Details", "information", "profile", "know more", "বিস্তারিত", "ডিটেইলস"
   about a project = send its brochure in that same reply (type "brochure")
   along with the one-line summary. NEVER ask "would you like the brochure?"
@@ -238,6 +224,7 @@ export async function askAgent(
 
   try {
     const res = await fetch(OPENROUTER_URL, {
+      signal: AbortSignal.timeout(30_000),
       method: "POST",
       headers: {
         Authorization: `Bearer ${apiKey}`,
@@ -304,11 +291,15 @@ export const FLOW_AGENT_YES_TEXT = "জি, বলুন কিভাবে হ�
 // asked_agent. "yes" then gets FLOW_AGENT_YES_TEXT like any stage-4 yes.
 export const FLOW_PRICE_AGENT_TEXT =
   "For price and payment details, would you like me to assign a dedicated agent who will call you?";
-const PRICE_RE = /\b(price|prices|pricing|cost|rate|rates|dam|daam|mullo|koto|kato|payment|installment|emi|budget|per sft|sqft|sft)\b|দাম|মূল্য|পেমেন্ট|কিস্তি|কত টাকা|কত পড়বে|বাজেট|প্রাইস|স্কয়ার ফিট|ফিট কত/i;
+// "koto" (how much / how many) and "sft" also appear in size questions
+// ("flat koto sft?"), so they count only next to a money or rate word.
+const PRICE_RE = /\b(price|prices|pricing|cost|rate|rates|dam|daam|mullo|payment|installment|emi|budget|per sft|per sqft|koto taka|koto pore|koto porbe)\b|\b(sft|sqft)\s*(koto\s*)?(taka|tk|rate|price)\b|দাম|মূল্য|পেমেন্ট|কিস্তি|কত টাকা|কত পড়বে|বাজেট|প্রাইস|স্কয়ার ফিট কত টাকা|ফিট কত টাকা/i;
 // Someone offering land / a plot (JV, land share, "55 gonda at Dolfin mor")
 // is not a buyer — no scripted path may fire on it ("rate" in such a message
 // once triggered the price→agent script). The land rule keeps the LLM silent.
-const LAND_RE = /\b(land|plot|plots|gonda|katha|kattha|bigha|decimal|mouja|mouza|joint venture|jv|land share|developer|develop)\b|জমি|জায়গা|প্লট|গন্ডা|গণ্ডা|কাঠা|বিঘা|শতক|মৌজা|ডেভেলপ|ল্যান্ড শেয়ার/i;
+// "developer" alone is a buyer asking who builds the project; "develop" counts
+// only beside land words, which the other terms already cover.
+const LAND_RE = /\b(land|plot|plots|gonda|katha|kattha|bigha|decimal|mouja|mouza|joint venture|jv|land share)\b|জমি|জায়গা|প্লট|গন্ডা|গণ্ডা|কাঠা|বিঘা|শতক|মৌজা|ল্যান্ড শেয়ার/i;
 export const isLandOffer = (text: string): boolean => LAND_RE.test(text);
 export const isPriceQuestion = (text: string): boolean => PRICE_RE.test(text) && !isLandOffer(text);
 // A direct knock with no ad behind it: nothing is known about what they
@@ -324,7 +315,9 @@ export const GENERIC_WELCOME_TEXT = "Assalamu Alaikum.\nI'm Eyad from Wecon Prop
 // at the edge of a Bangla word.
 const YES_WORDS = new Set([
   "hae", "ha", "haan", "ji", "jee", "jii", "hmm", "hm", "ok", "okay", "oky", "sure", "yes", "yeah", "yep", "please", "pls", "plz",
-  "dao", "den", "dibo", "din", "accha", "acha", "thik", "ache", "thanks", "thank", "you", "tnx", "thnx", "ধন্যবাদ",
+  // No "thanks" / "you": a thank-you is consent only when it quotes our
+  // question (isProfileConsent), otherwise it sent the brochure bundle.
+  "dao", "den", "dibo", "din", "accha", "acha", "thik", "ache",
   "জি", "জ্বি", "জ্বী", "হ্যাঁ", "হ্যা", "হুম", "আচ্ছা", "ঠিক", "আছে", "দিন", "দেন", "দাও", "পাঠান", "পাঠাও", "প্লিজ", "প্লীজ", "ওকে",
 ]);
 // Short consent phrases that aren't yes-word-only ("ভালো হয়" = "that'd be
@@ -372,8 +365,13 @@ export interface JolshiriBundle {
   brochures: { project: ProjectRow; url: string }[];
 }
 
+// Legacy preleads hold merged values ("Wecon Osman Bellevue, P2P Helthcare"),
+// so each comma-separated part is checked.
 export const isJolshiriProject = (name: string | null | undefined): boolean =>
-  !!name && JOLSHIRI_BUNDLE_NAMES.some((n) => n.toLowerCase() === name.toLowerCase());
+  !!name && name.split(",").some((part) => JOLSHIRI_BUNDLE_NAMES.some((n) => n.toLowerCase() === part.trim().toLowerCase()));
+
+// Catalog keywords that are ordinary words; alone they never name a project.
+const GENERIC_KEYWORDS = new Set(["summer", "orchid", "iqbal", "arcade", "heritage", "molla", "healthcare", "helthcare"]);
 
 // The project a message names outright (name or keyword), any region — so a
 // customer who clicked a Jolshiri ad but asks about "Chowdhury Arcade" is
@@ -383,7 +381,7 @@ export function matchNamedProject(text: string, projects: ProjectRow[]): Project
   return projects.find((p) =>
     lower.includes(p.name.toLowerCase()) ||
     lower.includes(p.name.toLowerCase().replace(/^wecon\s+/, "")) ||
-    (p.keywords || []).some((k) => k.length >= 4 && lower.includes(k.toLowerCase())),
+    (p.keywords || []).some((k) => k.length >= 4 && !GENERIC_KEYWORDS.has(k.toLowerCase()) && lower.includes(k.toLowerCase())),
   ) ?? null;
 }
 
