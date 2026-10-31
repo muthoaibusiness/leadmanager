@@ -4,6 +4,11 @@
 
 [build.environment]
   NODE_VERSION = "22"
+  # Migration 0052 builds the public meta-capi-sched URL from the project ref via
+  # SQL string concatenation; that equals VITE_SUPABASE_URL (a publishable client
+  # value, not a secret), so the scanner false-positives on it. Omit only this
+  # file — the rest of the repo stays scanned.
+  SECRETS_SCAN_OMIT_PATHS = "supabase/migrations/0052_meta_capi_retention_and_scheduler.sql"
 
 # The pdf.js worker (floor plan PDF upload) is an .mjs module worker, which
 # browsers only start when it is served as JavaScript.
