@@ -103,6 +103,12 @@ Not built, by choice: burst coalescing (needs a queue and lease in Postgres, des
 7. Deploy `wa-webhook` and `wa-bot-eyad` from this branch after review.
 8. Webhook secret in `wa_secrets` and Wasender (unchanged: synthetic tests stay blocked).
 
+## 6a. Post-commit security review (13:50 UTC)
+
+The automated review of `b1cf8ca` flagged `writeRecapNote` for matching a lead by 9-digit phone suffix before writing its NOTE: `971501234567` and `8801501234567` share a tail, so the recap could land on another company's lead. Fixed in the follow-up commit: the suffix query is a candidate fetch, `samePhone()` (full normalised number) decides, and two distinct numbers behind one tail write nowhere. Two regression tests added (cross-country tail, same number in local format). Production today: 8 of 2837 lead-phone tails are shared by two numbers, none across companies.
+
+The same suffix-only pattern exists in three older lookups this change did not touch, listed here so they are not forgotten: `findLeadForNote` (`wa.ts:363`, used by `/n` and `/f*` to pick the lead for a note), `logConversationHistory` (`wa.ts:420`, reads `preleads.message_logs` by tail), and `findLeadId` (`wa-webhook/index.ts:113`, links a thread to a lead). Each writes or links on a suffix match. Same fix applies; not made here because `handleCreateLead` and the webhook are outside this change's scope and the webhook deploy is still awaiting approval.
+
 ## 7. Not verified
 
 - Replies on the three physical numbers for the F/O/M cases (await the owner's phone tests).
