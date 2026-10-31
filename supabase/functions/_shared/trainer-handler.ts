@@ -25,7 +25,7 @@ export type Db = {
 };
 export type Llm = {
   chat(req: { model: string; max_tokens: number; system: string; messages: { role: string; content: string }[] }):
-    Promise<{ ok: true; text: string; prompt_tokens: number; completion_tokens: number } | { ok: false; error: string; code?: string }>;
+    Promise<{ ok: true; text: string; prompt_tokens: number; completion_tokens: number } | { ok: false; error: string; code?: string; prompt_tokens?: number; completion_tokens?: number }>;
 };
 // companyId scopes the live inventory read; without it the trainer states no live stock.
 // embeddingModel/embeddingDim switch on vector indexing (task 5); unset keeps every snapshot on "full".
@@ -93,7 +93,8 @@ function portsFor(deps: Deps, llm: Llm = deps.llm): Ports {
       const chars = req.system.length + req.messages.reduce((n, m) => n + m.content.length, 0);
       const r = await withBudget(deps, estimate(deps.env, chars, req.max_tokens), async () => {
         const x = await llm.chat(req);
-        if (!x.ok) return { value: x, actualUsd: null };
+        // A failure the provider still billed (e.g. "length") is settled, not released.
+        if (!x.ok) return { value: x, actualUsd: x.prompt_tokens || x.completion_tokens ? cost(deps.env, x.prompt_tokens || 0, x.completion_tokens || 0) : null };
         return { value: x, actualUsd: cost(deps.env, x.prompt_tokens, x.completion_tokens) };
       });
       if (r === "over_budget") throw new BudgetError();

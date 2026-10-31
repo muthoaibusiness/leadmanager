@@ -53,9 +53,11 @@ export const llm: Llm = {
         if (!r.ok) return first ?? { ok: false, error: `OpenRouter ${r.status}` };
         const j = await r.json();
         const text = String(j?.choices?.[0]?.message?.content ?? "");
-        const res: ChatRes = { ok: true, text, prompt_tokens: j?.usage?.prompt_tokens ?? 0, completion_tokens: j?.usage?.completion_tokens ?? 0 };
+        // Usage is cumulative: the empty first pass was billed too.
+        const res: ChatRes = { ok: true, text, prompt_tokens: (first?.ok ? first.prompt_tokens : 0) + (j?.usage?.prompt_tokens ?? 0),
+          completion_tokens: (first?.ok ? first.completion_tokens : 0) + (j?.usage?.completion_tokens ?? 0) };
         if (text.trim() || String(j?.choices?.[0]?.finish_reason || "") !== "length") return res;
-        first = first ?? res;
+        first = res;
       } catch (e) {
         return first ?? { ok: false, error: e instanceof Error ? e.message : String(e) };
       } finally {

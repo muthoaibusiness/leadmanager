@@ -183,17 +183,19 @@ test("chatCompletion: an OpenRouter reply empty on the token limit is retried on
   const cfg = { provider: "openrouter" as const, model: "deepseek/x" };
   const big = { ...REQ, max_tokens: 2000 };
   const bodies: any[] = [];
-  const empty = { choices: [{ finish_reason: "length", message: { content: null } }] };
+  const empty = { choices: [{ finish_reason: "length", message: { content: null } }], usage: { prompt_tokens: 100, completion_tokens: 2000 } };
   const r: any = await chatCompletion(cfg, KEY, big, io(async (_u, i: any) => {
     bodies.push(JSON.parse(i.body));
-    return res(200, bodies.length === 1 ? empty : { choices: [{ finish_reason: "stop", message: { content: "OK" } }] });
+    return res(200, bodies.length === 1 ? empty : { choices: [{ finish_reason: "stop", message: { content: "OK" } }], usage: { prompt_tokens: 100, completion_tokens: 10 } });
   }));
   assert.equal(r.ok, true); assert.equal(r.text, "OK"); assert.equal(bodies.length, 2);
+  // Both passes are billed.
+  assert.equal(r.prompt_tokens, 200); assert.equal(r.completion_tokens, 2010);
   assert.deepEqual(bodies[0].reasoning, { effort: "low" }); assert.deepEqual(bodies[1].reasoning, { enabled: false });
   // A model that refuses reasoning off keeps the first "length" result.
   let n = 0;
   const r2: any = await chatCompletion(cfg, KEY, big, io(async () => (++n === 1 ? res(200, empty) : res(400))));
-  assert.equal(r2.code, "length"); assert.equal(n, 2);
+  assert.equal(r2.code, "length"); assert.equal(n, 2); assert.equal(r2.completion_tokens, 2000, "a billed failure keeps its usage");
   // Any other failure is not retried here.
   let m = 0;
   await chatCompletion(cfg, KEY, big, io(async () => { m++; return res(500); }));
