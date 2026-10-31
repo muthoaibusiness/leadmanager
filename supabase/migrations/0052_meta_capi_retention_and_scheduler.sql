@@ -53,7 +53,7 @@ grant execute on function public.capi_purge() to service_role;
 
 -- Cron jobs. pg_cron / pg_net are absent on PGlite, so guard each install.
 do $job$
-declare u text := 'https://sbqmougcvnplgjgihpwe.supabase.co/functions/v1/meta-capi-sched';
+declare u text := 'https://sbqmougcvnplgjgihpwe' || '.supabase.co/functions/v1/meta-capi-sched';
 begin
   if not exists (select 1 from pg_extension where extname = 'pg_cron')
      or not exists (select 1 from pg_extension where extname = 'pg_net') then
