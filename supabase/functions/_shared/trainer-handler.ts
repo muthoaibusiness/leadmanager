@@ -1132,6 +1132,6 @@ async function handleRunsAndPublish(action: string, p: any, actor: string, deps:
   }
 }
 
-export const _internals = { contentFor, portsFor: (deps: Deps) => portsFor(deps), withBudget, saveItem, canonicalJson, buildJudgePrompt, parseJudge,
+export const _internals = { contentFor, portsFor: (deps: Deps) => portsFor(deps), docSearchPort, withBudget, saveItem, canonicalJson, buildJudgePrompt, parseJudge,
   judgeVerdict, finalVerdict, runChecks, publishGate, RUBRIC_V1, freezeContent, checksumOf };
 export type { Bot, TestSpec };

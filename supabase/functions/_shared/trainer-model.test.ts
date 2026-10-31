@@ -177,6 +177,29 @@ test("chatCompletion: a 200 with an error object, or with no content, names the 
   }
 });
 
+// Playground 2026-10-31: deepseek/deepseek-v4-flash-0731 spent the whole
+// budget thinking. An OpenRouter "length" is retried once with reasoning off.
+test("chatCompletion: an OpenRouter reply empty on the token limit is retried once with reasoning off", async () => {
+  const cfg = { provider: "openrouter" as const, model: "deepseek/x" };
+  const big = { ...REQ, max_tokens: 2000 };
+  const bodies: any[] = [];
+  const empty = { choices: [{ finish_reason: "length", message: { content: null } }] };
+  const r: any = await chatCompletion(cfg, KEY, big, io(async (_u, i: any) => {
+    bodies.push(JSON.parse(i.body));
+    return res(200, bodies.length === 1 ? empty : { choices: [{ finish_reason: "stop", message: { content: "OK" } }] });
+  }));
+  assert.equal(r.ok, true); assert.equal(r.text, "OK"); assert.equal(bodies.length, 2);
+  assert.deepEqual(bodies[0].reasoning, { effort: "low" }); assert.deepEqual(bodies[1].reasoning, { enabled: false });
+  // A model that refuses reasoning off keeps the first "length" result.
+  let n = 0;
+  const r2: any = await chatCompletion(cfg, KEY, big, io(async () => (++n === 1 ? res(200, empty) : res(400))));
+  assert.equal(r2.code, "length"); assert.equal(n, 2);
+  // Any other failure is not retried here.
+  let m = 0;
+  await chatCompletion(cfg, KEY, big, io(async () => { m++; return res(500); }));
+  assert.equal(m, 1);
+});
+
 test("review2: an error inside an HTTP 200 keeps its meaning: 401/403 auth, 402 billing, 429 rate limit, 4xx request, 5xx provider", async () => {
   const cfg = { provider: "custom" as const, base_url: "https://api.example.com/v1", model: "m" };
   for (const [c, code] of [[401, "auth"], [403, "auth"], [402, "billing"], [429, "rate_limited"], [400, "request"], [404, "model"], [503, "provider"], ["x", "provider"]] as const) {

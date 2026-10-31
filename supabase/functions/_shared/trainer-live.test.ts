@@ -37,6 +37,15 @@ function fakes(opts: { testMode?: boolean; numbers?: string[]; items?: any[]; me
 }
 const input = (o: Partial<LiveInput> = {}): LiveInput => ({ bot: "eyad", convId: "eyad:8801711000001@s.whatsapp.net", phone: "8801711000001", to: "8801711000001", text: "Nuznan location?", ad: { isAd: false }, replyModel: "m", allowMedia: true, ...o });
 
+test("a test-number turn passes approved document hits to the model and traces them", async () => {
+  const f = fakes({ model: () => reply({ intent: "location", project_ref: "p1", reply: "Wecon Nuznan is in Dhaka.", clarify: false }) });
+  const hit = { id: "c1", document_id: "d1", document_version: 1, chunk_no: 0, title: "Nuznan FAQ", section: null, chunk_text: "FAQ-CHUNK: Nuznan parking 47 cars.", score: 0.6 };
+  const r = await runTestTurn(input(), { ...f.ports, searchDocs: async () => [hit] });
+  assert.equal(r.outcome, "ok");
+  assert.ok(JSON.stringify(f.modelReqs[0]).includes("FAQ-CHUNK"), "document excerpt reaches the prompt");
+  assert.equal(f.t.ai_turns[0].trace.documents[0].document_id, "d1");
+});
+
 test("isTestNumber matches on the last 10 digits", () => {
   assert.equal(isTestNumber(["8801711000001"], "01711000001"), true);
   assert.equal(isTestNumber(["8801711000001"], "+880 1711-000001"), true);
