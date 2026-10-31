@@ -65,12 +65,22 @@ function world(leads: Lead[], meta: (body: any) => Meta = () => ({ status: 200, 
     async saveSettings(p) { Object.assign(settings, p); },
     async postMeta(body) { sent.push(body); const r = meta(body); if (r instanceof Error) throw r; return r; },
     allowUnverifiedActor: () => true,
+    async verify(req) {
+      const id = (req.headers.get("authorization") || "").replace(/^Bearer tok-/, "");
+      const u = users.find((x) => x.id === id && (req.headers.get("authorization") || "").startsWith("Bearer tok-"));
+      if (!u) { const e: any = new Error("Sign in required"); e.status = 401; throw e; }
+      if (u.is_active === false) { const e: any = new Error("inactive"); e.status = 401; throw e; }
+      return u;
+    },
   };
   return { deps, attempts, sent, locks, settings, limiter, bots };
 }
 const L = (id: string, o: Partial<Lead> = {}): Lead => ({ id, name: "Customer " + id, company_id: "c1", source: "WHATSAPP_ADS", ctwa_clid: "clid-" + id, CAPI_STATUS: null, created_at: new Date(NOW - DAY).toISOString(), ...o });
+// The caller is the verified session: the bearer token names the account
+// (deps.verify). The body's userId is set to the manager on purpose: it must
+// never decide who is calling.
 const call = (deps: CapiDeps, action: string, payload: any = {}, userId = "mgr") =>
-  handleCapi(new Request("https://x/functions/v1/meta-capi", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action, payload, userId }) }), deps)
+  handleCapi(new Request("https://x/functions/v1/meta-capi", { method: "POST", headers: { "content-type": "application/json", ...(userId ? { authorization: `Bearer tok-${userId}` } : {}) }, body: JSON.stringify({ action, payload, userId: "mgr" }) }), deps)
     .then(async (r) => ({ status: r.status, body: await r.json() }));
 
 // ── access ──────────────────────────────────────────────────────────────────
@@ -224,6 +234,16 @@ test("classifyMeta maps Meta's answers to one outcome each", () => {
 });
 
 // ── CR-001 decision D1 ──────────────────────────────────────────────────────
+test("D1: reads take the caller from the verified session, never from body.userId", async () => {
+  const w = world([L("a")]);
+  // No session, but the body names the manager: refused, and no lead is read.
+  const anon = await handleCapi(new Request("https://x/functions/v1/meta-capi", { method: "POST", body: JSON.stringify({ action: "list", payload: {}, userId: "mgr" }) }), w.deps);
+  assert.equal(anon.status, 401);
+  // An agent's real session claiming the manager's id is still the agent.
+  assert.equal((await call(w.deps, "summary", {}, "agent")).status, 403);
+  assert.equal((await call(w.deps, "list", {}, "agent")).status, 403);
+});
+
 // No privileged action may rely on a user id sent by the browser. Until
 // verified sessions ship (Phase 1B), sending and changing settings are off
 // unless the server is explicitly started in a mode that allows them: a local

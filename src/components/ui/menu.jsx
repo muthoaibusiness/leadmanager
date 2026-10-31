@@ -49,9 +49,10 @@ export function MenuRadioGroup({ value, onChange, children }) {
   return <M.RadioGroup value={value} onValueChange={onChange}>{children}</M.RadioGroup>;
 }
 
-export function MenuRadio({ value, children }) {
+// `onSelect` (optional) is radix's: e.preventDefault() in it keeps the menu open.
+export function MenuRadio({ value, onSelect, children }) {
   return (
-    <M.RadioItem className="menu-item menu-radio" value={value}>
+    <M.RadioItem className="menu-item menu-radio" value={value} onSelect={onSelect}>
       <Mi aria-hidden="true" className="menu-off">radio_button_unchecked</Mi>
       <Mi aria-hidden="true" className="menu-on">radio_button_checked</Mi>
       <span className="menu-tx">{children}</span>

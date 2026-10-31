@@ -10,12 +10,11 @@ import { pushNotify } from '../../lib/pushNotify.js';
 import useChanged from '../../hooks/useChanged.js';
 import {
   waLoadConversations, waLoadMessages, waMarkRead, waSendMessage, waRetry,
-  waFetchAvatar, waSubscribe, matchLead, mergeStatus, isChatAdmin, isLeadAssignedOrForwardedTo,
+  waSubscribe, matchLead, mergeStatus, isChatAdmin, isLeadAssignedOrForwardedTo,
 } from '../../lib/wa.js';
 
 // How many missing avatars to backfill right after the list loads — enough to
 // cover what's on screen without hammering the relay (Wasender is rate-limited).
-const AVATAR_PREFETCH = 8;
 
 export default function ConversationsView() {
   const { user, waSettings, chatOk, setWaUnread, openModal, dbVersion, showToast } = useApp();
@@ -52,23 +51,11 @@ export default function ConversationsView() {
     [active, leads, dbVersion] // eslint-disable-line react-hooks/exhaustive-deps -- db mutates in place; dbVersion is the change signal
   );
 
-  // Fill in missing profile photos for what's on screen, one request at a
-  // time with a short gap — Wasender is rate-limited, and most threads only
-  // ever need this once since the fetched URL is cached on the thread.
-  const backfillAvatars = useCallback(async (list) => {
-    const targets = list.filter(c => !c.avatarUrl).slice(0, AVATAR_PREFETCH);
-    for (const c of targets) {
-      const res = await waFetchAvatar(waSettings, c);
-      if (res.ok) setConvs(prev => prev.map(x => (x.id === c.id ? { ...x, avatarUrl: res.avatarUrl } : x)));
-      await new Promise(r => setTimeout(r, 1200));
-    }
-  }, [waSettings]);
-
   // ── initial load ──────────────────────────────────────────────────────────
   // The fetch alone; reload() and the chatOk switch below put up the spinner.
   const fetchConvs = useCallback(() => waLoadConversations()
-    .then(list => { setConvs(list); backfillAvatars(list); }, e => setLoadErr(e.message || 'Could not load conversations.'))
-    .finally(() => setLoadingConvs(false)), [backfillAvatars]);
+    .then(list => { setConvs(list); }, e => setLoadErr(e.message || 'Could not load conversations.'))
+    .finally(() => setLoadingConvs(false)), []);
   const reload = useCallback(() => {
     setLoadingConvs(true);
     setLoadErr('');
@@ -171,14 +158,7 @@ export default function ConversationsView() {
     } finally {
       setLoadingMsgs(false);
     }
-    // Best-effort, doesn't block opening the thread — missing/failed just
-    // keeps the initials avatar.
-    if (!c.avatarUrl) {
-      waFetchAvatar(waSettings, c).then(res => {
-        if (res.ok) setConvs(prev => prev.map(x => (x.id === c.id ? { ...x, avatarUrl: res.avatarUrl } : x)));
-      });
-    }
-  }, [showToast, waSettings]);
+  }, [showToast]);
 
   // ── send / retry ──────────────────────────────────────────────────────────
   const handleSend = async (payload) => {
@@ -215,14 +195,12 @@ export default function ConversationsView() {
     );
   }
 
-  const relayMissing = !waSettings?.relayUrl;
+  // The send endpoint is fixed at build time (WA_RELAY_URL), so it is never missing.
   const disabledReason = !waSettings?.enabled
     ? 'Chat is switched off in Chat Settings.'
-    : relayMissing
-      ? 'No relay URL configured — an admin must set it in Chat Settings.'
-      : !active
-        ? 'Select a conversation to reply.'
-        : '';
+    : !active
+      ? 'Select a conversation to reply.'
+      : '';
 
   return (
     <div className="wa-wrap">
@@ -252,13 +230,6 @@ export default function ConversationsView() {
           <Mi>error_outline</Mi>
           <span>{loadErr}</span>
           <button className="btn btn-g" onClick={reload}>Retry</button>
-        </div>
-      )}
-
-      {relayMissing && isChatAdmin(user) && (
-        <div className="wa-warn">
-          <Mi>info</Mi>
-          <span>No relay URL is set, so replies can't be delivered. Open Chat Settings to finish setup.</span>
         </div>
       )}
 

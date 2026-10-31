@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useCallback, useRef, useEffect } from 'react';
-import { getDB, getSession } from '../lib/db.js';
+import { getDB, getSession, onSelfChange } from '../lib/db.js';
+import { signOut, sessionStillValid } from '../lib/auth.js';
 import { DRAWER_MQ } from '../lib/constants.js';
 import { readBoot } from '../lib/navHistory.js';
 import useNavHistory, { replaceNextPage } from '../hooks/useNavHistory.js';
@@ -33,6 +34,9 @@ export function AppProvider({ children }) {
   // owns the query, so it publishes its own totals here and the header just
   // renders them. null = not counted yet.
   const [leadCounts, setLeadCounts] = useState(null);
+  // A page that owns its own data (Meta CAPI) publishes { run, busy } here so the
+  // header's Refresh button can reload it and spin while it loads. null = none.
+  const [pageRefresh, setPageRefresh] = useState(null);
   const [propSel, setPropSel] = useState(null);   // property id for detail view
   const [propEdit, setPropEdit] = useState(null);  // property obj for edit, {} for new
   const [propDraft, setPropDraft] = useState(null); // unsaved new project (Add Property) — stored only once saved
@@ -71,6 +75,26 @@ export function AppProvider({ children }) {
   const [waUnread, setWaUnread] = useState(0); // total unread across chat threads
   const [chatTarget, setChatTarget] = useState(null);
   const searchRef = useRef(null);
+
+  // An admin changed my own row (access, role, deactivation): follow it now,
+  // and drop the session when the account is deactivated. Not while viewing
+  // as someone else, where `user` is that other account.
+  useEffect(() => onSelfChange((me) => {
+    if (impersonator) return;
+    if (me.isActive === false) { signOut(); setUser(null); return; }
+    setUser(prev => (prev && prev.id === me.id ? { ...prev, ...me } : prev));
+  }), [impersonator]);
+
+  // A deactivated account no longer sees its own row, so the realtime event
+  // above never arrives for it. Re-check the session with the server instead.
+  const signedIn = !!user;
+  useEffect(() => {
+    if (!signedIn) return;
+    const check = () => { if (document.visibilityState === 'visible') sessionStillValid().then(ok => { if (!ok) { signOut(); setUser(null); } }); };
+    const t = setInterval(check, 5 * 60 * 1000); // shortcut: 5-min polling, replace with a server-pushed revoke if minutes matter
+    document.addEventListener('visibilitychange', check);
+    return () => { clearInterval(t); document.removeEventListener('visibilitychange', check); };
+  }, [signedIn]);
 
   // Admin account switcher — become any account without email/password.
   // The session is never changed, so a page reload always returns to the real admin.
@@ -192,6 +216,7 @@ export function AppProvider({ children }) {
     agentFilter, setAgentFilter,
     teamFilter, setTeamFilter,
     leadCounts, setLeadCounts,
+    pageRefresh, setPageRefresh,
     propSel, setPropSel,
     propEdit, setPropEdit,
     propDraft, setPropDraft,

@@ -5,42 +5,33 @@ import useChanged from '../../hooks/useChanged.js';
 import { getDB } from '../../lib/db.js';
 import { rlabel, avc, ini } from '../../lib/helpers.js';
 import { ROLES } from '../../lib/constants.js';
-import { waLoadSettings, waSaveSettings, waSaveToken, isChatAdmin, WA_ACCOUNTS, WA_ACCOUNT_LABEL, WA_DEFAULT_ACCOUNT } from '../../lib/wa.js';
+import { waLoadSettings, waSaveSettings, isChatAdmin, WA_RELAY_URL } from '../../lib/wa.js';
 
 // Admin-only WhatsApp configuration: which accounts get the Conversations
-// section, where outbound messages are relayed, and rotation of the Wasender
-// credential. The token is write-only — it is posted to the relay, stored by the
-// service role in wa_secrets, and never read back into the browser.
+// section. The send endpoint is fixed at build time (WA_RELAY_URL, CR-001 CR-2)
+// and only shown here. Wasender credentials are rotated by an operator with
+// CR-001 runbook A; the browser never sends them anywhere (CR-3).
 export default function ChatSettingsModal() {
   const { modal, closeModal, user, waSettings, setWaSettings, showToast } = useApp();
   const isOpen = modal === 'chat-settings';
 
-  const [relayUrl, setRelayUrl] = useState('');
   const [sessionName, setSessionName] = useState('');
   const [webhookUrl, setWebhookUrl] = useState('');
   const [enabled, setEnabled] = useState(true);
-  const [account, setAccount] = useState(WA_DEFAULT_ACCOUNT);
   const [allowed, setAllowed] = useState(() => new Set());
   const [q, setQ] = useState('');
-  const [token, setToken] = useState('');
-  const [secret, setSecret] = useState('');
-  const [showToken, setShowToken] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [tokenSaving, setTokenSaving] = useState(false);
   const [tokenSet, setTokenSet] = useState(false);
 
   // waSettings is a context state object, so its identity changes only when
   // the settings are replaced.
   const s = waSettings;
   if (useChanged(isOpen ? s : null) && isOpen && s) {
-    setRelayUrl(s.relayUrl || '');
     setSessionName(s.sessionName || '');
     setWebhookUrl(s.webhookUrl || '');
     setEnabled(s.enabled !== false);
     setAllowed(new Set(s.allowedUserIds || []));
     setTokenSet(!!s.tokenSet);
-    setToken('');
-    setSecret('');
   }
 
   if (!isOpen) return <div className="mov" onClick={closeModal} />;
@@ -72,7 +63,7 @@ export default function ChatSettingsModal() {
     setSaving(true);
     try {
       const next = {
-        relayUrl: relayUrl.trim(), sessionName: sessionName.trim(), webhookUrl: webhookUrl.trim(),
+        sessionName: sessionName.trim(), webhookUrl: webhookUrl.trim(),
         enabled, allowedUserIds: [...allowed],
       };
       const res = await waSaveSettings(next, user);
@@ -86,22 +77,6 @@ export default function ChatSettingsModal() {
       closeModal();
     } finally {
       setSaving(false);
-    }
-  };
-
-  const saveToken = async () => {
-    if (!token.trim()) { showToast('Enter a token first.', 'err'); return; }
-    setTokenSaving(true);
-    try {
-      const res = await waSaveToken({ relayUrl: relayUrl.trim() }, { account, apiToken: token.trim(), webhookSecret: secret.trim() }, user);
-      if (!res.ok) { showToast(res.error || 'Could not store the token.', 'err'); return; }
-      setTokenSet(true);
-      setToken('');
-      setSecret('');
-      setWaSettings(await waLoadSettings());
-      showToast('Credentials stored server-side', 'ok');
-    } finally {
-      setTokenSaving(false);
     }
   };
 
@@ -126,13 +101,8 @@ export default function ChatSettingsModal() {
 
           <div className="fl">
             <label>Relay URL</label>
-            <input
-              className="finp"
-              value={relayUrl}
-              onChange={e => setRelayUrl(e.target.value)}
-              placeholder="https://<project>.functions.supabase.co/wa-send  ·  or your n8n webhook"
-            />
-            <div className="ea-count">Server endpoint that holds the API token and talks to Wasender. The browser only ever POSTs here.</div>
+            <input className="finp" value={WA_RELAY_URL} readOnly aria-readonly="true" />
+            <div className="ea-count">Fixed when the app is built (CR-001). Outbound messages go only here, with the sender's sign-in.</div>
           </div>
 
           <div className="fl">
@@ -158,42 +128,7 @@ export default function ChatSettingsModal() {
                 <Mi>{tokenSet ? 'lock' : 'lock_open'}</Mi>{tokenSet ? 'Token stored' : 'Not set'}
               </span>
             </div>
-            <div className="wa-acct-pick" style={{ display: 'flex', gap: '6px', margin: '10px 0' }}>
-              {WA_ACCOUNTS.map(a => (
-                <button key={a} type="button" className={`ftab${account === a ? ' on' : ''}`} onClick={() => setAccount(a)}>
-                  {WA_ACCOUNT_LABEL[a]}
-                </button>
-              ))}
-            </div>
-            <div className="wa-cred-row">
-              <input
-                className="finp"
-                type={showToken ? 'text' : 'password'}
-                value={token}
-                autoComplete="new-password"
-                onChange={e => setToken(e.target.value)}
-                placeholder={tokenSet ? 'Enter a new token to rotate' : 'Private API token'}
-              />
-              <button className="wa-cbtn" onClick={() => setShowToken(v => !v)} title={showToken ? 'Hide' : 'Show'}>
-                <Mi>{showToken ? 'visibility_off' : 'visibility'}</Mi>
-              </button>
-            </div>
-            <input
-              className="finp"
-              type="password"
-              value={secret}
-              autoComplete="new-password"
-              onChange={e => setSecret(e.target.value)}
-              placeholder="Webhook signing secret (optional)"
-              style={{ marginTop: '8px' }}
-            />
-            <button className="btn btn-g wa-fullbtn" disabled={tokenSaving || !relayUrl.trim()} onClick={saveToken}>
-              <Mi>key</Mi>{tokenSaving ? 'Storing…' : `Store ${WA_ACCOUNT_LABEL[account]} credentials`}
-            </button>
-            <div className="ea-count">
-              One token per WhatsApp number ({WA_ACCOUNT_LABEL.dubai} and {WA_ACCOUNT_LABEL.eyad}). Dubai-team leads use the Dubai session; every other lead uses Eyad's.
-              Sent straight to the relay and written to <code>wa_secrets</code> by the service role.
-            </div>
+            <div className="ea-count">Rotated by an operator on the server (CR-001 runbook A). The app no longer accepts tokens.</div>
           </div>
 
           <div className="fl">

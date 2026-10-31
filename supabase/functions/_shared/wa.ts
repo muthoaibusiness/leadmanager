@@ -445,17 +445,6 @@ export async function logNoteActivity(leadId: string, companyId: string | null, 
   }]);
 }
 
-// The CRM has no Supabase Auth session, so an admin action is authorised by
-// checking the acting user's role in the users table. Same trust boundary the
-// rest of the app already runs on — it stops a non-admin agent from rotating
-// the token, not someone holding the anon key.
-export async function isAdminUser(userId: string | null): Promise<boolean> {
-  if (!userId) return false;
-  const rows = await sbSelect(`users?id=eq.${encodeURIComponent(userId)}&select=role,is_active`);
-  const u = rows?.[0];
-  return !!u && u.is_active !== false && (u.role === "MANAGEMENT" || u.role === "MASTER");
-}
-
 // ── phone / jid ─────────────────────────────────────────────────────────────
 export const jidToPhone = (jid: string) => (jid || "").split("@")[0].split(":")[0].replace(/\D/g, "");
 export const phoneToJid = (phone: string) => {

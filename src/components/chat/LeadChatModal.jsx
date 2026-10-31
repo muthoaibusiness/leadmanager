@@ -124,13 +124,12 @@ export default function LeadChatModal() {
   const currentAccount = conv?.account || waAccountForUser(user, chatTarget);
   const accountLabel = WA_ACCOUNT_LABEL[currentAccount] || 'WhatsApp';
 
+  // The send endpoint is fixed at build time (WA_RELAY_URL), so it is never missing.
   const disabledReason = !waSettings?.enabled
     ? 'Chat is disabled globally.'
-    : !waSettings?.relayUrl
-      ? 'No relay URL configured in Chat Settings.'
-      : !conv
-        ? 'Preparing conversation…'
-        : '';
+    : !conv
+      ? 'Preparing conversation…'
+      : '';
 
   return (
     <div className="mov on" onClick={e => { if (e.target === e.currentTarget) setChatTarget(null); }}>

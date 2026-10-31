@@ -32,13 +32,17 @@
     "test:followup-rules": "vite-node scripts/followup-rules.test.mjs && node --test scripts/company-time.test.mjs",
     "test:0049": "node scripts/test-0049.mjs",
     "test:0050": "node scripts/test-0050.mjs",
-    "test:capi": "node --test supabase/functions/_shared/capi-core.test.ts supabase/functions/_shared/capi-rest.test.ts && vite-node scripts/metacapi-access.test.mjs",
+    "test:0052": "node scripts/test-0052.mjs",
+    "test:capi:report": "node scripts/metaCapiReport.test.mjs",
+    "test:capi": "node --test supabase/functions/_shared/capi-core.test.ts supabase/functions/_shared/capi-rest.test.ts supabase/functions/_shared/capi-sched.test.ts && vite-node scripts/metacapi-access.test.mjs",
     "test:capi:race": "node scripts/capi-limiter.race.test.mjs",
-    "test:ui:metacapi": "vite-node scripts/metacapi-ui.flow.test.mjs"
+    "test:ui:metacapi": "vite-node scripts/metacapi-ui.flow.test.mjs",
+    "test:auth": "node --test supabase/functions/_shared/actor.test.ts supabase/functions/_shared/access-admin.test.ts supabase/functions/_shared/cron-key.test.ts supabase/functions/_shared/wa-send-auth.test.ts supabase/functions/_shared/wa-send-chat.test.ts supabase/functions/_shared/finance-actor.test.ts scripts/access-rules.test.mjs && vite-node scripts/auth-session.test.mjs && vite-node scripts/auth-token.test.mjs && vite-node scripts/auth-recovery.test.mjs && vite-node scripts/auth-hardening.test.mjs && vite-node scripts/user-update.test.mjs && vite-node scripts/wa-relay.test.mjs"
   },
   "dependencies": {
     "@ark-ui/react": "^5.37.2",
     "goey-toast": "^0.5.0",
+    "jspdf": "^4.2.1",
     "libphonenumber-js": "^1.13.14",
     "lucide-react": "^1.18.0",
     "motion": "^12.40.0",

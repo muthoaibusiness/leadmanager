@@ -1,8 +1,8 @@
 import { useRef, useState, useEffect, useId } from 'react';
 import Mi from '../Mi.jsx';
 import { useApp } from '../../context/AppContext.jsx';
-import { getDB, createUserFn, addNotifs } from '../../lib/db.js';
-import { sbEmailsInUse } from '../../lib/supabase.js';
+import { getDB, addNotifs } from '../../lib/db.js';
+import { createAccount } from '../../lib/accessAdmin.js';
 import { rlabel } from '../../lib/helpers.js';
 import { ROLES } from '../../lib/constants.js';
 import useDiscardGuard from '../../hooks/useDiscardGuard.js';
@@ -61,14 +61,14 @@ export default function CreateUserModal() {
     const db = getDB();
 
     if (!name || !email || !pass) { setErr('Name, email and password required.'); return; }
-    if (pass.length < 4) { setErr('Password must be at least 4 characters.'); return; }
+    if (pass.length < 10) { setErr('Password must be at least 10 characters.'); return; }
     if (db.users.find(u => u.email.toLowerCase() === email.toLowerCase())) { setErr('Email already in use.'); return; }
-    // db.users only holds this company since the cloud load became tenant-scoped,
-    // so the check above is blind to the other tenants. Ask the server too — an
-    // address shared by two accounts breaks login (loginRemote matches on email).
-    if ((await sbEmailsInUse([email])).size) { setErr('Email already in use.'); return; }
 
-    createUserFn(name, email, pass, phone, role, user);
+    // The access-admin function creates the sign-in and the CRM row together,
+    // checks the email across every tenant, and refuses roles above the caller.
+    setErr('');
+    const res = await createAccount({ name, email, password: pass, phone, role });
+    if (!res.ok) { setErr(res.error); return; }
 
     if (role === ROLES.TL) {
       const newDb = getDB();

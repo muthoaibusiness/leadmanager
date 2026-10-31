@@ -6,9 +6,9 @@
 // Deploy (owner approval required):
 //   npx supabase functions deploy meta-capi --no-verify-jwt
 //
-// --no-verify-jwt because the CRM mints no Supabase JWT; access is the acting
-// user's role or 'metacapi' grant in the users table (capi-core.ts loadActor),
-// the same trust boundary as finance and ai-trainer. META_CAPI_ACCESS_TOKEN is
+// --no-verify-jwt only so OPTIONS preflight works; every POST is checked
+// against the caller's Supabase Auth session (actor.ts, decision D1), then the
+// account's role or 'metacapi' grant (capi-core.ts loadActor). META_CAPI_ACCESS_TOKEN is
 // read here and never returned.
 import { handleCapi } from "../_shared/capi-core.ts";
 import { restDeps } from "../_shared/capi-rest.ts";
@@ -16,6 +16,7 @@ import { restDeps } from "../_shared/capi-rest.ts";
 const deps = restDeps({
   url: Deno.env.get("SUPABASE_URL") ?? "",
   serviceKey: Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "",
+  anonKey: Deno.env.get("SUPABASE_ANON_KEY") ?? "",
   token: () => Deno.env.get("META_CAPI_ACCESS_TOKEN") ?? "",
   fetch: (u, i) => fetch(u, i),
   now: () => Date.now(),

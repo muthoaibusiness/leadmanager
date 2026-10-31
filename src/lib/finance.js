@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { SB_URL, SB_KEY } from './supabase.js';
+import { SB_URL, SB_KEY, bearer, ensureFreshToken } from './supabase.js';
 import { categoryOf, paymentStatus, staleLines, fmtMoney } from '../../supabase/functions/_shared/finance-doc.js';
 
 // Admin → Inventory: budgets, expenses and expense statements. Internal money,
@@ -45,7 +45,7 @@ export const camel = (v) => (Array.isArray(v) ? v.map(camel)
 export async function finCall(user, action, payload = {}) {
   let r;
   try {
-    r = await fetch(FIN_URL, { method: 'POST', headers: { 'Content-Type': 'application/json', apikey: SB_KEY }, body: JSON.stringify({ userId: user?.id || null, action, ...payload }) });
+    await ensureFreshToken(); r = await fetch(FIN_URL, { method: 'POST', headers: { 'Content-Type': 'application/json', apikey: SB_KEY, Authorization: bearer() }, body: JSON.stringify({ action, ...payload }) });
   } catch {
     // A missing function answers 404 without CORS headers, which the browser reports as a network failure.
     throw new Error('Could not reach the finance service. Either you are offline, or the `finance` function is not deployed to this Supabase project yet.');

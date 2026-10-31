@@ -1,6 +1,8 @@
 import { useState, useEffect, useRef, Suspense } from 'react';
 import { useApp } from './context/AppContext.jsx';
-import { getDB, getUnreadCount, getSession, setSession, loginRemote, hasSessionId, saveDBDeferred, checkFollowUpReminders, getProperties, expireHolds, migrateTenancy, mergeDB, purgeDemoSeed, dedupeLeads, reconcileDeletions, applyRealtimeEvent, clearLocalDB, cacheBelongsTo, fetchSessionUser } from './lib/db.js';
+import { getDB, getUnreadCount, getSession, hasSessionId, saveDBDeferred, checkFollowUpReminders, getProperties, expireHolds, migrateTenancy, mergeDB, purgeDemoSeed, dedupeLeads, reconcileDeletions, applyRealtimeEvent, clearLocalDB, cacheBelongsTo } from './lib/db.js';
+import { signIn as authSignIn, restoreSession, consumeAuthRedirect, mustSetPassword, openedFromAuthLink } from './lib/auth.js';
+import SetPasswordCard from './components/SetPasswordCard.jsx';
 import { seedDB, SEED_PROPERTIES, DEMO_PROPERTIES } from './lib/seed.js';
 import { sbLoad, sbSubscribeAll } from './lib/supabase.js';
 import { waLoadSettings } from './lib/wa.js';
@@ -147,22 +149,21 @@ function PostLoginLoader() {
 }
 
 // ── Login page ─────────────────────────────────────────────────────────────
-function LoginPage({ onLogin, onBack }) {
+function LoginPage({ onLogin, onBack, initialError = '' }) {
   const [email, setEmail] = useState('');
   const [pw, setPw] = useState('');
-  const [err, setErr] = useState('');
+  const [err, setErr] = useState(initialError);
   const [loading, setLoading] = useState(false);
 
   const doLogin = async () => {
     if (!email || !pw) { setErr('Enter email and password.'); return; }
     setLoading(true);
     setErr('');
-    // loginRemote checks the cached DB first, then falls back to a single
-    // filtered row — so nothing has to be downloaded before this screen paints.
-    const u = await loginRemote(email, pw);
+    // Supabase Auth checks the password; the CRM account is the row linked to
+    // the verified sign-in (auth.js). Nothing is downloaded before this.
+    const { user: u, error } = await authSignIn(email, pw);
     setLoading(false);
-    if (!u) { setErr('Incorrect email or password.'); return; }
-    setSession(u);
+    if (!u) { setErr(error || 'Incorrect email or password.'); return; }
     onLogin(u);
   };
 
@@ -236,7 +237,7 @@ function PageHeader({ shown, showBtnRef }) {
 
 // ── In-body hero header (title + subtitle + actions) ────────────────────────
 function PageHero() {
-  const { user, view, agentFilter, teamFilter, openModal, setCreateUserRoles, leadCounts, projTab, setProjTab, planSel } = useApp();
+  const { user, view, agentFilter, teamFilter, openModal, setCreateUserRoles, leadCounts, projTab, setProjTab, planSel, pageRefresh } = useApp();
   const pnav = useProjectNav();
 
   // The Customers count is NOT computed here. It has to agree with the table
@@ -303,13 +304,15 @@ function PageHero() {
   let actions = [];
   // Customers: re-fetch the list, for every role that can open the view.
   if (view === 'leads') actions.push(<RefreshButton key="refresh" />);
+  // Meta CAPI: the same button, reloading that page's own data (pageRefresh).
+  if (view === 'metacapi' && pageRefresh) actions.push(<RefreshButton key="refresh" onClick={pageRefresh.run} busy={pageRefresh.busy} label="Refresh Meta CAPI" />);
   if (view === 'leads' && canSee(user, 'add_customer')) {
     actions.push(<button key="add-lead" className="btn btn-p" onClick={() => openModal('add-lead')}><Mi>add</Mi>Add Customer</button>);
     actions.push(<button key="import" className="btn btn-g" onClick={() => openModal('import')}><Mi>upload</Mi>Import</button>);
   }
   // Duplicate checker button removed — dedup runs automatically on load/import.
   // Executives are created by a Team Lead, alongside Agents, so they land
-  // in that Team Lead's team (createUserFn stamps the creator's teamId). Management only
+  // in that Team Lead's team (access-admin puts a Team Lead's creations in its team). Management only
   // creates Team Leads, each of which starts a team of its own.
   if (view === 'team' && user.role === ROLES.TL) actions.push(<button key="add-agent" className="btn btn-p" onClick={() => { setCreateUserRoles([ROLES.AGENT, ROLES.MA, ROLES.EXEC]); openModal('create-user'); }}><Mi>person_add</Mi>Add Agent</button>);
   // Projects: two tabs, the list and Available Units. Management's actions sit
@@ -470,6 +473,9 @@ export default function App() {
   const [loading, setLoading] = useState(needsBootFetch);
   const [loadVisible, setLoadVisible] = useState(needsBootFetch);
   const [showLogin, setShowLogin] = useState(false); // landing → login gate
+  // A one-time link signed the account in without a password of its own yet.
+  const [needPassword, setNeedPassword] = useState(mustSetPassword);
+  const [linkError, setLinkError] = useState('');
   const [waCheckedFor, setWaCheckedFor] = useState(null); // account whose chat allow-list has answered
   const [entering, setEntering] = useState(false);    // brief loader after login
   const initialized = useRef(false);
@@ -679,32 +685,49 @@ export default function App() {
     if (initialized.current) return;
     initialized.current = true;
 
-    // No session id: Landing/Login are already on screen via the seeded state
-    // above. Nothing is fetched until the user submits credentials — see
-    // loginRemote, which pulls a single filtered row instead of every user.
-    if (!hasSessionId()) return;
-
-    const cached = getSession(); // resolves the stored id against the cached users
-    if (cached) {
-      // Warm cache: the shell is already rendering from it (AppProvider seeded
-      // `user` from the same read). Just ask for push permission and refresh
-      // the data underneath.
-      requestNotifyPermission();
-      hydrateFromCloud(cached).finally(() => summarizeUnread(cached));
+    // A one-time recovery or invite link (#access_token=...&type=recovery):
+    // it becomes the session, then the account sets its own password.
+    if (openedFromAuthLink()) {
+      (async () => {
+        const r = await consumeAuthRedirect();
+        if (r && r.user) { setNeedPassword(true); enterApp(r.user); return; }
+        if (r && r.error) { setLinkError(r.error); setShowLogin(true); }
+        revealApp();
+      })();
       return;
     }
 
-    // Session id present but the cache is cold (cleared storage, new device, or
-    // a snapshot trimmed by persistLocal's quota fallback). The session cannot
-    // be resolved without the users table, so this is the one path that waits.
-    //
-    // The load is scoped by company, so it needs the user before it can build
-    // its filters — and the cache is exactly what cannot supply one here. Fetch
-    // that single row by primary key first; falling back to the unfiltered load
-    // if it fails keeps a broken network from locking anyone out.
+    // No session: Landing/Login are already on screen via the seeded state
+    // above. Nothing is fetched until the user submits credentials (auth.js).
+    if (!hasSessionId()) return;
+
+    const cached = getSession(); // the signed-in account's cached row, if any
+    if (cached) {
+      // Warm cache: the shell is already rendering from it (AppProvider seeded
+      // `user` from the same read). The token is re-verified first; a session
+      // the server no longer honours (expired, revoked, account deactivated)
+      // signs out instead of carrying on from the cache.
+      requestNotifyPermission();
+      (async () => {
+        const u = await restoreSession();
+        if (u && u.offline) return; // server unreachable: keep the cached shell, the session stays
+        if (!u) { clearLocalDB(); setUser(null); return; }
+        if (u.id !== cached.id) { clearLocalDB(); setUser(null); return; }
+        setUser(u);
+        hydrateFromCloud(u).finally(() => summarizeUnread(u));
+      })();
+      return;
+    }
+
+    // Session present but the cache is cold (cleared storage, new device, or
+    // a snapshot trimmed by persistLocal's quota fallback): the one path that
+    // waits. restoreSession verifies the token and fetches the account's own
+    // row, which the company-scoped load needs before it can build its filters.
+    // A session the server rejects lands on the login screen.
     (async () => {
-      const sid = JSON.parse(localStorage.getItem('pcrm_sess') || 'null')?.id;
-      const who = await fetchSessionUser(sid);
+      const who = await restoreSession();
+      // Offline with a cold cache: nothing to show, but the session is kept for a reload.
+      if (!who || who.offline) { revealApp(); return; }
       await hydrateFromCloud(who);
       const u = getSession();
       if (u) signIn(u);
@@ -719,8 +742,11 @@ export default function App() {
       <GlobalLoadingBar />
       {loadVisible && <LoadingScreen visible={loading} />}
       {!user && !loading && !showLogin && <Suspense fallback={null}><LandingPage onEnter={() => setShowLogin(true)} /></Suspense>}
-      {!user && !loading && showLogin && <LoginPage onLogin={enterApp} onBack={() => setShowLogin(false)} />}
-      {user && <AppShell />}
+      {!user && !loading && showLogin && <LoginPage onLogin={enterApp} onBack={() => setShowLogin(false)} initialError={linkError} />}
+      {user && needPassword && (
+        <div id="login"><div className="ln-right"><SetPasswordCard email={user.email} onDone={() => setNeedPassword(false)} /></div></div>
+      )}
+      {user && !needPassword && <AppShell />}
       {entering && <PostLoginLoader />}
       <Overlays />
       <Toast />

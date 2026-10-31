@@ -81,8 +81,21 @@ const llm = (...texts: string[]): Llm & { calls: any[] } => {
 const ENV = { budgetUsd: 1, replyModel: "m", judgeModel: "j", pricePerMTok: { in: 1, out: 5 } };
 // The failed sign-in counter is module state shared by every test in this file,
 // so the rate-limit test uses its own IP and cannot lock the others out.
+// The caller is the verified session (deps.actor); the token names the account.
+// actor_claimed and user_id in the body are ignored, so they are set to lie.
+const ROWS: Record<string, any> = {
+  mgr: { id: "mgr", name: "Asad", role: "MANAGEMENT", is_active: true },
+  agent: { id: "agent", name: "Agent", role: "AGENT", is_active: true },
+  gone: { id: "gone", name: "Gone", role: "MASTER", is_active: false },
+};
+const verify = async (req: { headers: Headers }) => {
+  const r = ROWS[(req.headers.get("authorization") || "").replace("Bearer ", "")];
+  if (!r) throw Object.assign(new Error("Sign in required"), { status: 401 });
+  if (!r.is_active) throw Object.assign(new Error("inactive"), { status: 403 });
+  return r;
+};
 const call = (deps: any, action: string, payload: any = {}, userId: any = "mgr", ip = "1.1.1.1") =>
-  handleTrainer({ method: "POST", headers: new Headers(), ip, body: { action, payload, actor_claimed: "Asad", user_id: userId } }, deps);
+  handleTrainer({ method: "POST", headers: new Headers(userId ? { authorization: `Bearer ${userId}` } : {}), ip, body: { action, payload, actor_claimed: "Forged Name", user_id: "mgr" } }, { actor: verify, ...deps });
 
 test("rejects missing, unknown, non-Management or inactive users; accepts Management", async () => {
   const deps = { db: memDb(), llm: llm(), env: ENV };
@@ -90,9 +103,39 @@ test("rejects missing, unknown, non-Management or inactive users; accepts Manage
   assert.equal((await call(deps, "items.list")).status, 200);
 });
 
+test("defect 10: the trainer follows the shared feature rule (access-rules.js), the same one the browser shows", async () => {
+  const deps = { db: memDb(), llm: llm(), env: ENV };
+  ROWS.granted = { id: "granted", name: "G", role: "AGENT", is_active: true, allowed_features: ["aitrainer"] };
+  ROWS.revoked = { id: "revoked", name: "R", role: "MANAGEMENT", is_active: true, allowed_features: ["leads"] };
+  assert.equal((await call(deps, "items.list", {}, "granted", "8.8.8.1")).status, 200, "an aitrainer grant opens it");
+  assert.equal((await call(deps, "items.list", {}, "revoked", "8.8.8.2")).status, 401, "a saved list without aitrainer closes it");
+});
+
+test("a body user_id naming a manager does not open the trainer without that manager's session", async () => {
+  const deps = { db: memDb(), llm: llm(), env: ENV };
+  const r = await handleTrainer({ method: "POST", headers: new Headers(), ip: "7.7.7.7", body: { action: "items.list", user_id: "mgr" } }, { actor: verify, ...deps });
+  assert.equal(r.status, 401);
+});
+
+test("a sign-in service outage (503) is not a failed sign-in: no lockout, and it says so", async () => {
+  const deps = { db: memDb(), llm: llm(), env: ENV };
+  const down = async () => { throw Object.assign(new Error("Sign-in service unavailable"), { status: 503 }); };
+  for (let i = 0; i < 12; i++) {
+    const r = await handleTrainer({ method: "POST", headers: new Headers({ authorization: "Bearer mgr" }), ip: "6.6.6.6", body: { action: "items.list" } }, { actor: down, ...deps });
+    assert.equal(r.status, 503, `call ${i}`);
+  }
+  assert.equal((await call(deps, "items.list", {}, "mgr", "6.6.6.6")).status, 200, "the office ip is not locked out");
+});
+
+test("a valid session without trainer access (403) is refused but never locks the ip out", async () => {
+  const deps = { db: memDb(), llm: llm(), env: ENV };
+  for (let i = 0; i < 12; i++) assert.equal((await call(deps, "items.list", {}, "agent", "5.5.5.5")).status, 401);
+  assert.equal((await call(deps, "items.list", {}, "mgr", "5.5.5.5")).status, 200, "a manager behind the same office NAT still gets in");
+});
+
 test("rate limits repeated failed sign-ins per ip", async () => {
   const deps = { db: memDb(), llm: llm(), env: ENV };
-  for (let i = 0; i < 10; i++) await call(deps, "items.list", {}, "agent", "9.9.9.9");
+  for (let i = 0; i < 10; i++) await call(deps, "items.list", {}, "nobody", "9.9.9.9");
   assert.equal((await call(deps, "items.list", {}, "mgr", "9.9.9.9")).status, 429);
   assert.equal((await call(deps, "items.list")).status, 200);
 });

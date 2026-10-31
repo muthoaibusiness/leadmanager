@@ -2,20 +2,19 @@
 // code only (fetch, Request, Response, crypto): no Deno globals, so the Edge
 // Function and the Node tests run the same file. All I/O is injected (CapiDeps).
 //
-// Trust model, as for finance and the AI Trainer: the caller names a userId;
-// the users table says whether that account may use Meta CAPI (role MANAGEMENT
+// Trust model, as for finance and the AI Trainer: the caller is the verified
+// Supabase Auth session (deps.verify, actor.ts); body.userId is ignored. The
+// users row says whether that account may use Meta CAPI (role MANAGEMENT
 // or MASTER, or an allowed_features grant of 'metacapi', which then fully
 // decides, the same rule as canSee() in the browser). Every read and write uses
 // the service role. The Meta token stays in the Edge Function's environment:
 // no action returns it, and nothing derived from it but "configured" leaves.
 //
-// CR-001 decision D1: no privileged action may rely on a user id sent by the
-// browser. The CRM has no verified session yet (Phase 1B), so the actions that
-// change something (retry, which sends to Meta, and settings.set) are refused
-// unless allowUnverifiedActor() says this server may accept a claimed id. It is
-// false unless the function is started with CAPI_ALLOW_UNVERIFIED_ACTOR=local,
-// which only a local development stack sets. Read-only actions still use the
-// claimed id, like every other CRM page today.
+// CR-001 decision D1: every action, reads included, takes its caller from the
+// verified session. The actions that change something (retry, which sends to
+// Meta, settings.set, bot.set) additionally stay off unless
+// allowUnverifiedActor() is true (CAPI_ALLOW_UNVERIFIED_ACTOR=local, a local
+// stack only), so Meta CAPI sending remains disabled until it is approved.
 //
 // Sending, the same event the bots send (wa-bot-eyad v61 / wa-bot-dubai v58):
 // LeadSubmitted, business_messaging, whatsapp, event_id = lead id, the lead's
@@ -31,6 +30,8 @@
 // it. Meta's own throttling pauses every sender (capi_throttle). Meta does
 // not deduplicate business-messaging events (docs/research/2026-10-29-meta-
 // capi-limits.md), so a reported lead is never sent again.
+
+import { hasFeature } from "./access-rules.js";
 
 export const DATASET_ID = "869790160551668";
 export const PAGE_ID = "104718884272119";
@@ -71,17 +72,22 @@ export type CapiDeps = {
   postMeta(body: Row): Promise<{ status: number; json: Row; retryAfter?: number | null }>;
   // D1: may this server accept a browser-claimed user id for a privileged action?
   allowUnverifiedActor?: () => boolean;
+  // The verified caller (actor.ts): the users row for the request's Supabase
+  // Auth session, or a throw with .status 401/403. body.userId is never read.
+  verify(req: Request): Promise<Row>;
 };
 
 class Fail extends Error { status: number; constructor(status: number, msg: string) { super(msg); this.status = status; } }
 
 // ── who may use it ──────────────────────────────────────────────────────────
-export async function loadActor(deps: CapiDeps, userId: unknown) {
-  if (!userId || typeof userId !== "string") throw new Fail(401, "Sign in required");
-  const u = await deps.user(userId);
+export async function loadActor(deps: CapiDeps, req: Request) {
+  let u: Row;
+  try { u = await deps.verify(req); }
+  catch (e: any) { throw new Fail(typeof e?.status === "number" ? e.status : 401, e?.message || "Sign in required"); }
   if (!u || u.is_active === false) throw new Fail(401, "Unknown or inactive account");
-  const af = Array.isArray(u.allowed_features) ? u.allowed_features : null;
-  const ok = af ? af.includes("metacapi") : u.role === "MANAGEMENT" || u.role === "MASTER";
+  // The same rule as the browser (access-rules.js): metacapi defaults to
+  // Management and Master; a saved feature list fully decides.
+  const ok = hasFeature(u, "metacapi");
   if (!ok) throw new Fail(403, "Meta CAPI is not enabled for this account");
   // Master sees every company; everyone else only their own.
   return { id: u.id as string, company: u.role === "MASTER" ? null : (u.company_id as string | null) ?? "__none__" };
@@ -251,7 +257,7 @@ export async function handleCapi(req: Request, deps: CapiDeps, allowedOrigin = "
   let body: Row;
   try { body = await req.json(); } catch { return json({ ok: false, error: { message: "Invalid JSON" } }, 400); }
   try {
-    const actor = await loadActor(deps, body.userId);
+    const actor = await loadActor(deps, req);
     const fn = ACTIONS[String(body.action)];
     if (!fn) throw new Fail(400, "Unknown action");
     if (PRIVILEGED.has(String(body.action)) && !unverifiedAllowed(deps)) {

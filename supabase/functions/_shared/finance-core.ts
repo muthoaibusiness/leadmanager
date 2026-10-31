@@ -3,9 +3,10 @@
 // no Deno globals, so the same file runs in the Edge Function and under Node
 // in the test harness.
 //
-// Trust model: the caller names a userId; the users table says whether that
-// account may use Inventory (role MANAGEMENT, or an allowed_features grant of
-// 'inventory'). Every row is read and written with the service role and scoped
+// Trust model: the caller is the verified Supabase Auth session (actor.ts,
+// decision D1); body.userId is ignored. The users row linked to that session
+// says whether the account may use Inventory (role MANAGEMENT, or an
+// allowed_features grant of 'inventory', access-rules.js). Every row is read and written with the service role and scoped
 // to the actor's company. Figures (amount / committed / spent / remaining) are
 // computed HERE and handed to the browser ready-made, so there is one
 // definition of each number.
@@ -22,8 +23,10 @@
 // history. It gives nothing else.
 
 import { renderStatement, statementDoc, staleLines, adSetExtra, TEMPLATES, CURRENCIES, newReferenceId, newTransactionId, newInvoiceNo, REFERENCE_ID_RE, TRANSACTION_ID_RE, INVOICE_NO_RE } from "./finance-doc.js";
+import { verifiedActor, ActorError } from "./actor.ts";
+import { hasFeature } from "./access-rules.js";
 
-export type Env = { url: string; serviceKey: string; allowedOrigin?: string };
+export type Env = { url: string; serviceKey: string; anonKey: string; allowedOrigin?: string };
 
 type Row = Record<string, any>;
 type Actor = { id: string; name: string; role: string; companyId: string; manageAll: boolean };
@@ -99,15 +102,13 @@ async function conflictMessage(r: Response) {
 }
 
 // ── the actor ────────────────────────────────────────────────────────────────
-async function loadActor(db: Db, userId: unknown): Promise<Actor> {
-  if (!userId || typeof userId !== "string") throw new Fail(401, "Sign in required");
-  const rows = await db.select(`users?id=eq.${enc(userId)}&select=id,name,role,is_active,company_id,allowed_features`);
-  const u = rows[0];
-  if (!u || u.is_active === false) throw new Fail(401, "Unknown or inactive account");
+async function loadActor(req: Request, env: Env): Promise<Actor> {
+  let u;
+  try { u = await verifiedActor(req, { url: env.url, serviceKey: env.serviceKey, anonKey: env.anonKey, fetch: (a, i) => fetch(a, i) }); }
+  catch (e) { if (e instanceof ActorError) throw new Fail(e.status, e.message); throw e; }
   const af = Array.isArray(u.allowed_features) ? u.allowed_features : null;
   // Same rule as canSee() in the browser: a saved feature list overrides the role default.
-  const canSee = af ? af.includes("inventory") : u.role === "MANAGEMENT";
-  if (!canSee) throw new Fail(403, "Inventory is not enabled for this account");
+  if (!hasFeature(u, "inventory")) throw new Fail(403, "Inventory is not enabled for this account");
   if (!u.company_id) throw new Fail(403, "This account belongs to no company");
   // 'finance_approve' is the "Manage all budgets" grant (see the header).
   return { id: u.id, name: u.name || "", role: u.role, companyId: u.company_id, manageAll: !!af && af.includes("finance_approve") };
@@ -717,7 +718,7 @@ export async function handleFinance(req: Request, env: Env): Promise<Response> {
   try { body = await req.json(); } catch { return json({ error: "Invalid JSON" }, 400); }
   try {
     const db = new Db(env);
-    const actor = await loadActor(db, body.userId);
+    const actor = await loadActor(req, env);
     const fn = ACTIONS[String(body.action)];
     if (!fn) throw new Fail(400, "Unknown action");
     const out = await fn({ env, actor, db, reqUrl }, body);

@@ -78,14 +78,10 @@ const tab = async (label) => {
 };
 const panel = () => page.locator('.ait-panel');
 
-// 0. Signed in and on the AI Trainer. E2E_SESSION_USER signs a fresh profile in
-// as that CRM user id (the app keeps only the id in pcrm_sess); the server
-// still checks the account's Management role on every trainer call.
+// 0. Signed in and on the AI Trainer. The profile holds a Supabase Auth
+// session that a person created by signing in (CR-001 D1); a CRM user id in
+// storage is no longer a session, so there is no way to sign in from here.
 await page.goto(`${URL0}/#/aitrainer`, { waitUntil: 'domcontentloaded' });
-if (process.env.E2E_SESSION_USER && !(await page.evaluate(() => localStorage.getItem('pcrm_sess')))) {
-  await page.evaluate((id) => localStorage.setItem('pcrm_sess', JSON.stringify({ id })), process.env.E2E_SESSION_USER);
-  await page.reload({ waitUntil: 'domcontentloaded' });
-}
 await page.getByRole('tablist', { name: 'AI Trainer sections' }).waitFor({ timeout: 45000 }).catch(() => {});
 const tabs = await page.getByRole('tab').allTextContents();
 if (!tabs.length) {

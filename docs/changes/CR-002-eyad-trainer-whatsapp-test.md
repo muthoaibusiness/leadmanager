@@ -84,12 +84,22 @@ A chat is answered by exactly one of the two in every mode, because of the `if /
    - It builds as found. It contains no secrets.
    - See its `README.md` and `DEPLOYMENT.json`.
 2. Commit the working-tree changes (section 7): the deployed-only rules ported into git, their tests, the E2E script, and this record.
-3. Already done, read-only: Playwright E2E of the Playground and Knowledge (21/22 PASS; the single R2 failure was a provider error and passed 3 of 3 on rerun), and a local replay proving the 600-token cause and the HEAD fix.
+3. Already done, read-only: Playwright E2E of the Playground and Knowledge (21/22 PASS; the single R2 failure was a provider error and passed 3 of 3 on rerun), and a local replay proving the 600-token cause of the 07:13 failure and the HEAD fix. The cap causes some failures, not all (section 5 correction).
 
 ### Phase 1. One-number WhatsApp test (deploy `wa-bot-eyad` only)
 
 Isolation:
-- Only `8801604271958` is tested. The other two Eyad test numbers also route to the Trainer while `trainer_test_mode` is on. They belong to the team; tell their holders, or remove them from the list for the test window.
+- Only `8801604271958` is tested. The other two Eyad test numbers also route to the Trainer while `trainer_test_mode` is on.
+- `8801866064500` is in active team use (section 5 correction). Coordinate with its holder before the deploy and keep them informed during the test window, because the deploy changes their replies too.
+- Lead auto-creation for each test number, read-only on 2026-10-29 09:45 UTC. The Eyad bot runs with `auto_forward_enabled` false, but test numbers have it forced on, with a threshold of 3:
+
+  | Number | Prelead | Messages | `forwarded` | `ctwa_clid` | CRM lead | Next message auto-creates a lead? |
+  |---|---|---|---|---|---|---|
+  | 8801604271958 | `898910dc-1ccb-492d-bdc5-e3190d1699d3` | 2 | false | no | none | **Yes** (3rd message, Dhaka, `/fdh`), until P1 |
+  | 8801866064500 | `9c36262e-cb6e-4642-a00a-ff3b56e09739` | 90 | **true** | yes | none | No: `forwarded` blocks it |
+  | 8801709665095 | `e6060265-643d-4757-bab1-9ecf4585adff` | 25 | **true** | no | 1 (existing) | No |
+
+  `forwarded` blocks only automatic lead creation. A `/f…` command typed on the business phone in any of these chats still calls `wa_create_lead`. For 8801866064500 that would create a new lead with its `ctwa_clid`, and a Meta CAPI attempt that fails today (section 6). Ask the team not to send `/f` commands on test chats during the window.
 - Dubai: `trainer_test_mode` false and session logged out (last inbound 2026-10-28 06:15). Not touched.
 - Unrelated Eyad customers: still R4 (`runFaqAgent`), the same as today. The deploy changes their path only by the reviewed git fixes (section 5).
 
@@ -100,6 +110,7 @@ Lead auto-creation prevention (needed: the prelead has 2 messages, and the 3rd t
 Stale state:
 - **P2** `delete from public.ai_conversation_state where conversation_id = 'eyad:8801604271958@s.whatsapp.net' and bot = 'eyad' and paused = true;`
   This is the simulated thread, paused by the 07:13 fallback. The real phone arrives on the LID thread `eyad:89254134857802@lid` (not paused), and HEAD reads memory key `eyad:8801604271958` (no row). P2 is hygiene, not a blocker.
+- **P2b (decision needed, not for 8801604271958):** `eyad:226431162396785@lid` (8801866064500) has been paused since the 2026-10-18 fallbacks. After D1, HEAD skips every Trainer turn on that chat (`skipped_paused`). Either clear it with the holder's agreement (`update public.ai_conversation_state set paused = false, state = jsonb_set(state, '{paused}', 'false') where conversation_id = 'eyad:226431162396785@lid' and bot = 'eyad';`, rollback: set both back to `true`), or accept that this number stays silent on the Trainer after the deploy.
 
 Deploy:
 - **D1** `npx supabase functions deploy wa-bot-eyad --no-verify-jwt --project-ref sbqmougcvnplgjgihpwe` from the committed tree.
@@ -132,7 +143,7 @@ Live v61 vs the working tree, line-ending normalised:
 
 | Change | Effect |
 |---|---|
-| Test-number replies use `max_tokens` 2000 at low reasoning effort (`REPLY_LIMITS`) | Fixes the 07:13 failure. Reproduced: v61 at 600 gives `finish_reason length` and `fallback_invalid_output`; HEAD gives the right answer. Test numbers only. |
+| Test-number replies use `max_tokens` 2000 at low reasoning effort (`REPLY_LIMITS`) | Fixes the 07:13 failure. Reproduced: v61 at 600 gives `finish_reason length` and `fallback_invalid_output`; HEAD gives the right answer. Test numbers only. The 600 cap makes **some** replies fail, not all (see the correction below). |
 | Trainer turns: published System Prompt, brochure checks, memory keyed by phone, pause honoured before every send | Test numbers only |
 | `aiStillOn` re-checks the AI switch before each legacy send | Switching AI replies off takes effect mid-turn |
 | Settings read failure: automations off (fail closed) | Safer on a database error |
@@ -141,6 +152,22 @@ Live v61 vs the working tree, line-ending normalised:
 | `x-replay` honoured only for a verified sender | Replay header ignored, since nothing is verified |
 | Price, land and consent edge-case fixes, 30 s OpenRouter timeouts | Reviewed in `docs/reports/legacy-bot-reconciliation.md` §13.4; 8 of 8 real price messages gave the same result |
 | Deployed-only rules (ad-lead welcome, "which project" prompt) | **Kept**: ported into git, with identical prompt text (section 7) |
+
+**Correction (2026-10-29, after commit `dfa9f55`).** Earlier text said the live bot "would fail the same way" on every test-number reply. That overstated it. The 600-token cap truncates a reply only when the model's hidden reasoning, plus the JSON, runs past 600 tokens. Shorter turns get through. Turns on live v61 (from 2026-10-19 20:03 UTC) that reached the model:
+
+| Turn | Thread | Number | Outcome |
+|---|---|---|---|
+| `e7f33a2a-834a-4c39-b859-87368686586f`, 07:13:35 | `eyad:8801604271958@s.whatsapp.net` (simulated) | 8801604271958 | `fallback_invalid_output`, `guard_errors ["schema"]`: the case reproduced above |
+| `c20c56f9-071e-44b0-aa7f-fe06be93722b`, 09:32:08 | `eyad:226431162396785@lid` | 8801866064500 | `ok` (greeting reply, 1 send) |
+| `be69d44d-b811-497b-9df8-adb6b3f68433`, 09:32:47 | same | 8801866064500 | `ok` (1 send) |
+| `c6db758f-2d36-490a-9123-79a7bd3a57b0`, 09:35:28 | same | 8801866064500 | `ok` (Nuznan brochure, 2 sends) |
+
+`f05212d7…` (07:12:56) was a pure greeting and never reached the model (`skipped_greeting_new`).
+- **On v61:** 1 of 4 model turns failed.
+- **On 2026-10-18 (earlier deployed code):** 3 of 7 test-number turns ended `fallback_invalid_output` with `guard_errors ["schema"]`. git shows the 600 cap was added on 2026-10-18 (`ab66552`), but the bundle that was live that day was not saved, so the cause is not proven for those turns.
+- The 07:13 evidence and its local replay are unchanged.
+
+**Test number 8801866064500 is in active team use.** A team member chatted with the Trainer on Eyad at 09:32 to 09:35 UTC, while CR-002 was being prepared, and received 4 "AI Trainer" messages, including the Nuznan brochure PDF. Its chat state is **paused**: `ai_conversation_state` row `eyad:226431162396785@lid`, `paused true`, last written 09:35:33 UTC. The pause dates from 2026-10-18. That thread had three `fallback_invalid_output` turns that day (`a56e4257…`, `2142bba6…`, `0e89ad46…`), and a fallback sets `paused: true`. v61 `runTurn` copies the previous state into the next one (`paused: parsed.handoff ? true : a.state.paused`), so the flag survives every later `ok` turn. v61 never checks it before sending, which is why the 09:32 to 09:35 replies still went out. **After the deploy, HEAD does check it.** `isPaused` reads memory key `eyad:8801866064500` (no row), then falls back to the thread row, which is paused. So on HEAD every Trainer turn for 8801866064500 ends `skipped_paused` with no reply, until the row is cleared. The same applies to 8801604271958 only on its simulated JID thread, not on its real LID thread.
 
 Environment (Confirmed, names only): `OPENROUTER_API_KEY` (matches the local key's digest), `WASENDER_API_TOKEN`, `META_CAPI_ACCESS_TOKEN` (invalid, section 6), and the platform `SUPABASE_*`. No new secret is needed for phases 1-3. Unset and not needed: `OPENROUTER_MODEL` (default `anthropic/claude-haiku-5.5`), `AI_TRAINER_COMPANY_ID` (no live stock figures), `AI_TRAINER_EMBEDDING_*` (the model is read from `ai_model_configs`).
 

@@ -25,5 +25,9 @@ jobs:
           node --test scripts/company-time.test.mjs
           npx vite-node --config .gate-harness/vite.config.mjs scripts/forward.test.mjs
           node scripts/test-0049.mjs
+      # Sign-in, session and permission rules (CR-001 D1): stubbed GoTrue and
+      # PostgREST, nothing leaves the runner.
+      - name: Auth and access tests
+        run: npm run test:auth
       - name: Build
         run: npm run build

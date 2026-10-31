@@ -41,7 +41,7 @@ const env = { budgetUsd: 5, replyModel: "m", judgeModel: "j", pricePerMTok: { in
 const modelCalls = []; const modelOut = [{ ok: false, code: "auth", error: "Provider rejected the API key (HTTP 401)" }, { ok: true, text: "OK", prompt_tokens: 1, completion_tokens: 1 }];
 const modelLlm = (cfg, key) => ({ async chat(req) { modelCalls.push({ cfg, key, model: req.model }); return modelOut.shift(); } });
 const api = async (action, payload) => {
-  const r = await handleTrainer({ method: "POST", headers: new Headers(), ip: "127.0.0.1", body: { action, payload, actor_claimed: "Test Manager", user_id: "u" } }, { db, llm, env, modelLlm });
+  const r = await handleTrainer({ method: "POST", headers: new Headers(), ip: "127.0.0.1", body: { action, payload } }, { db, llm, env, modelLlm, actor: async () => ({ id: "u", name: "Test Manager", role: "MANAGEMENT", is_active: true }) });
   if (!r.body.ok) throw Object.assign(new Error(r.body.error.message), { code: r.body.error.code, details: r.body.error.details, status: r.status });
   return r.body.data;
 };

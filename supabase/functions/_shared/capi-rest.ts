@@ -2,12 +2,13 @@
 // 0050 and 0051: tables, view and functions) and Meta's Conversions API endpoint.
 // Deno-free: fetch, env and clock are passed in, so the Node tests drive it.
 import { DATASET_ID, GRAPH, type CapiDeps, type Attempt } from "./capi-core.ts";
+import { verifiedActor } from "./actor.ts";
 
 // allowUnverified: the CAPI_ALLOW_UNVERIFIED_ACTOR value. Only "local" lets a
 // browser-claimed user id run a privileged action (capi-core.ts, decision D1).
 // graphBase: a local Meta stub for development (CAPI_GRAPH_BASE). Accepted only
 // for a loopback or Docker-host address; anything else uses Meta itself.
-type Opts = { url: string; serviceKey: string; token: () => string; fetch: typeof fetch; now: () => number; metaTimeoutMs?: number; allowUnverified?: string; graphBase?: string };
+type Opts = { url: string; serviceKey: string; anonKey?: string; token: () => string; fetch: typeof fetch; now: () => number; metaTimeoutMs?: number; allowUnverified?: string; graphBase?: string };
 const LOCAL_STUB = /^http:\/\/(127\.0\.0\.1|localhost|host\.docker\.internal)(:\d+)?$/;
 
 const ORDER: Record<string, string> = {
@@ -40,6 +41,7 @@ export function restDeps(o: Opts): CapiDeps {
     now: o.now,
     token: o.token,
     allowUnverifiedActor: () => o.allowUnverified === "local",
+    verify: (req) => verifiedActor(req, { url: o.url, serviceKey: o.serviceKey, anonKey: o.anonKey ?? "", fetch: (u, i) => o.fetch(u, i) }),
     async user(id) { return (await (await get(`users?id=eq.${enc(id)}&select=id,role,is_active,company_id,allowed_features`)).json())[0] ?? null; },
     async lead(id) { return (await (await get(`capi_lead_status?id=eq.${enc(id)}&select=${LEAD_COLS}`)).json())[0] ?? null; },
     async page(q) {
