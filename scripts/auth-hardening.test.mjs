@@ -72,6 +72,16 @@ const S = await import('../src/lib/supabase.js');
 const A = await import('../src/lib/auth.js');
 const wa = await import('../src/lib/wa.js');
 
+// A socket opens only after an async token refresh in waSubscribe/sbSubscribe*,
+// so a fixed delay is a race on slow machines. Wait for it, then let onopen
+// enqueue the joins.
+const waitSockets = async (n, ms = 2000) => {
+  const t0 = Date.now();
+  while (sockets.length < n && Date.now() - t0 < ms) await new Promise((r) => setTimeout(r, 5));
+  if (sockets.length < n) throw new Error(`expected ${n} socket(s), got ${sockets.length}`);
+  await new Promise((r) => setTimeout(r, 20)); // let onopen enqueue joins
+};
+
 const signedIn = (exp = NOW() + 3600) => { const t = jwt('a-1', exp); valid.add(t); store.set('pcrm_auth', JSON.stringify({ access_token: t, refresh_token: 'r0', expires_at: exp, sub: 'a-1', uid: 'u1' })); S.setAccessToken(t); return t; };
 const expired = () => signedIn(NOW() - 5);
 const reset = () => { usersMode = 'ok'; refresh = 'ok'; calls.length = 0; };
@@ -179,7 +189,7 @@ test('6: realtime joins use a fresh token, and a refresh is pushed to open socke
   sockets.length = 0;
   const stop = wa.waSubscribe({ onMessage() {}, onConversation() {}, onState() {} });
   try {
-    await new Promise((r) => setTimeout(r, 20));
+    await waitSockets(1);
     const join = sockets[0].sent.find((m) => m.event === 'phx_join');
     assert.ok(join, 'joined');
     assert.notEqual(join.payload.access_token, old, 'join did not use the expired token');
@@ -227,7 +237,7 @@ test('9: the notifications and main realtime sockets also receive refreshed toke
   const stopN = S.sbSubscribeNotifs('u1', () => {});
   const stopA = S.sbSubscribeAll(() => {}, { id: 'u1', role: 'MASTER' });
   try {
-    await new Promise((r) => setTimeout(r, 30));
+    await waitSockets(2);
     assert.equal(sockets.length, 2, 'two sockets');
     const s = JSON.parse(store.get('pcrm_auth'));
     store.set('pcrm_auth', JSON.stringify({ ...s, expires_at: NOW() - 5 }));
@@ -248,7 +258,7 @@ test('10: a token another tab refreshed reaches this tab\'s sockets', async () =
   sockets.length = 0;
   const stop = wa.waSubscribe({ onMessage() {}, onConversation() {}, onState() {} });
   try {
-    await new Promise((r) => setTimeout(r, 20));
+    await waitSockets(1);
     const t = jwt('a-1'); valid.add(t);
     store.set('pcrm_auth', JSON.stringify({ access_token: t, refresh_token: 'r-tab2', expires_at: NOW() + 3600, sub: 'a-1', uid: 'u1' }));
     await S.ensureFreshToken();
