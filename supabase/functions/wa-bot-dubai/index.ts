@@ -45,7 +45,7 @@ import {
 import { askAgent, resolveMedia, fixGrammar, matchJolshiriBundle, matchNamedProject, isLandOffer, isPriceQuestion, brochureCaption } from "../_shared/ai.ts";
 import {
   DUBAI_STAGE, DUBAI_CAMPAIGN_PROJECT, DUBAI_GREETING_TEXT, DOCS_ASK_PREFIX,
-  needsAiReply, isFloorPlanAsk, DUBAI_PRICE_TEXT, isLocationAsk, locationText, floorPlanPlan, brochureItem, brochureAskText, consentsTo, refuses, type DocItem,
+  needsAiReply, isFloorPlanAsk, DUBAI_PRICE_TEXT, isLocationAsk, locationText, floorPlanPlan, brochureItem, brochureAskText, consentsTo, refuses, shouldGreet, type DocItem,
 } from "../_shared/dubai-flow.ts";
 import { runTrainerTestTurn } from "../_shared/trainer-deno.ts";
 
@@ -449,7 +449,15 @@ async function handleInbound(evt: ParsedEvent): Promise<void> {
   }
 
   // 2. Greeting the moment a new contact writes; it starts the 10-minute clock.
-  if (starting && settings.welcomeEnabled && !takeover) {
+  // Only when no substantive handler below will answer the same message —
+  // otherwise one inbound would get two logical responses.
+  if (shouldGreet({
+    starting, welcomeEnabled: settings.welcomeEnabled, takeover, stage,
+    text: evt.text, quoted: evt.quoted,
+    faqAgentEnabled: settings.faqAgentEnabled, aiMediaEnabled: settings.aiMediaEnabled,
+    aiWillAnswer: !!(settings.faqAgentEnabled && evt.text && evt.remote && !isLandOffer(evt.text)
+      && (needsAiReply(evt.text, adLead) || settings.trainerTest)),
+  })) {
     // Stage moves only once the greeting really went out; a failed send leaves
     // the contact unstarted, so its next message tries again.
     const greeted = await sendWaMessageMirrored("dubai", evt.waTo, convId, evt.phone,

@@ -17,7 +17,7 @@
 //      assigned, keep in touch" message.
 // Each step happens once per contact (the stage moves forward, never back).
 
-import { isAffirmative, isNegative } from "./ai.ts";
+import { isAffirmative, isNegative, isPriceQuestion } from "./ai.ts";
 
 export const DUBAI_STAGE = {
   greeted: "dubai_greeted",
@@ -171,4 +171,33 @@ export function consentsTo(text: string, quoted: string | undefined, askPrefix: 
 }
 export function refuses(text: string): boolean {
   return isNegative(text) && !isAffirmative(text);
+}
+
+// Decide whether the greeting should go out for this inbound. Greeting only a
+// plain opening: when a substantive handler below (consent/"yes", floor-plan,
+// price, location, or the AI reply) will answer the same message, sending the
+// greeting too would produce two logical responses for one inbound. Called
+// before the greeting; aiWillAnswer mirrors the AI block's own gate.
+export interface GreetDecision {
+  starting: boolean;
+  welcomeEnabled: boolean;
+  takeover: boolean;
+  stage: string;
+  text: string | undefined;
+  quoted: string | undefined;
+  faqAgentEnabled: boolean;
+  aiMediaEnabled: boolean;
+  aiWillAnswer: boolean;
+}
+export function shouldGreet(d: GreetDecision): boolean {
+  if (!d.starting || !d.welcomeEnabled || d.takeover) return false;
+  const t = d.text ?? "";
+  if (t) {
+    if (d.stage === DUBAI_STAGE.askedDocs && (refuses(t) || consentsTo(t, d.quoted, DOCS_ASK_PREFIX))) return false;
+    if (d.stage === DUBAI_STAGE.askedBrochure && (refuses(t) || consentsTo(t, d.quoted, DOCS_ASK_PREFIX))) return false;
+    if (d.faqAgentEnabled && d.aiMediaEnabled && isFloorPlanAsk(t)) return false;
+    if (d.faqAgentEnabled && (isPriceQuestion(t) || isLocationAsk(t))) return false;
+    if (d.aiWillAnswer) return false;
+  }
+  return true;
 }

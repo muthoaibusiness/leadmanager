@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  isForeignNumber, isAdFaqOrSmallTalk, needsAiReply, floorPlanPlan, brochureItem, floorPlanAskText, brochureAskText, consentsTo, refuses,
+  isForeignNumber, isAdFaqOrSmallTalk, needsAiReply, floorPlanPlan, brochureItem, floorPlanAskText, brochureAskText, consentsTo, refuses, shouldGreet,
   DUBAI_STAGE, DUBAI_STAGES, DOCS_ASK_PREFIX,
 } from "./dubai-flow.ts";
 
@@ -62,6 +62,38 @@ test("consent: yes-words, or a non-refusal quoting the question; refusals are re
   assert.equal(consentsTo("no thanks", brochureAskText({ name: "X" }), DOCS_ASK_PREFIX), false);
   assert.equal(consentsTo("what is the price?", "", DOCS_ASK_PREFIX), false);
   assert.equal(refuses("no"), true); assert.equal(refuses("না"), true); assert.equal(refuses("yes"), false); assert.equal(refuses("hmm"), false);
+});
+
+// Regression: one inbound "ফ্লোর প্ল্যান ও শপের পজিশন দেখতে চাই" must NOT produce
+// a greeting AND a substantive reply. The greeting is suppressed whenever a
+// handler below will answer the same message.
+const GREET_BASE = {
+  starting: true, welcomeEnabled: true, takeover: false,
+  stage: "", text: undefined, quoted: undefined,
+  faqAgentEnabled: true, aiMediaEnabled: true, aiWillAnswer: false,
+};
+test("shouldGreet: no greeting when a floor-plan ask will be answered (reported duplicate)", () => {
+  assert.equal(shouldGreet({ ...GREET_BASE, text: "ফ্লোর প্ল্যান ও শপের পজিশন দেখতে চাই" }), false);
+});
+test("shouldGreet: no greeting for price or location asks", () => {
+  assert.equal(shouldGreet({ ...GREET_BASE, text: "দাম কত?" }), false);
+  assert.equal(shouldGreet({ ...GREET_BASE, text: "ঠিকানা কী?" }), false);
+});
+test("shouldGreet: no greeting when the consent flow will answer, or the AI will", () => {
+  assert.equal(shouldGreet({ ...GREET_BASE, stage: DUBAI_STAGE.askedDocs, text: "Yes", quoted: DOCS_ASK_PREFIX }), false);
+  assert.equal(shouldGreet({ ...GREET_BASE, text: "what is a shop?", aiWillAnswer: true }), false);
+});
+test("shouldGreet: a plain opening still gets the greeting", () => {
+  assert.equal(shouldGreet({ ...GREET_BASE, text: "hi" }), true);
+  assert.equal(shouldGreet({ ...GREET_BASE, text: "" }), true);
+});
+test("shouldGreet: takeover, welcome-off, or non-starting never greets", () => {
+  assert.equal(shouldGreet({ ...GREET_BASE, text: "hi", takeover: true }), false);
+  assert.equal(shouldGreet({ ...GREET_BASE, text: "hi", welcomeEnabled: false }), false);
+  assert.equal(shouldGreet({ ...GREET_BASE, text: "hi", starting: false }), false);
+});
+test("shouldGreet: the floor-plan flow itself still has content to send (greeting suppressed, not silent)", () => {
+  assert.ok(floorPlanPlan({ name: "Wecon Citizen Avenue" }).length >= 2);
 });
 
 test("stages are distinct from the Eyad flow's, so the two crons never touch each other's rows", () => {
