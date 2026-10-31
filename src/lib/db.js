@@ -3,7 +3,7 @@ import { setOfferResolver } from './offerRegistry.js';
 import { uid, now_, fmtBDT, fmtDT, curMonth, startOfMonth, rlabel } from './helpers.js';
 import { leadFilterParam, ORDER } from './leadQuery.js';
 import { COUNTED } from './contactPerf.js';
-import { sbGet, sbGetAll, sbCount, sbPage, hasColumn, sbRpc, sbRpcCall, sbUpdate, sbInsert, sbUpsert, sbMarkRead, sbDelete, sbDeleteLeads, sbEmailsInUse, sbUserIdsByRole, sbActsForLead, sbLoadActWindow, sbLoadLeadUpdates, sbLoadLeadsSince, ACT_WINDOW_DAYS, lToR, rToL, uToR, rToU, tToR, rToT, aToR, rToA, rToN, tgToR, rToTg, pToR, rToP, bkToR, rToBk, cToR, rToC, hrToR, rToHr, sbUpsertNotifs } from './supabase.js';
+import { sbGet, sbGetAll, sbCount, sbPage, hasColumn, sbRpc, sbRpcCall, sbUpdate, sbPatchRows, sbInsert, sbUpsert, sbMarkRead, sbDelete, sbDeleteLeads, sbUserIdsByRole, sbActsForLead, sbLoadActWindow, sbLoadLeadUpdates, sbLoadLeadsSince, ACT_WINDOW_DAYS, lToR, rToL, uToR, rToU, tToR, rToT, aToR, rToA, rToN, tgToR, rToTg, pToR, rToP, bkToR, rToBk, cToR, rToC, hrToR, rToHr, sbUpsertNotifs } from './supabase.js';
 // Bumped from propcrm_v1 when the cloud load became tenant-scoped: every
 // existing browser is carrying a full multi-tenant snapshot under the old key,
 // and mergeDB would happily fold it back in on top of the scoped one. A new key
@@ -168,8 +168,9 @@ export function purgeDemoSeed(db) {
   const killUsers = (db.users || []).filter(u => DEMO_SEED_EMAILS.includes((u.email || '').toLowerCase())).map(u => u.id);
   if (killUsers.length) {
     const s = new Set(killUsers);
+    // Cache only: a stray demo account in the cloud is removed by an admin
+    // through access-admin, never by a browser's bulk delete (CR-001 D1).
     db.users = db.users.filter(u => !s.has(u.id));
-    sbDelete('users', killUsers);
     changed = true;
   }
   if (db.teams && db.teams.some(t => t.id === 't1')) {
@@ -328,7 +329,13 @@ export function applyRealtimeEvent(table, eventType, record, oldRecord, user, er
     }
   };
 
-  if (table === 'users') handleArrayEvent('users', rToU, uToR);
+  if (table === 'users') {
+    handleArrayEvent('users', rToU, uToR);
+    // An admin changed my own row (access, role, deactivation): the session
+    // user must follow, or a revoked page stays open until the next reload.
+    const me = user && record && record.id === user.id && _DB.users.find(x => x.id === user.id);
+    if (me && eventType === 'UPDATE') _selfListeners.forEach(fn => fn(me));
+  }
   else if (table === 'teams') handleArrayEvent('teams', rToT, tToR);
   else if (table === 'leads') handleArrayEvent('leads', rToL, lToR);
   else if (table === 'companies') handleArrayEvent('companies', rToC, cToR);
@@ -430,7 +437,7 @@ function persistLocal(db) {
   for (const make of attempts) {
     try {
       localStorage.setItem(KEY, make());
-      const sid = JSON.parse(localStorage.getItem('pcrm_sess') || 'null')?.id;
+      const sid = sessionUserId();
       if (sid) localStorage.setItem(OWNER_KEY, sid);
       return true;
     }
@@ -449,71 +456,38 @@ export function mutate(fn) {
   saveDB(db);
 }
 
+const _selfListeners = new Set();
+export function onSelfChange(fn) { _selfListeners.add(fn); return () => _selfListeners.delete(fn); }
+
 // ── Auth ──
-export function tryLogin(email, pass) {
-  const db = getDB();
-  return db.users.find(u => u.email.toLowerCase() === email.toLowerCase() && u.password === pass) || null;
-}
+// Sign-in, refresh and sign-out are in auth.js (Supabase Auth, CR-001 D1).
+// The stored session is GoTrue's token pair plus `uid`, the CRM account the
+// server resolved for it. A legacy `pcrm_sess` (a bare user id anyone could
+// edit) is never read as a session.
+import { SESSION_KEY } from './supabase.js';
+export { SESSION_KEY };
+const readAuth = () => { try { return JSON.parse(localStorage.getItem(SESSION_KEY) || 'null'); } catch { return null; } };
+// Drop the pre-D1 session key on load: it grants nothing now, and leaving it
+// would let an older cached build trust it.
+try { localStorage.removeItem('pcrm_sess'); } catch { /* storage disabled */ }
+export const sessionUserId = () => {
+  const s = readAuth();
+  if (!s) return null;
+  if (s.legacy && s.uid) return s.uid;
+  return s.access_token && s.refresh_token ? s.uid || null : null;
+};
 
-// Columns login needs. Deliberately explicit: the bulk load must NOT ship
-// `password`, and this filtered lookup is the only place it is fetched.
-const LOGIN_COLS = 'id,name,email,password,phone,role,team_id,company_id,is_active,avatar,projects,allowed_features';
+// "Is there a signed-in session at all", without the network. True only for a
+// token pair whose account was resolved by the server at sign-in or restore.
+export function hasSessionId() { return !!sessionUserId(); }
 
-// Login against the cloud without needing the whole `users` table in memory.
-// Tries the cached DB first (keeps working offline / on a warm cache), then
-// falls back to a single filtered row.
-//
-// `ilike` — not `eq` — because tryLogin's cached comparison is case-insensitive
-// while PostgREST's `eq` is not, so `eq` would reject on a cold cache the exact
-// logins that succeed on a warm one. `ilike` treats `_` (common in emails) and
-// `%` as wildcards, so it can over-match; the match below re-checks the address
-// exactly, making the server-side filter a narrowing hint rather than the test.
-export async function loginRemote(email, pass) {
-  const local = tryLogin(email, pass);
-  if (local) return local;
-  const wanted = String(email).trim().toLowerCase();
-  const rows = await sbGet(`users?email=ilike.${encodeURIComponent(wanted)}&select=${LOGIN_COLS}`);
-  const hit = (rows || []).map(rToU)
-    .find(u => u.email && u.email.toLowerCase() === wanted && u.password === pass);
-  if (hit) return hit;
-
-  // Bootstrap escape hatch. migrateTenancy mints the built-in master account
-  // when no user exists anywhere; it used to run on every cold boot, but that
-  // boot now happens after login, so a brand-new deployment (empty cache AND
-  // empty cloud) would have nothing to sign in with. Only fires when the whole
-  // dataset is empty, so it cannot resurrect a deleted master.
-  const db = getDB();
-  if (!db.users.length && !(rows || []).length) {
-    migrateTenancy(db);
-    saveDB(db);
-    return tryLogin(email, pass);
-  }
-  return null;
-}
-
-// Cheap "is there a session at all" probe. getSession() resolves the stored id
-// against getDB().users, so on a cold visit with an empty cache it returns null
-// even when a valid session exists — it cannot be used to decide whether to
-// skip the initial load.
-export function hasSessionId() {
-  try { return !!JSON.parse(localStorage.getItem('pcrm_sess') || 'null')?.id; }
-  catch { return false; }
-}
-
+// The cached row of the signed-in account, for the warm first paint. App
+// re-verifies the token with restoreSession() right after and signs out if the
+// server disagrees, so this never decides access on its own.
 export function getSession() {
-  try {
-    const s = JSON.parse(localStorage.getItem('pcrm_sess'));
-    if (!s) return null;
-    return getDB().users.find(u => u.id === s.id) || null;
-  } catch { return null; }
+  const id = sessionUserId();
+  return id ? getDB().users.find(u => u.id === id) || null : null;
 }
-
-// Deliberately does NOT stamp OWNER_KEY. The session is set at login, BEFORE
-// the old tenant's snapshot has been cleared, so stamping here would mark the
-// outgoing user's cache as belonging to the incoming one and cacheBelongsTo
-// would wave it through. Only persistLocal stamps, once the data is actually
-// this account's.
-export function setSession(u) { localStorage.setItem('pcrm_sess', JSON.stringify({ id: u.id })); }
 
 // Drop the cached snapshot AND the in-memory singleton. Since the snapshot now
 // only ever holds one company's rows, leaving it behind for the next account to
@@ -526,6 +500,7 @@ export function clearLocalDB() {
 }
 
 export function clearSession() {
+  localStorage.removeItem(SESSION_KEY);
   localStorage.removeItem('pcrm_sess');
   clearLocalDB();
 }
@@ -535,15 +510,6 @@ export function clearSession() {
 // tab crashed, and someone else signs in.
 export function cacheBelongsTo(userId) {
   try { return localStorage.getItem(OWNER_KEY) === userId; } catch { return false; }
-}
-
-// Fetch one user row by id, without needing the users table in memory. Session
-// restore on a cold cache has a stored id but no user, and the scoped load needs
-// the user (for companyId) before it can build its filters — chicken and egg.
-export async function fetchSessionUser(id) {
-  if (!id) return null;
-  const rows = await sbGet(`users?id=eq.${encodeURIComponent(id)}&select=${LOGIN_COLS}`);
-  return (rows && rows[0]) ? rToU(rows[0]) : null;
 }
 
 // ── Queries ──
@@ -1205,17 +1171,36 @@ export function userNameById(userId, fallback = null) {
   return (u && u.name) || fallback;
 }
 
-// Update an agent's editable fields (name/phone) and project assignment.
-// projects: 'ALL' (all projects) | array of property ids | [] (none).
-export function updateAgent(userId, fields) {
-  let updated;
+// Save the signed-in account's own profile fields (migration 0054 grants
+// UPDATE on these three only). Sends only what changed, so a stale cached copy
+// can never write old values back over somebody else's newer edit, and waits
+// for the row PostgREST returns: 0 rows means RLS or a deleted row refused it,
+// and the cache stays as it was. Access, role and projects go through
+// access-admin (accessAdmin.js), never through here.
+const PROFILE_FIELDS = { name: 'name', phone: 'phone', avatar: 'avatar' };
+export async function updateProfile(userId, fields) {
+  const cur = getDB().users.find(x => x.id === userId);
+  if (!cur) return { ok: false, error: 'Account not found. Reload and try again.' };
+  const patch = {};
+  for (const [k, col] of Object.entries(PROFILE_FIELDS)) {
+    if (k in fields && (fields[k] ?? '') !== (cur[k] ?? '')) patch[col] = fields[k] ?? '';
+  }
+  if (!Object.keys(patch).length) return { ok: true, user: cur };
+  const r = await sbPatchRows('users', `id=eq.${encodeURIComponent(userId)}`, patch, 'id,name,phone,avatar');
+  if (!r.ok || !r.rows.length) return { ok: false, error: r.error || 'Not saved: the server accepted no change. Reload and try again.' };
+  return { ok: true, user: storeUserRow(r.rows[0]) };
+}
+
+// Lay a users row the server returned over the cached account and persist it.
+export function storeUserRow(row) {
+  let out;
   mutate(db => {
-    const u = db.users.find(x => x.id === userId);
-    if (u) { Object.assign(u, fields); updated = u; }
+    const i = db.users.findIndex(x => x.id === row.id);
+    const merged = rToU(i >= 0 ? { ...uToR(db.users[i]), ...row } : row);
+    if (i >= 0) db.users[i] = merged; else db.users.push(merged);
+    out = merged;
   });
-  // Push to the cloud too. Without this the edit lives only in localStorage and
-  // the next reload wipes it: sbLoad + mergeDB take the remote snapshot wholesale.
-  if (updated) sbUpdate('users', userId, uToR(updated));
+  return out;
 }
 
 // Resolve the projects an agent may deal on ('ALL' or array of ids).
@@ -2216,42 +2201,13 @@ export function setTargetFn(userId, val) {
   if (saved) sbUpsert('targets', [tgToR(saved)]);
 }
 
-export function createUserFn(name, email, password, phone, role, currentUser) {
-  const id = 'u' + uid();
-  const companyId = currentUser.companyId; // inherit the admin's company
-  const stamp = now_();
-  const baseUser = { id, name, email, password: password || '1234', phone: phone || '', role, teamId: currentUser.teamId, companyId, isActive: true, createdAt: stamp, updatedAt: stamp };
-
-  // mutate() only writes the in-memory copy and the localStorage cache — it does NOT
-  // reach Supabase. Every create has to push its own row, or the account exists on this
-  // browser only and is gone on the next machine (and on the next sbLoad).
-  if (role === ROLES.TL) {
-    const tid = 't' + uid();
-    const team = { id: tid, name: name + "'s Team", leadId: id, companyId, createdAt: stamp, updatedAt: stamp };
-    const tlUser = { ...baseUser, teamId: tid };
-    mutate(db => {
-      db.teams = db.teams || [];
-      db.teams.push(team);
-      db.users.push(tlUser);
-    });
-    // Team first: the user row's team_id points at it.
-    sbInsert('teams', tToR(team));
-    sbInsert('users', uToR(tlUser));
-  } else {
-    const newUser = role === ROLES.EXEC ? { ...baseUser, allowedFeatures: [] } : baseUser;
-    mutate(db => { db.users.push(newUser); });
-    sbInsert('users', uToR(newUser));
-  }
-  return id;
-}
-
-// Delete a user and persist it: tombstone (so the cloud snapshot can't resurrect
-// it on reload) + hard-delete from Supabase. If a Team Lead is removed, their team
-// is deleted too and its agents are unassigned.
-export function deleteUserFn(userId, currentUser) {
+// After access-admin has deleted an account (accessAdmin.deleteAccount), tidy
+// the local cache: tombstone it so another device's snapshot cannot resurrect
+// it, unassign its cached leads, and drop a Team Lead's team. The users row
+// itself is never deleted from here: only the server may do that.
+export function unassignDeletedUser(userId, currentUser) {
   const db = getDB();
-  const u = db.users.find(x => x.id === userId);
-  if (!u) return;
+  const u = db.users.find(x => x.id === userId) || { id: userId, name: '', role: null };
   const teamToKill = (u.role === ROLES.TL && u.teamId) ? u.teamId : null;
   mutate(d => {
     d.users = d.users.filter(x => x.id !== userId);
@@ -2273,7 +2229,6 @@ export function deleteUserFn(userId, currentUser) {
     d.deletionLog.push({ id: userId, kind: 'user', name: u.name, status: u.role, deletedBy: currentUser?.name || '', deletedAt: now_() });
     if (teamToKill) d.deletionLog.push({ id: teamToKill, kind: 'team', name: u.name + "'s Team", deletedBy: currentUser?.name || '', deletedAt: now_() });
   });
-  sbDelete('users', [userId]);
   if (teamToKill) sbDelete('teams', [teamToKill]);
 }
 
@@ -2312,23 +2267,25 @@ export function companyStats(cid) {
   };
 }
 
-// Create a new company + its first Management (admin) account. Master-only.
-export function createCompany({ name, plan, adminName, adminEmail, password, phone }) {
+// Create a new company, then its first Management account through the
+// access-admin function (Master only, checked there). The company row is
+// written first because the account's company_id points at it.
+export async function createCompany({ name, plan, adminName, adminEmail, password, phone }, createAccount) {
+  if (!password || password.length < 10) return { error: 'Admin password must be at least 10 characters' };
   const cid = 'c' + uid();
-  const aid = 'u' + uid();
-  const exists = getDB().users.some(u => (u.email || '').toLowerCase() === (adminEmail || '').toLowerCase());
-  if (exists) return { error: 'Admin email already in use' };
   const company = { id: cid, name: name.trim(), plan: plan || 'Starter', createdAt: now_(), isActive: true };
-  const admin = { id: aid, name: (adminName || 'Admin').trim(), email: (adminEmail || '').trim(), password: password || '1234', phone: phone || '', role: ROLES.MGMT, teamId: null, companyId: cid, isActive: true };
-  mutate(db => {
-    db.companies = db.companies || [];
-    db.companies.push(company);
-    db.users.push(admin);
-  });
-  // Company first: the admin row's company_id points at it.
-  sbInsert('companies', cToR(company));
-  sbInsert('users', uToR(admin));
-  return { companyId: cid, adminId: aid, adminEmail: (adminEmail || '').trim(), password: password || '1234' };
+  const c = await sbInsert('companies', cToR(company));
+  if (c && c.ok === false) return { error: 'Company not saved' };
+  mutate(db => { db.companies = db.companies || []; db.companies.push(company); });
+  const res = await createAccount({ name: (adminName || 'Admin').trim(), email: (adminEmail || '').trim(), password, phone: phone || '', role: ROLES.MGMT, companyId: cid });
+  if (!res.ok) {
+    // No company without its first admin: a retry would otherwise leave one
+    // more empty company each time.
+    mutate(db => { db.companies = (db.companies || []).filter(c => c.id !== cid); });
+    await sbDelete('companies', [cid]);
+    return { error: res.error };
+  }
+  return { companyId: cid, adminId: res.user.id, adminEmail: res.user.email, password };
 }
 
 export function setCompanyActive(cid, active) {
@@ -2337,65 +2294,6 @@ export function setCompanyActive(cid, active) {
   if (updated) sbUpdate('companies', cid, cToR(updated));
 }
 
-// Provision many accounts in one pass. `rows`: [{name,email,phone,role,password,teamId}].
-// Validates each row (name+email required, valid+unique email incl. within the batch),
-// creates Team Leads with their own team, and agents under the chosen/owner team.
-// Returns { created:[{name,email,pass,roleLabel,role}], errors:[{line,name,reason}] }.
-// Async since the cloud load became tenant-scoped: getDB().users holds one
-// company, so a purely local duplicate-email check can no longer see the other
-// tenants. The server is asked about this batch's addresses first.
-export async function bulkCreateUsers(rows, currentUser) {
-  const created = [];
-  const errors = [];
-  const emailRe = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
-  const candidates = (rows || []).map(r => (r.email || '').trim()).filter(e => emailRe.test(e));
-  const remote = await sbEmailsInUse(candidates);
-  const seen = new Set([...getDB().users.map(u => (u.email || '').toLowerCase()), ...remote]);
-
-  rows.forEach((r, i) => {
-    const line = i + 1;
-    const name = (r.name || '').trim();
-    const email = (r.email || '').trim();
-    const role = normRole(r.role || ROLES.AGENT);
-    const pass = (r.password || '').trim() || '1234';
-    const phone = (r.phone || '').trim();
-
-    if (!name && !email) return; // skip blank rows silently
-    if (!name) { errors.push({ line, name: email || '(row ' + line + ')', reason: 'Name required' }); return; }
-    if (!email) { errors.push({ line, name, reason: 'Email required' }); return; }
-    if (!emailRe.test(email)) { errors.push({ line, name, reason: 'Invalid email' }); return; }
-    if (seen.has(email.toLowerCase())) { errors.push({ line, name, reason: 'Email already in use' }); return; }
-
-    const id = 'u' + uid();
-    seen.add(email.toLowerCase());
-
-    const companyId = r.companyId || currentUser.companyId; // new accounts join the admin's company
-    // As in createUserFn: mutate() is local-only, so each row is pushed to Supabase too.
-    const stamp = now_();
-    if (role === ROLES.TL) {
-      const tid = 't' + uid();
-      const team = { id: tid, name: name + "'s Team", leadId: id, companyId };
-      const u = { id, name, email, password: pass, phone, role, teamId: tid, companyId, isActive: true, createdAt: stamp, updatedAt: stamp };
-      mutate(db => {
-        db.teams = db.teams || [];
-        db.teams.push(team);
-        db.users.push(u);
-      });
-      sbInsert('teams', tToR(team));
-      sbInsert('users', uToR(u));
-    } else {
-      // Management rows carry no team; everyone else inherits the admin's (or the
-      // team picked on the row).
-      const teamId = role === ROLES.MGMT ? undefined : (r.teamId || currentUser.teamId);
-      const u = { id, name, email, password: pass, phone, role, teamId, companyId, isActive: true, createdAt: stamp, updatedAt: stamp };
-      mutate(db => { db.users.push(u); });
-      sbInsert('users', uToR(u));
-    }
-    created.push({ id, name, email, pass, role, roleLabel: rlabel(role) });
-  });
-
-  return { created, errors };
-}
 
 // Normalize a phone to E.164-ish with country code. Bangladesh-aware:
 //   01XXXXXXXXX  -> +8801XXXXXXXXX

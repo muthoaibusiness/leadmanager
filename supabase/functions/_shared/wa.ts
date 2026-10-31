@@ -450,19 +450,83 @@ export async function logNoteActivity(leadId: string, companyId: string | null, 
   }]);
 }
 
-// The CRM has no Supabase Auth session, so an admin action is authorised by
-// checking the acting user's role in the users table. Same trust boundary the
-// rest of the app already runs on — it stops a non-admin agent from rotating
-// the token, not someone holding the anon key.
-export async function isAdminUser(userId: string | null): Promise<boolean> {
-  if (!userId) return false;
-  const rows = await sbSelect(`users?id=eq.${encodeURIComponent(userId)}&select=role,is_active`);
-  const u = rows?.[0];
-  return !!u && u.is_active !== false && (u.role === "MANAGEMENT" || u.role === "MASTER");
-}
-
 // ── phone / jid ─────────────────────────────────────────────────────────────
 export const jidToPhone = (jid: string) => (jid || "").split("@")[0].split(":")[0].replace(/\D/g, "");
+
+// One customer can reach the bot under two JIDs: the phone JID (…@s.whatsapp.net)
+// and, when WhatsApp hides the number, a LID (…@lid). Both must land in the same
+// conversation, so the conversation key prefers the phone JID whenever a real
+// Bangladeshi number is known; a LID with no real number stays as-is.
+export const canonicalConvJid = (remote: string, phone: string): string => {
+  const r = String(remote || "");
+  if (r.endsWith("@s.whatsapp.net")) return r;
+  if (r.endsWith("@lid")) {
+    // Normalize to the BD international form (8801XXXXXXXXXX) so the LID thread
+    // matches the phone-JID thread of the same customer exactly.
+    let p = String(phone || "").replace(/\D/g, "");
+    if (p.startsWith("0")) p = p.slice(1);
+    if (/^1[3-9]\d{8}$/.test(p)) p = "880" + p;
+    if (looksLikeRealPhone(p)) return `${p}@s.whatsapp.net`;
+    return r;
+  }
+  return r;
+};
+
+// Click-to-WhatsApp ad referral. Wasender surfaces this either pre-flattened or
+// nested on contextInfo.externalAdReply — accept both. Besides the ad creative,
+// capture Meta's structured identifiers (ad/campaign/adcreative/click) when the
+// payload carries them, so an ad can be traced to its campaign, not just its
+// creative text. Empty fields fall through; returns null when nothing ad-like
+// is present.
+export function extractAdReply(msg: any, payload: any): Record<string, unknown> | null {
+  const ctx =
+    msg?.extendedTextMessage?.contextInfo?.externalAdReply ??
+    msg?.imageMessage?.contextInfo?.externalAdReply ??
+    msg?.contextInfo?.externalAdReply ??
+    payload?.externalAdReply ??
+    payload?.adReply ??
+    null;
+  if (!ctx) return null;
+  const r = payload?.referral ?? null;
+  const ad: Record<string, unknown> = {
+    title: ctx.title ?? ctx.adTitle ?? "",
+    description: ctx.description ?? ctx.adDescription ?? "",
+    body: ctx.body ?? ctx.adText ?? ctx.text ?? "",
+    conversionSource: ctx.conversionSource ?? ctx.sourceType ?? ctx.source ?? "",
+    sourceUrl: ctx.sourceUrl ?? ctx.url ?? "",
+    greetingMessageBody: ctx.greetingMessageBody ?? ctx.greeting ?? "",
+    thumbnailUrl: ctx.thumbnailUrl ?? ctx.thumbnail ?? "",
+    adId: ctx.adId ?? ctx.ad_id ?? r?.ad_id ?? "",
+    campaignId: ctx.campaignId ?? ctx.campaign_id ?? r?.campaign_id ?? "",
+    adcreativeId: ctx.adcreativeId ?? ctx.adcreative_id ?? r?.adcreative_id ?? "",
+    clickId: ctx.clickId ?? ctx.click_id ?? r?.click_id ?? ctx.ctwaClid ?? "",
+  };
+  return Object.values(ad).some(Boolean) ? ad : null;
+}
+
+// First real, dialable Bangladeshi number among payload JID/sender candidates,
+// normalized to the international 880 form (the form leads are stored in). A
+// LID's digits are not a real number and are never returned.
+export function realPhoneFrom(candidates: unknown[]): string {
+  for (const c of candidates) {
+    const d = String(c ?? "").replace(/\D/g, "");
+    if (!d) continue;
+    const n = d.length === 11 && d.startsWith("01") ? "880" + d.slice(1)
+      : d.length === 10 && d.startsWith("1") ? "880" + d
+      : d;
+    if (looksLikeRealPhone(n)) return n;
+  }
+  return "";
+}
+
+// Wasender echoes a bot's own send back as a fromMe message whose key.id is not
+// the msgId the send API returned, so the wa_id index never catches it. The
+// echo is the same OUT text, in the same thread, seconds after a bot-sent row.
+export const isBotEcho = (
+  recentOut: { body?: string | null; sender_name?: string | null; wa_timestamp?: string | null }[], body: string, at: string, windowMs = 120_000,
+): boolean =>
+  !!body && recentOut.some((r) => (r.body || "") === body && ["AI Agent", "AI Trainer"].includes(String(r.sender_name || ""))
+    && Math.abs(new Date(at).getTime() - new Date(r.wa_timestamp || 0).getTime()) <= windowMs);
 export const phoneToJid = (phone: string) => {
   const d = (phone || "").replace(/\D/g, "");
   return d ? `${d}@s.whatsapp.net` : "";

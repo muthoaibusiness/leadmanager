@@ -15,49 +15,15 @@ export const ROLES = {
 export const LEGACY_AGENT_ROLES = ['INITIAL_AGENT'];
 export const normRole = (r) => (LEGACY_AGENT_ROLES.includes(r) ? ROLES.AGENT : r);
 
-// Role-scoped navigation (mirrors Muthoclo admin can(role, scope)).
-const ALL_ROLES = ['AGENT', 'MEETING_AGENT', 'TEAM_LEAD', 'MANAGEMENT'];
-export const NAV_SCOPES = {
-  dashboard: ALL_ROLES,
-  leads: ALL_ROLES,
-  add_customer: ['AGENT', 'MEETING_AGENT', 'TEAM_LEAD'],
-  // WhatsApp chat is never granted by role — access comes from the allow-list in
-  // wa_settings (or an explicit allowedFeatures grant). See waCanChat() in wa.js.
-  conversations: [],
-  calendar: ['AGENT', 'MEETING_AGENT', 'TEAM_LEAD', 'MANAGEMENT'],
-  meeting: ['AGENT', 'MEETING_AGENT', 'TEAM_LEAD'],
-  pipeline: ALL_ROLES,
-  properties: ALL_ROLES,
-  // Management's Reports charts now live on their Home dashboard — the
-  // standalone page is Team Lead only.
-  reports: ['TEAM_LEAD'],
-  agentperf: ['MANAGEMENT', 'TEAM_LEAD'],
-  // Reports page listed right after Performance (blank for now). Not the
-  // Team Lead's older `reports` analytics page above.
-  perfreports: ['MANAGEMENT', 'TEAM_LEAD'],
-  requests: ['MANAGEMENT'],
-  inventory: ['MANAGEMENT'],
-  team: ['TEAM_LEAD'],
-  // The old separate Users tab is merged into Accounts (one roster page).
-  accounts: ['MANAGEMENT'],
-  relay: ['MANAGEMENT'],
-  aitrainer: ['MANAGEMENT'],
-  companies: ['MASTER'],   // master-admin company-wise overview
-  profile: [...ALL_ROLES, 'MASTER'],
-};
+// Role-scoped navigation and feature grants live in one file shared with the
+// Edge Functions, so the server checks the same rule the browser shows.
+import { NAV_SCOPES, FEATURE_KEYS, defaultFeatures, hasFeature, canManageUser, assignableRoles } from '../../supabase/functions/_shared/access-rules.js';
+export { NAV_SCOPES, FEATURE_KEYS, defaultFeatures, canManageUser, assignableRoles };
 // Access check. If an admin has saved a custom `allowedFeatures` list on the user,
 // that list fully dictates access (overrides role defaults). Otherwise fall back to
 // the strict role-based NAV_SCOPES. Profile is always available (logout/account).
-export const canSee = (user, key) => {
-  if (!user) return false;
-  if (key === 'profile') return true;
-  if (Array.isArray(user.allowedFeatures)) {
-    // A grant saved before Users merged into Accounts still opens the merged page.
-    if (key === 'accounts' && user.allowedFeatures.includes('users')) return true;
-    return user.allowedFeatures.includes(key);
-  }
-  return (NAV_SCOPES[key] || []).includes(user.role);
-};
+// isActive is not checked here: the session itself ends for an inactive account.
+export const canSee = (user, key) => !!user && hasFeature({ ...user, isActive: true }, key);
 
 // Below this width the sidebar is an overlay drawer; from 1024px it is docked
 // (and can be collapsed). Keep in step with the 1023px breakpoints in index.css.
@@ -83,28 +49,21 @@ export const effectiveRole = (user) => {
 export const NI_ONLY = 'ni_only';
 export const isNiHandler = (user) => !!user && Array.isArray(user.allowedFeatures) && user.allowedFeatures.includes(NI_ONLY);
 
-// Features an admin can grant/revoke per user, in display order (nav features only;
-// 'companies' is master-only overview and 'profile' is always-on, so both excluded).
-// 'finance_approve' is not a page. The key is kept as it was saved on accounts;
-// since budget approval was turned off it is shown as "Manage all budgets":
-// an Inventory user holding it can edit, archive and restore budgets other
-// people created (without it, only their own) and add corrections to finance
-// history. Checked again server-side by the finance Edge Function, which reads
-// the same allowed_features column.
-export const FEATURE_KEYS = ['dashboard', 'leads', 'add_customer', 'conversations', 'calendar', 'meeting', 'pipeline', 'properties', 'reports', 'agentperf', 'perfreports', 'requests', 'inventory', 'finance_approve', 'team', 'accounts', 'relay', 'aitrainer', 'self_forward'];
+// FEATURE_KEYS (the grantable features, in display order) is in access-rules.js.
+// The checklist's starting state: the saved list, else the role's defaults
+// (none for Executive).
+export const initialFeatures = (u) =>
+  new Set(Array.isArray(u?.allowedFeatures) ? u.allowedFeatures : (u?.role === ROLES.EXEC ? [] : defaultFeatures(u?.role)));
 export const FEATURE_LABELS = {
   dashboard: 'Home', leads: 'Leads', add_customer: 'Add Customer', conversations: 'Conversations', calendar: 'Calendar', meeting: 'Meeting', pipeline: 'Pipeline', properties: 'Projects',
   reports: 'Reports', agentperf: 'Performance', perfreports: 'Performance Reports', requests: 'Requests', inventory: 'Inventory', finance_approve: 'Manage all budgets', team: 'Team',
-  accounts: 'Users & Accounts', relay: 'WhatsApp Relay', aitrainer: 'AI Trainer', self_forward: 'Self-forward leads',
+  accounts: 'Users & Accounts', relay: 'WhatsApp Relay', aitrainer: 'AI Trainer', metacapi: 'Meta CAPI', self_forward: 'Self-forward leads',
 };
 // What a grant does when its label alone doesn't say it.
 export const FEATURE_HINTS = {
   finance_approve: 'Manage all budgets: can edit, archive and restore budgets other people created, and add corrections to finance history. Without it, Inventory users change only their own budgets.',
   self_forward: 'Can forward a lead to themselves from the lead panel, without going through a Team Lead or Management. Meeting Agents always have this; grant it to anyone else who should too.',
 };
-// Default features for a standard role (from NAV_SCOPES). Executive resolves to none.
-export const defaultFeatures = (role) => FEATURE_KEYS.filter(k => (NAV_SCOPES[k] || []).includes(role));
-
 // Meeting Agent always has this, role-wise — same reasoning as effectiveRole()
 // folding it back to AGENT everywhere else. 'self_forward' in FEATURE_KEYS is
 // the grant path for anyone else who should have it too, same as any other

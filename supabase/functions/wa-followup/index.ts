@@ -10,12 +10,16 @@
 //   select cron.schedule('wa-followup', '*/2 * * * *', $$
 //     select net.http_post(
 //       url := '<SUPABASE_URL>/functions/v1/wa-followup',
-//       headers := '{"Content-Type": "application/json"}'::jsonb
+//       headers := '{"Content-Type": "application/json", "x-followup-key": "<FOLLOWUP_CRON_KEY>"}'::jsonb
 //     );
 //   $$);
+// Access (CR-001 D1): the x-followup-key header must equal the
+// FOLLOWUP_CRON_KEY secret (cron-key.ts). Without the secret every call is
+// refused (503): set the secret and the cron header before deploying this.
 
 import { CORS, json, sbSelect, sbPatch, SUPABASE_URL, SERVICE_KEY, getActiveProjects, sendWaMessageMirrored } from "../_shared/wa.ts";
 import { buildJolshiriBundle, FLOW_ASK_PROFILE_TEXT, FLOW_AUTO_PROFILE_TEXT, FLOW_ASK_AGENT_TEXT, brochureCaption } from "../_shared/ai.ts";
+import { cronKeyGate } from "../_shared/cron-key.ts";
 import {
   DUBAI_STAGE, DUBAI_DOCS_WAIT_MS, DUBAI_MEETING_WAIT_MS, DUBAI_MEETING_ASK_TEXT, docsPlan, docsAskText,
 } from "../_shared/dubai-flow.ts";
@@ -211,6 +215,8 @@ async function processDubaiAwaiting(): Promise<number> {
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
+  const gate = cronKeyGate(req, Deno.env.get("FOLLOWUP_CRON_KEY"), "x-followup-key");
+  if (!gate.ok) return json({ ok: false, error: gate.error }, gate.status);
   try {
     const greeted = await processGreeted();
     const awaiting = await processAwaitingReply();

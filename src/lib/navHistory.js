@@ -22,6 +22,7 @@ export const VIEW_TITLES = {
   accounts: 'Users',
   relay: 'WhatsApp Relay',
   aitrainer: 'AI Trainer',
+  metacapi: 'Meta CAPI',
   requests: 'Hold Requests',
   inventory: 'Inventory',
   profile: 'My Profile',

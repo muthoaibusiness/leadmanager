@@ -37,6 +37,15 @@ function fakes(opts: { testMode?: boolean; numbers?: string[]; items?: any[]; me
 }
 const input = (o: Partial<LiveInput> = {}): LiveInput => ({ bot: "eyad", convId: "eyad:8801711000001@s.whatsapp.net", phone: "8801711000001", to: "8801711000001", text: "Nuznan location?", ad: { isAd: false }, replyModel: "m", allowMedia: true, ...o });
 
+test("a test-number turn passes approved document hits to the model and traces them", async () => {
+  const f = fakes({ model: () => reply({ intent: "location", project_ref: "p1", reply: "Wecon Nuznan is in Dhaka.", clarify: false }) });
+  const hit = { id: "c1", document_id: "d1", document_version: 1, chunk_no: 0, title: "Nuznan FAQ", section: null, chunk_text: "FAQ-CHUNK: Nuznan parking 47 cars.", score: 0.6 };
+  const r = await runTestTurn(input(), { ...f.ports, searchDocs: async () => [hit] });
+  assert.equal(r.outcome, "ok");
+  assert.ok(JSON.stringify(f.modelReqs[0]).includes("FAQ-CHUNK"), "document excerpt reaches the prompt");
+  assert.equal(f.t.ai_turns[0].trace.documents[0].document_id, "d1");
+});
+
 test("isTestNumber matches on the last 10 digits", () => {
   assert.equal(isTestNumber(["8801711000001"], "01711000001"), true);
   assert.equal(isTestNumber(["8801711000001"], "+880 1711-000001"), true);
@@ -162,6 +171,21 @@ test("test mode switched off after the model call and before the send stops the 
   const r = await runTestTurn(input(), f.ports);
   assert.equal(f.sent.length, 0); assert.equal(r.sent, 0);
   assert.deepEqual(f.t.ai_turns[0].trace.send_errors, ["recipient no longer allowed"]);
+});
+
+test("production activation (allowNonTest) replies to a non-test customer when AI replies are on", async () => {
+  const f = fakes({ numbers: [] });
+  f.t.wa_bot_settings[0].faq_agent_enabled = true;
+  const r = await runTestTurn(input({ allowNonTest: true }), f.ports);
+  assert.equal(r.outcome, "ok"); assert.equal(r.sent, 1);
+});
+
+test("production activation is gated by the AI-replies switch (fail closed)", async () => {
+  const f = fakes({ numbers: [] });
+  f.t.wa_bot_settings[0].faq_agent_enabled = false;
+  const r = await runTestTurn(input({ allowNonTest: true }), f.ports);
+  assert.equal(r.sent, 0); assert.equal(f.modelReqs.length, 0);
+  assert.equal(f.t.ai_turns[0].outcome, "blocked_not_test_number");
 });
 
 test("a failed settings read blocks the turn (fail closed)", async () => {

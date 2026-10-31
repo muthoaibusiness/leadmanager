@@ -40,6 +40,9 @@ test("floorLabel: a floor name is read from the file name when the catalog has n
   assert.equal(floorLabel("https://img.test/3rd-Floor-Layut-Plan.jpg"), "3rd Floor");
   assert.equal(floorLabel("https://img.test/Bastment-Parking-Floor-Plan.jpg"), "Basement");
   assert.equal(floorLabel("https://img.test/Semi-Basement-Parking.jpg"), "Semi-Basement");
+  // Citizen Avenue names its basement plans without a "floor" or "plan" word.
+  assert.equal(floorLabel("https://img.test/2026/06/Semi_Basement_Citizen_Mall-scaled.png"), "Semi-Basement");
+  assert.equal(floorLabel("https://img.test/2026/06/Basement_Floor_-Citizen_Mall-scaled.png"), "Basement");
   assert.equal(floorLabel("https://img.test/10th-Floor-Layout-PlanRoof.png"), "10th Floor");
   assert.equal(floorLabel("https://img.test/Osman-2D.pdf.15.12.25_page-0001.jpg"), null);
   assert.equal(floorLabel("https://img.test/IMG_2041.jpg"), null);

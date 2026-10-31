@@ -95,6 +95,8 @@ test("detectLanguage", () => {
   assert.equal(detectLanguage("দাম কত?"), "bn");
   assert.equal(detectLanguage("Nuznan er size কত?"), "bn");
   assert.equal(detectLanguage("nuznan er dam koto?"), "banglish");
+  assert.equal(detectLanguage("Citizen Avenue koi?"), "banglish");
+  assert.equal(detectLanguage("koto tola?"), "banglish");
   assert.equal(detectLanguage("What is the price of Nuznan?"), "en");
   assert.equal(detectLanguage("‌‍"), "en");
 });

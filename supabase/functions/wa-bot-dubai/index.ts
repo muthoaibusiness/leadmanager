@@ -413,7 +413,6 @@ async function handleInbound(evt: ParsedEvent): Promise<void> {
   if (projectName && projectName !== row.property_interest) {
     await sbPatchFireAndForget("preleads", `id=eq.${pid}`, { property_interest: projectName });
   }
-
   // 1. A foreign number goes straight to the Dubai agent — no message to the
   // customer. A Bangladeshi number or a hidden number is left to a human.
   if (isNew && settings.autoForwardEnabled && !takeover && isForeignNumber(evt.phone, evt.isLid)) {

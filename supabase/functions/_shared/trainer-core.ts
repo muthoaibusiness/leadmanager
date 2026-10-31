@@ -6,7 +6,7 @@
 // Bump CORE_VERSION on any change that can alter a reply, a verdict or a
 // checksum. Test runs and published snapshots are certified per version.
 
-export const CORE_VERSION = "1.9.0";
+export const CORE_VERSION = "1.10.0";
 
 import { docExcerpts, type DocHit } from "./trainer-docs.ts";
 import { GENERIC } from "./trainer-words.ts";
@@ -190,7 +190,8 @@ export function freezeContent(
 
 // ── language ────────────────────────────────────────────────────────────────
 const BANGLISH = ["ami", "apni", "apnar", "koto", "dam", "taka", "ache", "achhe", "chai", "den", "dao", "kothay",
-  "jomi", "kemon", "er", "ki", "na", "hobe", "korte", "bolen", "dite", "pathan", "kobe", "kono", "shob", "sob"];
+  "jomi", "kemon", "er", "ki", "na", "hobe", "korte", "bolen", "dite", "pathan", "kobe", "kono", "shob", "sob",
+  "koi", "tola", "koyta"];
 
 export function detectLanguage(text: string): "bn" | "banglish" | "en" {
   const t = norm(text);
@@ -425,7 +426,7 @@ export function buildPrompt(
     examples.length ? "Examples of good replies:\n" + examples.map((e) => `- [${e.id}] customer: "${e.body.conversation.at(-1)?.text ?? ""}" -> ideal: "${e.body.ideal_reply}"`).join("\n") : "",
     "",
     `Conversation state: ${JSON.stringify({ active_project: state.active_project, first_price_given_for: Object.keys(state.first_price_at), already_asked: state.asked })}`,
-    `Reply in ${LANG_NAME[lang as keyof typeof LANG_NAME] ?? "English"}. Short, friendly, no emoji. Do not ask again for anything in already_asked.`,
+    `Reply in ${LANG_NAME[lang as keyof typeof LANG_NAME] ?? "English"}. At most 5 short lines, friendly, no emoji. Answer every question in the message, in order. Do not ask again for anything in already_asked.`,
     "Never say you cannot answer and stop. Never say a person has been informed or that anything was booked or sent.",
     "Only request media that the project lists. Use project ids from the catalog.",
     "Brochures and profiles are sent by the system, not by you: never say a brochure is attached, sent or on its way, and never put one in media.",
@@ -513,6 +514,8 @@ export function guardReply(out: ModelOut, c: SnapshotContent, resolved: string[]
     if (out.language === "bn" && !scriptBn) errs.push("script");
     if (out.language !== "bn" && scriptBn) errs.push("script");
   }
+  // A WhatsApp reply is at most 5 short lines (owner rule, 2026-10-31).
+  if (r.split("\n").filter((l) => l.trim()).length > 5) errs.push("length");
   return errs;
 }
 

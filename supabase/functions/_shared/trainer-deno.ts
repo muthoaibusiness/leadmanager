@@ -53,9 +53,11 @@ export const llm: Llm = {
         if (!r.ok) return first ?? { ok: false, error: `OpenRouter ${r.status}` };
         const j = await r.json();
         const text = String(j?.choices?.[0]?.message?.content ?? "");
-        const res: ChatRes = { ok: true, text, prompt_tokens: j?.usage?.prompt_tokens ?? 0, completion_tokens: j?.usage?.completion_tokens ?? 0 };
+        // Usage is cumulative: the empty first pass was billed too.
+        const res: ChatRes = { ok: true, text, prompt_tokens: (first?.ok ? first.prompt_tokens : 0) + (j?.usage?.prompt_tokens ?? 0),
+          completion_tokens: (first?.ok ? first.completion_tokens : 0) + (j?.usage?.completion_tokens ?? 0) };
         if (text.trim() || String(j?.choices?.[0]?.finish_reason || "") !== "length") return res;
-        first = first ?? res;
+        first = res;
       } catch (e) {
         return first ?? { ok: false, error: e instanceof Error ? e.message : String(e) };
       } finally {
@@ -130,12 +132,17 @@ export const embedder = env.embeddingModel
 
 // One test-number turn on a bot's real chat. Model calls draw on the trainer's
 // daily budget, like the Playground.
-export function runTrainerTestTurn(a: {
-  bot: Bot; convId: string; phone: string; to: string; text: string; ad: { isAd: boolean; adText?: string }; allowMedia: boolean;
+export async function runTrainerTestTurn(a: {
+  bot: Bot; convId: string; phone: string; to: string; text: string; ad: { isAd: boolean; adText?: string }; allowMedia: boolean; production?: boolean;
 }): Promise<LiveResult> {
   const { callModel, inventory } = _internals.portsFor({ db, llm, env });
-  return runTestTurn({ ...a, replyModel: env.replyModel }, {
-    callModel, inventory, probeDocument: probe, probeImage: probe,
+  // The same approved-document search as the Playground, so a test number is
+  // answered from the uploaded FAQs and fact sheets too.
+  // A failed setup is traced on the turn, never thrown into the bot.
+  const searchDocs = await _internals.docSearchPort({ db, llm, env, embedWith } as Parameters<typeof _internals.docSearchPort>[0])
+    .catch((e) => async () => { throw e; });
+  return runTestTurn({ ...a, replyModel: env.replyModel, allowNonTest: !!a.production }, {
+    callModel, inventory, searchDocs, probeDocument: probe, probeImage: probe,
     select: db.select, insert: db.insert, patch: db.patch,
     upsert: (table, row) => sbUpsert(table, [row], table === "ai_conversation_state" ? "conversation_id" : "id"),
     send: (to, msg) => sendWaMessageMirroredId(a.bot, to, a.convId, a.phone, msg, { senderName: "AI Trainer", storeWaId: true }),

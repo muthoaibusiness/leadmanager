@@ -10,12 +10,11 @@ import { pushNotify } from '../../lib/pushNotify.js';
 import useChanged from '../../hooks/useChanged.js';
 import {
   waLoadConversations, waLoadMessages, waMarkRead, waSendMessage, waRetry,
-  waFetchAvatar, waSubscribe, matchLead, mergeStatus, isChatAdmin, isLeadAssignedOrForwardedTo,
+  waSubscribe, matchLead, mergeStatus, isChatAdmin, isLeadAssignedOrForwardedTo, waAiState,
 } from '../../lib/wa.js';
 
-// How many missing avatars to backfill right after the list loads — enough to
+// How many missing avatars to backfill right after the list loads, enough to
 // cover what's on screen without hammering the relay (Wasender is rate-limited).
-const AVATAR_PREFETCH = 8;
 
 export default function ConversationsView() {
   const { user, waSettings, chatOk, setWaUnread, openModal, dbVersion, showToast } = useApp();
@@ -28,6 +27,14 @@ export default function ConversationsView() {
   const [connState, setConnState] = useState('connecting');
   const [loadErr, setLoadErr] = useState('');
   const [showPane, setShowPane] = useState(true);
+  const [aiState, setAiState] = useState(null);
+  // Message-history pagination (older batches) and conversation-rail pagination.
+  const [olderCursor, setOlderCursor] = useState(null);
+  const [olderId, setOlderId] = useState(null);
+  const [hasOlder, setHasOlder] = useState(false);
+  const [loadingOlder, setLoadingOlder] = useState(false);
+  const [canLoadMore, setCanLoadMore] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
 
   // Realtime callbacks are registered once, so they read live values via refs
   // rather than closing over stale state.
@@ -35,7 +42,10 @@ export default function ConversationsView() {
   const visibleRef = useRef(true);
   useEffect(() => { activeIdRef.current = activeId; }, [activeId]);
 
-  const leads = getDB().leads || [];
+  const leads = useMemo(() => {
+    void dbVersion; // recompute when a mutation bumps the DB version
+    return getDB().leads || [];
+  }, [dbVersion]);
   // For non-admin agents: only show conversations for leads forwarded or assigned to this agent
   const visibleConvs = useMemo(() => {
     if (isChatAdmin(user)) return convs;
@@ -46,29 +56,29 @@ export default function ConversationsView() {
   }, [convs, user, leads]);
 
   const active = useMemo(() => visibleConvs.find(c => c.id === activeId) || null, [visibleConvs, activeId]);
+
+  // AI reply / takeover state for the open thread (switch + ai_handoffs).
+  // Nothing is set synchronously here; the result is tagged with the thread id
+  // and only rendered while it matches the open conversation.
+  useEffect(() => {
+    if (!active) return;
+    let live = true;
+    waAiState(active.id)
+      .then(s => { if (live) setAiState({ convId: active.id, ...s }); })
+      .catch(() => {});
+    return () => { live = false; };
+  }, [active?.id]); // eslint-disable-line react-hooks/exhaustive-deps
   // dbVersion is a dependency so a lead created elsewhere re-resolves the link.
   const lead = useMemo(
     () => (active ? (active.leadId ? getLead(active.leadId) || matchLead(active, leads) : matchLead(active, leads)) : null),
     [active, leads, dbVersion] // eslint-disable-line react-hooks/exhaustive-deps -- db mutates in place; dbVersion is the change signal
   );
 
-  // Fill in missing profile photos for what's on screen, one request at a
-  // time with a short gap — Wasender is rate-limited, and most threads only
-  // ever need this once since the fetched URL is cached on the thread.
-  const backfillAvatars = useCallback(async (list) => {
-    const targets = list.filter(c => !c.avatarUrl).slice(0, AVATAR_PREFETCH);
-    for (const c of targets) {
-      const res = await waFetchAvatar(waSettings, c);
-      if (res.ok) setConvs(prev => prev.map(x => (x.id === c.id ? { ...x, avatarUrl: res.avatarUrl } : x)));
-      await new Promise(r => setTimeout(r, 1200));
-    }
-  }, [waSettings]);
-
   // ── initial load ──────────────────────────────────────────────────────────
   // The fetch alone; reload() and the chatOk switch below put up the spinner.
   const fetchConvs = useCallback(() => waLoadConversations()
-    .then(list => { setConvs(list); backfillAvatars(list); }, e => setLoadErr(e.message || 'Could not load conversations.'))
-    .finally(() => setLoadingConvs(false)), [backfillAvatars]);
+    .then(list => { setConvs(list); setCanLoadMore(list.length >= 200); }, e => setLoadErr(e.message || 'Could not load conversations.'))
+    .finally(() => setLoadingConvs(false)), []);
   const reload = useCallback(() => {
     setLoadingConvs(true);
     setLoadErr('');
@@ -162,6 +172,10 @@ export default function ConversationsView() {
     try {
       const list = await waLoadMessages(c.id);
       setMsgs(list);
+      const oldest = list[0] || null;
+      setOlderCursor(oldest?.waTimestamp || null);
+      setOlderId(oldest?.id || null);
+      setHasOlder(!!oldest && list.length >= 300);
       if (c.unreadCount > 0) {
         await waMarkRead(c.id);
         setConvs(prev => prev.map(x => (x.id === c.id ? { ...x, unreadCount: 0 } : x)));
@@ -171,14 +185,7 @@ export default function ConversationsView() {
     } finally {
       setLoadingMsgs(false);
     }
-    // Best-effort, doesn't block opening the thread — missing/failed just
-    // keeps the initials avatar.
-    if (!c.avatarUrl) {
-      waFetchAvatar(waSettings, c).then(res => {
-        if (res.ok) setConvs(prev => prev.map(x => (x.id === c.id ? { ...x, avatarUrl: res.avatarUrl } : x)));
-      });
-    }
-  }, [showToast, waSettings]);
+  }, [showToast]);
 
   // ── send / retry ──────────────────────────────────────────────────────────
   const handleSend = async (payload) => {
@@ -195,6 +202,29 @@ export default function ConversationsView() {
       showToast(res.error || 'Message failed to send.', 'err');
     }
   };
+
+  const loadOlder = useCallback(async () => {
+    if (!active || !olderCursor || loadingOlder) return;
+    setLoadingOlder(true);
+    try {
+      const older = await waLoadMessages(active.id, { before: olderCursor, beforeId: olderId });
+      setMsgs(prev => [...older, ...prev]);
+      const prevOldest = older[0] || null;
+      if (prevOldest) { setOlderCursor(prevOldest.waTimestamp); setOlderId(prevOldest.id); }
+      if (!prevOldest || older.length < 300) setHasOlder(false);
+    } finally { setLoadingOlder(false); }
+  }, [active, olderCursor, olderId, loadingOlder]);
+
+  const loadMoreConvs = useCallback(async () => {
+    if (loadingMore) return;
+    setLoadingMore(true);
+    try {
+      const more = await waLoadConversations({ offset: convs.length });
+      setConvs(prev => [...prev, ...more]);
+      if (more.length < 200) setCanLoadMore(false);
+    } catch (e) { showToast(e.message || 'Could not load more conversations.', 'err'); }
+    finally { setLoadingMore(false); }
+  }, [convs.length, loadingMore, showToast]);
 
   const handleRetry = async (msg) => {
     if (!active) return;
@@ -215,14 +245,12 @@ export default function ConversationsView() {
     );
   }
 
-  const relayMissing = !waSettings?.relayUrl;
+  // The send endpoint is fixed at build time (WA_RELAY_URL), so it is never missing.
   const disabledReason = !waSettings?.enabled
     ? 'Chat is switched off in Chat Settings.'
-    : relayMissing
-      ? 'No relay URL configured — an admin must set it in Chat Settings.'
-      : !active
-        ? 'Select a conversation to reply.'
-        : '';
+    : !active
+      ? 'Select a conversation to reply.'
+      : '';
 
   return (
     <div className="wa-wrap">
@@ -236,7 +264,7 @@ export default function ConversationsView() {
             <span className="wa-offline">
               <Mi>cloud_off</Mi>
               {connState === 'connecting' ? 'Connecting…'
-                : connState === 'error' ? 'Realtime rejected — check the console'
+                : connState === 'error' ? 'Realtime rejected. Check the console'
                 : 'Reconnecting…'}
             </span>
           )}
@@ -255,13 +283,6 @@ export default function ConversationsView() {
         </div>
       )}
 
-      {relayMissing && isChatAdmin(user) && (
-        <div className="wa-warn">
-          <Mi>info</Mi>
-          <span>No relay URL is set, so replies can't be delivered. Open Chat Settings to finish setup.</span>
-        </div>
-      )}
-
       {/* wa-grid-list keeps the rail (not the transcript) on screen on phones
           while no thread is open. */}
       <div className={`wa-grid${showPane && active ? '' : ' wa-grid-2'}${active ? '' : ' wa-grid-list'}`}>
@@ -271,6 +292,9 @@ export default function ConversationsView() {
           onSelect={openConv}
           connState={connState}
           loading={loadingConvs}
+          canLoadMore={canLoadMore}
+          loadingMore={loadingMore}
+          onLoadMore={loadMoreConvs}
         />
 
         <section className="wa-main">
@@ -292,6 +316,14 @@ export default function ConversationsView() {
                     {active.phone}
                     {active.source === 'AD' && <span className="wa-src-chip"><Mi>campaign</Mi>From ad</span>}
                     {lead && <span className="wa-link-chip"><Mi>link</Mi>{lead.name}</span>}
+                    {aiState && active && aiState.convId === active.id && (
+                      <span className="wa-src-chip">
+                        {aiState.takeover ? 'Human takeover. AI paused'
+                          : aiState.repliesOn === false ? 'AI replies off'
+                          : aiState.repliesOn ? (aiState.trainerTest ? 'AI Trainer on' : 'AI replies on')
+                          : 'AI state: global'}
+                      </span>
+                    )}
                   </div>
                 </div>
                 <button
@@ -303,7 +335,8 @@ export default function ConversationsView() {
                 </button>
               </header>
 
-              <ChatThread messages={msgs} loading={loadingMsgs} onRetry={handleRetry} />
+              <ChatThread messages={msgs} loading={loadingMsgs} onRetry={handleRetry}
+                hasOlder={hasOlder} loadingOlder={loadingOlder} onLoadOlder={loadOlder} />
 
               <ChatComposer
                 disabled={!!disabledReason}

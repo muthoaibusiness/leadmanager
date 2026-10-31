@@ -6,7 +6,18 @@
 // POSTed to a server-side relay (Supabase Edge Function or n8n) whose URL comes
 // from wa_settings. The relay holds the credential.
 
-import { SB_URL, SB_KEY, SB_H, sbGet, sbUpsert } from './supabase.js';
+import { SB_URL, SB_KEY, SB_H, bearer, accessToken, ensureFreshToken, onAccessToken, sbGet, sbUpsert } from './supabase.js';
+
+// The send endpoint is fixed at build time (CR-001 CR-2). wa_settings.relay_url
+// can be rewritten with the anon key, so trusting it would hand every human
+// message, and the sender's session token, to whoever planted the URL. The
+// stored value is shown read-only in Chat Settings and never fetched.
+export const WA_RELAY_URL = import.meta.env.VITE_WA_RELAY_URL || `${SB_URL}/functions/v1/wa-send`;
+const relayHeaders = () => ({ 'Content-Type': 'application/json', apikey: SB_KEY, Authorization: bearer() });
+// Every request that carries the session token refreshes it first if it has
+// expired (ensureFreshToken), the same as the requests in supabase.js.
+// The header is rebuilt after the refresh: callers built it from the old token.
+const authedFetch = async (url, init) => { await ensureFreshToken(); return fetch(url, { ...init, headers: { ...init.headers, Authorization: bearer() } }); };
 import { normalizePhone, getDB } from './db.js';
 
 export const WA_BUCKET = 'wa-media';
@@ -139,33 +150,17 @@ export async function waLoadSettings() {
   return rToSettings(rows && rows[0]);
 }
 
+// relay_url is never written: the send endpoint is fixed at build time
+// (WA_RELAY_URL), and the stored value is left as it is so a rollback to an
+// older client still finds it.
 export async function waSaveSettings(s, user) {
   const row = {
-    id: 'default', relay_url: s.relayUrl || '', session_name: s.sessionName || '',
+    id: 'default', session_name: s.sessionName || '',
     enabled: s.enabled !== false, allowed_user_ids: s.allowedUserIds || [],
     webhook_url: s.webhookUrl || '', updated_at: new Date().toISOString(),
     updated_by: user?.id || null,
   };
   return sbUpsert('wa_settings', [row]);
-}
-
-// Store/rotate the Wasender token. Deliberately goes through the relay, never
-// into a browser-readable table — wa_secrets has RLS on with no policies, so
-// only the service role behind the relay can write it.
-export async function waSaveToken(settings, { account = WA_DEFAULT_ACCOUNT, apiToken, webhookSecret }, user) {
-  if (!settings?.relayUrl) return { ok: false, error: 'Set the relay URL first.' };
-  try {
-    const r = await fetch(settings.relayUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'set-credentials', account: normAccount(account), apiToken, webhookSecret, userId: user?.id }),
-    });
-    if (!r.ok) return { ok: false, error: `Relay returned HTTP ${r.status}` };
-    await sbUpsert('wa_settings', [{ id: 'default', token_set: true, updated_at: new Date().toISOString(), updated_by: user?.id || null }]);
-    return { ok: true };
-  } catch (e) {
-    return { ok: false, error: e.message || 'Could not reach the relay.' };
-  }
 }
 
 // ── access control ──────────────────────────────────────────────────────────
@@ -204,15 +199,23 @@ export function isLeadAssignedOrForwardedTo(lead, user) {
 }
 
 // ── reads ───────────────────────────────────────────────────────────────────
-export async function waLoadConversations({ limit = 200 } = {}) {
-  const rows = await sbGet(`wa_conversations?archived=is.false&order=last_message_at.desc.nullslast&limit=${limit}`);
+export async function waLoadConversations({ limit = 200, offset = 0 } = {}) {
+  const rows = await sbGet(`wa_conversations?archived=is.false&order=last_message_at.desc.nullslast&limit=${limit}&offset=${offset}`);
   return (rows || []).map(rToConv);
 }
 
-export async function waLoadMessages(conversationId, { limit = 300 } = {}) {
+export async function waLoadMessages(conversationId, { limit = 300, before = null, beforeId = null } = {}) {
   if (!conversationId) return [];
+  // Keyset pagination on (wa_timestamp, id) ordered descending: strictly before
+  // the oldest loaded message, so messages sharing its exact timestamp are not
+  // dropped or repeated at the page boundary.
+  const beforeParam = before
+    ? beforeId
+      ? `&or=(wa_timestamp.lt.${encodeURIComponent(before)},and=(wa_timestamp.eq.${encodeURIComponent(before)},id.lt.${encodeURIComponent(beforeId)}))`
+      : `&wa_timestamp=lt.${encodeURIComponent(before)}`
+    : '';
   const rows = await sbGet(
-    `wa_messages?conversation_id=eq.${encodeURIComponent(conversationId)}&order=wa_timestamp.desc&limit=${limit}`
+    `wa_messages?conversation_id=eq.${encodeURIComponent(conversationId)}&order=wa_timestamp.desc,id.desc&limit=${limit}${beforeParam}`
   );
   return (rows || []).map(rToMsg).reverse(); // oldest → newest for rendering
 }
@@ -233,7 +236,7 @@ export function matchLead(conv, leads) {
 export async function waMarkRead(conversationId) {
   if (!conversationId) return;
   try {
-    await fetch(`${SB_URL}/rest/v1/wa_conversations?id=eq.${encodeURIComponent(conversationId)}`, {
+    await authedFetch(`${SB_URL}/rest/v1/wa_conversations?id=eq.${encodeURIComponent(conversationId)}`, {
       method: 'PATCH',
       headers: { ...SB_H, Prefer: 'return=minimal' },
       body: JSON.stringify({ unread_count: 0 }),
@@ -243,13 +246,31 @@ export async function waMarkRead(conversationId) {
 
 export async function waLinkLead(conversationId, leadId) {
   try {
-    await fetch(`${SB_URL}/rest/v1/wa_conversations?id=eq.${encodeURIComponent(conversationId)}`, {
+    await authedFetch(`${SB_URL}/rest/v1/wa_conversations?id=eq.${encodeURIComponent(conversationId)}`, {
       method: 'PATCH',
       headers: { ...SB_H, Prefer: 'return=minimal' },
       body: JSON.stringify({ lead_id: leadId }),
     });
     return true;
   } catch { return false; }
+}
+
+// AI reply + takeover state for one conversation, for the Conversations UI.
+// The reply switch is wa_bot_settings.faq_agent_enabled on the bot's row; a
+// human takeover is an active ai_handoffs row for this thread.
+export async function waAiState(conversationId) {
+  const bot = String(conversationId || '').split(':')[0] || 'eyad';
+  const [s, h] = await Promise.all([
+    sbGet(`wa_bot_settings?bot=eq.${bot}&select=faq_agent_enabled,trainer_test_mode`),
+    sbGet(`ai_handoffs?conversation_id=eq.${encodeURIComponent(conversationId)}&select=status&limit=1`),
+  ]);
+  const row = s?.[0];
+  return {
+    bot,
+    repliesOn: row ? row.faq_agent_enabled !== false : null,
+    trainerTest: !!row?.trainer_test_mode,
+    takeover: !!(h?.[0]),
+  };
 }
 
 export const waClientRef = () => 'c' + Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
@@ -319,9 +340,9 @@ export async function waUploadMedia(file, onProgress) {
   const path = `out/${Date.now()}_${Math.random().toString(36).slice(2, 8)}_${safe}`;
   try {
     if (onProgress) onProgress(10);
-    const r = await fetch(`${SB_URL}/storage/v1/object/${WA_BUCKET}/${path}`, {
+    const r = await authedFetch(`${SB_URL}/storage/v1/object/${WA_BUCKET}/${path}`, {
       method: 'POST',
-      headers: { apikey: SB_KEY, Authorization: 'Bearer ' + SB_KEY, 'Content-Type': file.type || 'application/octet-stream' },
+      headers: { apikey: SB_KEY, Authorization: bearer(), 'Content-Type': file.type || 'application/octet-stream' },
       body: file,
     });
     if (!r.ok) {
@@ -367,11 +388,6 @@ export async function waSendMessage(settings, { conversation, user, type = 'text
     last_message_dir: 'OUT',
   }]);
 
-  if (!settings?.relayUrl) {
-    await waFailMessage(clientRef, 'No relay URL configured — set it in Chat Settings.');
-    return { ok: false, optimistic, error: 'No relay URL configured.' };
-  }
-
   const to = waSendTarget(conversation);
   if (!to) {
     const reason = 'No phone number on this thread yet — WhatsApp identified it by LID. It becomes sendable after the next message arrives.';
@@ -380,9 +396,9 @@ export async function waSendMessage(settings, { conversation, user, type = 'text
   }
 
   try {
-    const r = await fetch(settings.relayUrl, {
+    const r = await authedFetch(WA_RELAY_URL, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: relayHeaders(),
       body: JSON.stringify({
         action: 'send',
         account,
@@ -393,8 +409,7 @@ export async function waSendMessage(settings, { conversation, user, type = 'text
         text: type === 'text' ? body : '',
         caption: type === 'text' ? '' : body,
         mediaUrl, mediaName, mediaMime,
-        userId: user?.id || null,
-        sessionName: settings.sessionName || undefined,
+        sessionName: settings?.sessionName || undefined,
       }),
     });
     if (!r.ok) {
@@ -411,7 +426,7 @@ export async function waSendMessage(settings, { conversation, user, type = 'text
 
 export async function waFailMessage(id, error) {
   try {
-    await fetch(`${SB_URL}/rest/v1/wa_messages?id=eq.${encodeURIComponent(id)}`, {
+    await authedFetch(`${SB_URL}/rest/v1/wa_messages?id=eq.${encodeURIComponent(id)}`, {
       method: 'PATCH',
       headers: { ...SB_H, Prefer: 'return=minimal' },
       body: JSON.stringify({ status: 'FAILED', error: (error || '').slice(0, 500) }),
@@ -421,7 +436,7 @@ export async function waFailMessage(id, error) {
 
 export async function waRetry(settings, msg, conversation, user) {
   try {
-    await fetch(`${SB_URL}/rest/v1/wa_messages?id=eq.${encodeURIComponent(msg.id)}`, {
+    await authedFetch(`${SB_URL}/rest/v1/wa_messages?id=eq.${encodeURIComponent(msg.id)}`, {
       method: 'DELETE', headers: { ...SB_H, Prefer: 'return=minimal' },
     });
   } catch { /* ignore — worst case a stale failed bubble lingers */ }
@@ -432,40 +447,19 @@ export async function waRetry(settings, msg, conversation, user) {
   });
 }
 
-export async function waFetchAvatar(settings, conversation) {
-  if (!settings?.relayUrl) return { ok: false };
-  const phone = waSendTarget(conversation);
-  if (!phone) return { ok: false };
-
-  try {
-    const r = await fetch(settings.relayUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'get-avatar', phone }),
-    });
-    if (!r.ok) return { ok: false };
-    const data = await r.json();
-    if (!data?.ok || !data.avatarUrl) return { ok: false };
-    await fetch(`${SB_URL}/rest/v1/wa_conversations?id=eq.${encodeURIComponent(conversation.id)}`, {
-      method: 'PATCH',
-      headers: { ...SB_H, Prefer: 'return=minimal' },
-      body: JSON.stringify({ avatar_url: data.avatarUrl }),
-    });
-    return { ok: true, avatarUrl: data.avatarUrl };
-  } catch {
-    return { ok: false };
-  }
-}
-
 // ── realtime ────────────────────────────────────────────────────────────────
 export function waSubscribe({ onMessage, onConversation, onState }) {
   if (!SB_URL || !SB_KEY) return () => {};
   const wsUrl = `${SB_URL.replace('https://', 'wss://')}/realtime/v1/websocket?apikey=${SB_KEY}&vsn=1.0.0`;
   let ws, hbTimer, reconnTimer, attempt = 0;
   let dead = false;
+  // Realtime drops a channel when its token expires: hand it each refreshed one.
+  const offToken = onAccessToken((t) => { if (ws?.readyState === 1) ws.send(JSON.stringify({ topic: 'realtime:public', event: 'access_token', payload: { access_token: t }, ref: String(Date.now()) })); });
 
-  function connect() {
+  async function connect() {
     onState?.('connecting');
+    await ensureFreshToken().catch(() => null);
+    if (dead) return;
     try { ws = new WebSocket(wsUrl); } catch { schedule(); return; }
 
     ws.onopen = () => {
@@ -481,6 +475,8 @@ export function waSubscribe({ onMessage, onConversation, onState }) {
               { event: '*', schema: 'public', table: 'wa_conversations' },
             ],
           },
+          // RLS on these tables (0055) admits only a signed-in account.
+          access_token: accessToken(),
         },
         ref: '1',
       }));
@@ -518,5 +514,5 @@ export function waSubscribe({ onMessage, onConversation, onState }) {
   }
 
   connect();
-  return () => { dead = true; clearInterval(hbTimer); clearTimeout(reconnTimer); try { ws?.close(); } catch { /* ignore */ } };
+  return () => { dead = true; offToken(); clearInterval(hbTimer); clearTimeout(reconnTimer); try { ws?.close(); } catch { /* ignore */ } };
 }

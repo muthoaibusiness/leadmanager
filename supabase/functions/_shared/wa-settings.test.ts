@@ -51,3 +51,26 @@ test("a foreign number sharing the last 10 digits is not routed to the trainer",
     tables = { wa_bot_settings: [{ ...ROW, bot: "dubai", test_numbers: ["8801501234567"] }] };
     assert.equal((await getBotSettings("dubai", "971501234567")).trainerTest, false);
   });
+
+// The Meta CAPI tab's per-bot switch (meta_capi_enabled, set through meta-capi
+// bot.set). Off: the bot sends no LeadSubmitted when it creates a lead. A test
+// number still reads every toggle ON (migration 0035), as for the others.
+test("Meta CAPI switch: OFF on a bot's row stops its lead event; ON or absent keeps it", async () => {
+  tables = { wa_bot_settings: [{ bot: "dubai", meta_capi_enabled: false }, { bot: "eyad", meta_capi_enabled: true }] };
+  assert.equal((await getBotSettings("dubai", "8801999000002")).metaCapiEnabled, false);
+  tables = { wa_bot_settings: [{ bot: "eyad", meta_capi_enabled: true }] };
+  assert.equal((await getBotSettings("eyad", "8801999000002")).metaCapiEnabled, true);
+  tables = { wa_bot_settings: [{ bot: "eyad" }] };
+  assert.equal((await getBotSettings("eyad", "8801999000002")).metaCapiEnabled, true, "a missing column keeps today's behaviour");
+  tables = { wa_bot_settings: "fail", wa_settings: "fail" };
+  assert.equal((await getBotSettings("eyad", "8801999000002")).metaCapiEnabled, false, "a failed read sends nothing");
+});
+
+// Known gap, pinned so it cannot change silently: a bot's test number reads
+// every toggle ON (migration 0035), including Meta CAPI. With the switch Off,
+// a lead created from a test number is still reported to Meta.
+test("Meta CAPI switch: a test number still reads ON when the bot is Off (documented gap)", async () => {
+  tables = { wa_bot_settings: [{ bot: "eyad", meta_capi_enabled: false, test_numbers: ["8801711000001"] }] };
+  assert.equal((await getBotSettings("eyad", "01711000001")).metaCapiEnabled, true);
+  assert.equal((await getBotSettings("eyad", "8801999000002")).metaCapiEnabled, false);
+});

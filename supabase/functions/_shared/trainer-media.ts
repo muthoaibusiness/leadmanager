@@ -42,7 +42,7 @@ export function floorLabel(url: string): string | null {
   const n = f.toLowerCase().replace(/\.[a-z0-9]+$/, "").replace(/[_\s]+/g, "-");
   // Each word must be its own part of the name: "playground" is not ground.
   const part = (re: string) => new RegExp(`(^|-)(${re})(-|$)`).test(n);
-  if (!part("floor|plan|layout|layut|parking") && !/floor|layout|layut/.test(n)) return null;
+  if (!part("floor|plan|layout|layut|parking|semi-?bas[e]?t?ment|bas[e]?t?ment") && !/floor|layout|layut/.test(n)) return null;
   if (part("semi-?bas[e]?t?ment")) return "Semi-Basement";
   if (part("bas[e]?t?ment")) return "Basement";
   const num = /(^|-)(\d{1,2})(st|nd|rd|th|sr)?-(floor|layout|layut)/.exec(n);

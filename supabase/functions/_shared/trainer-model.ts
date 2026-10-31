@@ -12,7 +12,8 @@ export type Provider = keyof typeof PROVIDERS;
 
 export type ModelConfig = { provider: Provider; base_url: string; model: string };
 export type ChatReq = { model: string; max_tokens: number; system: string; messages: { role: string; content: string }[] };
-export type ChatRes = { ok: true; text: string; prompt_tokens: number; completion_tokens: number } | { ok: false; error: string; code?: string };
+// A failure carries usage when the provider still billed tokens ("length").
+export type ChatRes = { ok: true; text: string; prompt_tokens: number; completion_tokens: number } | { ok: false; error: string; code?: string; prompt_tokens?: number; completion_tokens?: number };
 export type Fetch = (url: string, init: { method: string; headers: Record<string, string>; body: string; signal: AbortSignal; redirect: "manual" }) =>
   Promise<{ ok: boolean; status: number; headers: { get(k: string): string | null }; json(): Promise<any> }>;
 // Resolves a host name to its addresses, so a public name that points at a
@@ -116,7 +117,9 @@ export async function chatCompletion(cfg: ModelConfig, key: string, req: ChatReq
   const first = await chatOnce(cfg, key, req, io, false);
   if (!shouldRetryWithoutReasoning(first, cfg.provider)) return first;
   const second = await chatOnce(cfg, key, req, io, true);
-  return second.ok ? second : first;
+  // Both passes are billed by the provider, so both count against the budget.
+  const used = { prompt_tokens: (first.prompt_tokens || 0) + (second.prompt_tokens || 0), completion_tokens: (first.completion_tokens || 0) + (second.completion_tokens || 0) };
+  return second.ok ? { ...second, ...used } : { ...first, ...used };
 }
 
 async function chatOnce(cfg: ModelConfig, key: string, req: ChatReq, io: { fetch: Fetch; resolve: Resolve; timeoutMs?: number }, reasoningOff: boolean): Promise<ChatRes> {
@@ -164,7 +167,8 @@ async function chatOnce(cfg: ModelConfig, key: string, req: ChatReq, io: { fetch
     const text = choice.message?.content;
     if (typeof text !== "string" || !text.trim()) {
       const why = String(choice.finish_reason || "");
-      if (why === "length") return { ok: false, code: "length", error: "The model used its whole token limit (most likely on reasoning) and returned no reply" };
+      if (why === "length") return { ok: false, code: "length", error: "The model used its whole token limit (most likely on reasoning) and returned no reply",
+        prompt_tokens: Number(j?.usage?.prompt_tokens) || 0, completion_tokens: Number(j?.usage?.completion_tokens) || 0 };
       if (why === "content_filter") return { ok: false, code: "refused", error: "The provider's content filter blocked the reply" };
       if (typeof text === "string") return { ok: false, code: "empty", error: "The model returned an empty reply" };
       return { ok: false, code: "format", error: "Provider response has no choices[0].message.content; it may not be OpenAI-compatible" };

@@ -1,7 +1,8 @@
 import { useState, useRef, useEffect, Suspense } from 'react';
 import Mi from './Mi.jsx';
 import { useApp } from '../context/AppContext.jsx';
-import { clearSession, getDB } from '../lib/db.js';
+import { getDB } from '../lib/db.js';
+import { signOut } from '../lib/auth.js';
 import { avc, ini, rlabel } from '../lib/helpers.js';
 import { canSee, ROLES } from '../lib/constants.js';
 import lazyChunk from '../lib/lazyChunk.js';
@@ -84,7 +85,8 @@ export default function UserMenu() {
     </button>
   );
 
-  const logout = () => { clearSession(); setSidebarOpen(false); setUser(null); };
+  // Revokes the Auth session at the server, then clears the local session and cache.
+  const logout = () => { signOut(); setSidebarOpen(false); setUser(null); };
 
   return (
     <div className={`hd-um${open ? ' open' : ''}${impersonator ? ' imp' : ''}`} ref={ref} onKeyDown={onEsc}>
