@@ -10,7 +10,7 @@
 
 import {
   CORS, json, SUPABASE_URL, SERVICE_KEY, claimEvent, getCredentials,
-  jidToPhone, sbPatch, sbRpc, sbSelect, sbUpsert, safeEqual,
+  jidToPhone, sbPatch, sbRpc, sbSelect, sbUpsert, safeEqual, canonicalConvJid, isBotEcho,
 } from "../_shared/wa.ts";
 
 const BUCKET = "wa-media";
@@ -204,12 +204,18 @@ Deno.serve(async (req) => {
   // Conversation PK matches the client's waConvId(account, jid) convention
   // (src/lib/wa.js) — without the prefix, Dubai and Eyad threads for the same
   // number would collide, and the app's own account-scoped lookups would miss
-  // the row entirely.
-  const convId = `${account}:${jid}`;
+  // the row entirely. Canonicalize so a LID chat and the phone-JID chat of the
+  // same customer land in one thread instead of two.
+  const convId = `${account}:${canonicalConvJid(jid, phone)}`;
   const ad = extractAd(inner, data);
   const pushName: string = msgNode?.pushName ?? data?.pushName ?? "";
   const tsSeconds = Number(msgNode?.messageTimestamp ?? data?.timestamp ?? 0);
   const at = tsSeconds ? new Date(tsSeconds * 1000).toISOString() : new Date().toISOString();
+  // The bot already mirrored its own send; its fromMe echo must not show twice.
+  if (fromMe && media.type === "text" && text) {
+    const recent = await sbSelect(`wa_messages?conversation_id=eq.${encodeURIComponent(convId)}&direction=eq.OUT&select=body,sender_name,wa_timestamp&order=wa_timestamp.desc&limit=5`);
+    if (isBotEcho(recent, text, at)) return json({ ok: true, skipped: "bot echo" });
+  }
 
   let mediaUrl = "";
   if (media.url) mediaUrl = await mirrorMedia(media.url, media.name ?? "file", media.mime ?? "");

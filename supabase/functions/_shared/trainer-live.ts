@@ -66,6 +66,23 @@ async function isPaused(ports: LivePorts, key: string, convId: string, phone: st
   return leads.some((l) => samePhone(l.phone, phone) && (l.takeover === true || l.takeover === "true"));
 }
 
+export const RECAP_NOTE_SOURCE = "Eyad Bot (recap)";
+
+// The recap for a phone's lead is one NOTE row, updated in place (owner rule:
+// reuse/update the existing customer note, never duplicate). Finds the latest
+// recap NOTE on the lead resolved by phone and replaces it; inserts the first
+// one when none exists. No-op when the phone has no lead yet — the recap then
+// stays in conversation state until routing/forward creates the lead.
+export async function writeRecapNote(ports: LivePorts, phone: string, description: string): Promise<boolean> {
+  const tail = normPhone(phone).slice(-9);
+  if (tail.length < 8) return false;
+  const lead = (await ports.select(`leads?phone=like.*${encodeURIComponent(tail)}&select=id,company_id&order=created_at.desc&limit=1`))[0];
+  if (!lead) return false;
+  const existing = (await ports.select(`activities?lead_id=eq.${encodeURIComponent(lead.id)}&type=eq.NOTE&user_name=eq.${encodeURIComponent(RECAP_NOTE_SOURCE)}&select=id&order=timestamp.desc&limit=1`))[0];
+  if (existing) return ports.patch("activities", `id=eq.${encodeURIComponent(existing.id)}`, { description, timestamp: new Date().toISOString() });
+  return ports.upsert("activities", { id: crypto.randomUUID(), lead_id: lead.id, type: "NOTE", description, user_id: null, user_name: RECAP_NOTE_SOURCE, duration_seconds: 0, timestamp: new Date().toISOString(), company_id: lead.company_id ?? null });
+}
+
 // The current wa_bot_settings row, read again just before each send so a
 // number removed from the list (or test mode switched off) mid-turn is honoured.
 async function stillAllowed(ports: LivePorts, bot: Bot, phone: string, to: string): Promise<boolean> {
@@ -142,6 +159,13 @@ export async function runTestTurn(a: LiveInput, ports: LivePorts): Promise<LiveR
       if (sent) await ports.sleep(5500);
       const id = await ports.send(a.to, out[i]);
       if (id) { sent++; waIds.push(id); } else sendErrors.push(`send ${i + 1} failed`);
+    }
+    // On a handoff, persist the recap as the lead's one note (updated in place).
+    // The model's recap field is the source; until the core emits it this is a
+    // no-op, so the wiring ships before the content.
+    if (r.handoff) {
+      const recap = (r.trace as any)?.recap?.text;
+      if (typeof recap === "string" && recap.trim()) await writeRecapNote(ports, a.phone, recap.trim());
     }
     // The turn's outcome is what reached the customer; the brochure path's own
     // verdict (which files were checked and sent) is kept beside it.

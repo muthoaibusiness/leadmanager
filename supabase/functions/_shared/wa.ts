@@ -447,6 +447,34 @@ export async function logNoteActivity(leadId: string, companyId: string | null, 
 
 // ── phone / jid ─────────────────────────────────────────────────────────────
 export const jidToPhone = (jid: string) => (jid || "").split("@")[0].split(":")[0].replace(/\D/g, "");
+
+// One customer can reach the bot under two JIDs: the phone JID (…@s.whatsapp.net)
+// and, when WhatsApp hides the number, a LID (…@lid). Both must land in the same
+// conversation, so the conversation key prefers the phone JID whenever a real
+// Bangladeshi number is known; a LID with no real number stays as-is.
+export const canonicalConvJid = (remote: string, phone: string): string => {
+  const r = String(remote || "");
+  if (r.endsWith("@s.whatsapp.net")) return r;
+  if (r.endsWith("@lid")) {
+    // Normalize to the BD international form (8801XXXXXXXXXX) so the LID thread
+    // matches the phone-JID thread of the same customer exactly.
+    let p = String(phone || "").replace(/\D/g, "");
+    if (p.startsWith("0")) p = p.slice(1);
+    if (/^1[3-9]\d{8}$/.test(p)) p = "880" + p;
+    if (looksLikeRealPhone(p)) return `${p}@s.whatsapp.net`;
+    return r;
+  }
+  return r;
+};
+
+// Wasender echoes a bot's own send back as a fromMe message whose key.id is not
+// the msgId the send API returned, so the wa_id index never catches it. The
+// echo is the same OUT text, in the same thread, seconds after a bot-sent row.
+export const isBotEcho = (
+  recentOut: { body?: string | null; sender_name?: string | null; wa_timestamp?: string | null }[], body: string, at: string, windowMs = 120_000,
+): boolean =>
+  !!body && recentOut.some((r) => (r.body || "") === body && ["AI Agent", "AI Trainer"].includes(String(r.sender_name || ""))
+    && Math.abs(new Date(at).getTime() - new Date(r.wa_timestamp || 0).getTime()) <= windowMs);
 export const phoneToJid = (phone: string) => {
   const d = (phone || "").replace(/\D/g, "");
   return d ? `${d}@s.whatsapp.net` : "";

@@ -23,7 +23,7 @@ import {
   CORS, json, SUPABASE_URL, SERVICE_KEY, WASENDER_BASE,
   claimEvent, getCredentials, getActiveProjects, getRecentHistory, sendWaMessageMirrored, getKnowledge, getCorrections,
   findLeadForNote, logNoteActivity, getBotSettings, aiStillOn, verifyWebhook, getProjectBySendCode, fillWelcomeTemplate, fixLeadPhoneFromNote, splitPhoneFromNote,
-  logConversationHistory,
+  logConversationHistory, canonicalConvJid,
 } from "../_shared/wa.ts";
 import type { BotSettings } from "../_shared/wa.ts";
 import {
@@ -151,6 +151,7 @@ interface ParsedEvent {
   event: string;
   phone: string;
   remote: string;
+  convJid: string;
   hasRealPhone: boolean;
   target: string;
   fromMe: boolean;
@@ -212,6 +213,9 @@ function parseEvent(payload: any): ParsedEvent {
     event,
     phone,
     remote,
+    // The thread key shared by the CRM mirror and the trainer, canonicalized so
+    // a LID chat and the same customer's phone-JID chat land in one thread.
+    convJid: canonicalConvJid(remote, hasRealPhone ? phone : ""),
     hasRealPhone,
     target,
     fromMe,
@@ -361,7 +365,7 @@ async function handleInbound(p: ParsedEvent): Promise<void> {
   // ── Follow-up flow stage 3 — "yes" to the stage 2a profile offer sends
   // the bundle right away instead of waiting for the next cron tick.
   if (status.flow_stage === "asked_profile" && upsert.takeover !== true && isProfileConsent(p.text, p.quoted)) {
-    const convId = `eyad:${p.remote}`;
+    const convId = `eyad:${p.convJid}`;
     const bundle = buildJolshiriBundle(await getActiveProjects(), FLOW_AUTO_PROFILE_TEXT);
     if (bundle) {
       await sendWaMessageMirrored("eyad", p.target, convId, p.phone, { type: "text", text: bundle.message });
@@ -387,7 +391,7 @@ async function handleInbound(p: ParsedEvent): Promise<void> {
   // one-line acknowledgement and closes the flow. Deliberately no auto
   // lead/forward here: a human reads the thread and acts.
   if (status.flow_stage === "asked_agent" && upsert.takeover !== true && isAffirmative(p.text)) {
-    await sendWaMessageMirrored("eyad", p.target, `eyad:${p.remote}`, p.phone, { type: "text", text: FLOW_AGENT_YES_TEXT });
+    await sendWaMessageMirrored("eyad", p.target, `eyad:${p.convJid}`, p.phone, { type: "text", text: FLOW_AGENT_YES_TEXT });
     await sbPatchJson("preleads", `id=eq.${encodeURIComponent(preleadId)}`, {
       flow_stage: "agent_ack", stage_at: new Date().toISOString(), stage_msg_count: msgCount,
     }).catch(() => {});
@@ -398,7 +402,7 @@ async function handleInbound(p: ParsedEvent): Promise<void> {
   // the greeting + brochure flow): offer a dedicated agent, jump to stage 4.
   const agentAlreadyOffered = ["asked_agent", "agent_ack", "agent_assigned"].includes(status.flow_stage);
   if (upsert.is_new !== true && p.text && isPriceQuestion(p.text) && !agentAlreadyOffered && upsert.takeover !== true) {
-    await sendWaMessageMirrored("eyad", p.target, `eyad:${p.remote}`, p.phone, { type: "text", text: FLOW_PRICE_AGENT_TEXT });
+    await sendWaMessageMirrored("eyad", p.target, `eyad:${p.convJid}`, p.phone, { type: "text", text: FLOW_PRICE_AGENT_TEXT });
     await sbPatchJson("preleads", `id=eq.${encodeURIComponent(preleadId)}`, {
       flow_stage: "asked_agent", stage_at: new Date().toISOString(), stage_msg_count: msgCount,
     }).catch(() => {});
@@ -412,11 +416,11 @@ async function handleInbound(p: ParsedEvent): Promise<void> {
     // Test mode on and an allow-listed number (getBotSettings): the AI Trainer
     // core answers instead of the legacy agent. Everything else above and
     // below runs unchanged.
-    const r = await runTrainerTestTurn({ bot: "eyad", convId: `eyad:${p.remote}`, phone: p.phone, to: p.target, text: p.text,
+    const r = await runTrainerTestTurn({ bot: "eyad", convId: `eyad:${p.convJid}`, phone: p.phone, to: p.target, text: p.text,
       ad: { isAd: p.isAd, adText: p.adText }, allowMedia: settings.aiMediaEnabled });
     console.log("trainer test turn", { phone: p.phone, outcome: r.outcome, sent: r.sent, turnId: r.turnId });
   } else if (settings.faqAgentEnabled && p.text && upsert.takeover !== true && p.remote) {
-    const sent = await runFaqAgent("eyad", p.phone, p.target, p.remote, p.text, {
+    const sent = await runFaqAgent("eyad", p.phone, p.target, p.convJid, p.text, {
       adProject: lead.adProject, profilesAlreadySent: profilesAlreadySent || landOffer, allowMedia: settings.aiMediaEnabled,
     });
     if (sent) {
@@ -629,7 +633,7 @@ async function handleSendDocs(p: ParsedEvent): Promise<void> {
   const project = await getProjectBySendCode(p.command);
   if (!project) return; // unrecognized /send... code — silent no-op, matches source
 
-  const convId = `eyad:${p.remote}`;
+  const convId = `eyad:${p.convJid}`;
   const items: { type: "document" | "image"; url: string; fileName?: string; caption: string }[] = [];
   if (project.brochure_url) items.push({ type: "document", url: project.brochure_url, fileName: `${project.name} Brochure.pdf`, caption: brochureCaption(project) });
   for (const url of (project.photos || []).slice(0, 3)) items.push({ type: "image", url, caption: project.name });
