@@ -474,6 +474,16 @@ test("modelconfig.test: reports success only when the provider answered, and saf
   assert.equal(deps.db.t.wa_messages.length, 0, "a connection test sends nothing on WhatsApp");
 });
 
+test("modelconfig.test: a reasoning model that stops on the token limit passes, with a note", async () => {
+  const m = modelLlm([{ ok: false, code: "length", error: "reply cut at max_tokens" }]);
+  const deps = { db: memDb(), llm: llm(), env: ENV, modelLlm: m.make };
+  await call(deps, "modelconfig.save", { ...CFG, api_key: KEY });
+  const d = (await call(deps, "modelconfig.test")).body.data;
+  assert.equal(d.ok, true);
+  assert.match(d.note, /reasoning/);
+  assert.equal(d.code, undefined);
+});
+
 test("modelconfig: Playground turns use the saved config; without one they use the server default", async () => {
   const deps: any = { db: memDb(), llm: llm(REPLY("from server default")), env: ENV };
   const a = await turn(deps, { text: "price?", client_turn_id: "c-0001-mmmm" });

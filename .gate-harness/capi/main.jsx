@@ -27,6 +27,8 @@ const bots = [{ bot: 'eyad', display_name: 'Eyad Bot', meta_capi_enabled: true }
 const deps = {
   now: () => NOW, token: () => 'configured-but-hidden',
   async user() { return { id: 'admin', role: 'MANAGEMENT', is_active: true, company_id: 'c1', allowed_features: null }; },
+  // HEAD's capi-core takes the caller from deps.verify (verified session); c3af195's reads user().
+  async verify() { return { id: 'admin', role: 'MANAGEMENT', is_active: true, company_id: 'c1', allowed_features: null }; },
   async lead(id) { const l = leads.find((x) => x.id === id); return l ? { ...l, capi_status_column: l.CAPI_STATUS, unsure: false } : null; },
   async page(q) { let rs = leads.map(row); if (q.status !== 'all') rs = rs.filter((r) => r.status === q.status); return { rows: rs.slice(q.offset, q.offset + q.limit), total: rs.length }; },
   async summary() { const by = {}; for (const l of leads) by[st(l)] = (by[st(l)] || 0) + 1;
