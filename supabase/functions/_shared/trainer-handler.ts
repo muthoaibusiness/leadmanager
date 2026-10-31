@@ -438,9 +438,19 @@ async function modelConfigTest(deps: Deps, actor: string): Promise<Res> {
   if ("error" in pm) return pm.error;
   if (!pm.cfg) return fail(422, "model_config", "Save the Playground model settings before testing.");
   const started = Date.now();
-  const x = await pm.llm.chat({ model: pm.cfg.model, max_tokens: 5, system: "Reply with the single word OK.", messages: [{ role: "user", content: "ping" }] });
-  const result = { ok: x.ok, at: new Date().toISOString(), ms: Date.now() - started, provider: pm.cfg.provider, model: pm.cfg.model,
-    ...(x.ok ? {} : { code: (x as any).code || "provider", error: x.error }) };
+  // 1024 is the floor at which requestBody asks OpenRouter for low reasoning
+  // effort. With the old 5-token probe a reasoning model (e.g. DeepSeek) spent
+  // every token thinking and the test failed with "length" although the key
+  // and model were fine.
+  const x = await pm.llm.chat({ model: pm.cfg.model, max_tokens: 1024, system: "Reply with the single word OK.", messages: [{ role: "user", content: "ping" }] });
+  // The test asks "did the provider authenticate us and run this model?". A
+  // completion that stopped on the token limit proves both, so it passes; the
+  // real reply budget is larger (REPLY_LIMITS).
+  const spentOnReasoning = !x.ok && (x as any).code === "length";
+  const passed = x.ok || spentOnReasoning;
+  const result = { ok: passed, at: new Date().toISOString(), ms: Date.now() - started, provider: pm.cfg.provider, model: pm.cfg.model,
+    ...(spentOnReasoning ? { note: "The model answered but used the test's small token budget on reasoning. Key and model work; real replies get a larger budget." } : {}),
+    ...(passed ? {} : { code: (x as any).code || "provider", error: (x as any).error }) };
   await deps.db.patch("ai_model_configs", "scope=eq.playground", { last_test: result });
   await deps.db.insert("ai_trainer_audit", { entity: "model_config", entity_id: "playground", action: "test", after: result, actor_claimed: actor });
   return ok(result);

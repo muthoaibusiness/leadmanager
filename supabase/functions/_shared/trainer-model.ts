@@ -26,10 +26,23 @@ export const REPLY_LIMITS = { max_tokens: 2000, effort: "low" } as const;
 
 // The chat/completions body. `reasoning` is an OpenRouter field, so other
 // providers never receive it; tiny probes (the key test) skip it too.
-export function requestBody(req: ChatReq, provider: Provider = "openrouter") {
-  const reasoning = provider === "openrouter" && req.max_tokens >= 1024 ? { reasoning: { effort: REPLY_LIMITS.effort } } : {};
+//
+// `reasoningOff` is the retry mode: some models (DeepSeek V4 Flash) ignore the
+// effort hint and still think for the whole budget on a long prompt, which
+// returns no reply (finish "length"). Switching reasoning off made the same
+// question answer in 72 tokens with 0 spent on thinking.
+export function requestBody(req: ChatReq, provider: Provider = "openrouter", opts: { reasoningOff?: boolean } = {}) {
+  const reasoning = provider !== "openrouter" ? {}
+    : opts.reasoningOff ? { reasoning: { enabled: false } }
+    : req.max_tokens >= 1024 ? { reasoning: { effort: REPLY_LIMITS.effort } } : {};
   return { model: req.model, max_tokens: req.max_tokens, ...reasoning, messages: [{ role: "system", content: req.system }, ...req.messages] };
 }
+
+// Retries a reply that came back empty on the token limit, once, with
+// reasoning off. A model that cannot run without reasoning refuses that with
+// an error, and the caller then keeps the original "length" result.
+export const shouldRetryWithoutReasoning = (r: { ok: boolean; code?: string }, provider: Provider) =>
+  provider === "openrouter" && !r.ok && r.code === "length";
 
 const MODEL_RE = /^[A-Za-z0-9][A-Za-z0-9._:\/@+-]{0,127}$/;
 const KEY_RE = /^[\x21-\x7e]{8,512}$/;
@@ -100,6 +113,13 @@ function providerError(status: number): { code: string; error: string } {
 // One chat completion against an OpenAI-compatible endpoint. Resolves the host
 // before every call and refuses private targets; does not follow redirects.
 export async function chatCompletion(cfg: ModelConfig, key: string, req: ChatReq, io: { fetch: Fetch; resolve: Resolve; timeoutMs?: number }): Promise<ChatRes> {
+  const first = await chatOnce(cfg, key, req, io, false);
+  if (!shouldRetryWithoutReasoning(first, cfg.provider)) return first;
+  const second = await chatOnce(cfg, key, req, io, true);
+  return second.ok ? second : first;
+}
+
+async function chatOnce(cfg: ModelConfig, key: string, req: ChatReq, io: { fetch: Fetch; resolve: Resolve; timeoutMs?: number }, reasoningOff: boolean): Promise<ChatRes> {
   const v = validateConfig(cfg);
   if (!v.ok) return { ok: false, code: "config", error: v.errors.join("; ") };
   // OpenRouter and OpenAI are pinned to their public hosts; only a custom host
@@ -120,7 +140,7 @@ export async function chatCompletion(cfg: ModelConfig, key: string, req: ChatReq
   try {
     const r = await io.fetch(`${v.value.base_url}/chat/completions`, {
       method: "POST", headers, signal: ctl.signal, redirect: "manual",
-      body: JSON.stringify(requestBody(req, v.value.provider)),
+      body: JSON.stringify(requestBody(req, v.value.provider, { reasoningOff })),
     });
     if (!r.ok) return { ok: false, ...providerError(r.status) };
     let j: any;

@@ -16,6 +16,9 @@
 
 import { CORS, json, sbSelect, sbPatch, SUPABASE_URL, SERVICE_KEY, getActiveProjects, sendWaMessageMirrored } from "../_shared/wa.ts";
 import { buildJolshiriBundle, FLOW_ASK_PROFILE_TEXT, FLOW_AUTO_PROFILE_TEXT, FLOW_ASK_AGENT_TEXT, brochureCaption } from "../_shared/ai.ts";
+import {
+  DUBAI_STAGE, DUBAI_DOCS_WAIT_MS, DUBAI_MEETING_WAIT_MS, DUBAI_MEETING_ASK_TEXT, docsPlan, docsAskText,
+} from "../_shared/dubai-flow.ts";
 
 // The cron job runs every 1-2 minutes; a run can still be going (brochure
 // sends are rate-limited to 1 every 5.5s) when the next one fires. Claiming
@@ -47,6 +50,7 @@ const BOT_FOR_TAG: Record<string, string> = { Eyad: "eyad", Jaber: "dubai" };
 interface FlowRow {
   id: string;
   phone: string;
+  property_interest?: string | null;
   WA: string | null;
   message_logs: string[] | null;
   flow_stage: string;
@@ -155,12 +159,64 @@ async function processAwaitingReply(): Promise<number> {
   return acted;
 }
 
+// ── Dubai bot (stages in _shared/dubai-flow.ts; separate names, so the Eyad
+// passes above never match these rows and these never match theirs) ─────────
+// Contacts are claimed with an atomic PATCH, exactly like the Eyad passes, so
+// two overlapping runs cannot send the same message twice.
+const DUBAI_COLS = "select=id,phone,WA,property_interest,message_logs,flow_stage,stage_msg_count&limit=200";
+const messageCount = (r: FlowRow) => (Array.isArray(r.message_logs) ? r.message_logs.length : 0);
+
+// 10 minutes after the greeting with no reply → offer the brochure.
+async function processDubaiGreeted(): Promise<number> {
+  const cutoff = new Date(Date.now() - DUBAI_DOCS_WAIT_MS).toISOString();
+  const rows = await claimRows(
+    `flow_stage=eq.${DUBAI_STAGE.greeted}&WA=eq.Jaber&stage_at=lte.${encodeURIComponent(cutoff)}&takeover=not.is.true&${DUBAI_COLS}`,
+    { flow_stage: "dubai_claim_docs" },
+  );
+  const projects = rows.length ? await getActiveProjects() : [];
+  let acted = 0;
+  for (const row of rows) {
+    const count = messageCount(row);
+    const replied = count - (row.stage_msg_count ?? 0) > 0;
+    const project = projects.find((p: any) => p.name === row.property_interest);
+    const plan = docsPlan(project as any);
+    const patch = (stage: string) => sbPatch("preleads", `id=eq.${encodeURIComponent(row.id)}`, { flow_stage: stage, stage_at: new Date().toISOString(), stage_msg_count: count });
+    if (replied || !project || !plan.hasDocs) { await patch(DUBAI_STAGE.done); acted++; continue; }
+    await sendText("dubai", row.phone, docsAskText(project as any));
+    await patch(DUBAI_STAGE.askedDocs);
+    acted++;
+  }
+  return acted;
+}
+
+// 1 hour after the docs offer / the docs themselves with no reply → offer a meeting.
+async function processDubaiAwaiting(): Promise<number> {
+  const cutoff = new Date(Date.now() - DUBAI_MEETING_WAIT_MS).toISOString();
+  const rows = await claimRows(
+    `flow_stage=in.(${DUBAI_STAGE.askedDocs},${DUBAI_STAGE.docsSent})&WA=eq.Jaber&stage_at=lte.${encodeURIComponent(cutoff)}&takeover=not.is.true&${DUBAI_COLS}`,
+    { flow_stage: "dubai_claim_meeting" },
+  );
+  let acted = 0;
+  for (const row of rows) {
+    const count = messageCount(row);
+    const replied = count - (row.stage_msg_count ?? 0) > 0;
+    const patch = (stage: string) => sbPatch("preleads", `id=eq.${encodeURIComponent(row.id)}`, { flow_stage: stage, stage_at: new Date().toISOString(), stage_msg_count: count });
+    if (replied) { await patch(DUBAI_STAGE.done); acted++; continue; }
+    await sendText("dubai", row.phone, DUBAI_MEETING_ASK_TEXT);
+    await patch(DUBAI_STAGE.askedMeeting);
+    acted++;
+  }
+  return acted;
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
   try {
     const greeted = await processGreeted();
     const awaiting = await processAwaitingReply();
-    return json({ ok: true, greeted, awaiting });
+    const dubaiDocs = await processDubaiGreeted();
+    const dubaiMeeting = await processDubaiAwaiting();
+    return json({ ok: true, greeted, awaiting, dubaiDocs, dubaiMeeting });
   } catch (e) {
     console.error("wa-followup error", e);
     return json({ ok: false, error: e instanceof Error ? e.message : String(e) }, 500);

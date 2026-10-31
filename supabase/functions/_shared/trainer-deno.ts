@@ -6,7 +6,7 @@ import { _internals, type Db, type Llm } from "./trainer-handler.ts";
 import { runTestTurn, type LiveResult } from "./trainer-live.ts";
 import type { Bot } from "./trainer-core.ts";
 import { SUPABASE_URL, SERVICE_KEY, sbSelect, sbUpsert, sendWaMessageMirroredId } from "./wa.ts";
-import { chatCompletion, requestBody, embedRequest, embedWithConfig, type ModelConfig } from "./trainer-model.ts";
+import { chatCompletion, requestBody, embedRequest, embedWithConfig, type ModelConfig, type ChatRes } from "./trainer-model.ts";
 import { httpProbe } from "./trainer-brochure.ts";
 
 const H = { apikey: SERVICE_KEY, Authorization: `Bearer ${SERVICE_KEY}`, "Content-Type": "application/json" };
@@ -35,23 +35,34 @@ export const llm: Llm = {
   async chat(req) {
     const key = Deno.env.get("OPENROUTER_API_KEY") ?? "";
     if (!key) return { ok: false, error: "OPENROUTER_API_KEY not configured" };
-    const ctl = new AbortController();
-    const timer = setTimeout(() => ctl.abort(), 30_000);
-    try {
-      // Override only for a local dev stack (e.g. a stub model); unset in production.
-      const r = await fetch(Deno.env.get("AI_TRAINER_LLM_URL") || "https://openrouter.ai/api/v1/chat/completions", {
-        method: "POST", signal: ctl.signal,
-        headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json", "HTTP-Referer": "https://wepro.app", "X-Title": "WEPRO AI Trainer" },
-        body: JSON.stringify(requestBody(req, "openrouter")),
-      });
-      if (!r.ok) return { ok: false, error: `OpenRouter ${r.status}` };
-      const j = await r.json();
-      return { ok: true, text: String(j?.choices?.[0]?.message?.content ?? ""), prompt_tokens: j?.usage?.prompt_tokens ?? 0, completion_tokens: j?.usage?.completion_tokens ?? 0 };
-    } catch (e) {
-      return { ok: false, error: e instanceof Error ? e.message : String(e) };
-    } finally {
-      clearTimeout(timer);
+    // Second pass only when the first came back empty on the token limit
+    // (a reasoning model that spent the budget thinking): same request with
+    // reasoning off. A model that cannot run without reasoning refuses that
+    // pass, and the empty first answer stands.
+    let first: ChatRes | null = null;
+    for (const reasoningOff of [false, true]) {
+      const ctl = new AbortController();
+      const timer = setTimeout(() => ctl.abort(), 30_000);
+      try {
+        // Override only for a local dev stack (e.g. a stub model); unset in production.
+        const r = await fetch(Deno.env.get("AI_TRAINER_LLM_URL") || "https://openrouter.ai/api/v1/chat/completions", {
+          method: "POST", signal: ctl.signal,
+          headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json", "HTTP-Referer": "https://wepro.app", "X-Title": "WEPRO AI Trainer" },
+          body: JSON.stringify(requestBody(req, "openrouter", { reasoningOff })),
+        });
+        if (!r.ok) return first ?? { ok: false, error: `OpenRouter ${r.status}` };
+        const j = await r.json();
+        const text = String(j?.choices?.[0]?.message?.content ?? "");
+        const res: ChatRes = { ok: true, text, prompt_tokens: j?.usage?.prompt_tokens ?? 0, completion_tokens: j?.usage?.completion_tokens ?? 0 };
+        if (text.trim() || String(j?.choices?.[0]?.finish_reason || "") !== "length") return res;
+        first = first ?? res;
+      } catch (e) {
+        return first ?? { ok: false, error: e instanceof Error ? e.message : String(e) };
+      } finally {
+        clearTimeout(timer);
+      }
     }
+    return first!;
   },
 };
 
