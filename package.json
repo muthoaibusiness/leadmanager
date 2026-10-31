@@ -37,7 +37,7 @@
     "test:capi": "node --test supabase/functions/_shared/capi-core.test.ts supabase/functions/_shared/capi-rest.test.ts supabase/functions/_shared/capi-sched.test.ts && vite-node scripts/metacapi-access.test.mjs",
     "test:capi:race": "node scripts/capi-limiter.race.test.mjs",
     "test:ui:metacapi": "vite-node scripts/metacapi-ui.flow.test.mjs",
-    "test:auth": "node --test supabase/functions/_shared/actor.test.ts supabase/functions/_shared/access-admin.test.ts supabase/functions/_shared/cron-key.test.ts supabase/functions/_shared/wa-send-auth.test.ts supabase/functions/_shared/wa-send-chat.test.ts supabase/functions/_shared/finance-actor.test.ts scripts/access-rules.test.mjs && vite-node scripts/auth-session.test.mjs && vite-node scripts/auth-token.test.mjs && vite-node scripts/auth-recovery.test.mjs && vite-node scripts/auth-hardening.test.mjs && vite-node scripts/user-update.test.mjs && vite-node scripts/wa-relay.test.mjs"
+    "test:auth": "node --test supabase/functions/_shared/actor.test.ts supabase/functions/_shared/access-admin.test.ts supabase/functions/_shared/cron-key.test.ts supabase/functions/_shared/wa-send-auth.test.ts supabase/functions/_shared/wa-send-chat.test.ts supabase/functions/_shared/finance-actor.test.ts scripts/access-rules.test.mjs && vite-node scripts/auth-session.test.mjs && vite-node scripts/auth-token.test.mjs && vite-node scripts/auth-recovery.test.mjs && vite-node --config .gate-harness/vite.config.mjs scripts/auth-hardening.test.mjs && vite-node scripts/user-update.test.mjs && vite-node --config .gate-harness/vite.config.mjs scripts/wa-relay.test.mjs"
   },
   "dependencies": {
     "@ark-ui/react": "^5.37.2",
