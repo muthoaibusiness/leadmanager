@@ -40,13 +40,11 @@ import {
   CORS, json, SUPABASE_URL, SERVICE_KEY, WASENDER_BASE,
   claimEvent, getCredentials, getActiveProjects, getRecentHistory, sendWaMessageMirrored, getKnowledge, getCorrections,
   findLeadForNote, logNoteActivity, getBotSettings, aiStillOn, verifyWebhook, fillWelcomeTemplate, fixLeadPhoneFromNote, splitPhoneFromNote,
-  logConversationHistory, persistLlmFailure,
+  logConversationHistory,
 } from "../_shared/wa.ts";
-import { askAgent, resolveMedia, fixGrammar, matchJolshiriBundle, matchNamedProject, isLandOffer, isPriceQuestion, brochureCaption } from "../_shared/ai.ts";
-import {
-  DUBAI_STAGE, DUBAI_CAMPAIGN_PROJECT, DUBAI_GREETING_TEXT, DOCS_ASK_PREFIX,
-  needsAiReply, isFloorPlanAsk, DUBAI_PRICE_TEXT, isLocationAsk, locationText, floorPlanPlan, brochureItem, brochureAskText, consentsTo, refuses, shouldGreet, type DocItem,
-} from "../_shared/dubai-flow.ts";
+import { askAgent, resolveMedia, fixGrammar, matchJolshiriBundle, matchNamedProject, isLandOffer, brochureCaption } from "../_shared/ai.ts";
+import { DUBAI_STAGE, DUBAI_CAMPAIGN_PROJECT, DUBAI_GREETING_TEXT, needsAiReply } from "../_shared/dubai-flow.ts";
+import { runCitizenFlow } from "../_shared/citizen-flow.ts";
 import { runTrainerTestTurn } from "../_shared/trainer-deno.ts";
 
 // ── local REST helpers ───────────────────────────────────────────────────
@@ -414,9 +412,6 @@ async function handleInbound(evt: ParsedEvent): Promise<void> {
     await sbPatchFireAndForget("preleads", `id=eq.${pid}`, { property_interest: projectName });
   }
 
-  const sendDocItem = (d: DocItem) => sendWaMessageMirrored("dubai", evt.waTo, convId, evt.phone,
-    d.type === "text" ? { type: "text", text: d.caption } : { type: d.type, mediaUrl: d.url, fileName: d.fileName, text: d.caption });
-
   // A contact that wrote before this flow existed has no stage and was never
   // answered by us: it gets the same opening as a brand-new one. Anyone a human
   // has already replied to is left alone.
@@ -441,132 +436,18 @@ async function handleInbound(evt: ParsedEvent): Promise<void> {
     }
   }
 
-  // A second opening message (a button plus a voice note, say) lands seconds
-  // after the first: it is part of the same opening, not a reply to the
-  // greeting, so it must not cancel the 10-minute follow-up.
-  if (!isNew && stage === DUBAI_STAGE.greeted && row.stage_at && Date.now() - Date.parse(row.stage_at) < 60_000) {
-    await sbPatchFireAndForget("preleads", `id=eq.${pid}&flow_stage=eq.${DUBAI_STAGE.greeted}`, { stage_msg_count: msgCount });
-  }
-
-  // 2. Greeting the moment a new contact writes; it starts the 10-minute clock.
-  // Only when no substantive handler below will answer the same message —
-  // otherwise one inbound would get two logical responses.
-  if (shouldGreet({
-    starting, welcomeEnabled: settings.welcomeEnabled, takeover, stage,
-    text: evt.text, quoted: evt.quoted,
-    faqAgentEnabled: settings.faqAgentEnabled, aiMediaEnabled: settings.aiMediaEnabled,
+  // The scripted Citizen Avenue flow (greeting, floor plan / video, brochure,
+  // price and location answers) is shared with the Eyad bot.
+  const handled = await runCitizenFlow({
+    bot: "dubai", assigned: true, pid, convId, phone: evt.phone, waTo: evt.waTo, text: evt.text, quoted: evt.quoted,
+    isNew, starting, stage, stageAt: row.stage_at, takeover, msgCount, project,
+    greetingEnabled: settings.welcomeEnabled,
+    greetingText: settings.welcomeMessage ? fillWelcomeTemplate(settings.welcomeMessage, evt.name) : DUBAI_GREETING_TEXT,
     aiWillAnswer: !!(settings.faqAgentEnabled && evt.text && evt.remote && !isLandOffer(evt.text)
       && (needsAiReply(evt.text, adLead) || settings.trainerTest)),
-  })) {
-    // Stage moves only once the greeting really went out; a failed send leaves
-    // the contact unstarted, so its next message tries again.
-    const greeted = await sendWaMessageMirrored("dubai", evt.waTo, convId, evt.phone,
-      { type: "text", text: settings.welcomeMessage ? fillWelcomeTemplate(settings.welcomeMessage, evt.name) : DUBAI_GREETING_TEXT });
-    if (greeted) await sbPatchFireAndForget("preleads", `id=eq.${pid}`, { flow_stage: DUBAI_STAGE.greeted, stage_at: now(), stage_msg_count: msgCount });
-    else console.error("wa-bot-dubai: greeting failed for", evt.phone);
-  }
-
-  // 5. "yes" to the floor plan / video offer → send them at once, then ask about the brochure. The PATCH only matches while the
-  // contact is still in asked_docs, so a duplicate delivery claims nothing.
-  if (!isNew && !takeover && stage === DUBAI_STAGE.askedDocs && evt.text) {
-    if (refuses(evt.text)) {
-      await sbPatchFireAndForget("preleads", `id=eq.${pid}&flow_stage=eq.${DUBAI_STAGE.askedDocs}`, { flow_stage: DUBAI_STAGE.done, stage_at: now(), stage_msg_count: msgCount });
-      return;
-    }
-    if (consentsTo(evt.text, evt.quoted, DOCS_ASK_PREFIX)) {
-      // The claim moves the contact to the brochure question first, so a
-      // duplicate delivery of this "yes" matches nothing while we send.
-      const claimed = await sbPatchJson("preleads", `id=eq.${pid}&flow_stage=eq.${DUBAI_STAGE.askedDocs}`,
-        { flow_stage: DUBAI_STAGE.askedBrochure, stage_at: now(), stage_msg_count: msgCount });
-      if (claimed) {
-        const items = floorPlanPlan(project);
-        for (let i = 0; i < items.length; i++) {
-          if (i) await new Promise((r) => setTimeout(r, 5500));
-          await sendDocItem(items[i]);
-        }
-        if (project && brochureItem(project)) {
-          await new Promise((r) => setTimeout(r, 5500));
-          await sendWaMessageMirrored("dubai", evt.waTo, convId, evt.phone, { type: "text", text: brochureAskText(project) });
-          await sbPatchFireAndForget("preleads", `id=eq.${pid}&flow_stage=eq.${DUBAI_STAGE.askedBrochure}`, { stage_at: now() });
-        } else {
-          await sbPatchFireAndForget("preleads", `id=eq.${pid}&flow_stage=eq.${DUBAI_STAGE.askedBrochure}`, { flow_stage: DUBAI_STAGE.done, stage_at: now() });
-        }
-      }
-      return;
-    }
-  }
-
-  // 6. "yes" to the brochure question → send it. The 1-hour closing note
-  // follows if the customer then goes quiet.
-  if (!isNew && !takeover && stage === DUBAI_STAGE.askedBrochure && evt.text) {
-    if (refuses(evt.text)) {
-      await sbPatchFireAndForget("preleads", `id=eq.${pid}&flow_stage=eq.${DUBAI_STAGE.askedBrochure}`, { flow_stage: DUBAI_STAGE.done, stage_at: now(), stage_msg_count: msgCount });
-      return;
-    }
-    if (consentsTo(evt.text, evt.quoted, DOCS_ASK_PREFIX)) {
-      const claimed = await sbPatchJson("preleads", `id=eq.${pid}&flow_stage=eq.${DUBAI_STAGE.askedBrochure}`,
-        { flow_stage: DUBAI_STAGE.brochureSent, stage_at: now(), stage_msg_count: msgCount });
-      const b = claimed ? brochureItem(project) : null;
-      if (b) await sendDocItem(b);
-      return;
-    }
-  }
-
-  // 7. Someone who asks for the floor plan themselves gets it now (the ad's
-  // floor-plan button counts), then the brochure question. Once per contact: the
-  // video message in the thread is the marker that it already went out.
-  if (settings.faqAgentEnabled && settings.aiMediaEnabled && !takeover && evt.text && isFloorPlanAsk(evt.text)) {
-    const items = floorPlanPlan(project);
-    if (items.length) {
-      const sent = await sbSelectJson(`wa_messages?conversation_id=eq.${encodeURIComponent(convId)}&direction=eq.OUT&body=like.Project%20video*&select=id&limit=1`);
-      const inFlow = ["", DUBAI_STAGE.greeted, DUBAI_STAGE.askedDocs].includes(stage);
-      const claimed = sent.length ? null : !inFlow ? true
-        : await sbPatchJson("preleads", `id=eq.${pid}&${stage ? `flow_stage=eq.${stage}` : "flow_stage=is.null"}`,
-          { flow_stage: DUBAI_STAGE.askedBrochure, stage_at: now(), stage_msg_count: msgCount });
-      if (claimed) {
-        if (!(await aiStillOn("dubai", evt.phone))) return;
-        if (starting) await new Promise((r) => setTimeout(r, 5500)); // after the greeting
-        for (let i = 0; i < items.length; i++) {
-          if (i) await new Promise((r) => setTimeout(r, 5500));
-          await sendDocItem(items[i]);
-        }
-        if (inFlow) {
-          if (brochureItem(project)) {
-            await new Promise((r) => setTimeout(r, 5500));
-            await sendWaMessageMirrored("dubai", evt.waTo, convId, evt.phone, { type: "text", text: brochureAskText(project!) });
-            await sbPatchFireAndForget("preleads", `id=eq.${pid}&flow_stage=eq.${DUBAI_STAGE.askedBrochure}`, { stage_at: now() });
-          } else {
-            await sbPatchFireAndForget("preleads", `id=eq.${pid}&flow_stage=eq.${DUBAI_STAGE.askedBrochure}`, { flow_stage: DUBAI_STAGE.done, stage_at: now() });
-          }
-        }
-      }
-      return;
-    }
-  }
-
-  // 8. A price question: the catalog has no price, so point to the consultant
-  // already assigned. Once per contact.
-  if (settings.faqAgentEnabled && !takeover && evt.text && isPriceQuestion(evt.text)) {
-    const said = await sbSelectJson(`wa_messages?conversation_id=eq.${encodeURIComponent(convId)}&direction=eq.OUT&body=eq.${encodeURIComponent(DUBAI_PRICE_TEXT)}&select=id&limit=1`);
-    if (!said.length) {
-      if (!(await aiStillOn("dubai", evt.phone))) return;
-      await sendWaMessageMirrored("dubai", evt.waTo, convId, evt.phone, { type: "text", text: DUBAI_PRICE_TEXT });
-    }
-    return;
-  }
-
-  // 9. Where is the project: the catalog's address and map link. Once per contact.
-  if (settings.faqAgentEnabled && !takeover && evt.text && isLocationAsk(evt.text)) {
-    const loc = locationText(project);
-    if (loc) {
-      const said = await sbSelectJson("wa_messages?conversation_id=eq." + encodeURIComponent(convId) + "&direction=eq.OUT&body=eq." + encodeURIComponent(loc) + "&select=id&limit=1");
-      if (!said.length) {
-        if (!(await aiStillOn("dubai", evt.phone))) return;
-        await sendWaMessageMirrored("dubai", evt.waTo, convId, evt.phone, { type: "text", text: loc });
-      }
-      return;
-    }
-  }
+    replyToMessageId: evt.messageId || undefined,
+  });
+  if (handled) return;
 
   // 3. A grounded AI reply for an ad customer's own question. Ad buttons,
   // greetings, media placeholders and land offers get none; anything the
@@ -620,7 +501,7 @@ async function runFaqAgent(account: string, to: string, remote: string, text: st
       return true;
     }
 
-    const result = await askAgent(history, text, projects, opts.adProject, knowledge, corrections, { record: (f) => void persistLlmFailure("dubai", f) });
+    const result = await askAgent(history, text, projects, opts.adProject, knowledge, corrections);
     if (!result.confident) return false; // out of knowledge → say nothing
     // A brochure the flow already delivered is not sent again (no-repeat rule).
     const send = result.send && !(result.send.type === "brochure" && opts.profilesAlreadySent) ? result.send : null;

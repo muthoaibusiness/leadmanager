@@ -201,3 +201,29 @@ export function shouldGreet(d: GreetDecision): boolean {
   }
   return true;
 }
+
+// The Citizen flow's greeting guard (shared by both bots via citizen-flow.ts).
+// Returns false when any substantive handler below will answer the same message:
+// the caller's AI/FAQ branch (aiWillAnswer), the floor-plan send, the assigned-
+// consultant price line, or the catalog location line. An empty message (an ad
+// click with no body) and a plain opening still get the greeting.
+export interface CitizenGreetD {
+  starting: boolean;
+  greetingEnabled: boolean;
+  takeover: boolean;
+  text: string | undefined;
+  assigned: boolean;
+  floorPlanAvailable: boolean;
+  locationAvailable: boolean;
+  aiWillAnswer: boolean;
+}
+export function shouldCitizenGreet(d: CitizenGreetD): boolean {
+  if (!d.starting || !d.greetingEnabled || d.takeover) return false;
+  const t = String(d.text ?? "");
+  if (!t) return true;
+  if (d.aiWillAnswer) return false;
+  if (isFloorPlanAsk(t) && d.floorPlanAvailable) return false;
+  if (d.assigned && isPriceQuestion(t)) return false;
+  if (isLocationAsk(t) && d.locationAvailable) return false;
+  return true;
+}

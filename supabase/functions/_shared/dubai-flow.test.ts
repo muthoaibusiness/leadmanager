@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  isForeignNumber, isAdFaqOrSmallTalk, needsAiReply, floorPlanPlan, brochureItem, floorPlanAskText, brochureAskText, consentsTo, refuses, shouldGreet,
+  isForeignNumber, isAdFaqOrSmallTalk, needsAiReply, floorPlanPlan, brochureItem, floorPlanAskText, brochureAskText, consentsTo, refuses, shouldGreet, shouldCitizenGreet,
   DUBAI_STAGE, DUBAI_STAGES, DOCS_ASK_PREFIX,
 } from "./dubai-flow.ts";
 
@@ -94,6 +94,36 @@ test("shouldGreet: takeover, welcome-off, or non-starting never greets", () => {
 });
 test("shouldGreet: the floor-plan flow itself still has content to send (greeting suppressed, not silent)", () => {
   assert.ok(floorPlanPlan({ name: "Wecon Citizen Avenue" }).length >= 2);
+});
+
+// The Citizen flow (deployed `wa-bot-dubai` v74+) greets conditionally. A
+// starting contact whose message a substantive handler answers must get that
+// answer and NOT a greeting — the deployed double-reply regression.
+const CG = {
+  starting: true, greetingEnabled: true, takeover: false, text: "",
+  assigned: true, floorPlanAvailable: true, locationAvailable: true, aiWillAnswer: false,
+};
+test("shouldCitizenGreet: floor-plan ask with a plan available → no greeting", () => {
+  assert.equal(shouldCitizenGreet({ ...CG, text: "ফ্লোর প্ল্যান ও শপের পজিশন দেখতে চাই" }), false);
+  assert.equal(shouldCitizenGreet({ ...CG, text: "ফ্লোর প্ল্যান ও শপের পজিশন দেখতে চাই", floorPlanAvailable: false }), true);
+});
+test("shouldCitizenGreet: AI/FAQ will answer → no greeting, incl. a floor-plan ask with no plan", () => {
+  assert.equal(shouldCitizenGreet({ ...CG, text: "দাম কত?", aiWillAnswer: true }), false);
+  assert.equal(shouldCitizenGreet({ ...CG, text: "ফ্লোর প্ল্যান ও শপের পজিশন দেখতে চাই", floorPlanAvailable: false, aiWillAnswer: true }), false);
+});
+test("shouldCitizenGreet: price (assigned) and location asks → no greeting", () => {
+  assert.equal(shouldCitizenGreet({ ...CG, text: "দাম কত?" }), false);
+  assert.equal(shouldCitizenGreet({ ...CG, text: "ঠিকানা কী?" }), false);
+});
+test("shouldCitizenGreet: plain opening or empty (ad click) still greets", () => {
+  assert.equal(shouldCitizenGreet({ ...CG, text: "Hi" }), true);
+  assert.equal(shouldCitizenGreet({ ...CG, text: "" }), true);
+  assert.equal(shouldCitizenGreet({ ...CG, text: "বিস্তারিত জানতে চাই" }), true);
+});
+test("shouldCitizenGreet: non-starting, greeting-off, or takeover never greets", () => {
+  assert.equal(shouldCitizenGreet({ ...CG, text: "Hi", starting: false }), false);
+  assert.equal(shouldCitizenGreet({ ...CG, text: "Hi", greetingEnabled: false }), false);
+  assert.equal(shouldCitizenGreet({ ...CG, text: "Hi", takeover: true }), false);
 });
 
 test("stages are distinct from the Eyad flow's, so the two crons never touch each other's rows", () => {
