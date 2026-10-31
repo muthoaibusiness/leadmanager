@@ -10,7 +10,7 @@
 //   select cron.schedule('wa-followup', '*/2 * * * *', $$
 //     select net.http_post(
 //       url := '<SUPABASE_URL>/functions/v1/wa-followup',
-//       headers := '{"Content-Type": "application/json"}'::jsonb
+//       headers := '{"Content-Type": "application/json", "x-followup-key": "<FOLLOWUP_CRON_KEY>"}'::jsonb
 //     );
 //   $$);
 
@@ -20,6 +20,7 @@ import {
   DUBAI_STAGE, DUBAI_DOCS_WAIT_MS, DUBAI_AUTO_SEND_WAIT_MS, DUBAI_FINAL_WAIT_MS, DUBAI_FINAL_TEXT,
   floorPlanPlan, floorPlanAskText, brochureItem, brochureAskText, type DocItem,
 } from "../_shared/dubai-flow.ts";
+import { cronKeyGate } from "../_shared/cron-key.ts";
 
 // The cron job runs every 1-2 minutes; a run can still be going (brochure
 // sends are rate-limited to 1 every 5.5s) when the next one fires. Claiming
@@ -258,6 +259,11 @@ async function processDubaiFinal(): Promise<number> {
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
+  // Access (CR-001 D1): the x-followup-key header must equal the
+  // FOLLOWUP_CRON_KEY secret (cron-key.ts). Without the secret every call is
+  // refused (503): set the secret and the cron header before deploying this.
+  const gate = cronKeyGate(req, Deno.env.get("FOLLOWUP_CRON_KEY"), "x-followup-key");
+  if (!gate.ok) return json({ ok: false, error: gate.error }, gate.status);
   try {
     const greeted = await processGreeted();
     const awaiting = await processAwaitingReply();

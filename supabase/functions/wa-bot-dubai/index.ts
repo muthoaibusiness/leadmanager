@@ -507,7 +507,7 @@ async function handleInbound(evt: ParsedEvent): Promise<void> {
   // 7. Someone who asks for the floor plan themselves gets it now (the ad's
   // floor-plan button counts), then the brochure question. Once per contact: the
   // video message in the thread is the marker that it already went out.
-  if (!takeover && evt.text && isFloorPlanAsk(evt.text)) {
+  if (settings.faqAgentEnabled && settings.aiMediaEnabled && !takeover && evt.text && isFloorPlanAsk(evt.text)) {
     const items = floorPlanPlan(project);
     if (items.length) {
       const sent = await sbSelectJson(`wa_messages?conversation_id=eq.${encodeURIComponent(convId)}&direction=eq.OUT&body=like.Project%20video*&select=id&limit=1`);
@@ -516,6 +516,7 @@ async function handleInbound(evt: ParsedEvent): Promise<void> {
         : await sbPatchJson("preleads", `id=eq.${pid}&${stage ? `flow_stage=eq.${stage}` : "flow_stage=is.null"}`,
           { flow_stage: DUBAI_STAGE.askedBrochure, stage_at: now(), stage_msg_count: msgCount });
       if (claimed) {
+        if (!(await aiStillOn("dubai", evt.phone))) return;
         if (starting) await new Promise((r) => setTimeout(r, 5500)); // after the greeting
         for (let i = 0; i < items.length; i++) {
           if (i) await new Promise((r) => setTimeout(r, 5500));
@@ -537,18 +538,24 @@ async function handleInbound(evt: ParsedEvent): Promise<void> {
 
   // 8. A price question: the catalog has no price, so point to the consultant
   // already assigned. Once per contact.
-  if (!takeover && evt.text && isPriceQuestion(evt.text)) {
+  if (settings.faqAgentEnabled && !takeover && evt.text && isPriceQuestion(evt.text)) {
     const said = await sbSelectJson(`wa_messages?conversation_id=eq.${encodeURIComponent(convId)}&direction=eq.OUT&body=eq.${encodeURIComponent(DUBAI_PRICE_TEXT)}&select=id&limit=1`);
-    if (!said.length) await sendWaMessageMirrored("dubai", evt.waTo, convId, evt.phone, { type: "text", text: DUBAI_PRICE_TEXT });
+    if (!said.length) {
+      if (!(await aiStillOn("dubai", evt.phone))) return;
+      await sendWaMessageMirrored("dubai", evt.waTo, convId, evt.phone, { type: "text", text: DUBAI_PRICE_TEXT });
+    }
     return;
   }
 
   // 9. Where is the project: the catalog's address and map link. Once per contact.
-  if (!takeover && evt.text && isLocationAsk(evt.text)) {
+  if (settings.faqAgentEnabled && !takeover && evt.text && isLocationAsk(evt.text)) {
     const loc = locationText(project);
     if (loc) {
       const said = await sbSelectJson("wa_messages?conversation_id=eq." + encodeURIComponent(convId) + "&direction=eq.OUT&body=eq." + encodeURIComponent(loc) + "&select=id&limit=1");
-      if (!said.length) await sendWaMessageMirrored("dubai", evt.waTo, convId, evt.phone, { type: "text", text: loc });
+      if (!said.length) {
+        if (!(await aiStillOn("dubai", evt.phone))) return;
+        await sendWaMessageMirrored("dubai", evt.waTo, convId, evt.phone, { type: "text", text: loc });
+      }
       return;
     }
   }
