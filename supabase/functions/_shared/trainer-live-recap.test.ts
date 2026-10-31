@@ -58,3 +58,17 @@ test("writeRecapNote is a no-op when the phone has no lead", async () => {
   assert.equal(await writeRecapNote(f.ports, PHONE, DESC), false);
   assert.equal(f.t.activities.length, 0);
 });
+
+// A UAE number shares the 9-digit tail 501234567 with a BD number; the suffix
+// fetch returns the other company's lead, and nothing may be written on it.
+test("writeRecapNote never writes on a lead that only shares the phone suffix", async () => {
+  const f = portsFor({ leads: [{ id: "lead-uae", phone: "971501234567", company_id: "c2" }], activities: [] });
+  assert.equal(await writeRecapNote(f.ports, "8801501234567", DESC), false);
+  assert.equal(f.t.activities.length, 0);
+});
+
+test("writeRecapNote accepts a full-number match written in a different format", async () => {
+  const f = portsFor({ leads: [{ id: "lead-bd", phone: "01604271958", company_id: "c1" }], activities: [] });
+  assert.equal(await writeRecapNote(f.ports, PHONE, DESC), true);
+  assert.equal(f.t.activities[0].lead_id, "lead-bd");
+});

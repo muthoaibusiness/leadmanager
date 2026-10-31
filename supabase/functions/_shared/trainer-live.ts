@@ -76,8 +76,13 @@ export const RECAP_NOTE_SOURCE = "Eyad Bot (recap)";
 export async function writeRecapNote(ports: LivePorts, phone: string, description: string): Promise<boolean> {
   const tail = normPhone(phone).slice(-9);
   if (tail.length < 8) return false;
-  const lead = (await ports.select(`leads?phone=like.*${encodeURIComponent(tail)}&select=id,company_id&order=created_at.desc&limit=1`))[0];
-  if (!lead) return false;
+  // The suffix query is only a candidate fetch: a 9-digit tail is shared across
+  // country codes, so the lead is accepted only on a full-number match, and a
+  // tail that matches two different numbers writes nowhere.
+  const rows = await ports.select(`leads?phone=like.*${encodeURIComponent(tail)}&select=id,company_id,phone&order=created_at.desc&limit=20`);
+  const same = rows.filter((l) => samePhone(l.phone, phone));
+  if (new Set(same.map((l) => normPhone(l.phone))).size !== 1) return false;
+  const lead = same[0];
   const existing = (await ports.select(`activities?lead_id=eq.${encodeURIComponent(lead.id)}&type=eq.NOTE&user_name=eq.${encodeURIComponent(RECAP_NOTE_SOURCE)}&select=id&order=timestamp.desc&limit=1`))[0];
   if (existing) return ports.patch("activities", `id=eq.${encodeURIComponent(existing.id)}`, { description, timestamp: new Date().toISOString() });
   return ports.upsert("activities", { id: crypto.randomUUID(), lead_id: lead.id, type: "NOTE", description, user_id: null, user_name: RECAP_NOTE_SOURCE, duration_seconds: 0, timestamp: new Date().toISOString(), company_id: lead.company_id ?? null });
