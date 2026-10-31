@@ -112,6 +112,7 @@ export function rToMsg(r) {
     mediaUrl: r.media_url || '', mediaMime: r.media_mime || '', mediaName: r.media_name || '',
     mediaSize: r.media_size || 0, status: r.status || 'SENT', error: r.error || '',
     senderName: r.sender_name || '', sentBy: r.sent_by || null, clientRef: r.client_ref || null,
+    replyToMessageId: r.reply_to_message_id || null,
     waTimestamp: r.wa_timestamp || r.created_at, createdAt: r.created_at,
     account: normAccount(r.account),
   };
