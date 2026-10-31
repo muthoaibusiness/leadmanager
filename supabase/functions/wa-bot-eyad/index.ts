@@ -336,7 +336,7 @@ async function handleInbound(p: ParsedEvent): Promise<void> {
   const trainerEligible = !!(settings.faqAgentEnabled && p.text && upsert.takeover !== true && p.remote);
   if (trainerEligible) {
     const r = await runTrainerTestTurn({ bot: "eyad", convId: `eyad:${p.convJid}`, phone: p.phone, to: p.target, text: p.text,
-      ad: { isAd: p.isAd, adText: p.adText }, allowMedia: settings.aiMediaEnabled, production: true });
+      ad: { isAd: p.isAd, adText: p.adText }, allowMedia: settings.aiMediaEnabled, production: true, replyToMessageId: p.deliveryId || undefined });
     console.log("trainer turn", { phone: p.phone, outcome: r.outcome, sent: r.sent, blocked: r.blocked, turnId: r.turnId });
   }
 

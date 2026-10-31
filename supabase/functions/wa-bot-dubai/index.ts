@@ -584,6 +584,7 @@ async function handleInbound(evt: ParsedEvent): Promise<void> {
     const docsDone = [DUBAI_STAGE.askedBrochure, DUBAI_STAGE.brochureSent].includes(stage as any);
     await runFaqAgent("dubai", evt.waTo, evt.remote, evt.text, {
       adProject: projectName || undefined, profilesAlreadySent: docsDone, noBundle: true, allowMedia: settings.aiMediaEnabled,
+      replyToMessageId: evt.messageId || undefined,
     });
   }
 }
@@ -595,7 +596,7 @@ async function handleInbound(evt: ParsedEvent): Promise<void> {
 // human picks the thread up from Conversations. It never announces actions
 // — the wa-followup flow owns those. Returns true only when the bundle went
 // out, so the caller marks profile_sent and it is never sent twice.
-interface FaqOpts { adProject?: string; profilesAlreadySent: boolean; noBundle?: boolean; allowMedia: boolean }
+interface FaqOpts { adProject?: string; profilesAlreadySent: boolean; noBundle?: boolean; allowMedia: boolean; replyToMessageId?: string }
 async function runFaqAgent(account: string, to: string, remote: string, text: string, opts: FaqOpts): Promise<boolean> {
   try {
     const convId = `${account}:${remote}`;
@@ -607,7 +608,7 @@ async function runFaqAgent(account: string, to: string, remote: string, text: st
     const bundle = opts.profilesAlreadySent || opts.noBundle ? null : matchJolshiriBundle(text, projects);
     if (bundle) {
       if (!(await aiStillOn("dubai", phone))) return false;
-      await sendWaMessageMirrored(account, to, convId, phone, { type: "text", text: bundle.message });
+      await sendWaMessageMirrored(account, to, convId, phone, { type: "text", text: bundle.message }, { replyToMessageId: opts.replyToMessageId });
       for (let i = 0; i < bundle.brochures.length; i++) {
         await new Promise((r) => setTimeout(r, 5500));
         const b = bundle.brochures[i];
@@ -627,7 +628,7 @@ async function runFaqAgent(account: string, to: string, remote: string, text: st
 
     if (result.reply) {
       if (!(await aiStillOn("dubai", phone))) return false;
-      await sendWaMessageMirrored(account, to, convId, phone, { type: "text", text: result.reply });
+      await sendWaMessageMirrored(account, to, convId, phone, { type: "text", text: result.reply }, { replyToMessageId: opts.replyToMessageId });
       // Wasender's account-protection rate limit is 1 message per 5s.
       if (opts.allowMedia && send) await new Promise((r) => setTimeout(r, 5500));
     }

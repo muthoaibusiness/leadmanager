@@ -154,11 +154,12 @@ export async function sendWaMessageMirrored(
   convId: string,
   phone: string,
   msg: { type: "text" | "image" | "document"; text?: string; mediaUrl?: string; fileName?: string },
+  opts: { replyToMessageId?: string } = {},
 ): Promise<boolean> {
   // storeWaId on for the legacy agent too: the fromMe echo wa-webhook mirrors
   // back then collides on the wa_id index instead of showing as a second
   // copy of every bot message, and the id is the handle for a later unsend.
-  return (await sendWaMessageMirroredId(account, to, convId, phone, msg, { senderName: "AI Agent", storeWaId: true })) !== null;
+  return (await sendWaMessageMirroredId(account, to, convId, phone, msg, { senderName: "AI Agent", storeWaId: true, replyToMessageId: opts.replyToMessageId })) !== null;
 }
 
 // Same as sendWaMessageMirrored, returning the Wasender message id ("" when
@@ -173,7 +174,7 @@ export async function sendWaMessageMirroredId(
   convId: string,
   phone: string,
   msg: { type: "text" | "image" | "document"; text?: string; mediaUrl?: string; fileName?: string },
-  opts: { senderName: string; storeWaId: boolean },
+  opts: { senderName: string; storeWaId: boolean; replyToMessageId?: string },
 ): Promise<string | null> {
   const { token } = await getCredentials(account);
   if (!token) {
@@ -247,6 +248,7 @@ export async function sendWaMessageMirroredId(
     // UI lists, "AI Trainer" for a test-number reply.
     sender_name: opts.senderName,
     wa_timestamp: now,
+    ...(opts.replyToMessageId ? { reply_to_message_id: opts.replyToMessageId } : {}),
   }]);
   return waId;
 }
