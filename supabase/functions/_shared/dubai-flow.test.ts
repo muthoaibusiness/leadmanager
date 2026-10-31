@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  isForeignNumber, isAdFaqOrSmallTalk, needsAiReply, docsPlan, docsAskText, consentsTo, refuses,
+  isForeignNumber, isAdFaqOrSmallTalk, needsAiReply, floorPlanPlan, brochureItem, floorPlanAskText, brochureAskText, consentsTo, refuses,
   DUBAI_STAGE, DUBAI_STAGES, DOCS_ASK_PREFIX,
 } from "./dubai-flow.ts";
 
@@ -30,28 +30,36 @@ test("anything of the customer's own is a custom-reply case, but only for ad cus
   assert.equal(needsAiReply("বিস্তারিত জানতে চাই।", true), false);
 });
 
-test("docsPlan: brochure; Citizen Avenue also gets floor-plan PDF and video; no brochure means no docs", () => {
-  const p = docsPlan({ name: "Wecon Nuznan", address: "Plot 1, Sector 16, Jolshiri Abashon, Dhaka", brochure_url: "https://x/b.pdf", floor_plans: ["https://x/f.jpg"] } as any);
-  assert.equal(p.hasDocs, true);
-  assert.deepEqual(p.items, [{ type: "document", url: "https://x/b.pdf", fileName: "Wecon Nuznan Brochure.pdf", caption: "Wecon Nuznan (Sector 16, Jolshiri Abashon) — Brochure" }]);
-  assert.deepEqual(docsPlan({ name: "P2P Helthcare", brochure_url: "https://x/p.pdf" }).items.length, 1);
-  const c = docsPlan({ name: "Wecon Citizen Avenue", brochure_url: "https://x/c.pdf" });
-  assert.deepEqual(c.items.map((i) => i.type), ["document", "document", "text"]);
-  assert.ok(c.items[1].url.includes("1NVarSO7peq15fbPS_2pMBKcc6bVe9sfS"));
-  assert.ok(c.items[2].caption.includes("https://www.youtube.com/watch?v=Dc5OR3sEcaU"));
-  assert.equal(docsAskText({ name: "Wecon Citizen Avenue" }), "Would you like me to send the brochure, floor plan and video of Wecon Citizen Avenue?");
-  assert.ok(docsAskText({ name: "Wecon Citizen Avenue" }).startsWith(DOCS_ASK_PREFIX));
-  assert.equal(docsPlan({ name: "Momtaz Manor" }).hasDocs, false);
-  assert.equal(docsPlan(null).hasDocs, false);
-  assert.equal(docsAskText({ name: "P2P Helthcare" }), "Would you like me to send the brochure of P2P Helthcare?");
-  assert.ok(docsAskText({ name: "X" }).startsWith(DOCS_ASK_PREFIX));
+test("floor plan / video: Citizen Avenue gets a floor-plan PDF and a video; none without either", () => {
+  const c = floorPlanPlan({ name: "Wecon Citizen Avenue", address: "Plot 1, Sector 16, Jolshiri Abashon, Dhaka" });
+  assert.ok(c.length >= 2);
+  assert.equal(c[0].type, "document");
+  assert.ok(c[0].url.includes("1NVarSO7peq15fbPS_2pMBKcc6bVe9sfS"));
+  assert.equal(c[0].fileName, "Wecon Citizen Avenue Floor Plan.pdf");
+  assert.equal(c[1].caption.includes("https://www.youtube.com/watch?v=Dc5OR3sEcaU"), true);
+  assert.deepEqual(floorPlanPlan({ name: "Momtaz Manor" }), []);
+  assert.deepEqual(floorPlanPlan(null), []);
+  assert.equal(floorPlanAskText({ name: "Wecon Citizen Avenue" }), "Would you like me to send the floor plan and video of Wecon Citizen Avenue?");
+  assert.ok(floorPlanAskText({ name: "Wecon Citizen Avenue" }).startsWith(DOCS_ASK_PREFIX));
+  assert.equal(floorPlanAskText({ name: "Momtaz Manor" }), null);
+});
+
+test("brochure item and ask text", () => {
+  const p = brochureItem({ name: "Wecon Nuznan", address: "Plot 1, Sector 16, Jolshiri Abashon, Dhaka", brochure_url: "https://x/b.pdf" });
+  assert.equal(p?.type, "document");
+  assert.equal(p?.url, "https://x/b.pdf");
+  assert.equal(p?.fileName, "Wecon Nuznan Brochure.pdf");
+  assert.equal(brochureItem(null), null);
+  assert.equal(brochureItem({ name: "X" }), null);
+  assert.equal(brochureAskText({ name: "Wecon Citizen Avenue" }), "Would you like me to send the brochure of Wecon Citizen Avenue?");
+  assert.ok(brochureAskText({ name: "X" }).startsWith(DOCS_ASK_PREFIX));
 });
 
 test("consent: yes-words, or a non-refusal quoting the question; refusals are refusals", () => {
   assert.equal(consentsTo("Yes", "", DOCS_ASK_PREFIX), true);
   assert.equal(consentsTo("জি", undefined, DOCS_ASK_PREFIX), true);
-  assert.equal(consentsTo("Ok thanks", docsAskText({ name: "X" }), DOCS_ASK_PREFIX), true);
-  assert.equal(consentsTo("no thanks", docsAskText({ name: "X" }), DOCS_ASK_PREFIX), false);
+  assert.equal(consentsTo("Ok thanks", brochureAskText({ name: "X" }), DOCS_ASK_PREFIX), true);
+  assert.equal(consentsTo("no thanks", brochureAskText({ name: "X" }), DOCS_ASK_PREFIX), false);
   assert.equal(consentsTo("what is the price?", "", DOCS_ASK_PREFIX), false);
   assert.equal(refuses("no"), true); assert.equal(refuses("না"), true); assert.equal(refuses("yes"), false); assert.equal(refuses("hmm"), false);
 });

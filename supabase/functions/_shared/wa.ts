@@ -4,6 +4,7 @@
 // browser bundle never imports this file.
 
 import { samePhone } from "./phone.ts";
+import { type LlmFailure } from "./ai.ts";
 
 // Override only for a local dev stack (a fake Wasender); unset in production.
 export const WASENDER_BASE = Deno.env.get("WASENDER_BASE") || "https://wasenderapi.com/api";
@@ -448,6 +449,27 @@ export async function logNoteActivity(leadId: string, companyId: string | null, 
     timestamp: new Date().toISOString(),
     company_id: companyId,
   }]);
+}
+
+// Persist an OpenRouter/provider failure to the bot_llm_failures ledger
+// (migration 0056). Fire-and-forget: a failing write must never break the
+// turn or mask the original error.
+export async function persistLlmFailure(bot: string | null, f: LlmFailure): Promise<void> {
+  try {
+    const r = await fetch(`${SUPABASE_URL}/rest/v1/bot_llm_failures`, {
+      method: "POST",
+      headers: { ...svcHeaders(), Prefer: "return=minimal" },
+      body: JSON.stringify({
+        bot,
+        kind: f.kind,
+        status: f.status ?? null,
+        message: f.message ? String(f.message).slice(0, 500) : null,
+      }),
+    });
+    if (!r.ok) console.error("persistLlmFailure: insert failed", r.status);
+  } catch (e) {
+    console.error("persistLlmFailure: write failed", e);
+  }
 }
 
 // ── phone / jid ─────────────────────────────────────────────────────────────

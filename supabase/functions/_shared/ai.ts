@@ -211,6 +211,17 @@ function extractJson(raw: string): AgentReply | null {
   return null;
 }
 
+export type LlmFailureKind = "auth" | "provider" | "parse" | "network";
+export interface LlmFailure {
+  kind: LlmFailureKind;
+  status?: number;
+  message?: string;
+}
+export interface AskAgentIo {
+  fetch?: typeof fetch;
+  record?: (f: LlmFailure) => void | Promise<void>;
+}
+
 export async function askAgent(
   history: { role: "user" | "assistant"; text: string }[],
   userText: string,
@@ -218,10 +229,13 @@ export async function askAgent(
   adProject?: string,
   knowledge: { title: string; body: string }[] = [],
   corrections: { customer_message: string; corrected_reply: string }[] = [],
+  io: AskAgentIo = {},
 ): Promise<AgentReply> {
   const apiKey = Deno.env.get("OPENROUTER_API_KEY") ?? "";
+  const record = (f: LlmFailure) => { void io.record?.(f); };
   if (!apiKey) {
     console.error("askAgent: OPENROUTER_API_KEY not configured");
+    record({ kind: "auth", message: "OPENROUTER_API_KEY not configured" });
     return { reply: "", send: null, confident: false };
   }
 
@@ -232,7 +246,7 @@ export async function askAgent(
   ];
 
   try {
-    const res = await fetch(OPENROUTER_URL, {
+    const res = await (io.fetch ?? fetch)(OPENROUTER_URL, {
       signal: AbortSignal.timeout(30_000),
       method: "POST",
       headers: {
@@ -241,10 +255,12 @@ export async function askAgent(
         "HTTP-Referer": "https://wepro.app",
         "X-Title": "WEPRO WhatsApp Agent",
       },
-      body: JSON.stringify({ model: model(), messages, temperature: 0.2 }),
+      body: JSON.stringify({ model: model(), messages, temperature: 0.2, max_tokens: 400 }),
     });
     if (!res.ok) {
-      console.error("askAgent: OpenRouter error", res.status, await res.text());
+      const text = await res.text();
+      console.error("askAgent: OpenRouter error", res.status, text);
+      record({ kind: "provider", status: res.status, message: text.slice(0, 300) });
       return { reply: "", send: null, confident: false };
     }
     const body = await res.json();
@@ -255,6 +271,7 @@ export async function askAgent(
       // went off-script. Log it, but never forward unparsed content (it may
       // be raw JSON or a stray preamble, not something to show a customer).
       console.error("askAgent: could not extract JSON from model output", content.slice(0, 500));
+      record({ kind: "parse", message: content.slice(0, 300) });
       return { reply: "", send: null, confident: false };
     }
     // One line per decision so a silent thread can be audited from the logs.
@@ -262,6 +279,7 @@ export async function askAgent(
     return parsed;
   } catch (e) {
     console.error("askAgent: request failed", e);
+    record({ kind: "network", message: e instanceof Error ? e.message : String(e) });
     return { reply: "", send: null, confident: false };
   }
 }

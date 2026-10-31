@@ -40,12 +40,12 @@ import {
   CORS, json, SUPABASE_URL, SERVICE_KEY, WASENDER_BASE,
   claimEvent, getCredentials, getActiveProjects, getRecentHistory, sendWaMessageMirrored, getKnowledge, getCorrections,
   findLeadForNote, logNoteActivity, getBotSettings, aiStillOn, verifyWebhook, fillWelcomeTemplate, fixLeadPhoneFromNote, splitPhoneFromNote,
-  logConversationHistory,
+  logConversationHistory, persistLlmFailure,
 } from "../_shared/wa.ts";
-import { askAgent, resolveMedia, fixGrammar, matchJolshiriBundle, matchNamedProject, isLandOffer, brochureCaption } from "../_shared/ai.ts";
+import { askAgent, resolveMedia, fixGrammar, matchJolshiriBundle, matchNamedProject, isLandOffer, isPriceQuestion, brochureCaption } from "../_shared/ai.ts";
 import {
-  DUBAI_STAGE, DUBAI_CAMPAIGN_PROJECT, DUBAI_GREETING_TEXT, DUBAI_MEETING_ASK_PREFIX, DUBAI_MEETING_YES_TEXT, DOCS_ASK_PREFIX,
-  isForeignNumber, needsAiReply, docsPlan, consentsTo, refuses,
+  DUBAI_STAGE, DUBAI_CAMPAIGN_PROJECT, DUBAI_GREETING_TEXT, DOCS_ASK_PREFIX,
+  needsAiReply, isFloorPlanAsk, DUBAI_PRICE_TEXT, isLocationAsk, locationText, floorPlanPlan, brochureItem, brochureAskText, consentsTo, refuses, type DocItem,
 } from "../_shared/dubai-flow.ts";
 import { runTrainerTestTurn } from "../_shared/trainer-deno.ts";
 
@@ -413,9 +413,23 @@ async function handleInbound(evt: ParsedEvent): Promise<void> {
   if (projectName && projectName !== row.property_interest) {
     await sbPatchFireAndForget("preleads", `id=eq.${pid}`, { property_interest: projectName });
   }
-  // 1. A foreign number goes straight to the Dubai agent — no message to the
-  // customer. A Bangladeshi number or a hidden number is left to a human.
-  if (isNew && settings.autoForwardEnabled && !takeover && isForeignNumber(evt.phone, evt.isLid)) {
+
+  const sendDocItem = (d: DocItem) => sendWaMessageMirrored("dubai", evt.waTo, convId, evt.phone,
+    d.type === "text" ? { type: "text", text: d.caption } : { type: d.type, mediaUrl: d.url, fileName: d.fileName, text: d.caption });
+
+  // A contact that wrote before this flow existed has no stage and was never
+  // answered by us: it gets the same opening as a brand-new one. Anyone a human
+  // has already replied to is left alone.
+  let starting = isNew;
+  if (!isNew && !stage && !takeover) {
+    const sent = await sbSelectJson(`wa_messages?conversation_id=eq.${encodeURIComponent(convId)}&direction=eq.OUT&select=id&limit=1`);
+    starting = sent.length === 0;
+  }
+
+  // 1. Every Dubai contact with a real number goes straight to the Dubai agent —
+  // Bangladeshi numbers too — with no message to the customer. A hidden number
+  // has no phone to forward, so a human picks that one up.
+  if (starting && settings.autoForwardEnabled && !takeover && !evt.isLid && !(!isNew && (await findLeadForNote(evt.phone)))) {
     const lead = await sbRpcJson("wa_create_lead", { p_phone: evt.phone, p_cmd: "/fdu", p_company_id: "c1" });
     if (lead?.lead_id) {
       await logConversationHistory(String(lead.lead_id), "c1", evt.phone, "Dubai Bot (auto-forward)");
@@ -435,12 +449,16 @@ async function handleInbound(evt: ParsedEvent): Promise<void> {
   }
 
   // 2. Greeting the moment a new contact writes; it starts the 10-minute clock.
-  if (isNew && settings.welcomeEnabled && !takeover) {
-    await sendWaText(evt.waTo, settings.welcomeMessage ? fillWelcomeTemplate(settings.welcomeMessage, evt.name) : DUBAI_GREETING_TEXT);
-    await sbPatchFireAndForget("preleads", `id=eq.${pid}`, { flow_stage: DUBAI_STAGE.greeted, stage_at: now(), stage_msg_count: msgCount });
+  if (starting && settings.welcomeEnabled && !takeover) {
+    // Stage moves only once the greeting really went out; a failed send leaves
+    // the contact unstarted, so its next message tries again.
+    const greeted = await sendWaMessageMirrored("dubai", evt.waTo, convId, evt.phone,
+      { type: "text", text: settings.welcomeMessage ? fillWelcomeTemplate(settings.welcomeMessage, evt.name) : DUBAI_GREETING_TEXT });
+    if (greeted) await sbPatchFireAndForget("preleads", `id=eq.${pid}`, { flow_stage: DUBAI_STAGE.greeted, stage_at: now(), stage_msg_count: msgCount });
+    else console.error("wa-bot-dubai: greeting failed for", evt.phone);
   }
 
-  // 5. "yes" to the docs offer → send them. The PATCH only matches while the
+  // 5. "yes" to the floor plan / video offer → send them at once, then ask about the brochure. The PATCH only matches while the
   // contact is still in asked_docs, so a duplicate delivery claims nothing.
   if (!isNew && !takeover && stage === DUBAI_STAGE.askedDocs && evt.text) {
     if (refuses(evt.text)) {
@@ -448,36 +466,89 @@ async function handleInbound(evt: ParsedEvent): Promise<void> {
       return;
     }
     if (consentsTo(evt.text, evt.quoted, DOCS_ASK_PREFIX)) {
+      // The claim moves the contact to the brochure question first, so a
+      // duplicate delivery of this "yes" matches nothing while we send.
       const claimed = await sbPatchJson("preleads", `id=eq.${pid}&flow_stage=eq.${DUBAI_STAGE.askedDocs}`,
-        { flow_stage: DUBAI_STAGE.docsSent, stage_at: now(), stage_msg_count: msgCount });
+        { flow_stage: DUBAI_STAGE.askedBrochure, stage_at: now(), stage_msg_count: msgCount });
       if (claimed) {
-        const plan = docsPlan(project);
-        for (let i = 0; i < plan.items.length; i++) {
+        const items = floorPlanPlan(project);
+        for (let i = 0; i < items.length; i++) {
           if (i) await new Promise((r) => setTimeout(r, 5500));
-          const d = plan.items[i];
-          await sendWaMessageMirrored("dubai", evt.waTo, convId, evt.phone,
-            d.type === "text" ? { type: "text", text: d.caption } : { type: d.type, mediaUrl: d.url, fileName: d.fileName, text: d.caption });
+          await sendDocItem(items[i]);
+        }
+        if (project && brochureItem(project)) {
+          await new Promise((r) => setTimeout(r, 5500));
+          await sendWaMessageMirrored("dubai", evt.waTo, convId, evt.phone, { type: "text", text: brochureAskText(project) });
+          await sbPatchFireAndForget("preleads", `id=eq.${pid}&flow_stage=eq.${DUBAI_STAGE.askedBrochure}`, { stage_at: now() });
+        } else {
+          await sbPatchFireAndForget("preleads", `id=eq.${pid}&flow_stage=eq.${DUBAI_STAGE.askedBrochure}`, { flow_stage: DUBAI_STAGE.done, stage_at: now() });
         }
       }
       return;
     }
   }
 
-  // 6b. "yes" to the meeting offer: ask for a time and leave a note on the lead
-  // for the agent. Nothing is booked from here.
-  if (!isNew && !takeover && stage === DUBAI_STAGE.askedMeeting && evt.text) {
+  // 6. "yes" to the brochure question → send it. The 1-hour closing note
+  // follows if the customer then goes quiet.
+  if (!isNew && !takeover && stage === DUBAI_STAGE.askedBrochure && evt.text) {
     if (refuses(evt.text)) {
-      await sbPatchFireAndForget("preleads", `id=eq.${pid}&flow_stage=eq.${DUBAI_STAGE.askedMeeting}`, { flow_stage: DUBAI_STAGE.done, stage_at: now(), stage_msg_count: msgCount });
+      await sbPatchFireAndForget("preleads", `id=eq.${pid}&flow_stage=eq.${DUBAI_STAGE.askedBrochure}`, { flow_stage: DUBAI_STAGE.done, stage_at: now(), stage_msg_count: msgCount });
       return;
     }
-    if (consentsTo(evt.text, evt.quoted, DUBAI_MEETING_ASK_PREFIX)) {
-      const claimed = await sbPatchJson("preleads", `id=eq.${pid}&flow_stage=eq.${DUBAI_STAGE.askedMeeting}`,
-        { flow_stage: DUBAI_STAGE.meetingYes, stage_at: now(), stage_msg_count: msgCount });
+    if (consentsTo(evt.text, evt.quoted, DOCS_ASK_PREFIX)) {
+      const claimed = await sbPatchJson("preleads", `id=eq.${pid}&flow_stage=eq.${DUBAI_STAGE.askedBrochure}`,
+        { flow_stage: DUBAI_STAGE.brochureSent, stage_at: now(), stage_msg_count: msgCount });
+      const b = claimed ? brochureItem(project) : null;
+      if (b) await sendDocItem(b);
+      return;
+    }
+  }
+
+  // 7. Someone who asks for the floor plan themselves gets it now (the ad's
+  // floor-plan button counts), then the brochure question. Once per contact: the
+  // video message in the thread is the marker that it already went out.
+  if (!takeover && evt.text && isFloorPlanAsk(evt.text)) {
+    const items = floorPlanPlan(project);
+    if (items.length) {
+      const sent = await sbSelectJson(`wa_messages?conversation_id=eq.${encodeURIComponent(convId)}&direction=eq.OUT&body=like.Project%20video*&select=id&limit=1`);
+      const inFlow = ["", DUBAI_STAGE.greeted, DUBAI_STAGE.askedDocs].includes(stage);
+      const claimed = sent.length ? null : !inFlow ? true
+        : await sbPatchJson("preleads", `id=eq.${pid}&${stage ? `flow_stage=eq.${stage}` : "flow_stage=is.null"}`,
+          { flow_stage: DUBAI_STAGE.askedBrochure, stage_at: now(), stage_msg_count: msgCount });
       if (claimed) {
-        await sendWaMessageMirrored("dubai", evt.waTo, convId, evt.phone, { type: "text", text: DUBAI_MEETING_YES_TEXT });
-        const lead = await findLeadForNote(evt.phone);
-        if (lead) await logNoteActivity(lead.id, "c1", "Customer said yes to a meeting on WhatsApp (Dubai bot) — please arrange a time.", "Dubai Bot");
+        if (starting) await new Promise((r) => setTimeout(r, 5500)); // after the greeting
+        for (let i = 0; i < items.length; i++) {
+          if (i) await new Promise((r) => setTimeout(r, 5500));
+          await sendDocItem(items[i]);
+        }
+        if (inFlow) {
+          if (brochureItem(project)) {
+            await new Promise((r) => setTimeout(r, 5500));
+            await sendWaMessageMirrored("dubai", evt.waTo, convId, evt.phone, { type: "text", text: brochureAskText(project!) });
+            await sbPatchFireAndForget("preleads", `id=eq.${pid}&flow_stage=eq.${DUBAI_STAGE.askedBrochure}`, { stage_at: now() });
+          } else {
+            await sbPatchFireAndForget("preleads", `id=eq.${pid}&flow_stage=eq.${DUBAI_STAGE.askedBrochure}`, { flow_stage: DUBAI_STAGE.done, stage_at: now() });
+          }
+        }
       }
+      return;
+    }
+  }
+
+  // 8. A price question: the catalog has no price, so point to the consultant
+  // already assigned. Once per contact.
+  if (!takeover && evt.text && isPriceQuestion(evt.text)) {
+    const said = await sbSelectJson(`wa_messages?conversation_id=eq.${encodeURIComponent(convId)}&direction=eq.OUT&body=eq.${encodeURIComponent(DUBAI_PRICE_TEXT)}&select=id&limit=1`);
+    if (!said.length) await sendWaMessageMirrored("dubai", evt.waTo, convId, evt.phone, { type: "text", text: DUBAI_PRICE_TEXT });
+    return;
+  }
+
+  // 9. Where is the project: the catalog's address and map link. Once per contact.
+  if (!takeover && evt.text && isLocationAsk(evt.text)) {
+    const loc = locationText(project);
+    if (loc) {
+      const said = await sbSelectJson("wa_messages?conversation_id=eq." + encodeURIComponent(convId) + "&direction=eq.OUT&body=eq." + encodeURIComponent(loc) + "&select=id&limit=1");
+      if (!said.length) await sendWaMessageMirrored("dubai", evt.waTo, convId, evt.phone, { type: "text", text: loc });
       return;
     }
   }
@@ -495,7 +566,7 @@ async function handleInbound(evt: ParsedEvent): Promise<void> {
       console.log("trainer test turn", { phone: evt.phone, outcome: r.outcome, sent: r.sent, turnId: r.turnId });
       return;
     }
-    const docsDone = [DUBAI_STAGE.docsSent, DUBAI_STAGE.askedMeeting, DUBAI_STAGE.meetingYes].includes(stage as any);
+    const docsDone = [DUBAI_STAGE.askedBrochure, DUBAI_STAGE.brochureSent].includes(stage as any);
     await runFaqAgent("dubai", evt.waTo, evt.remote, evt.text, {
       adProject: projectName || undefined, profilesAlreadySent: docsDone, noBundle: true, allowMedia: settings.aiMediaEnabled,
     });
@@ -533,7 +604,7 @@ async function runFaqAgent(account: string, to: string, remote: string, text: st
       return true;
     }
 
-    const result = await askAgent(history, text, projects, opts.adProject, knowledge, corrections);
+    const result = await askAgent(history, text, projects, opts.adProject, knowledge, corrections, { record: (f) => void persistLlmFailure("dubai", f) });
     if (!result.confident) return false; // out of knowledge → say nothing
     // A brochure the flow already delivered is not sent again (no-repeat rule).
     const send = result.send && !(result.send.type === "brochure" && opts.profilesAlreadySent) ? result.send : null;

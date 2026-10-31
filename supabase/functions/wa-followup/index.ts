@@ -10,18 +10,15 @@
 //   select cron.schedule('wa-followup', '*/2 * * * *', $$
 //     select net.http_post(
 //       url := '<SUPABASE_URL>/functions/v1/wa-followup',
-//       headers := '{"Content-Type": "application/json", "x-followup-key": "<FOLLOWUP_CRON_KEY>"}'::jsonb
+//       headers := '{"Content-Type": "application/json"}'::jsonb
 //     );
 //   $$);
-// Access (CR-001 D1): the x-followup-key header must equal the
-// FOLLOWUP_CRON_KEY secret (cron-key.ts). Without the secret every call is
-// refused (503): set the secret and the cron header before deploying this.
 
 import { CORS, json, sbSelect, sbPatch, SUPABASE_URL, SERVICE_KEY, getActiveProjects, sendWaMessageMirrored } from "../_shared/wa.ts";
 import { buildJolshiriBundle, FLOW_ASK_PROFILE_TEXT, FLOW_AUTO_PROFILE_TEXT, FLOW_ASK_AGENT_TEXT, brochureCaption } from "../_shared/ai.ts";
-import { cronKeyGate } from "../_shared/cron-key.ts";
 import {
-  DUBAI_STAGE, DUBAI_DOCS_WAIT_MS, DUBAI_MEETING_WAIT_MS, DUBAI_MEETING_ASK_TEXT, docsPlan, docsAskText,
+  DUBAI_STAGE, DUBAI_DOCS_WAIT_MS, DUBAI_AUTO_SEND_WAIT_MS, DUBAI_FINAL_WAIT_MS, DUBAI_FINAL_TEXT,
+  floorPlanPlan, floorPlanAskText, brochureItem, brochureAskText, type DocItem,
 } from "../_shared/dubai-flow.ts";
 
 // The cron job runs every 1-2 minutes; a run can still be going (brochure
@@ -170,7 +167,17 @@ async function processAwaitingReply(): Promise<number> {
 const DUBAI_COLS = "select=id,phone,WA,property_interest,message_logs,flow_stage,stage_msg_count&limit=200";
 const messageCount = (r: FlowRow) => (Array.isArray(r.message_logs) ? r.message_logs.length : 0);
 
-// 10 minutes after the greeting with no reply → offer the brochure.
+async function sendDocItem(account: string, phone: string, d: DocItem): Promise<void> {
+  const target = await resolveTarget(account, phone);
+  if (!target) return;
+  await sendWaMessageMirrored(account, target.to, `${account}:${target.remote}`, phone,
+    d.type === "text" ? { type: "text", text: d.caption } : { type: d.type, mediaUrl: d.url, fileName: d.fileName, text: d.caption });
+}
+const patchRow = (row: FlowRow, stage: string, count: number) =>
+  sbPatch("preleads", `id=eq.${encodeURIComponent(row.id)}`, { flow_stage: stage, stage_at: new Date().toISOString(), stage_msg_count: count });
+
+// 10 minutes after the greeting with no reply → offer the floor plan and video
+// (or, for a project that has neither, go straight to the brochure question).
 async function processDubaiGreeted(): Promise<number> {
   const cutoff = new Date(Date.now() - DUBAI_DOCS_WAIT_MS).toISOString();
   const rows = await claimRows(
@@ -182,32 +189,68 @@ async function processDubaiGreeted(): Promise<number> {
   for (const row of rows) {
     const count = messageCount(row);
     const replied = count - (row.stage_msg_count ?? 0) > 0;
-    const project = projects.find((p: any) => p.name === row.property_interest);
-    const plan = docsPlan(project as any);
-    const patch = (stage: string) => sbPatch("preleads", `id=eq.${encodeURIComponent(row.id)}`, { flow_stage: stage, stage_at: new Date().toISOString(), stage_msg_count: count });
-    if (replied || !project || !plan.hasDocs) { await patch(DUBAI_STAGE.done); acted++; continue; }
-    await sendText("dubai", row.phone, docsAskText(project as any));
-    await patch(DUBAI_STAGE.askedDocs);
+    const project = projects.find((p: any) => p.name === row.property_interest) as any;
+    if (replied || !project) { await patchRow(row, DUBAI_STAGE.done, count); acted++; continue; }
+    const fpAsk = floorPlanAskText(project);
+    if (fpAsk) {
+      await sendText("dubai", row.phone, fpAsk);
+      await patchRow(row, DUBAI_STAGE.askedDocs, count);
+    } else if (brochureItem(project)) {
+      await sendText("dubai", row.phone, brochureAskText(project));
+      await patchRow(row, DUBAI_STAGE.askedBrochure, count);
+    } else {
+      await patchRow(row, DUBAI_STAGE.done, count);
+    }
     acted++;
   }
   return acted;
 }
 
-// 1 hour after the docs offer / the docs themselves with no reply → offer a meeting.
-async function processDubaiAwaiting(): Promise<number> {
-  const cutoff = new Date(Date.now() - DUBAI_MEETING_WAIT_MS).toISOString();
+// 5 minutes after the floor plan / video offer with no reply → taken as a yes:
+// send them, then ask about the brochure.
+async function processDubaiAutoSend(): Promise<number> {
+  const cutoff = new Date(Date.now() - DUBAI_AUTO_SEND_WAIT_MS).toISOString();
   const rows = await claimRows(
-    `flow_stage=in.(${DUBAI_STAGE.askedDocs},${DUBAI_STAGE.docsSent})&WA=eq.Jaber&stage_at=lte.${encodeURIComponent(cutoff)}&takeover=not.is.true&${DUBAI_COLS}`,
-    { flow_stage: "dubai_claim_meeting" },
+    `flow_stage=eq.${DUBAI_STAGE.askedDocs}&WA=eq.Jaber&stage_at=lte.${encodeURIComponent(cutoff)}&takeover=not.is.true&${DUBAI_COLS}`,
+    { flow_stage: "dubai_claim_auto" },
+  );
+  const projects = rows.length ? await getActiveProjects() : [];
+  let acted = 0;
+  for (const row of rows) {
+    const count = messageCount(row);
+    const replied = count - (row.stage_msg_count ?? 0) > 0;
+    const project = projects.find((p: any) => p.name === row.property_interest) as any;
+    if (replied || !project) { await patchRow(row, DUBAI_STAGE.done, count); acted++; continue; }
+    const items = floorPlanPlan(project);
+    for (let i = 0; i < items.length; i++) {
+      if (i) await new Promise((r) => setTimeout(r, 5500));
+      await sendDocItem("dubai", row.phone, items[i]);
+    }
+    if (brochureItem(project)) {
+      await new Promise((r) => setTimeout(r, 5500));
+      await sendText("dubai", row.phone, brochureAskText(project));
+      await patchRow(row, DUBAI_STAGE.askedBrochure, count);
+    } else {
+      await patchRow(row, DUBAI_STAGE.done, count);
+    }
+    acted++;
+  }
+  return acted;
+}
+
+// 1 hour after the brochure question / the brochure with no reply → the closing note.
+async function processDubaiFinal(): Promise<number> {
+  const cutoff = new Date(Date.now() - DUBAI_FINAL_WAIT_MS).toISOString();
+  const rows = await claimRows(
+    `flow_stage=in.(${DUBAI_STAGE.askedBrochure},${DUBAI_STAGE.brochureSent})&WA=eq.Jaber&stage_at=lte.${encodeURIComponent(cutoff)}&takeover=not.is.true&${DUBAI_COLS}`,
+    { flow_stage: "dubai_claim_final" },
   );
   let acted = 0;
   for (const row of rows) {
     const count = messageCount(row);
     const replied = count - (row.stage_msg_count ?? 0) > 0;
-    const patch = (stage: string) => sbPatch("preleads", `id=eq.${encodeURIComponent(row.id)}`, { flow_stage: stage, stage_at: new Date().toISOString(), stage_msg_count: count });
-    if (replied) { await patch(DUBAI_STAGE.done); acted++; continue; }
-    await sendText("dubai", row.phone, DUBAI_MEETING_ASK_TEXT);
-    await patch(DUBAI_STAGE.askedMeeting);
+    if (!replied) await sendText("dubai", row.phone, DUBAI_FINAL_TEXT);
+    await patchRow(row, DUBAI_STAGE.done, count);
     acted++;
   }
   return acted;
@@ -215,14 +258,13 @@ async function processDubaiAwaiting(): Promise<number> {
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
-  const gate = cronKeyGate(req, Deno.env.get("FOLLOWUP_CRON_KEY"), "x-followup-key");
-  if (!gate.ok) return json({ ok: false, error: gate.error }, gate.status);
   try {
     const greeted = await processGreeted();
     const awaiting = await processAwaitingReply();
     const dubaiDocs = await processDubaiGreeted();
-    const dubaiMeeting = await processDubaiAwaiting();
-    return json({ ok: true, greeted, awaiting, dubaiDocs, dubaiMeeting });
+    const dubaiAuto = await processDubaiAutoSend();
+    const dubaiFinal = await processDubaiFinal();
+    return json({ ok: true, greeted, awaiting, dubaiDocs, dubaiAuto, dubaiFinal });
   } catch (e) {
     console.error("wa-followup error", e);
     return json({ ok: false, error: e instanceof Error ? e.message : String(e) }, 500);

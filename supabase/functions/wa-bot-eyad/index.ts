@@ -23,7 +23,7 @@ import {
   CORS, json, SUPABASE_URL, SERVICE_KEY, WASENDER_BASE,
   claimEvent, getCredentials, getActiveProjects, getRecentHistory, sendWaMessageMirrored, getKnowledge, getCorrections,
   findLeadForNote, logNoteActivity, getBotSettings, aiStillOn, verifyWebhook, getProjectBySendCode, fillWelcomeTemplate, fixLeadPhoneFromNote, splitPhoneFromNote,
-  logConversationHistory, canonicalConvJid,
+  logConversationHistory, canonicalConvJid, persistLlmFailure,
 } from "../_shared/wa.ts";
 import type { BotSettings } from "../_shared/wa.ts";
 import {
@@ -261,7 +261,7 @@ async function runFaqAgent(account: string, phone: string, target: string, remot
       return true;
     }
 
-    const result = await askAgent(history, text, projects, opts.adProject, knowledge, corrections);
+    const result = await askAgent(history, text, projects, opts.adProject, knowledge, corrections, { record: (f) => void persistLlmFailure("eyad", f) });
     if (!result.confident) return false; // out of knowledge → say nothing
     // A brochure the flow already delivered is not sent again (no-repeat rule).
     const send = result.send && !(result.send.type === "brochure" && opts.profilesAlreadySent) ? result.send : null;
