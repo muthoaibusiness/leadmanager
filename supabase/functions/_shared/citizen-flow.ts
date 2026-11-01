@@ -12,7 +12,7 @@ import { SUPABASE_URL, SERVICE_KEY, sendWaMessageMirrored } from "./wa.ts";
 import { isPriceQuestion } from "./ai.ts";
 import {
   DUBAI_STAGE, DOCS_ASK_PREFIX, DUBAI_PRICE_TEXT, isFloorPlanAsk, isLocationAsk, locationText,
-  floorPlanPlan, brochureItem, brochureAskText, consentsTo, refuses, type DocItem, type DocsProject,
+  floorPlanPlan, brochureItem, brochureAskText, consentsTo, refuses, shouldCitizenGreet, type DocItem, type DocsProject,
 } from "./dubai-flow.ts";
 
 export interface CitizenCtx {
@@ -35,6 +35,11 @@ export interface CitizenCtx {
   project: DocsProject | null;
   greetingEnabled: boolean;
   greetingText: string;
+  // True when the caller's AI/FAQ branch will answer this same message, so the
+  // greeting must stand down (one inbound → one response).
+  aiWillAnswer?: boolean;
+  // The inbound wa_messages id this turn answers, linked on every outbound send.
+  replyToMessageId?: string;
 }
 
 const H = { apikey: SERVICE_KEY, Authorization: `Bearer ${SERVICE_KEY}`, "Content-Type": "application/json" };
@@ -62,7 +67,8 @@ const patchQuiet = async (filter: string, patch: Record<string, unknown>) => { a
 // Returns true when it fully handled this message (the caller stops there).
 export async function runCitizenFlow(c: CitizenCtx): Promise<boolean> {
   const now = () => new Date().toISOString();
-  const send = (msg: Parameters<typeof sendWaMessageMirrored>[4]) => sendWaMessageMirrored(c.bot, c.waTo, c.convId, c.phone, msg);
+  const send = (msg: Parameters<typeof sendWaMessageMirrored>[4]) =>
+    sendWaMessageMirrored(c.bot, c.waTo, c.convId, c.phone, msg, { replyToMessageId: c.replyToMessageId });
   const sendItem = (d: DocItem) => send(d.type === "text" ? { type: "text", text: d.caption } : { type: d.type, mediaUrl: d.url, fileName: d.fileName, text: d.caption });
   const row = (stage: string) => `id=eq.${c.pid}&flow_stage=eq.${stage}`;
   const text = c.text;
@@ -73,9 +79,18 @@ export async function runCitizenFlow(c: CitizenCtx): Promise<boolean> {
     await patchQuiet(row(DUBAI_STAGE.greeted), { stage_msg_count: c.msgCount });
   }
 
-  // 2. Greeting; it starts the 10-minute clock. The stage moves only once the
-  // greeting really went out, so a failed send is retried on the next message.
-  if (c.starting && c.greetingEnabled && !c.takeover) {
+  // 2. Greeting; it starts the 10-minute clock. Only when no substantive handler
+  // below (floor plan, price, location, or the caller's AI reply) will answer the
+  // same message — otherwise one inbound gets two logical responses. The stage
+  // moves only once the greeting really went out, so a failed send is retried on
+  // the next message.
+  if (shouldCitizenGreet({
+    starting: c.starting, greetingEnabled: c.greetingEnabled, takeover: c.takeover,
+    text: c.text, assigned: c.assigned,
+    floorPlanAvailable: floorPlanPlan(c.project).length > 0,
+    locationAvailable: !!locationText(c.project),
+    aiWillAnswer: !!c.aiWillAnswer,
+  })) {
     const ok = await send({ type: "text", text: c.greetingText });
     if (ok) await patchQuiet(`id=eq.${c.pid}`, { flow_stage: DUBAI_STAGE.greeted, stage_at: now(), stage_msg_count: c.msgCount });
     else console.error(`citizen-flow(${c.bot}): greeting failed for`, c.phone);

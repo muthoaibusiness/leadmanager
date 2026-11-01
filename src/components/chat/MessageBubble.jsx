@@ -32,18 +32,30 @@ const DOC_ICON = (mime = '', name = '') => {
   return 'insert_drive_file';
 };
 
-export default function MessageBubble({ msg, onRetry, onOpenImage }) {
+export default function MessageBubble({ msg, onRetry, onOpenImage, replyTo }) {
   const [imgErr, setImgErr] = useState(false);
   const out = msg.direction === 'OUT';
   const tick = TICK[msg.status] || TICK.SENT;
   // Media carries its text in `caption`; a plain text message uses `body`.
   const text = msg.type === 'text' ? msg.body : msg.caption;
+  // The quoted reply line: the outbound bot/agent reply is linked to the inbound
+  // it answers via `reply_to_message_id`. Show the trigger's snippet when it is
+  // loaded; fall back to a generic label otherwise.
+  const replySnippet = replyTo
+    ? ((replyTo.type === 'text' ? replyTo.body : replyTo.caption) || 'Media').slice(0, 60)
+    : null;
 
   return (
     <div className={`wa-row${out ? ' out' : ''}`}>
       <div className={`wa-bub${out ? ' out' : ''}${msg.status === 'FAILED' ? ' failed' : ''}`}>
         {out && msg.senderName && (
           <div className="wa-src-chip">{msg.senderName}</div>
+        )}
+        {replySnippet && (
+          <div className="wa-quote" title="In reply to the message above">
+            <Mi className="wa-quote-ico">reply</Mi>
+            <span>{replySnippet}</span>
+          </div>
         )}
         {msg.type === 'image' && msg.mediaUrl && !imgErr && (
           <button className="wa-img" onClick={() => onOpenImage?.(msg)} title="Open image">

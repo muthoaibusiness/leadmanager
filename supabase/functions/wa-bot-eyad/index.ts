@@ -29,7 +29,7 @@ import type { BotSettings } from "../_shared/wa.ts";
 import {
   askAgent, resolveMedia, fixGrammar, matchJolshiriBundle, buildJolshiriBundle,
   FLOW_AUTO_PROFILE_TEXT, FLOW_AGENT_YES_TEXT, GENERIC_WELCOME_TEXT, isAffirmative, isProfileConsent,
-  leadContext, matchNamedProject, isPriceQuestion, isLandOffer, FLOW_PRICE_AGENT_TEXT, brochureCaption,
+  isJolshiriProject, matchNamedProject, isPriceQuestion, isLandOffer, FLOW_PRICE_AGENT_TEXT, brochureCaption,
 } from "../_shared/ai.ts";
 import { runTrainerTestTurn } from "../_shared/trainer-deno.ts";
 import { DUBAI_CAMPAIGN_PROJECT, DUBAI_GREETING_TEXT, DUBAI_STAGE, needsAiReply } from "../_shared/dubai-flow.ts";
@@ -153,7 +153,6 @@ interface ParsedEvent {
   event: string;
   phone: string;
   remote: string;
-  convJid: string;
   hasRealPhone: boolean;
   target: string;
   fromMe: boolean;
@@ -215,9 +214,6 @@ function parseEvent(payload: any): ParsedEvent {
     event,
     phone,
     remote,
-    // The thread key shared by the CRM mirror and the trainer, canonicalized so
-    // a LID chat and the same customer's phone-JID chat land in one thread.
-    convJid: canonicalConvJid(remote, hasRealPhone ? phone : ""),
     hasRealPhone,
     target,
     fromMe,
@@ -323,7 +319,7 @@ async function handleInbound(p: ParsedEvent): Promise<void> {
   // below needs message_logs/flow_stage before deciding what to send) ────
   if (!preleadId) return;
   const [statusRows, projects] = await Promise.all([
-    sbSelectJson(`preleads?id=eq.${encodeURIComponent(preleadId)}&select=forwarded,message_logs,flow_stage,ctwa_clid,wa_ad_id`),
+    sbSelectJson(`preleads?id=eq.${encodeURIComponent(preleadId)}&select=forwarded,message_logs,flow_stage`),
     sbSelectJson("wa_projects?select=name,region,keywords,brochure_url"),
   ]);
   const status = statusRows?.[0] ?? {};
@@ -386,6 +382,8 @@ async function handleInbound(p: ParsedEvent): Promise<void> {
       bot: "eyad", assigned: false, pid: encodeURIComponent(preleadId), convId, phone: p.phone, waTo: p.target, text: p.text, quoted: p.quoted,
       isNew: upsert.is_new === true, starting, stage: stage0, stageAt: undefined, takeover, msgCount, project,
       greetingEnabled: settings.welcomeEnabled, greetingText: DUBAI_GREETING_TEXT,
+      aiWillAnswer: trainerEligible && !isLandOffer(p.text) && needsAiReply(p.text, !!(p.isAd || status.ctwa_clid || status.wa_ad_id)),
+      replyToMessageId: p.deliveryId || undefined,
     });
     if (handled) return;
     // Everything the script does not cover goes to the AI Trainer, but only for an
@@ -400,10 +398,8 @@ async function handleInbound(p: ParsedEvent): Promise<void> {
   // an ad is not a Jolshiri buyer: generic hello, no brochure flow, and the
   // LLM's land rule keeps everything else silent for a human to pick up.
   const landOffer = !!p.text && isLandOffer(p.text);
-  // A defaulted property_interest is not a Jolshiri lead (leadContext in ai.ts).
-  const lead = leadContext({ named, isAd: p.isAd, status, propertyInterest: upsert.property_interest });
-  if (!trainerEligible && settings.welcomeEnabled && upsert.takeover !== true && upsert.is_new === true) {
-    if (lead.jolshiriLead && !landOffer) {
+  if (settings.welcomeEnabled && upsert.takeover !== true && upsert.is_new === true) {
+    if (isJolshiriProject(upsert.property_interest) && !landOffer) {
       // Jolshiri lead (ad or named): the admin welcome and the follow-up
       // clock — 5 minutes of silence asks about the profiles, an hour of
       // silence after that asks about a dedicated agent. No auto-forward.
@@ -419,8 +415,8 @@ async function handleInbound(p: ParsedEvent): Promise<void> {
 
   // ── Follow-up flow stage 3 — "yes" to the stage 2a profile offer sends
   // the bundle right away instead of waiting for the next cron tick.
-  if (!trainerEligible && status.flow_stage === "asked_profile" && upsert.takeover !== true && isProfileConsent(p.text, p.quoted)) {
-    const convId = `eyad:${p.convJid}`;
+  if (status.flow_stage === "asked_profile" && upsert.takeover !== true && isProfileConsent(p.text, p.quoted)) {
+    const convId = `eyad:${p.remote}`;
     const bundle = buildJolshiriBundle(await getActiveProjects(), FLOW_AUTO_PROFILE_TEXT);
     if (bundle) {
       await sendWaMessageMirrored("eyad", p.target, convId, p.phone, { type: "text", text: bundle.message });
@@ -445,8 +441,8 @@ async function handleInbound(p: ParsedEvent): Promise<void> {
   // ── Follow-up flow stage 4 — "yes" to the dedicated-agent question gets a
   // one-line acknowledgement and closes the flow. Deliberately no auto
   // lead/forward here: a human reads the thread and acts.
-  if (!trainerEligible && status.flow_stage === "asked_agent" && upsert.takeover !== true && isAffirmative(p.text)) {
-    await sendWaMessageMirrored("eyad", p.target, `eyad:${p.convJid}`, p.phone, { type: "text", text: FLOW_AGENT_YES_TEXT });
+  if (status.flow_stage === "asked_agent" && upsert.takeover !== true && isAffirmative(p.text)) {
+    await sendWaMessageMirrored("eyad", p.target, `eyad:${p.remote}`, p.phone, { type: "text", text: FLOW_AGENT_YES_TEXT });
     await sbPatchJson("preleads", `id=eq.${encodeURIComponent(preleadId)}`, {
       flow_stage: "agent_ack", stage_at: new Date().toISOString(), stage_msg_count: msgCount,
     }).catch(() => {});
@@ -456,12 +452,33 @@ async function handleInbound(p: ParsedEvent): Promise<void> {
   // Price / payment question (not the very first ad message — that one gets
   // the greeting + brochure flow): offer a dedicated agent, jump to stage 4.
   const agentAlreadyOffered = ["asked_agent", "agent_ack", "agent_assigned"].includes(status.flow_stage);
-  if (!trainerEligible && upsert.is_new !== true && p.text && isPriceQuestion(p.text) && !agentAlreadyOffered && upsert.takeover !== true) {
-    await sendWaMessageMirrored("eyad", p.target, `eyad:${p.convJid}`, p.phone, { type: "text", text: FLOW_PRICE_AGENT_TEXT });
+  if (upsert.is_new !== true && p.text && isPriceQuestion(p.text) && !agentAlreadyOffered && upsert.takeover !== true) {
+    await sendWaMessageMirrored("eyad", p.target, `eyad:${p.remote}`, p.phone, { type: "text", text: FLOW_PRICE_AGENT_TEXT });
     await sbPatchJson("preleads", `id=eq.${encodeURIComponent(preleadId)}`, {
       flow_stage: "asked_agent", stage_at: new Date().toISOString(), stage_msg_count: msgCount,
     }).catch(() => {});
     return;
+  }
+
+  // Once the profiles are out (keyword, stage 2b or stage 3) the bundle is
+  // never sent again — the gated LLM answer still runs for other questions.
+  const profilesAlreadySent = ["profile_sent", "asked_agent", "agent_ack", "agent_assigned"].includes(status.flow_stage);
+  if (settings.faqAgentEnabled && p.text && upsert.takeover !== true && p.remote && settings.trainerTest) {
+    // Test mode on and an allow-listed number (getBotSettings): the AI Trainer
+    // core answers instead of the legacy agent. Everything else above and
+    // below runs unchanged.
+    const r = await runTrainerTestTurn({ bot: "eyad", convId: `eyad:${p.remote}`, phone: p.phone, to: p.target, text: p.text,
+      ad: { isAd: p.isAd, adText: p.adText }, allowMedia: settings.aiMediaEnabled });
+    console.log("trainer test turn", { phone: p.phone, outcome: r.outcome, sent: r.sent, turnId: r.turnId });
+  } else if (settings.faqAgentEnabled && p.text && upsert.takeover !== true && p.remote) {
+    const sent = await runFaqAgent("eyad", p.phone, p.target, p.remote, p.text, {
+      adProject: upsert.property_interest || undefined, profilesAlreadySent: profilesAlreadySent || landOffer, allowMedia: settings.aiMediaEnabled,
+    });
+    if (sent) {
+      await sbPatchJson("preleads", `id=eq.${encodeURIComponent(preleadId)}`, {
+        flow_stage: "profile_sent", stage_at: new Date().toISOString(), stage_msg_count: msgCount,
+      }).catch(() => {});
+    }
   }
 
   const phoneDigits = p.phone.replace(/\D/g, "");
@@ -667,7 +684,7 @@ async function handleSendDocs(p: ParsedEvent): Promise<void> {
   const project = await getProjectBySendCode(p.command);
   if (!project) return; // unrecognized /send... code — silent no-op, matches source
 
-  const convId = `eyad:${p.convJid}`;
+  const convId = `eyad:${p.remote}`;
   const items: { type: "document" | "image"; url: string; fileName?: string; caption: string }[] = [];
   if (project.brochure_url) items.push({ type: "document", url: project.brochure_url, fileName: `${project.name} Brochure.pdf`, caption: brochureCaption(project) });
   for (const url of (project.photos || []).slice(0, 3)) items.push({ type: "image", url, caption: project.name });

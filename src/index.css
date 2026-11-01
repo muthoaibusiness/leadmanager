@@ -13038,6 +13038,9 @@ input[type="time"]::-webkit-calendar-picker-indicator { opacity: .9; cursor: poi
 .wa-ci-badge { background: var(--accent); color: var(--on-accent); font-size: 10.5px; font-weight: 800; border-radius: 999px; padding: 1px 6px; flex-shrink: 0; }
 .wa-src-chip { display: inline-flex; align-items: center; gap: 4px; margin-top: 5px; font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--gold); background: rgba(221, 185, 72, .12); border: 1px solid rgba(221, 185, 72, .34); border-radius: 999px; padding: 2px 8px; }
 .wa-src-chip .mi { font-size: 13px; }
+.wa-quote { display: flex; align-items: center; gap: 6px; margin: 6px 0 2px; padding: 4px 8px; font-size: 11.5px; line-height: 1.35; color: var(--txt-dim); background: var(--surf1); border-left: 3px solid var(--blue-b); border-radius: 4px; max-width: 100%; overflow: hidden; }
+.wa-quote .wa-quote-ico { font-size: 13px; color: var(--blue-b); flex-shrink: 0; }
+.wa-quote span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* skeletons */
 .wa-skel-wrap { padding: 6px 0; }
