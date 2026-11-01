@@ -12,6 +12,7 @@ export const NAV_META = {
   agentperf: { ico: 'leaderboard', lbl: 'Performance' },
   perfreports: { ico: 'description', lbl: 'Reports' },
   campaign: { ico: 'campaign', lbl: 'Campaign' },
+  mela: { ico: 'celebration', lbl: 'Avenue Mela' },
   requests: { ico: 'inbox', lbl: 'Requests' },
   properties: { ico: 'folder', lbl: 'Projects' },
   inventory: { ico: 'inventory_2', lbl: 'Inventory' },

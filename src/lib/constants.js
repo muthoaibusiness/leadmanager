@@ -56,7 +56,7 @@ export const initialFeatures = (u) =>
   new Set(Array.isArray(u?.allowedFeatures) ? u.allowedFeatures : (u?.role === ROLES.EXEC ? [] : defaultFeatures(u?.role)));
 export const FEATURE_LABELS = {
   dashboard: 'Home', leads: 'Leads', add_customer: 'Add Customer', conversations: 'Conversations', calendar: 'Calendar', meeting: 'Meeting', pipeline: 'Pipeline', properties: 'Projects',
-  reports: 'Reports', agentperf: 'Performance', perfreports: 'Performance Reports', campaign: 'Campaign', requests: 'Requests', inventory: 'Inventory', finance_approve: 'Manage all budgets', team: 'Team',
+  reports: 'Reports', agentperf: 'Performance', perfreports: 'Performance Reports', campaign: 'Campaign', mela: 'Avenue Mela', requests: 'Requests', inventory: 'Inventory', finance_approve: 'Manage all budgets', team: 'Team',
   accounts: 'Users & Accounts', relay: 'WhatsApp Relay', aitrainer: 'AI Trainer', metacapi: 'Meta CAPI', self_forward: 'Self-forward leads',
 };
 // What a grant does when its label alone doesn't say it.

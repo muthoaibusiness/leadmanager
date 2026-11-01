@@ -240,12 +240,20 @@ function mentioned(text: string, projects: ItemRow[]): string[] {
 export const namedProjects = (text: string, projects: ItemRow[]) => mentioned(text, projects);
 
 export function resolveProject(
-  text: string, state: ConvState, ad: { isAd: boolean; adText?: string }, projects: ItemRow[],
+  text: string, state: ConvState, ad: { isAd: boolean; adText?: string; project?: string }, projects: ItemRow[],
 ): { projects: string[]; source: "explicit" | "state" | "ad" | null; ambiguous: boolean } {
   const named = mentioned(text, projects);
   if (named.length) return { projects: named, source: "explicit", ambiguous: false };
   if (state.active_project && projects.some((p) => p.id === state.active_project)) {
     return { projects: [state.active_project], source: "state", ambiguous: false };
+  }
+  // The project the ad's click was recorded against (prelead.property_interest) is a
+  // structured fact, better than guessing from the ad's wording, which often
+  // names no project at all ("safe-title shop sale on").
+  if (ad.isAd && ad.project) {
+    const want = norm(ad.project);
+    const hit = projects.find((p) => norm(String(p.body?.name || "")) === want);
+    if (hit) return { projects: [hit.id], source: "ad", ambiguous: false };
   }
   if (ad.isAd && ad.adText) {
     const fromAd = mentioned(ad.adText, projects);
@@ -428,6 +436,8 @@ export function buildPrompt(
     `Conversation state: ${JSON.stringify({ active_project: state.active_project, first_price_given_for: Object.keys(state.first_price_at), already_asked: state.asked })}`,
     `Reply in ${LANG_NAME[lang as keyof typeof LANG_NAME] ?? "English"}. At most 5 short lines, friendly, no emoji. Answer every question in the message, in order. Do not ask again for anything in already_asked.`,
     "Never say you cannot answer and stop. Never say a person has been informed or that anything was booked or sent.",
+    "Ask at most ONE question in a reply, and only when you cannot help without the answer. Never ask for something the customer already told you in this conversation (project, place, purpose, a day or a time) or that the ad they clicked already tells you. Do not ask about the customer's own living or investment purpose, and do not offer to set up a meeting or a call.",
+    "When the customer gives a day or a time (for example 'after 9 pm'), accept it as given: confirm it in one short line and do not ask for a more exact time or anything else. If a [sales agent] message above shows an expert was already assigned, ask no question at all: acknowledge briefly and tell them to keep in touch with that assigned expert.",
     "Only request media that the project lists. Use project ids from the catalog.",
     "Brochures and profiles are sent by the system, not by you: never say a brochure is attached, sent or on its way, and never put one in media.",
     'Return STRICT JSON only: {"intent": string, "project_ref": string|null, "language": "bn"|"banglish"|"en", "reply": string, "media": [{"type": "photo"|"floorplan"|"map", "project_ref": string, "floor"?: string}], "handoff": boolean, "asked": [string], "used_item_ids": [string], "clarify": boolean}',
@@ -474,6 +484,24 @@ const refusesAndStops = (r: string) => REFUSAL.some((x) => x.test(r)) && !NEXT_S
 
 // The model transliterates "Wecon" as ওয়েকন (both encodings of য়); the
 // company writes উইকন. Fixed in code because a prompt instruction did not hold.
+// When the project is already settled (the ad, the thread or the customer named it) a
+// question asking which project is dropped, whatever the model wrote.
+export function dropProjectAsk(s: string): string {
+  const parts = s.split(/(?<=[?？।.!])\s+|\n+/).map((x) => x.trim()).filter(Boolean);
+  const ASK = /(কোন|কোনো)\s*(প্রজেক্ট|প্রকল্প|প্রোজেক্ট)|which\s+(project|one)|kon\s+project/i;
+  const kept = parts.filter((p) => !(/[?？]\s*$/.test(p) && ASK.test(p)));
+  return kept.length === parts.length || !kept.length ? s : kept.join("\n");
+}
+
+// One question per reply, whatever the model wrote: the first question sentence
+// stays, later ones are dropped (a reply that is only questions keeps its first).
+export function limitQuestions(s: string): string {
+  const parts = s.split(/(?<=[?？।.!])\s+|\n+/).map((x) => x.trim()).filter(Boolean);
+  let seen = false;
+  const kept = parts.filter((p) => { if (!/[?？]\s*$/.test(p)) return true; if (seen) return false; seen = true; return true; });
+  return kept.length === parts.length ? s : kept.join("\n");
+}
+
 const brandSpelling = (s: string) => s.replace(/ও(?:য়|য়)েকন/g, "উইকন");
 
 // Bangla digits (০-৯) fold to ASCII so "৫০" is checked as "50".
@@ -493,14 +521,17 @@ function moneyIn(s: string): string[] {
   return out;
 }
 
-export function guardReply(out: ModelOut, c: SnapshotContent, resolved: string[], evidenceText: string): string[] {
+// echoText: what the customer wrote and the ad they clicked. A plain number repeated from there
+// ("after 9 pm", "9 floors") is not an invention; money figures still need real evidence.
+export function guardReply(out: ModelOut, c: SnapshotContent, resolved: string[], evidenceText: string, echoText = ""): string[] {
   const errs: string[] = [];
   const r = out.reply;
   if (refusesAndStops(r)) errs.push("refusal");
   if (CLAIM.some((x) => x.test(r))) errs.push("claim");
   const numbersIn = (s: string) => asciiDigits(s).match(/\d+(?:[.,]\d+)?/g) || [];
   const ev = new Set(numbersIn(evidenceText));
-  if (numbersIn(r).some((n) => !ev.has(n))) errs.push("number");
+  const echoed = new Set(numbersIn(echoText));
+  if (numbersIn(r).some((n) => !ev.has(n) && !echoed.has(n))) errs.push("number");
   // A money figure needs the same figure with a money unit in the evidence, so
   // "16 crore" is not grounded by "Sector 16" nor "2 lakh" by "2 available".
   else {
@@ -597,7 +628,7 @@ const WANTS_PERSON = [/(agent|manush|human|person|consultant).*(kotha|talk|speak
 
 export async function runTurn(a: {
   content: SnapshotContent; bot: Bot; text: string; history: Turn[]; state: ConvState;
-  ad: { isAd: boolean; adText?: string }; returning: boolean; ports: Ports;
+  ad: { isAd: boolean; adText?: string; project?: string }; returning: boolean; ports: Ports;
 }): Promise<TurnResult> {
   const lang = detectLanguage(a.text);
   const sp = a.content.system_prompts?.[a.bot];
@@ -739,7 +770,8 @@ async function groundedTurn(a: Parameters<typeof runTurn>[0], lang: "bn" | "bang
     if (!r.ok) { trace.model_error = r.error; trace.cost_usd = cost; return { reply: FALLBACK[lang], media: [], handoff: true, stateNext: { ...base, paused: true }, outcome: "fallback_model_error", trace }; }
     cost += r.cost_usd;
     parsed = parseModelOutput(r.text);
-    errors = parsed ? guardReply(parsed, a.content, res.projects, evidence) : ["schema"];
+    errors = parsed ? guardReply(parsed, a.content, res.projects, evidence, `${a.text}
+${a.ad.adText ?? ""}`) : ["schema"];
     if (!errors.length) break;
   }
   trace.cost_usd = cost; trace.guard_errors = errors;
@@ -761,7 +793,7 @@ async function groundedTurn(a: Parameters<typeof runTurn>[0], lang: "bn" | "bang
   // The model's citations are kept only when they name something it was shown.
   const shown = new Set([...scoped.map((i) => i.id), ...res.projects]);
   trace.media_missing = media.missing; trace.used_item_ids = parsed.used_item_ids.filter((id) => shown.has(id)); trace.intent = parsed.intent;
-  const text0 = brandSpelling(parsed.reply);
+  const text0 = limitQuestions(res.projects.length === 1 ? dropProjectAsk(brandSpelling(parsed.reply)) : brandSpelling(parsed.reply));
   // The model wrote its reply believing the media would go. When none of a
   // requested kind can be sent, that sentence is replaced, never kept.
   const failedKinds = ((trace.media_failed as { kind: string }[] | undefined) || []).map((f) => f.kind);

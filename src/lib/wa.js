@@ -373,6 +373,35 @@ export async function waUploadMedia(file, onProgress) {
 // Persist the outgoing message immediately so it survives a reload and shows a
 // PENDING tick, then ask the relay to actually deliver it.
 // Uses Dubai session for Dubai agents and Eyad session for other agents.
+// The customer's profile picture. The relay looks it up with the server-held token
+// and saves it on the thread (the browser holds neither), so this only asks.
+export async function waFetchAvatar(conversation) {
+  if (!conversation?.id) return { ok: false };
+  try {
+    const r = await authedFetch(WA_RELAY_URL, {
+      method: 'POST',
+      headers: relayHeaders(),
+      body: JSON.stringify({ action: 'get-avatar', conversationId: conversation.id }),
+    });
+    if (!r.ok) return { ok: false };
+    const data = await r.json();
+    return data?.ok && data.avatarUrl ? { ok: true, avatarUrl: data.avatarUrl } : { ok: false };
+  } catch {
+    return { ok: false };
+  }
+}
+
+// The Mela invitation for a lead that just became Contacted. The relay checks the
+// lead is a Citizen Avenue one and invites each lead once, so calling it is safe.
+export async function waMelaInvite(leadId) {
+  try {
+    const r = await authedFetch(`${SB_URL}/functions/v1/mela-invite`, { method: 'POST', headers: relayHeaders(), body: JSON.stringify({ leadId }) });
+    return r.ok ? await r.json() : null;
+  } catch {
+    return null;
+  }
+}
+
 export async function waSendMessage(settings, { conversation, user, type = 'text', body = '', mediaUrl = '', mediaMime = '', mediaName = '', mediaSize = 0 }) {
   const clientRef = waClientRef();
   const account = normAccount(conversation?.account || waAccountForUser(user));

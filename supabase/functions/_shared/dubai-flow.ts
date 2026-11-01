@@ -58,7 +58,7 @@ export const locationText = (p: { name: string; address?: string | null; google_
 };
 export const DUBAI_FINAL_TEXT = "A sales consultant has already been assigned to you. Please keep in touch with them.";
 
-export type DocsProject = { name: string; address?: string | null; brochure_url?: string | null; video_url?: string | null };
+export type DocsProject = { name: string; address?: string | null; brochure_url?: string | null; video_url?: string | null; google_map_url?: string | null; map_image_url?: string | null };
 export type DocItem = { type: "document" | "image" | "text"; url: string; fileName?: string; caption: string };
 
 // Floor-plan PDFs that are not stored in wa_projects (it only holds floor-plan

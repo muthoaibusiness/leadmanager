@@ -133,7 +133,7 @@ export const embedder = env.embeddingModel
 // One test-number turn on a bot's real chat. Model calls draw on the trainer's
 // daily budget, like the Playground.
 export async function runTrainerTestTurn(a: {
-  bot: Bot; convId: string; phone: string; to: string; text: string; ad: { isAd: boolean; adText?: string }; allowMedia: boolean; production?: boolean; replyToMessageId?: string;
+  bot: Bot; convId: string; phone: string; to: string; text: string; ad: { isAd: boolean; adText?: string; project?: string }; allowMedia: boolean; production?: boolean; replyToMessageId?: string;
 }): Promise<LiveResult> {
   const { callModel, inventory } = _internals.portsFor({ db, llm, env });
   // The same approved-document search as the Playground, so a test number is

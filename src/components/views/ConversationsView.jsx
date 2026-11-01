@@ -9,12 +9,16 @@ import { getDB, getLead } from '../../lib/db.js';
 import { pushNotify } from '../../lib/pushNotify.js';
 import useChanged from '../../hooks/useChanged.js';
 import {
-  waLoadConversations, waLoadMessages, waMarkRead, waSendMessage, waRetry,
+  waLoadConversations, waLoadMessages, waMarkRead, waSendMessage, waRetry, waFetchAvatar,
   waSubscribe, matchLead, mergeStatus, isChatAdmin, waSeesAllChats, isLeadAssignedOrForwardedTo, waAiState,
 } from '../../lib/wa.js';
 
 // How many missing avatars to backfill right after the list loads, enough to
 // cover what's on screen without hammering the relay (Wasender is rate-limited).
+const AVATAR_PREFETCH = 8;
+// A thread needs a (new) photo when it has none, or still holds a WhatsApp link,
+// which expires within days; the relay now saves a stable copy instead.
+const needsAvatar = (c) => !!c.phone && (!c.avatarUrl || /whatsapp.net/.test(c.avatarUrl));
 
 export default function ConversationsView() {
   const { user, waSettings, chatOk, setWaUnread, openModal, dbVersion, showToast } = useApp();
@@ -76,9 +80,21 @@ export default function ConversationsView() {
 
   // ── initial load ──────────────────────────────────────────────────────────
   // The fetch alone; reload() and the chatOk switch below put up the spinner.
+  // Fill in missing profile photos, one request at a time with a short gap. Each
+  // thread is tried once per visit; most keep the fetched URL on the thread.
+  const triedAvatars = useRef(new Set());
+  const backfillAvatars = useCallback(async (list) => {
+    const targets = list.filter(c => needsAvatar(c) && !triedAvatars.current.has(c.id)).slice(0, AVATAR_PREFETCH);
+    for (const c of targets) {
+      triedAvatars.current.add(c.id);
+      const res = await waFetchAvatar(c);
+      if (res.ok) setConvs(prev => prev.map(x => (x.id === c.id ? { ...x, avatarUrl: res.avatarUrl } : x)));
+      await new Promise(r => setTimeout(r, 1200));
+    }
+  }, []);
   const fetchConvs = useCallback(() => waLoadConversations()
-    .then(list => { setConvs(list); setCanLoadMore(list.length >= 200); }, e => setLoadErr(e.message || 'Could not load conversations.'))
-    .finally(() => setLoadingConvs(false)), []);
+    .then(list => { setConvs(list); setCanLoadMore(list.length >= 200); backfillAvatars(list); }, e => setLoadErr(e.message || 'Could not load conversations.'))
+    .finally(() => setLoadingConvs(false)), [backfillAvatars]);
   const reload = useCallback(() => {
     setLoadingConvs(true);
     setLoadErr('');
@@ -167,6 +183,11 @@ export default function ConversationsView() {
   // ── open a thread ─────────────────────────────────────────────────────────
   const openConv = useCallback(async (c) => {
     setActiveId(c.id);
+    // The thread being read gets its photo even if it was past the first batch.
+    if (needsAvatar(c) && !triedAvatars.current.has(c.id)) {
+      triedAvatars.current.add(c.id);
+      waFetchAvatar(c).then(res => { if (res.ok) setConvs(prev => prev.map(x => (x.id === c.id ? { ...x, avatarUrl: res.avatarUrl } : x))); });
+    }
     setLoadingMsgs(true);
     setMsgs([]);
     try {

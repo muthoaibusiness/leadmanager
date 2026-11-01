@@ -414,3 +414,35 @@ test("review3: one turn makes at most one transient retry in total, so a timeout
   assert.equal(calls.length, 3);
   assert.equal(r.outcome, "fallback_model_error");
 });
+
+test("resolveProject: the project the ad click was recorded against settles an ad whose text names none", () => {
+  const r = resolveProject("Hello! Can I get more info on this?", emptyState(), { isAd: true, adText: "সাফ-কবলা দোকান বিক্রয় চলছে", project: OSM.body.name }, [NUZ, OSM]);
+  assert.deepEqual(r, { projects: ["p-osm"], source: "ad", ambiguous: false });
+  // not an ad: the recorded project is only a default and is ignored
+  assert.deepEqual(resolveProject("info", emptyState(), { isAd: false, project: OSM.body.name }, [NUZ, OSM]).projects, []);
+  // what the customer names still wins over the ad
+  assert.deepEqual(resolveProject("nuznan?", emptyState(), { isAd: true, project: OSM.body.name }, [NUZ, OSM]).projects, ["p-nuz"]);
+});
+
+test("limitQuestions: one question per reply, statements kept", async () => {
+  const { limitQuestions } = await import("./trainer-core.ts");
+  assert.equal(limitQuestions("রাত ৯টার পর ঠিক আছে।"), "রাত ৯টার পর ঠিক আছে।");
+  assert.equal(limitQuestions("Noted, after 9 pm. Which exact time? Is it for investment?"), "Noted, after 9 pm.\nWhich exact time?");
+  assert.equal(limitQuestions("Is this for living?\nWhich floor?"), "Is this for living?");
+  assert.equal(limitQuestions("One question only?"), "One question only?");
+});
+
+test("dropProjectAsk: a which-project question goes once the project is settled; other text stays", async () => {
+  const { dropProjectAsk } = await import("./trainer-core.ts");
+  assert.equal(dropProjectAsk("দোকানের দাম সাইজের ওপর নির্ভর করে। আপনি কোন প্রজেক্টের কথা জিজ্ঞেস করছেন?"), "দোকানের দাম সাইজের ওপর নির্ভর করে।");
+  assert.equal(dropProjectAsk("Prices depend on size. Which project do you mean?"), "Prices depend on size.");
+  assert.equal(dropProjectAsk("Which project do you mean?"), "Which project do you mean?"); // never leave an empty reply
+  assert.equal(dropProjectAsk("Do you want the layout or unit sizes?"), "Do you want the layout or unit sizes?");
+});
+
+test("guardReply: a plain number the customer or the ad already wrote is not an invention; money still is", () => {
+  const o = (reply: string) => parseModelOutput(JSON.stringify({ intent: "x", project_ref: "p-nuz", language: "en", reply, media: [], handoff: false, asked: [], used_item_ids: [], clarify: false }))!;
+  assert.deepEqual(guardReply(o("Noted, after 9 pm."), CONTENT, ["p-nuz"], "", "after 9 pm"), []);
+  assert.ok(guardReply(o("Noted, after 9 pm."), CONTENT, ["p-nuz"], "", "").includes("number"));
+  assert.ok(guardReply(o("It costs 50 lakh."), CONTENT, ["p-nuz"], "", "50 lakh").includes("number"));
+});

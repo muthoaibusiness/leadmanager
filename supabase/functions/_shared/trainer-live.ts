@@ -42,7 +42,7 @@ export type LivePorts = Ports & {
 
 export type LiveInput = {
   bot: Bot; convId: string; phone: string; to: string; text: string;
-  ad: { isAd: boolean; adText?: string }; replyModel: string; allowMedia: boolean;
+  ad: { isAd: boolean; adText?: string; project?: string }; replyModel: string; allowMedia: boolean;
   // Production activation (CR-002): when true, the test-number allow-list is
   // skipped and the AI-replies switch (faq_agent_enabled) gates sends instead.
   // Pause and agent-takeover are still enforced by isPaused.
@@ -160,7 +160,13 @@ export async function runTestTurn(a: LiveInput, ports: LivePorts): Promise<LiveR
     // An unlisted recipient stops the turn: no reply goes out after a refused
     // document, and the conversation is not paused for a handoff nobody saw.
     const stopped = sendErrors.includes("recipient no longer allowed");
-    const stateNext = stopped ? state : r.stateNext;
+    // A turn the core could not answer safely (it falls back to a canned "a consultant
+    // will get back to you" line and pauses the chat) is, on a real customer, silence
+    // instead: no promise nobody made, and the chat stays live for the next message. A
+    // human sees the thread in Conversations; the turn log keeps the outcome.
+    const silent = !!a.allowNonTest && String(r.outcome).startsWith("fallback_");
+    if (silent) { r.reply = ""; r.media = []; r.handoff = false; }
+    const stateNext = stopped || silent ? state : r.stateNext;
     await ports.upsert("ai_conversation_state", { conversation_id: key, bot: a.bot, state: stateNext, paused: stateNext.paused, updated_at: new Date().toISOString() });
     const out: { type: "text" | "image" | "document"; text: string; mediaUrl?: string; fileName?: string }[] = [];
     if (r.reply.trim() && !stopped) out.push({ type: "text", text: r.reply });

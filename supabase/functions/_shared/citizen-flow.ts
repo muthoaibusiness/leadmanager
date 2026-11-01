@@ -150,12 +150,23 @@ export async function runCitizenFlow(c: CitizenCtx): Promise<boolean> {
     return true;
   }
 
-  // 9. Where is the project: the catalog's address and map link. Once per contact.
+  // 9. Where is the project: the catalog's address and map link, then the map
+  // picture when the project has one. Each goes once per contact.
   if (!c.takeover && text && isLocationAsk(text)) {
     const loc = locationText(c.project);
     if (loc) {
-      const said = await select(`wa_messages?conversation_id=eq.${encodeURIComponent(c.convId)}&direction=eq.OUT&body=eq.${encodeURIComponent(loc)}&select=id&limit=1`);
-      if (!said.length) await send({ type: "text", text: loc });
+      const convQ = encodeURIComponent(c.convId);
+      const said = await select(`wa_messages?conversation_id=eq.${convQ}&direction=eq.OUT&body=eq.${encodeURIComponent(loc)}&select=id&limit=1`);
+      let sentSomething = false;
+      if (!said.length) { await send({ type: "text", text: loc }); sentSomething = true; }
+      const mapUrl = String(c.project?.map_image_url || "");
+      if (/^https:\/\//.test(mapUrl)) {
+        const shown = await select(`wa_messages?conversation_id=eq.${convQ}&direction=eq.OUT&media_url=eq.${encodeURIComponent(mapUrl)}&select=id&limit=1`);
+        if (!shown.length) {
+          if (sentSomething) await wait(5500);
+          await send({ type: "image", mediaUrl: mapUrl, text: `${c.project!.name} — location map` });
+        }
+      }
       return true;
     }
   }

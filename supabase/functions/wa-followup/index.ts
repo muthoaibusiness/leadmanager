@@ -14,6 +14,7 @@
 //     );
 //   $$);
 
+import { inviteLead, recentlyContactedLeadIds } from "../_shared/mela-invite.ts";
 import { CORS, json, sbSelect, sbPatch, SUPABASE_URL, SERVICE_KEY, getActiveProjects, sendWaMessageMirrored } from "../_shared/wa.ts";
 import { buildJolshiriBundle, FLOW_ASK_PROFILE_TEXT, FLOW_AUTO_PROFILE_TEXT, FLOW_ASK_AGENT_TEXT, brochureCaption } from "../_shared/ai.ts";
 import {
@@ -271,7 +272,10 @@ Deno.serve(async (req) => {
     const dubaiDocs = await processDubaiGreeted();
     const dubaiAuto = await processDubaiAutoSend();
     const dubaiFinal = await processDubaiFinal();
-    return json({ ok: true, greeted, awaiting, dubaiDocs, dubaiAuto, dubaiFinal });
+    // Mela invitations for leads contacted in the last half hour that the CRM call missed.
+    let mela = 0;
+    for (const id of await recentlyContactedLeadIds(30)) if ((await inviteLead(id)).status === "sent") mela++;
+    return json({ ok: true, greeted, awaiting, dubaiDocs, dubaiAuto, dubaiFinal, mela });
   } catch (e) {
     console.error("wa-followup error", e);
     return json({ ok: false, error: e instanceof Error ? e.message : String(e) }, 500);

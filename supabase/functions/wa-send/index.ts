@@ -9,9 +9,10 @@
 // are rotated by an operator with CR-001 runbook A.
 
 import {
-  CORS, json, WASENDER_BASE, getCredentials, sbPatch, sbUpsert, phoneToJid,
+  CORS, json, WASENDER_BASE, SUPABASE_URL, SERVICE_KEY, getCredentials, sbPatch, sbUpsert, phoneToJid,
 } from "../_shared/wa.ts";
 import { verifiedActor, actorDepsFromEnv } from "../_shared/actor.ts";
+import { normPhone } from "../_shared/phone.ts";
 import { authorizeWaSend, checkWaSend, restChatDeps, claimSend, restPatch } from "../_shared/wa-send-auth.ts";
 
 const actorDeps = actorDepsFromEnv((k) => Deno.env.get(k));
@@ -19,7 +20,7 @@ const chatDeps = restChatDeps(actorDeps.url, actorDeps.serviceKey);
 const msgPatch = restPatch(actorDeps.url, actorDeps.serviceKey);
 
 interface SendBody {
-  action: "send" | "set-credentials";
+  action: "send" | "get-avatar" | "set-credentials";
   account?: string;
   to?: string;
   conversationId?: string;
@@ -53,6 +54,58 @@ function buildPayload(b: SendBody) {
   }
 }
 
+async function keepPicture(conversationId: string, url: string): Promise<string> {
+  try {
+    const img = await fetch(url);
+    if (!img.ok) { console.error("avatar download failed", img.status); return ""; }
+    const mime = img.headers.get("content-type") || "image/jpeg";
+    const path = `avatars/${conversationId.replace(/[^\w.\-]/g, "_")}.jpg`;
+    const up = await fetch(`${SUPABASE_URL}/storage/v1/object/wa-media/${path}`, {
+      method: "POST",
+      headers: { apikey: SERVICE_KEY, Authorization: `Bearer ${SERVICE_KEY}`, "Content-Type": mime, "x-upsert": "true" },
+      body: new Uint8Array(await img.arrayBuffer()),
+    });
+    if (!up.ok) { console.error("avatar upload failed", up.status, await up.text()); return ""; }
+    return `${SUPABASE_URL}/storage/v1/object/public/wa-media/${path}?v=${Date.now()}`;
+  } catch (e) {
+    console.error("keepPicture error", e);
+    return "";
+  }
+}
+
+// The customer's WhatsApp profile picture, saved on the thread so the list shows
+// it. The browser may not write wa_conversations or hold the token, so the
+// lookup and the save both happen here, for a signed-in user whose company owns
+// the thread. Nothing is guessed: no picture (or a hidden one) is ok:false.
+async function getAvatar(actor: { role?: string; company_id?: string | null }, conversationId?: string): Promise<Response> {
+  if (!conversationId) return json({ error: "conversationId is required" }, 400);
+  let conv;
+  try { conv = await chatDeps.conversation(conversationId); }
+  catch (e) { console.error("get-avatar read failed", e); return json({ error: "Could not read the conversation" }, 503); }
+  if (!conv) return json({ error: "No such conversation" }, 404);
+  if (actor.role !== "MASTER" && conv.company_id && conv.company_id !== actor.company_id) return json({ error: "This conversation belongs to another company" }, 403);
+  const phone = normPhone(conv.phone);
+  if (!phone) return json({ ok: false, reason: "no phone on this thread" });
+  const { token } = await getCredentials(conv.account === "dubai" ? "dubai" : "eyad");
+  if (!token) return json({ ok: false, reason: "no token" });
+  try {
+    const r = await fetch(`${WASENDER_BASE}/contacts/${phone}/picture`, { headers: { Authorization: `Bearer ${token}` } });
+    if (!r.ok) return json({ ok: false, reason: `wasender ${r.status}` });
+    const j = await r.json().catch(() => ({}));
+    const url = String(j?.data?.imgUrl ?? j?.data?.url ?? j?.imgUrl ?? "");
+    if (!/^https:\/\//.test(url)) return json({ ok: false, reason: "no picture" });
+    // WhatsApp's picture links expire within days, so the picture is copied into our
+    // own storage and the stable link is what gets saved.
+    const stored = await keepPicture(conversationId, url);
+    if (!stored) return json({ ok: false, reason: "could not store the picture" });
+    await sbPatch("wa_conversations", `id=eq.${encodeURIComponent(conversationId)}`, { avatar_url: stored });
+    return json({ ok: true, avatarUrl: stored });
+  } catch (e) {
+    console.error("get-avatar failed", e);
+    return json({ ok: false, reason: "lookup failed" });
+  }
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
   if (req.method !== "POST") return json({ error: "Method not allowed" }, 405);
@@ -66,6 +119,8 @@ Deno.serve(async (req) => {
 
   const auth = await authorizeWaSend(req, body, (r) => verifiedActor(r, actorDeps));
   if (!auth.ok) return json({ error: auth.error }, auth.status);
+
+  if (body.action === "get-avatar") return await getAvatar(auth.actor, body.conversationId);
 
   // Chat access, company and thread ownership, server-side (wa-send-auth.ts).
   let chat;

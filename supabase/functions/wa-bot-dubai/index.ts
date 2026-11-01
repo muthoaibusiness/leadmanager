@@ -458,7 +458,7 @@ async function handleInbound(evt: ParsedEvent): Promise<void> {
     // core answers instead of the legacy agent. Everything else runs unchanged.
     if (settings.trainerTest) {
       const r = await runTrainerTestTurn({ bot: "dubai", convId, phone: evt.phone, to: evt.waTo, text: evt.text,
-        ad: evt.isAd || !adLead ? { isAd: evt.isAd, adText: evt.adText } : await storedAdContext(evt.phone), allowMedia: settings.aiMediaEnabled });
+        ad: { ...(evt.isAd || !adLead ? { isAd: evt.isAd, adText: evt.adText } : await storedAdContext(evt.phone)), ...(adLead && projectName ? { isAd: true, project: projectName } : {}) }, allowMedia: settings.aiMediaEnabled });
       console.log("trainer test turn", { phone: evt.phone, outcome: r.outcome, sent: r.sent, turnId: r.turnId });
       return;
     }
