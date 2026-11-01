@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  isForeignNumber, isAdFaqOrSmallTalk, needsAiReply, docsPlan, docsAskText, consentsTo, refuses,
+  isForeignNumber, isAdFaqOrSmallTalk, needsAiReply, floorPlanPlan, floorPlanAskText, isFloorPlanAsk, isLocationAsk, locationText, brochureItem, brochureAskText, consentsTo, refuses,
   DUBAI_STAGE, DUBAI_STAGES, DOCS_ASK_PREFIX,
 } from "./dubai-flow.ts";
 
@@ -30,28 +30,29 @@ test("anything of the customer's own is a custom-reply case, but only for ad cus
   assert.equal(needsAiReply("বিস্তারিত জানতে চাই।", true), false);
 });
 
-test("docsPlan: brochure; Citizen Avenue also gets floor-plan PDF and video; no brochure means no docs", () => {
-  const p = docsPlan({ name: "Wecon Nuznan", address: "Plot 1, Sector 16, Jolshiri Abashon, Dhaka", brochure_url: "https://x/b.pdf", floor_plans: ["https://x/f.jpg"] } as any);
-  assert.equal(p.hasDocs, true);
-  assert.deepEqual(p.items, [{ type: "document", url: "https://x/b.pdf", fileName: "Wecon Nuznan Brochure.pdf", caption: "Wecon Nuznan (Sector 16, Jolshiri Abashon) — Brochure" }]);
-  assert.deepEqual(docsPlan({ name: "P2P Helthcare", brochure_url: "https://x/p.pdf" }).items.length, 1);
-  const c = docsPlan({ name: "Wecon Citizen Avenue", brochure_url: "https://x/c.pdf" });
-  assert.deepEqual(c.items.map((i) => i.type), ["document", "document", "text"]);
-  assert.ok(c.items[1].url.includes("1NVarSO7peq15fbPS_2pMBKcc6bVe9sfS"));
-  assert.ok(c.items[2].caption.includes("https://www.youtube.com/watch?v=Dc5OR3sEcaU"));
-  assert.equal(docsAskText({ name: "Wecon Citizen Avenue" }), "Would you like me to send the brochure, floor plan and video of Wecon Citizen Avenue?");
-  assert.ok(docsAskText({ name: "Wecon Citizen Avenue" }).startsWith(DOCS_ASK_PREFIX));
-  assert.equal(docsPlan({ name: "Momtaz Manor" }).hasDocs, false);
-  assert.equal(docsPlan(null).hasDocs, false);
-  assert.equal(docsAskText({ name: "P2P Helthcare" }), "Would you like me to send the brochure of P2P Helthcare?");
-  assert.ok(docsAskText({ name: "X" }).startsWith(DOCS_ASK_PREFIX));
+test("flow files: Citizen Avenue offers floor plan + video first, the brochure second; no brochure means none", () => {
+  const cit = { name: "Wecon Citizen Avenue", brochure_url: "https://x/c.pdf" };
+  assert.deepEqual(floorPlanPlan(cit).map((i) => i.type), ["document", "text"]);
+  assert.ok(floorPlanPlan(cit)[0].url.includes("1NVarSO7peq15fbPS_2pMBKcc6bVe9sfS"));
+  assert.ok(floorPlanPlan(cit)[1].caption.includes("https://www.youtube.com/watch?v=Dc5OR3sEcaU"));
+  assert.equal(floorPlanAskText(cit), "Would you like me to send the floor plan and video of Wecon Citizen Avenue?");
+  assert.equal(brochureAskText(cit), "Would you like me to send the brochure of Wecon Citizen Avenue?");
+  assert.ok(floorPlanAskText(cit)!.startsWith(DOCS_ASK_PREFIX) && brochureAskText(cit).startsWith(DOCS_ASK_PREFIX));
+  const b = brochureItem({ name: "Wecon Nuznan", address: "Plot 1, Sector 16, Jolshiri Abashon, Dhaka", brochure_url: "https://x/b.pdf" });
+  assert.deepEqual(b, { type: "document", url: "https://x/b.pdf", fileName: "Wecon Nuznan Brochure.pdf", caption: "Wecon Nuznan (Sector 16, Jolshiri Abashon) — Brochure" });
+  const p2p = { name: "P2P Helthcare", brochure_url: "https://x/p.pdf" };
+  assert.deepEqual(floorPlanPlan(p2p), []);
+  assert.equal(floorPlanAskText(p2p), null);
+  assert.equal(brochureItem({ name: "Momtaz Manor" }), null);
+  assert.equal(brochureItem(null), null);
+  assert.deepEqual(floorPlanPlan(null), []);
 });
 
 test("consent: yes-words, or a non-refusal quoting the question; refusals are refusals", () => {
   assert.equal(consentsTo("Yes", "", DOCS_ASK_PREFIX), true);
   assert.equal(consentsTo("জি", undefined, DOCS_ASK_PREFIX), true);
-  assert.equal(consentsTo("Ok thanks", docsAskText({ name: "X" }), DOCS_ASK_PREFIX), true);
-  assert.equal(consentsTo("no thanks", docsAskText({ name: "X" }), DOCS_ASK_PREFIX), false);
+  assert.equal(consentsTo("Ok thanks", brochureAskText({ name: "X" }), DOCS_ASK_PREFIX), true);
+  assert.equal(consentsTo("no thanks", brochureAskText({ name: "X" }), DOCS_ASK_PREFIX), false);
   assert.equal(consentsTo("what is the price?", "", DOCS_ASK_PREFIX), false);
   assert.equal(refuses("no"), true); assert.equal(refuses("না"), true); assert.equal(refuses("yes"), false); assert.equal(refuses("hmm"), false);
 });
@@ -60,4 +61,16 @@ test("stages are distinct from the Eyad flow's, so the two crons never touch eac
   const eyad = ["greeted", "asked_profile", "profile_sent", "asked_agent", "agent_ack", "agent_assigned"];
   for (const s of DUBAI_STAGES) { assert.ok(s.startsWith("dubai_"), s); assert.ok(!eyad.includes(s), s); }
   assert.equal(new Set(DUBAI_STAGES).size, Object.keys(DUBAI_STAGE).length);
+});
+
+test("floor-plan ask: typed in English or Bangla, or the ad button; a payment plan is not one", () => {
+  for (const t of ["ফ্লোর প্ল্যান ও শপের পজিশন দেখতে চাই", "floor plan please", "Send me the floorplan", "ফ্লোর প্ল্যান দেন"]) assert.equal(isFloorPlanAsk(t), true, t);
+  for (const t of ["মূল্য ও পেমেন্ট প্ল্যান জানতে চাই", "price?", "বিস্তারিত জানতে চাই"]) assert.equal(isFloorPlanAsk(t), false, t);
+});
+
+test("location ask: where is the project; office questions are not one; text comes from the catalog", () => {
+  for (const t of ["লোকেশন কোথায় জানান", "মার্কেট কোন খানে হচ্ছে?", "send location", "where is the project"]) assert.equal(isLocationAsk(t), true, t);
+  for (const t of ["সৌদিতে কি আপনাদের অফিস আছে", "দুবাই অফিসের ঠিকানা ও অ্যাপয়েন্টমেন্ট চাই", "price?", "ফ্লোর প্ল্যান দেখতে চাই"]) assert.equal(isLocationAsk(t), false, t);
+  assert.equal(locationText({ name: "Wecon Citizen Avenue", address: "Amirabad, Lohagara, Chattogram", google_map_url: "https://maps.app.goo.gl/x" }), "Wecon Citizen Avenue is located at Amirabad, Lohagara, Chattogram.\nGoogle Map: https://maps.app.goo.gl/x");
+  assert.equal(locationText({ name: "X" }), null);
 });

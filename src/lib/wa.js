@@ -176,9 +176,21 @@ const CHAT_DENIED_ROLES = ['AGENT', 'EXECUTIVE'];
 
 export function waCanChat(user, settings) {
   if (!user) return false;
-  if (CHAT_DENIED_ROLES.includes(user.role)) return false;
   if (settings && settings.enabled === false) return false;
+  // An explicit grant beats the role default: the Conversations feature ticked on
+  // the account (Accounts → features), or the account on the Chat Settings
+  // allow-list. Without one, front-line roles stay out.
+  if (Array.isArray(user.allowedFeatures) && user.allowedFeatures.includes('conversations')) return true;
+  if (Array.isArray(settings?.allowedUserIds) && settings.allowedUserIds.includes(user.id)) return true;
+  if (CHAT_DENIED_ROLES.includes(user.role)) return false;
   return true;
+}
+
+// Whose Conversations list is unfiltered: Management/Master, and anyone the admin
+// ticked the Conversations feature for on their account. Everyone else sees only
+// the chats of leads assigned or forwarded to them.
+export function waSeesAllChats(user) {
+  return isChatAdmin(user) || (Array.isArray(user?.allowedFeatures) && user.allowedFeatures.includes('conversations'));
 }
 
 export function waCanChatLead(user, settings) {

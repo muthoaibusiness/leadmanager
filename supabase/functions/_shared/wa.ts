@@ -326,6 +326,20 @@ export async function getBotSettings(bot: BotName, phone?: string): Promise<BotS
   };
 }
 
+// The ad a customer came in through, for the turns that carry no ad payload.
+// WhatsApp attaches the ad referral to the first message only, and it can land on
+// the customer's LID thread while later messages arrive on the phone thread — so
+// the bot would ask "which project?" of someone who clicked a project's ad. The
+// referral is kept on wa_conversations.ad_meta; this finds it by phone.
+export async function storedAdContext(phone: string): Promise<{ isAd: boolean; adText: string }> {
+  const tail = String(phone || "").replace(/\D/g, "").slice(-10);
+  if (tail.length < 8) return { isAd: false, adText: "" };
+  const rows = await sbSelect("wa_conversations?phone=like.*" + tail + "&source=eq.AD&select=ad_meta&order=last_message_at.desc.nullslast&limit=1");
+  const m = rows?.[0]?.ad_meta;
+  if (!m) return { isAd: false, adText: "" };
+  return { isAd: true, adText: [m.title, m.body, m.greetingMessageBody].filter(Boolean).join("\n").slice(0, 600) };
+}
+
 // Re-read just before each customer send so an OFF toggle mid-turn is honoured.
 export async function aiStillOn(bot: BotName, phone?: string): Promise<boolean> {
   return (await getBotSettings(bot, phone)).faqAgentEnabled;

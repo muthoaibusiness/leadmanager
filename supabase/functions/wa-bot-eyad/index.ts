@@ -23,7 +23,7 @@ import {
   CORS, json, SUPABASE_URL, SERVICE_KEY, WASENDER_BASE,
   claimEvent, getCredentials, getActiveProjects, getRecentHistory, sendWaMessageMirrored, getKnowledge, getCorrections,
   findLeadForNote, logNoteActivity, getBotSettings, aiStillOn, verifyWebhook, getProjectBySendCode, fillWelcomeTemplate, fixLeadPhoneFromNote, splitPhoneFromNote,
-  logConversationHistory, canonicalConvJid,
+  logConversationHistory, canonicalConvJid, storedAdContext,
 } from "../_shared/wa.ts";
 import type { BotSettings } from "../_shared/wa.ts";
 import {
@@ -32,6 +32,8 @@ import {
   leadContext, matchNamedProject, isPriceQuestion, isLandOffer, FLOW_PRICE_AGENT_TEXT, brochureCaption,
 } from "../_shared/ai.ts";
 import { runTrainerTestTurn } from "../_shared/trainer-deno.ts";
+import { DUBAI_CAMPAIGN_PROJECT, DUBAI_GREETING_TEXT, DUBAI_STAGE, needsAiReply } from "../_shared/dubai-flow.ts";
+import { runCitizenFlow } from "../_shared/citizen-flow.ts";
 
 // ── fixed literals from the source workflow ──────────────────────────────
 // Hard-coded in the live n8n workflow for this one bot instance (Eyad /
@@ -334,11 +336,15 @@ async function handleInbound(p: ParsedEvent): Promise<void> {
   // region sync) still run afterwards. Pause and agent-takeover are enforced
   // inside the trainer turn.
   const trainerEligible = !!(settings.faqAgentEnabled && p.text && upsert.takeover !== true && p.remote);
-  if (trainerEligible) {
+  // The ad referral rides on the first message only; a customer who clicked an ad
+  // (prelead carries the click id) keeps that ad for every later turn.
+  const runTrainer = async () => {
+    let ad = { isAd: p.isAd, adText: p.adText };
+    if (!ad.isAd && (status.ctwa_clid || status.wa_ad_id)) ad = await storedAdContext(p.phone);
     const r = await runTrainerTestTurn({ bot: "eyad", convId: `eyad:${p.convJid}`, phone: p.phone, to: p.target, text: p.text,
-      ad: { isAd: p.isAd, adText: p.adText }, allowMedia: settings.aiMediaEnabled, production: true });
+      ad, allowMedia: settings.aiMediaEnabled, production: true });
     console.log("trainer turn", { phone: p.phone, outcome: r.outcome, sent: r.sent, blocked: r.blocked, turnId: r.turnId });
-  }
+  };
 
   // ── New Contact? → Welcome ──────────────────────────────────────────────
   // The n8n graph suppressed the welcome whenever should_drip was true (an
@@ -354,6 +360,42 @@ async function handleInbound(p: ParsedEvent): Promise<void> {
     upsert.property_interest = named.name;
     await sbPatchJson("preleads", `id=eq.${encodeURIComponent(preleadId)}`, { property_interest: named.name }).catch(() => {});
   }
+  // ── Citizen Avenue contact (names it, or came through a Citizen ad) ───────
+  // Same scripted flow as the Dubai bot — greeting, floor plan + video, brochure,
+  // location — except nothing here auto-forwards: a human takes the lead from
+  // Conversations. Contacts already inside an Eyad (Jolshiri) stage are left to
+  // that flow.
+  const stage0: string = status.flow_stage || "";
+  const adNamedCitizen = !!p.adText && matchNamedProject(p.adText, projects as any[])?.name === DUBAI_CAMPAIGN_PROJECT;
+  const citizen = (!stage0 || stage0.startsWith("dubai_")) &&
+    (stage0.startsWith("dubai_") || named?.name === DUBAI_CAMPAIGN_PROJECT || adNamedCitizen || upsert.property_interest === DUBAI_CAMPAIGN_PROJECT);
+  if (citizen) {
+    if (upsert.property_interest !== DUBAI_CAMPAIGN_PROJECT) {
+      await sbPatchJson("preleads", `id=eq.${encodeURIComponent(preleadId)}`, { property_interest: DUBAI_CAMPAIGN_PROJECT }).catch(() => {});
+    }
+    const convId = `eyad:${p.convJid}`;
+    const takeover = upsert.takeover === true;
+    let starting = upsert.is_new === true;
+    if (!starting && !stage0 && !takeover) {
+      const out = await sbSelectJson(`wa_messages?conversation_id=eq.${encodeURIComponent(convId)}&direction=eq.OUT&select=id&limit=1`);
+      starting = out.length === 0;
+    }
+    const full = await getActiveProjects();
+    const project = (full as any[]).find((x) => x.name === DUBAI_CAMPAIGN_PROJECT) ?? null;
+    const handled = await runCitizenFlow({
+      bot: "eyad", assigned: false, pid: encodeURIComponent(preleadId), convId, phone: p.phone, waTo: p.target, text: p.text, quoted: p.quoted,
+      isNew: upsert.is_new === true, starting, stage: stage0, stageAt: undefined, takeover, msgCount, project,
+      greetingEnabled: settings.welcomeEnabled, greetingText: DUBAI_GREETING_TEXT,
+    });
+    if (handled) return;
+    // Everything the script does not cover goes to the AI Trainer, but only for an
+    // ad customer's own question (buttons and small talk already have their answer).
+    if (trainerEligible && !isLandOffer(p.text) && needsAiReply(p.text, !!(p.isAd || status.ctwa_clid || status.wa_ad_id))) await runTrainer();
+    return; // never auto-forwards from here
+  }
+
+  if (trainerEligible) await runTrainer();
+
   // A land seller ("do you buy land in Cox's Bazar?") who happened to click
   // an ad is not a Jolshiri buyer: generic hello, no brochure flow, and the
   // LLM's land rule keeps everything else silent for a human to pick up.

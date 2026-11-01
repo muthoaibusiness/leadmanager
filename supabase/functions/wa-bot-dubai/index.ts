@@ -40,13 +40,11 @@ import {
   CORS, json, SUPABASE_URL, SERVICE_KEY, WASENDER_BASE,
   claimEvent, getCredentials, getActiveProjects, getRecentHistory, sendWaMessageMirrored, getKnowledge, getCorrections,
   findLeadForNote, logNoteActivity, getBotSettings, aiStillOn, verifyWebhook, fillWelcomeTemplate, fixLeadPhoneFromNote, splitPhoneFromNote,
-  logConversationHistory,
+  logConversationHistory, storedAdContext,
 } from "../_shared/wa.ts";
 import { askAgent, resolveMedia, fixGrammar, matchJolshiriBundle, matchNamedProject, isLandOffer, brochureCaption } from "../_shared/ai.ts";
-import {
-  DUBAI_STAGE, DUBAI_CAMPAIGN_PROJECT, DUBAI_GREETING_TEXT, DUBAI_MEETING_ASK_PREFIX, DUBAI_MEETING_YES_TEXT, DOCS_ASK_PREFIX,
-  isForeignNumber, needsAiReply, docsPlan, consentsTo, refuses,
-} from "../_shared/dubai-flow.ts";
+import { DUBAI_STAGE, DUBAI_CAMPAIGN_PROJECT, DUBAI_GREETING_TEXT, needsAiReply } from "../_shared/dubai-flow.ts";
+import { runCitizenFlow } from "../_shared/citizen-flow.ts";
 import { runTrainerTestTurn } from "../_shared/trainer-deno.ts";
 
 // ── local REST helpers ───────────────────────────────────────────────────
@@ -413,9 +411,20 @@ async function handleInbound(evt: ParsedEvent): Promise<void> {
   if (projectName && projectName !== row.property_interest) {
     await sbPatchFireAndForget("preleads", `id=eq.${pid}`, { property_interest: projectName });
   }
-  // 1. A foreign number goes straight to the Dubai agent — no message to the
-  // customer. A Bangladeshi number or a hidden number is left to a human.
-  if (isNew && settings.autoForwardEnabled && !takeover && isForeignNumber(evt.phone, evt.isLid)) {
+
+  // A contact that wrote before this flow existed has no stage and was never
+  // answered by us: it gets the same opening as a brand-new one. Anyone a human
+  // has already replied to is left alone.
+  let starting = isNew;
+  if (!isNew && !stage && !takeover) {
+    const sent = await sbSelectJson(`wa_messages?conversation_id=eq.${encodeURIComponent(convId)}&direction=eq.OUT&select=id&limit=1`);
+    starting = sent.length === 0;
+  }
+
+  // 1. Every Dubai contact with a real number goes straight to the Dubai agent —
+  // Bangladeshi numbers too — with no message to the customer. A hidden number
+  // has no phone to forward, so a human picks that one up.
+  if (starting && settings.autoForwardEnabled && !takeover && !evt.isLid && !(!isNew && (await findLeadForNote(evt.phone)))) {
     const lead = await sbRpcJson("wa_create_lead", { p_phone: evt.phone, p_cmd: "/fdu", p_company_id: "c1" });
     if (lead?.lead_id) {
       await logConversationHistory(String(lead.lead_id), "c1", evt.phone, "Dubai Bot (auto-forward)");
@@ -427,60 +436,15 @@ async function handleInbound(evt: ParsedEvent): Promise<void> {
     }
   }
 
-  // A second opening message (a button plus a voice note, say) lands seconds
-  // after the first: it is part of the same opening, not a reply to the
-  // greeting, so it must not cancel the 10-minute follow-up.
-  if (!isNew && stage === DUBAI_STAGE.greeted && row.stage_at && Date.now() - Date.parse(row.stage_at) < 60_000) {
-    await sbPatchFireAndForget("preleads", `id=eq.${pid}&flow_stage=eq.${DUBAI_STAGE.greeted}`, { stage_msg_count: msgCount });
-  }
-
-  // 2. Greeting the moment a new contact writes; it starts the 10-minute clock.
-  if (isNew && settings.welcomeEnabled && !takeover) {
-    await sendWaText(evt.waTo, settings.welcomeMessage ? fillWelcomeTemplate(settings.welcomeMessage, evt.name) : DUBAI_GREETING_TEXT);
-    await sbPatchFireAndForget("preleads", `id=eq.${pid}`, { flow_stage: DUBAI_STAGE.greeted, stage_at: now(), stage_msg_count: msgCount });
-  }
-
-  // 5. "yes" to the docs offer → send them. The PATCH only matches while the
-  // contact is still in asked_docs, so a duplicate delivery claims nothing.
-  if (!isNew && !takeover && stage === DUBAI_STAGE.askedDocs && evt.text) {
-    if (refuses(evt.text)) {
-      await sbPatchFireAndForget("preleads", `id=eq.${pid}&flow_stage=eq.${DUBAI_STAGE.askedDocs}`, { flow_stage: DUBAI_STAGE.done, stage_at: now(), stage_msg_count: msgCount });
-      return;
-    }
-    if (consentsTo(evt.text, evt.quoted, DOCS_ASK_PREFIX)) {
-      const claimed = await sbPatchJson("preleads", `id=eq.${pid}&flow_stage=eq.${DUBAI_STAGE.askedDocs}`,
-        { flow_stage: DUBAI_STAGE.docsSent, stage_at: now(), stage_msg_count: msgCount });
-      if (claimed) {
-        const plan = docsPlan(project);
-        for (let i = 0; i < plan.items.length; i++) {
-          if (i) await new Promise((r) => setTimeout(r, 5500));
-          const d = plan.items[i];
-          await sendWaMessageMirrored("dubai", evt.waTo, convId, evt.phone,
-            d.type === "text" ? { type: "text", text: d.caption } : { type: d.type, mediaUrl: d.url, fileName: d.fileName, text: d.caption });
-        }
-      }
-      return;
-    }
-  }
-
-  // 6b. "yes" to the meeting offer: ask for a time and leave a note on the lead
-  // for the agent. Nothing is booked from here.
-  if (!isNew && !takeover && stage === DUBAI_STAGE.askedMeeting && evt.text) {
-    if (refuses(evt.text)) {
-      await sbPatchFireAndForget("preleads", `id=eq.${pid}&flow_stage=eq.${DUBAI_STAGE.askedMeeting}`, { flow_stage: DUBAI_STAGE.done, stage_at: now(), stage_msg_count: msgCount });
-      return;
-    }
-    if (consentsTo(evt.text, evt.quoted, DUBAI_MEETING_ASK_PREFIX)) {
-      const claimed = await sbPatchJson("preleads", `id=eq.${pid}&flow_stage=eq.${DUBAI_STAGE.askedMeeting}`,
-        { flow_stage: DUBAI_STAGE.meetingYes, stage_at: now(), stage_msg_count: msgCount });
-      if (claimed) {
-        await sendWaMessageMirrored("dubai", evt.waTo, convId, evt.phone, { type: "text", text: DUBAI_MEETING_YES_TEXT });
-        const lead = await findLeadForNote(evt.phone);
-        if (lead) await logNoteActivity(lead.id, "c1", "Customer said yes to a meeting on WhatsApp (Dubai bot) — please arrange a time.", "Dubai Bot");
-      }
-      return;
-    }
-  }
+  // The scripted Citizen Avenue flow (greeting, floor plan / video, brochure,
+  // price and location answers) is shared with the Eyad bot.
+  const handled = await runCitizenFlow({
+    bot: "dubai", assigned: true, pid, convId, phone: evt.phone, waTo: evt.waTo, text: evt.text, quoted: evt.quoted,
+    isNew, starting, stage, stageAt: row.stage_at, takeover, msgCount, project,
+    greetingEnabled: settings.welcomeEnabled,
+    greetingText: settings.welcomeMessage ? fillWelcomeTemplate(settings.welcomeMessage, evt.name) : DUBAI_GREETING_TEXT,
+  });
+  if (handled) return;
 
   // 3. A grounded AI reply for an ad customer's own question. Ad buttons,
   // greetings, media placeholders and land offers get none; anything the
@@ -491,11 +455,11 @@ async function handleInbound(evt: ParsedEvent): Promise<void> {
     // core answers instead of the legacy agent. Everything else runs unchanged.
     if (settings.trainerTest) {
       const r = await runTrainerTestTurn({ bot: "dubai", convId, phone: evt.phone, to: evt.waTo, text: evt.text,
-        ad: { isAd: evt.isAd, adText: evt.adText }, allowMedia: settings.aiMediaEnabled });
+        ad: evt.isAd || !adLead ? { isAd: evt.isAd, adText: evt.adText } : await storedAdContext(evt.phone), allowMedia: settings.aiMediaEnabled });
       console.log("trainer test turn", { phone: evt.phone, outcome: r.outcome, sent: r.sent, turnId: r.turnId });
       return;
     }
-    const docsDone = [DUBAI_STAGE.docsSent, DUBAI_STAGE.askedMeeting, DUBAI_STAGE.meetingYes].includes(stage as any);
+    const docsDone = [DUBAI_STAGE.askedBrochure, DUBAI_STAGE.brochureSent].includes(stage as any);
     await runFaqAgent("dubai", evt.waTo, evt.remote, evt.text, {
       adProject: projectName || undefined, profilesAlreadySent: docsDone, noBundle: true, allowMedia: settings.aiMediaEnabled,
     });
