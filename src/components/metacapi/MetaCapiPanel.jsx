@@ -318,6 +318,9 @@ export default function MetaCapiPanel({ api, showToast, onDelete, refreshRef, on
   const rate = sum && sum.attempts ? `${Math.round((sum.accepted_attempts / sum.attempts) * 100)}%` : '-';
   // Sending is a privileged action: off until the server allows it (CR-001 D1).
   const canAct = cfg?.actions_enabled === true;
+  // World switches (manual send, recovery pause, bot on/off) edit one global row
+  // shared by every company, so they are Master-only.
+  const canManage = cfg?.can_manage === true;
   const rows = useMemo(() => data?.rows || [], [data]);
   // A row is sendable from here when it is pending or failed, an agent
   // qualified it, it had no unclear earlier answer, and the server allows sends.
@@ -399,7 +402,7 @@ export default function MetaCapiPanel({ api, showToast, onDelete, refreshRef, on
           <div className="ait-trace">
             Dataset {cfg?.dataset_id ?? '…'} · token {cfg ? (cfg.token.configured ? 'configured' : 'missing') : '…'} (kept on the server, never shown) · CRM recovery {cfg ? (cfg.ui_recovery_paused ? 'paused' : 'on') : '…'} · manual send {cfg ? (cfg.manual_send_enabled === false ? 'off' : 'on') : '…'}
           </div>
-          {canAct && (
+          {canManage && (
             <div className="mcx-switches">
               <button type="button" role="switch" aria-checked={cfg?.manual_send_enabled !== false} aria-label="Manual send to Meta"
                 className={`bc-switch ${cfg?.manual_send_enabled !== false ? 'on' : ''}`} disabled={busy}
@@ -426,7 +429,7 @@ export default function MetaCapiPanel({ api, showToast, onDelete, refreshRef, on
           {' · '}Oldest still to report: {sum?.oldest_pending ? <>cutoff {fmtTime(sum.oldest_pending.cutoff_at, tz)}</> : (sum ? 'none' : '…')}
           {lastUpdated ? ` · Updated ${fmtTime(lastUpdated.toISOString(), tz)}` : ''}
         </div>
-        <BotSwitches api={api} canAct={canAct} showToast={showToast} initial={bots} />
+        <BotSwitches api={api} canAct={canManage} showToast={showToast} initial={bots} />
         {cfg && !canAct && (
           <div className="mcx-note" role="note"><Mi>lock</Mi>
             <span>View only. Sending to Meta, the bot switches and pausing need a verified sign-in, which the CRM does not have yet (CR-001 decision D1).</span>

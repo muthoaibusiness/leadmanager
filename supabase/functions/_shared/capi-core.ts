@@ -11,10 +11,12 @@
 // no action returns it, and nothing derived from it but "configured" leaves.
 //
 // CR-001 decision D1: every action, reads included, takes its caller from the
-// verified session, and privileged actions (retry, which sends to Meta,
-// settings.set, bot.set) require one too: loadActor fail-closes with 401 when
-// there is no valid session, so sending is on for any verified, authorized
-// admin. The D1 test exercises the 401 path.
+// verified session, and privileged actions require one too: loadActor
+// fail-closes with 401 when there is no valid session. Among them, retry is
+// company-scoped and open to any verified, metacapi-authorized account;
+// settings.set and bot.set change global rows (capi_settings, wa_bot_settings)
+// that every company shares, so they are Master-only. The D1 tests exercise
+// both the 401 path and the global-vs-company boundary.
 //
 // Sending, the same event the bots send (wa-bot-eyad v61 / wa-bot-dubai v58):
 // LeadSubmitted, business_messaging, whatsapp, event_id = lead id, the lead's
@@ -151,12 +153,12 @@ function check(lead: Row | null, company: string | null, nowMs: number, resendUn
 type Actor = Awaited<ReturnType<typeof loadActor>>;
 type Action = (deps: CapiDeps, actor: Actor, p: Row) => Promise<unknown>;
 const ACTIONS: Record<string, Action> = {
-  async config(deps) {
+  async config(deps, actor) {
     const s = await deps.settings();
     return { token: { configured: !!deps.token() }, dataset_id: DATASET_ID, window_days: 7, max_batch: MAX_BATCH,
       // loadActor already verified the session and the metacapi grant; a caller
-      // that reaches config may act.
-      actions_enabled: true,
+      // that reaches config may act (retry). Global settings writes are Master-only.
+      actions_enabled: true, can_manage: actor.company === null,
       ui_recovery_paused: !!s.ui_recovery_paused, manual_send_enabled: s.manual_send_enabled !== false, settings_updated_at: s.updated_at ?? null, settings_updated_by: s.updated_by ?? null };
   },
   async summary(deps, actor) { return deps.summary(actor.company); },
@@ -176,12 +178,16 @@ const ACTIONS: Record<string, Action> = {
   },
   async bots(deps) { return { bots: await deps.bots() }; },
   // The existing bots' switch for sending LeadSubmitted when a lead is created.
+  // wa_bot_settings rows are global (shared by every company), so Master only.
   async "bot.set"(deps, actor, p) {
+    if (actor.company !== null) throw new Fail(403, "Only Master can change global Meta CAPI settings");
     if (!BOT_NAMES.includes(p.bot) || typeof p.enabled !== "boolean") throw new Fail(422, `bot must be one of ${BOT_NAMES.join(", ")} and enabled true or false`);
     if (!(await deps.setBot(p.bot, p.enabled))) throw new Fail(404, "Bot settings not found");
     return { bots: await deps.bots() };
   },
+  // The single capi_settings row is global (shared by every company), so Master only.
   async "settings.set"(deps, actor, p) {
+    if (actor.company !== null) throw new Fail(403, "Only Master can change global Meta CAPI settings");
     const has = (k: string) => typeof p[k] === "boolean";
     if (!has("ui_recovery_paused") && !has("manual_send_enabled")) throw new Fail(422, "ui_recovery_paused or manual_send_enabled must be true or false");
     await deps.saveSettings({ ...(has("ui_recovery_paused") ? { ui_recovery_paused: p.ui_recovery_paused } : {}),

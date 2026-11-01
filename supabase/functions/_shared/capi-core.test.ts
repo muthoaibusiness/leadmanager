@@ -116,25 +116,25 @@ test("config reports only whether a token is configured", async () => {
 test("config reports the manual-send switch; settings.set toggles it and persists", async () => {
   const w = world([L("a")]);
   assert.equal((await call(w.deps, "config")).body.data.manual_send_enabled, true, "defaults on (existing behavior unchanged)");
-  const r = await call(w.deps, "settings.set", { manual_send_enabled: false });
+  const r = await call(w.deps, "settings.set", { manual_send_enabled: false }, "master");
   assert.equal(r.status, 200);
   assert.equal(r.body.data.manual_send_enabled, false);
   assert.equal(w.settings.manual_send_enabled, false, "persisted");
   assert.equal((await call(w.deps, "config")).body.data.manual_send_enabled, false);
-  assert.equal((await call(w.deps, "settings.set", { manual_send_enabled: true })).body.data.manual_send_enabled, true);
+  assert.equal((await call(w.deps, "settings.set", { manual_send_enabled: true }, "master")).body.data.manual_send_enabled, true);
 });
 
 test("settings.set still only accepts booleans and requires at least one known field", async () => {
   const w = world([]);
   for (const p of [{ ui_recovery_paused: "yes" }, { manual_send_enabled: "off" }, {}]) {
-    assert.equal((await call(w.deps, "settings.set", p)).status, 422, JSON.stringify(p));
+    assert.equal((await call(w.deps, "settings.set", p, "master")).status, 422, JSON.stringify(p));
   }
   assert.equal(w.settings.manual_send_enabled, undefined, "nothing written for a bad toggle");
 });
 
 test("manual send off refuses a confirmed retry and sends nothing; preview still works", async () => {
   const w = world([L("a")]);
-  await call(w.deps, "settings.set", { manual_send_enabled: false });
+  await call(w.deps, "settings.set", { manual_send_enabled: false }, "master");
   const pre = await call(w.deps, "retry", { lead_ids: ["a"] });
   assert.equal(pre.status, 200); assert.equal(pre.body.data.preview.eligible, 1); // preview (read-only) still works
   const r = await call(w.deps, "retry", { lead_ids: ["a"], confirm: true });
@@ -231,7 +231,7 @@ test("a batch is capped, ids must be distinct, and recovery can be paused", asyn
   const w = world(Array.from({ length: 60 }, (_, i) => L("q" + i)));
   assert.equal((await call(w.deps, "retry", { lead_ids: Array.from({ length: 51 }, (_, i) => "q" + i), confirm: true })).status, 422);
   assert.equal((await call(w.deps, "retry", { lead_ids: ["q1", "q1"], confirm: true })).status, 422);
-  await call(w.deps, "settings.set", { ui_recovery_paused: true });
+  await call(w.deps, "settings.set", { ui_recovery_paused: true }, "master");
   const r = await call(w.deps, "retry", { lead_ids: ["q1"], confirm: true });
   assert.equal(r.status, 409); assert.match(r.body.error.message, /paused/);
   assert.equal(w.sent.length, 0);
@@ -291,15 +291,20 @@ test("D1: without a verified session every action is refused; nothing is sent", 
   assert.equal(w.sent.length, 0); assert.equal(w.attempts.length, 0); assert.equal(w.settings.ui_recovery_paused, false);
 });
 
-test("D1: a verified, authorized account can send and change settings by default (no env opt-in)", async () => {
+test("a verified Management can send (company-scoped) but cannot change global settings; Master can", async () => {
   const w = world([L("a")]);
   delete (w.deps as any).allowUnverifiedActor;
   const cfg = (await call(w.deps, "config")).body.data;
   assert.equal(cfg.actions_enabled, true, "the page is told it can act");
+  assert.equal(cfg.can_manage, false, "a company Management account cannot change global settings");
   const r = await call(w.deps, "retry", { lead_ids: ["a"], confirm: true });
   assert.equal(r.status, 200); assert.deepEqual(r.body.data.results[0].result, "accepted");
   assert.deepEqual(w.sent.map((b) => b.data[0].event_id), ["a"]);
-  const s = await call(w.deps, "settings.set", { manual_send_enabled: false });
+  // Global settings writes are Master-only: Management is refused (403), not 500.
+  assert.equal((await call(w.deps, "settings.set", { manual_send_enabled: false })).status, 403);
+  assert.equal((await call(w.deps, "bot.set", { bot: "eyad", enabled: false })).status, 403);
+  // Master can change them.
+  const s = await call(w.deps, "settings.set", { manual_send_enabled: false }, "master");
   assert.equal(s.status, 200); assert.equal(s.body.data.manual_send_enabled, false);
 });
 
@@ -379,7 +384,7 @@ test("a lead whose earlier send got no clear answer is held back unless the oper
 test("bots lists the two existing bots' Meta CAPI switch; bot.set persists one and returns both", async () => {
   const w = world([]);
   assert.deepEqual((await call(w.deps, "bots")).body.data.bots.map((b: any) => [b.bot, b.meta_capi_enabled]), [["eyad", true], ["dubai", true]]);
-  const r = await call(w.deps, "bot.set", { bot: "dubai", enabled: false });
+  const r = await call(w.deps, "bot.set", { bot: "dubai", enabled: false }, "master");
   assert.equal(r.status, 200);
   assert.deepEqual(r.body.data.bots.map((b: any) => [b.bot, b.meta_capi_enabled]), [["eyad", true], ["dubai", false]]);
   assert.deepEqual(w.bots.map((b) => b.meta_capi_enabled), [true, false], "persisted");
@@ -388,18 +393,23 @@ test("bots lists the two existing bots' Meta CAPI switch; bot.set persists one a
 test("bot.set refuses an unknown bot or a non-boolean, and changes nothing", async () => {
   const w = world([]);
   for (const p of [{ bot: "new-bot", enabled: false }, { bot: "eyad", enabled: "off" }, { bot: "eyad" }]) {
-    assert.equal((await call(w.deps, "bot.set", p)).status, 422, JSON.stringify(p));
+    assert.equal((await call(w.deps, "bot.set", p, "master")).status, 422, JSON.stringify(p));
   }
   assert.deepEqual(w.bots.map((b) => b.meta_capi_enabled), [true, true]);
 });
 
-test("D1: bot.set requires a verified session; with one a verified admin can change bot switches", async () => {
+test("D1: bot.set requires a verified session; only Master can change the global bot switch", async () => {
   const w = world([]);
   w.deps.verify = async () => { throw Object.assign(new Error("Sign in required"), { status: 401 }); };
   assert.equal((await call(w.deps, "bot.set", { bot: "eyad", enabled: false })).status, 401);
   assert.deepEqual(w.bots.map((b) => b.meta_capi_enabled), [true, true]);
   assert.equal((await call(w.deps, "bots")).status, 401, "reads also need a session");
-  w.deps.verify = async () => ({ id: "mgr", role: "MANAGEMENT", is_active: true, company_id: null, team_id: null, allowed_features: null });
+  // A verified company Management is refused: the switch is a global row.
+  w.deps.verify = async () => ({ id: "mgr", role: "MANAGEMENT", is_active: true, company_id: "c1", team_id: null, allowed_features: null });
+  assert.equal((await call(w.deps, "bot.set", { bot: "eyad", enabled: false })).status, 403);
+  assert.deepEqual(w.bots.map((b) => b.meta_capi_enabled), [true, true]);
+  // Master can change it.
+  w.deps.verify = async () => ({ id: "master", role: "MASTER", is_active: true, company_id: null, team_id: null, allowed_features: null });
   const r = await call(w.deps, "bot.set", { bot: "eyad", enabled: false });
   assert.equal(r.status, 200); assert.equal(r.body.data.bots.find((b: any) => b.bot === "eyad").meta_capi_enabled, false);
 });

@@ -73,7 +73,7 @@ const pageCalls = [];
 let historyGate = null; // a promise the history call waits on, to see its loading state
 const deps = {
   now: () => NOW, token: () => TOKEN,
-  async user(id) { return id === "mgr" ? { id, role: "MANAGEMENT", is_active: true, company_id: "c1", allowed_features: null } : null; },
+  async user(id) { return id === "mgr" ? { id, role: "MASTER", is_active: true, company_id: null, allowed_features: null } : null; },
   async lead(id) { const l = leads.find((x) => x.id === id); return l ? { id: l.id, company_id: l.company_id, created_at: l.created_at, ctwa_clid: l.ctwa_clid, capi_status_column: l.CAPI_STATUS, qualified: l.qualified !== false, unsure: unsureOf(l.id) } : null; },
   async page(q) {
     pageCalls.push(q);
