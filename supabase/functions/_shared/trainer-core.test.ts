@@ -218,6 +218,14 @@ test("runTurn: wants a person gives handoff without model", async () => {
   assert.equal(r.handoff, true); assert.equal(s.calls.length, 0); assert.ok(!/informed/i.test(r.reply));
 });
 
+test("runTurn: a contact availability question (কখন ও কিভাবে কথা বলতে পারবো) gets a direct answer, never a meeting offer or generic handoff", async () => {
+  const s = stub();
+  const r = await runTurn({ content: CONTENT, bot: "eyad", text: "কখন ও কিভাবে কথা বলতে পারবো?", history: [], state: emptyState(), ad: { isAd: false }, returning: false, ports: s.ports });
+  assert.equal(r.handoff, false); assert.equal(s.calls.length, 0);
+  assert.ok(!/meeting|মিটিং সেট/i.test(r.reply), `no meeting setup offer: ${r.reply}`);
+  assert.ok(/এখনই এই চ্যাটেই কথা বলতে পারবেন/.test(r.reply), `direct chat answer: ${r.reply}`);
+});
+
 test("runTurn: carries project in state across turns", async () => {
   const s = stub(out({ reply: "Nuznan Jolshiri te", project_ref: "p-nuz", used_item_ids: ["f1"] }), out({ reply: "Sector 16, Jolshiri Abashon", project_ref: "p-nuz" }));
   const t1 = await runTurn({ content: CONTENT, bot: "eyad", text: "nuznan kothay?", history: [], state: emptyState(), ad: { isAd: false }, returning: false, ports: s.ports });

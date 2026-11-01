@@ -21,7 +21,7 @@ export default function useCampaignData() {
     try {
       const [leads, preleads] = await Promise.all([
         sbGetAll(`leads?select=*&${like}&order=created_at.asc${co}`),
-        sbGetAll(`preleads?select=id,phone,WA,created_at,flow_stage,takeover,forwarded,property_interest&${like}&order=created_at.asc`),
+        sbGetAll(`preleads?select=id,phone,WA,created_at,flow_stage,takeover,forwarded,property_interest&${like}&order=created_at.asc${co}`),
       ]);
       if (alive.current) setState({ leads, preleads, loading: false, error: '', at: new Date() });
     } catch (e) {

@@ -67,6 +67,23 @@ test("changing the prompt changes what the model is asked, and the trace names t
   assert.equal(none.trace.system_prompt, null);
 });
 
+test("ad attribution reaches the model prompt (issue 4): the ad text is stated, not just used to resolve the project", () => {
+  const p = buildPrompt(BASE, "eyad", [], "shop ki ache?", emptyState(), ["p-nuz"], "banglish", undefined, undefined, undefined, { isAd: true, adText: "লোহাগাড়া শপ বুকিং" });
+  assert.ok(p.system.includes("reached you through an ad: লোহাগাড়া শপ বুকিং"));
+  assert.ok(p.system.includes("Keep answers about the project/area that ad pointed at"));
+  // No ad ⇒ no attribution line.
+  const plain = buildPrompt(BASE, "eyad", [], "shop ki ache?", emptyState(), ["p-nuz"], "banglish");
+  assert.ok(!plain.system.includes("reached you through an ad"));
+});
+
+test("runTurn threads the ad into the model call, not just project resolution", async () => {
+  const calls: any[] = [];
+  const ports = { callModel: async (req: any) => { calls.push(req); return { ok: true as const, text: JSON.stringify({ intent: "info", project_ref: "p-nuz", language: "bn", reply: "এখানে শপ আছে", media: [], handoff: false, asked: [], used_item_ids: ["f1"], clarify: false }), cost_usd: 0 }; } };
+  const r = await runTurn({ content: BASE, bot: "eyad", text: "আমি দোকান চাই", history: [], state: emptyState(), ad: { isAd: true, adText: "লোহাগাড়া শপ বুকিং" }, returning: false, ports });
+  assert.ok(calls.length === 1);
+  assert.ok(calls[0].system.includes("লোহাগাড়া শপ বুকিং"), "ad text must appear in the system prompt sent to the model");
+});
+
 test("limits and stats: characters and an approximate token count", () => {
   assert.equal(promptLimits.maxChars, 12000);
   const st = promptStats("Hello world. আসসালামু আলাইকুম");

@@ -1,18 +1,24 @@
-// The scripted Citizen Avenue lead flow, shared by the Dubai bot (every contact)
-// and the Eyad bot (contacts who come in for Citizen Avenue). The pure pieces —
-// stages, texts, matchers — live in dubai-flow.ts (Node-tested); this file is
-// the part that talks to Wasender and the preleads table. The caller owns what
-// differs between the bots: the auto-forward (Dubai only), the AI reply and the
-// closing note (the cron).
+// The scripted project lead flow, shared by every customer conversation on
+// both WhatsApp numbers (Dubai and Eyad) and every project (Citizen Avenue,
+// Jolshiri, …). The pure pieces — stages, texts, matchers, per-project flow
+// config — live in dubai-flow.ts (Node-tested); this file is the part that
+// talks to Wasender and the preleads table. The caller owns what differs
+// between bots: the auto-forward (Dubai only), the AI reply and the closing
+// note (the cron). Which project's script runs is decided by the config the
+// caller passes; every project funnels through this same engine, so the same
+// intent is answered identically regardless of which number the customer
+// messaged.
 //
-// Each step moves the contact's flow_stage forward with an atomic PATCH before
-// sending, so a duplicate webhook delivery claims nothing and sends nothing.
+// Each step moves the contact's flow_stage forward with an atomic PATCH
+// before sending, so a duplicate webhook delivery claims nothing and sends
+// nothing.
 
 import { SUPABASE_URL, SERVICE_KEY, sendWaMessageMirrored } from "./wa.ts";
 import { isPriceQuestion } from "./ai.ts";
 import {
-  DUBAI_STAGE, DOCS_ASK_PREFIX, DUBAI_PRICE_TEXT, isFloorPlanAsk, isLocationAsk, locationText,
-  floorPlanPlan, brochureItem, brochureAskText, consentsTo, refuses, shouldCitizenGreet, type DocItem, type DocsProject,
+  CITIZEN_FLOW, isLocationAsk, locationText, floorPlanPlan,
+  consentsTo, refuses, isPlainSmallTalk,
+  type FlowCfg, type DocItem, type DocsProject, type ProjectRow,
 } from "./dubai-flow.ts";
 
 export interface CitizenCtx {
@@ -33,11 +39,22 @@ export interface CitizenCtx {
   takeover: boolean;
   msgCount: number;
   project: DocsProject | null;
+  projects?: ProjectRow[]; // full catalog; needed for multi-project bundles (Jolshiri)
   greetingEnabled: boolean;
   greetingText: string;
+  // The per-project flow config; defaults to Citizen.
+  cfg?: FlowCfg;
   // True when the caller's AI/FAQ branch will answer this same message, so the
   // greeting must stand down (one inbound → one response).
   aiWillAnswer?: boolean;
+  // True when the caller's AI/FAQ agent is enabled; a substantive question then
+  // belongs to that agent and the greeting stands down too (greeting only ever
+  // answers a plain opening).
+  faqAgentEnabled?: boolean;
+  // The merged FAQ/AI answerer: owned by the flow, so a substantive question
+  // gets exactly one response (the greeting never doubles with it). Passed by
+  // the caller; undefined when the agent is off or the message is an opening.
+  faq?: () => Promise<unknown>;
   // The inbound wa_messages id this turn answers, linked on every outbound send.
   replyToMessageId?: string;
 }
@@ -64,8 +81,17 @@ async function claim(filter: string, patch: Record<string, unknown>): Promise<bo
 }
 const patchQuiet = async (filter: string, patch: Record<string, unknown>) => { await claim(filter, patch); };
 
+// The consent check for a config step: its own override, else the shared
+// quote-prefix / affirmative matcher.
+const consent = (cfg: FlowCfg["docs"] | NonNullable<FlowCfg["brochure"]> | NonNullable<FlowCfg["agentConsent"]>, text: string, quoted: string | undefined): boolean => {
+  if ("consent" in cfg && cfg.consent) return cfg.consent(text, quoted);
+  const prefix = "askQuotePrefix" in cfg ? (cfg.askQuotePrefix as string) : "";
+  return consentsTo(text, quoted, prefix);
+};
+
 // Returns true when it fully handled this message (the caller stops there).
 export async function runCitizenFlow(c: CitizenCtx): Promise<boolean> {
+  const cfg: FlowCfg = c.cfg ?? CITIZEN_FLOW;
   const now = () => new Date().toISOString();
   const send = (msg: Parameters<typeof sendWaMessageMirrored>[4]) =>
     sendWaMessageMirrored(c.bot, c.waTo, c.convId, c.phone, msg, { replyToMessageId: c.replyToMessageId });
@@ -73,94 +99,125 @@ export async function runCitizenFlow(c: CitizenCtx): Promise<boolean> {
   const row = (stage: string) => `id=eq.${c.pid}&flow_stage=eq.${stage}`;
   const text = c.text;
 
-  // A second opening message (a button plus a voice note) lands seconds after
-  // the first: part of the same opening, so it must not cancel the follow-up.
-  if (!c.isNew && c.stage === DUBAI_STAGE.greeted && c.stageAt && Date.now() - Date.parse(c.stageAt) < 60_000) {
-    await patchQuiet(row(DUBAI_STAGE.greeted), { stage_msg_count: c.msgCount });
+  // Duplicate webhook deliveries of the same inbound must not produce a second
+  // response: once this message already has an outbound linked to it, cede.
+  if (c.replyToMessageId) {
+    const already = await select(`wa_messages?reply_to_message_id=eq.${encodeURIComponent(c.replyToMessageId)}&select=id&limit=1`);
+    if (already.length) return true;
   }
 
-  // 2. Greeting; it starts the 10-minute clock. Only when no substantive handler
-  // below (floor plan, price, location, or the caller's AI reply) will answer the
-  // same message — otherwise one inbound gets two logical responses. The stage
-  // moves only once the greeting really went out, so a failed send is retried on
-  // the next message.
-  if (shouldCitizenGreet({
-    starting: c.starting, greetingEnabled: c.greetingEnabled, takeover: c.takeover,
-    text: c.text, assigned: c.assigned,
-    floorPlanAvailable: floorPlanPlan(c.project).length > 0,
-    locationAvailable: !!locationText(c.project),
+  // A second opening message (a button plus a voice note) lands seconds after
+  // the first: part of the same opening, so it must not cancel the follow-up.
+  if (!c.isNew && c.stage === cfg.stages.greeted && c.stageAt && Date.now() - Date.parse(c.stageAt) < 60_000) {
+    await patchQuiet(row(cfg.stages.greeted), { stage_msg_count: c.msgCount });
+  }
+
+  // 2. Greeting; it starts the flow's clock. Only when no substantive handler
+  // below (docs offer, price, location, or the caller's AI reply) will answer
+  // the same message — otherwise one inbound gets two logical responses. The
+  // stage moves only once the greeting really went out, so a failed send is
+  // retried on the next message.
+  const locationAvailable = !!cfg.location && !!locationText(c.project);
+  const floorPlanAvailable = floorPlanPlan(c.project).length > 0;
+  const greetingSuppressed = cfg.greetingSuppressed({
+    faqAgentEnabled: !!c.faqAgentEnabled,
     aiWillAnswer: !!c.aiWillAnswer,
-  })) {
+    text: c.text,
+    assigned: c.assigned,
+    locationAvailable,
+    floorPlanAvailable,
+  });
+  if (c.starting && c.greetingEnabled && !c.takeover && !greetingSuppressed) {
     const ok = await send({ type: "text", text: c.greetingText });
-    if (ok) await patchQuiet(`id=eq.${c.pid}`, { flow_stage: DUBAI_STAGE.greeted, stage_at: now(), stage_msg_count: c.msgCount });
+    if (ok) await patchQuiet(`id=eq.${c.pid}`, { flow_stage: cfg.stages.greeted, stage_at: now(), stage_msg_count: c.msgCount });
     else console.error(`citizen-flow(${c.bot}): greeting failed for`, c.phone);
   }
 
-  // 5. "yes" to the floor plan / video offer → send them at once, then ask about the brochure.
-  if (!c.isNew && !c.takeover && c.stage === DUBAI_STAGE.askedDocs && text) {
+  // 5. "yes" to the docs offer (floor plan / video for Citizen, the profile
+  // bundle for Jolshiri) → send them at once, then ask about the brochure
+  // (Citizen only). A refusal closes the flow.
+  if (!c.isNew && !c.takeover && c.stage === cfg.stages.askedDocs && text) {
     if (refuses(text)) {
-      await patchQuiet(row(DUBAI_STAGE.askedDocs), { flow_stage: DUBAI_STAGE.done, stage_at: now(), stage_msg_count: c.msgCount });
+      await patchQuiet(row(cfg.stages.askedDocs), { flow_stage: cfg.stages.done, stage_at: now(), stage_msg_count: c.msgCount });
       return true;
     }
-    if (consentsTo(text, c.quoted, DOCS_ASK_PREFIX)) {
-      if (await claim(row(DUBAI_STAGE.askedDocs), { flow_stage: DUBAI_STAGE.askedBrochure, stage_at: now(), stage_msg_count: c.msgCount })) {
-        await sendFloorPlanThenBrochureAsk(true);
+    if (consent(cfg.docs, text, c.quoted)) {
+      const next = cfg.docs.askBrochure ? cfg.stages.askedBrochure : cfg.stages.brochureSent;
+      if (await claim(row(cfg.stages.askedDocs), { flow_stage: next, stage_at: now(), stage_msg_count: c.msgCount })) {
+        await sendDocsThenMaybeBrochureAsk(true);
       }
       return true;
     }
   }
 
-  // 6. "yes" to the brochure question → send it.
-  if (!c.isNew && !c.takeover && c.stage === DUBAI_STAGE.askedBrochure && text) {
+  // 6. "yes" to the brochure question (Citizen) → send it. The same brochure
+  // is never resent: if it already went out in this conversation (a previous
+  // "yes", or the ad's direct trigger) the consent is still honoured and the
+  // stage moves, but no duplicate copy is sent.
+  if (!c.isNew && !c.takeover && cfg.brochure && c.stage === cfg.stages.askedBrochure && text) {
     if (refuses(text)) {
-      await patchQuiet(row(DUBAI_STAGE.askedBrochure), { flow_stage: DUBAI_STAGE.done, stage_at: now(), stage_msg_count: c.msgCount });
+      await patchQuiet(row(cfg.stages.askedBrochure), { flow_stage: cfg.stages.done, stage_at: now(), stage_msg_count: c.msgCount });
       return true;
     }
-    if (consentsTo(text, c.quoted, DOCS_ASK_PREFIX)) {
-      const got = await claim(row(DUBAI_STAGE.askedBrochure), { flow_stage: DUBAI_STAGE.brochureSent, stage_at: now(), stage_msg_count: c.msgCount });
-      const b = got ? brochureItem(c.project) : null;
-      if (b) await sendItem(b);
+    if (consent(cfg.brochure, text, c.quoted)) {
+      const got = await claim(row(cfg.stages.askedBrochure), { flow_stage: cfg.stages.brochureSent, stage_at: now(), stage_msg_count: c.msgCount });
+      const b = got ? cfg.brochure.sendOnYes(c.project) : null;
+      if (b) {
+        const sent = await select(`wa_messages?conversation_id=eq.${encodeURIComponent(c.convId)}&direction=eq.OUT&body=like.${encodeURIComponent(`%${b.fileName}%`)}&select=id&limit=1`);
+        if (!sent.length) await sendItem(b);
+      }
       return true;
     }
   }
 
-  // 7. Someone who asks for the floor plan themselves gets it now (the ad's
-  // floor-plan button counts). Once per contact: the video message in the thread
-  // is the marker that it already went out.
-  if (!c.takeover && text && isFloorPlanAsk(text) && floorPlanPlan(c.project).length) {
+  // 7. Someone who asks for the docs themselves (the ad's floor-plan button
+  // for Citizen) gets them now. Once per contact: the video message in the
+  // thread is the marker that it already went out. Jolshiri has no direct
+  // trigger — its offer is the cron's; a project-naming message belongs to
+  // the FAQ agent below.
+  if (cfg === CITIZEN_FLOW && !c.takeover && text && /floor\s*-?\s*plan|ফ্লোর\s*প্ল্যান|ফ্লোর\s*প্লান|ফ্লোর\s*লে\s*আউট|ফ্লোর\s*ডিজাইন/i.test(text) && floorPlanPlan(c.project).length) {
     const sent = await select(`wa_messages?conversation_id=eq.${encodeURIComponent(c.convId)}&direction=eq.OUT&body=like.Project%20video*&select=id&limit=1`);
-    const inFlow = ["", DUBAI_STAGE.greeted, DUBAI_STAGE.askedDocs].includes(c.stage);
+    const inFlow = ["", cfg.stages.greeted, cfg.stages.askedDocs].includes(c.stage);
     let go = false;
     if (!sent.length) {
       go = !inFlow ? true : await claim(`id=eq.${c.pid}&${c.stage ? `flow_stage=eq.${c.stage}` : "flow_stage=is.null"}`,
-        { flow_stage: DUBAI_STAGE.askedBrochure, stage_at: now(), stage_msg_count: c.msgCount });
+        { flow_stage: cfg.stages.askedBrochure, stage_at: now(), stage_msg_count: c.msgCount });
     }
     if (go) {
       if (c.starting) await wait(5500); // after the greeting
-      await sendFloorPlanThenBrochureAsk(inFlow);
+      await sendDocsThenMaybeBrochureAsk(inFlow);
     }
     return true;
   }
 
-  // 8. A price question: the catalog has no price, so point to the consultant
-  // already assigned (only where one really is). Once per contact.
-  if (c.assigned && !c.takeover && text && isPriceQuestion(text)) {
-    const said = await select(`wa_messages?conversation_id=eq.${encodeURIComponent(c.convId)}&direction=eq.OUT&body=eq.${encodeURIComponent(DUBAI_PRICE_TEXT)}&select=id&limit=1`);
-    if (!said.length) await send({ type: "text", text: DUBAI_PRICE_TEXT });
+  // 8. A price question. Citizen: point to the consultant already assigned
+  // (only where one really is). Jolshiri: offer a dedicated agent (flow jumps
+  // to the agent stage). Once per contact.
+  const priceFires = cfg.price.mode === "assigned" ? c.assigned : true;
+  if (priceFires && !c.takeover && text && isPriceQuestion(text)) {
+    const said = await select(`wa_messages?conversation_id=eq.${encodeURIComponent(c.convId)}&direction=eq.OUT&body=eq.${encodeURIComponent(cfg.price.text)}&select=id&limit=1`);
+    if (!said.length) {
+      if (cfg.price.mode === "agent") {
+        // claim the agent offer stage so a "yes" here is recognized next turn
+        await patchQuiet(`id=eq.${c.pid}${c.stage ? `&flow_stage=eq.${c.stage}` : ""}`,
+          { flow_stage: cfg.agentConsent?.stage ?? cfg.stages.done, stage_at: now(), stage_msg_count: c.msgCount });
+      }
+      await send({ type: "text", text: cfg.price.text });
+    }
     return true;
   }
 
-  // 9. Where is the project: the catalog's address and map link, then the map
-  // picture when the project has one. Each goes once per contact.
-  if (!c.takeover && text && isLocationAsk(text)) {
+  // 9. Where is the project (Citizen only): the catalog's address and map link.
+  if (cfg.location && !c.takeover && text && isLocationAsk(text)) {
     const loc = locationText(c.project);
     if (loc) {
       const convQ = encodeURIComponent(c.convId);
       const said = await select(`wa_messages?conversation_id=eq.${convQ}&direction=eq.OUT&body=eq.${encodeURIComponent(loc)}&select=id&limit=1`);
       let sentSomething = false;
       if (!said.length) { await send({ type: "text", text: loc }); sentSomething = true; }
+      // Then the map picture, when the project has one. Each goes once per contact.
       const mapUrl = String(c.project?.map_image_url || "");
-      if (/^https:\/\//.test(mapUrl)) {
+      if (mapUrl.startsWith("https://")) {
         const shown = await select(`wa_messages?conversation_id=eq.${convQ}&direction=eq.OUT&media_url=eq.${encodeURIComponent(mapUrl)}&select=id&limit=1`);
         if (!shown.length) {
           if (sentSomething) await wait(5500);
@@ -171,23 +228,51 @@ export async function runCitizenFlow(c: CitizenCtx): Promise<boolean> {
     }
   }
 
+  // 10. "yes" to the dedicated-agent offer (Jolshiri stage 4) → ack and close.
+  if (cfg.agentConsent && !c.isNew && !c.takeover && c.stage === cfg.agentConsent.stage && text) {
+    if (refuses(text)) {
+      await patchQuiet(row(cfg.agentConsent.stage), { flow_stage: cfg.stages.done, stage_at: now(), stage_msg_count: c.msgCount });
+      return true;
+    }
+    if (consent(cfg.agentConsent, text, c.quoted)) {
+      await claim(row(cfg.agentConsent.stage), { flow_stage: cfg.agentConsent.doneStage, stage_at: now(), stage_msg_count: c.msgCount });
+      await send({ type: "text", text: cfg.agentConsent.ackText });
+      return true;
+    }
+  }
+
+  // 11. Any substantive question no scripted handler answered belongs to the FAQ
+  // agent — the single owner for it. The greeting already stood down, so this is
+  // the only response this inbound gets.
+  if (c.faqAgentEnabled && !isPlainSmallTalk(text) && c.faq) {
+    await c.faq();
+    return true;
+  }
+
   return false;
 
-  // Floor plan + video, then the brochure question (when the project has a
-  // brochure). `advance` is false for a contact who is past the offer stages.
-  async function sendFloorPlanThenBrochureAsk(advance: boolean) {
-    const items = floorPlanPlan(c.project);
+  // Docs (floor plan + video / profile bundle), then the brochure question when
+  // the project has one and the config asks it. `advance` is false for a
+  // contact who is past the offer stages.
+  async function sendDocsThenMaybeBrochureAsk(advance: boolean) {
+    const items = cfg.docs.sendOnYes(c.project, c.projects ?? []);
     for (let i = 0; i < items.length; i++) {
       if (i) await wait(5500);
       await sendItem(items[i]);
     }
     if (!advance) return;
-    if (c.project && brochureItem(c.project)) {
-      await wait(5500);
-      await send({ type: "text", text: brochureAskText(c.project) });
-      await patchQuiet(row(DUBAI_STAGE.askedBrochure), { stage_at: now() });
+    if (cfg.docs.askBrochure && cfg.brochure && c.project && cfg.brochure.askText(c.project)) {
+      // Never re-offer the same project's brochure: once its question (or the
+      // brochure itself) has gone out in this conversation, don't ask again.
+      const ask = cfg.brochure.askText(c.project);
+      const asked = await select(`wa_messages?conversation_id=eq.${encodeURIComponent(c.convId)}&direction=eq.OUT&body=eq.${encodeURIComponent(ask)}&select=id&limit=1`);
+      if (!asked.length) {
+        await wait(5500);
+        await send({ type: "text", text: ask });
+        await patchQuiet(row(cfg.stages.askedBrochure), { stage_at: now() });
+      }
     } else {
-      await patchQuiet(row(DUBAI_STAGE.askedBrochure), { flow_stage: DUBAI_STAGE.done, stage_at: now() });
+      await patchQuiet(row(cfg.stages.askedBrochure), { flow_stage: cfg.stages.done, stage_at: now(), stage_msg_count: c.msgCount });
     }
   }
 }

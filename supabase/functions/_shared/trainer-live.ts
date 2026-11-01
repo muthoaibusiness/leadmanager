@@ -47,6 +47,12 @@ export type LiveInput = {
   // skipped and the AI-replies switch (faq_agent_enabled) gates sends instead.
   // Pause and agent-takeover are still enforced by isPaused.
   allowNonTest?: boolean;
+  // A published snapshot (ai_snapshots.content) pre-resolved from the bot's
+  // pointer, with its checksum. When present the turn runs over the frozen
+  // content — never the live drafts — so production answers exactly what was
+  // certified by the snapshot's test run. The caller owns the core-version
+  // compatibility gate (see loadPublishedSnapshot in trainer-deno.ts).
+  publishedContent?: { content: SnapshotContent; checksum: string };
 };
 export type LiveResult = { outcome: string; turnId: string | null; sent: number; blocked?: string };
 
@@ -118,18 +124,28 @@ export async function runTestTurn(a: LiveInput, ports: LivePorts): Promise<LiveR
       await finish("blocked_not_test_number", { phone_key: phoneKey(a.phone) });
       return { outcome: "blocked_not_test_number", turnId, sent: 0, blocked: "not a test number" };
     }
-    const rows = (await ports.select("ai_trainer_items?status=eq.active&select=*")) as ItemRow[];
-    const frozen = freezeContent(rows, { reply_model: a.replyModel, max_tokens: REPLY_LIMITS.max_tokens, rubric_version: 1 });
-    const errors = frozen.errors;
-    // The bot's published System Prompt only (migration 0046); a draft never
-    // reaches a WhatsApp chat, even a test number's.
-    const ptr = (await ports.select(`ai_system_prompt_pointers?bot=eq.${a.bot}&company_id=eq.c1&select=prompt_id`).catch(() => []))[0];
-    const sp = ptr?.prompt_id ? (await ports.select(`ai_system_prompts?id=eq.${encodeURIComponent(ptr.prompt_id)}&status=eq.published&select=id,version_no,sha256,body`).catch(() => []))[0] : null;
-    const content = withSystemPrompt(frozen.content, sp ? { [a.bot]: sp } : {});
-    const checksum = await checksumOf(content);
-    if (errors.length) {
-      await finish("blocked_draft_errors", { errors }, { snapshot_checksum: checksum });
-      return { outcome: "blocked_draft_errors", turnId, sent: 0, blocked: "drafts have errors" };
+    // Production path: run the published snapshot the caller resolved (the
+    // frozen content, already checksummed). Test path: freeze the live drafts
+    // and apply the published System Prompt, as the Playground does.
+    let content: SnapshotContent;
+    let checksum: string;
+    if (a.publishedContent) {
+      content = a.publishedContent.content;
+      checksum = a.publishedContent.checksum;
+    } else {
+      const rows = (await ports.select("ai_trainer_items?status=eq.active&select=*")) as ItemRow[];
+      const frozen = freezeContent(rows, { reply_model: a.replyModel, max_tokens: REPLY_LIMITS.max_tokens, rubric_version: 1 });
+      const errors = frozen.errors;
+      // The bot's published System Prompt only (migration 0046); a draft never
+      // reaches a WhatsApp chat, even a test number's.
+      const ptr = (await ports.select(`ai_system_prompt_pointers?bot=eq.${a.bot}&company_id=eq.c1&select=prompt_id`).catch(() => []))[0];
+      const sp = ptr?.prompt_id ? (await ports.select(`ai_system_prompts?id=eq.${encodeURIComponent(ptr.prompt_id)}&status=eq.published&select=id,version_no,sha256,body`).catch(() => []))[0] : null;
+      content = withSystemPrompt(frozen.content, sp ? { [a.bot]: sp } : {});
+      checksum = await checksumOf(content);
+      if (errors.length) {
+        await finish("blocked_draft_errors", { errors }, { snapshot_checksum: checksum });
+        return { outcome: "blocked_draft_errors", turnId, sent: 0, blocked: "drafts have errors" };
+      }
     }
     // History excludes the message being answered: wa-webhook may already have
     // mirrored it, and it reaches the model separately as the customer message.

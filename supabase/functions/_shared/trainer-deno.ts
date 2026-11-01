@@ -4,7 +4,7 @@
 // trainer-handler.ts / trainer-core.ts / trainer-live.ts.
 import { _internals, type Db, type Llm } from "./trainer-handler.ts";
 import { runTestTurn, type LiveResult } from "./trainer-live.ts";
-import type { Bot } from "./trainer-core.ts";
+import { CORE_VERSION, type Bot, type SnapshotContent } from "./trainer-core.ts";
 import { SUPABASE_URL, SERVICE_KEY, sbSelect, sbUpsert, sendWaMessageMirroredId } from "./wa.ts";
 import { chatCompletion, requestBody, embedRequest, embedWithConfig, type ModelConfig, type ChatRes } from "./trainer-model.ts";
 import { httpProbe } from "./trainer-brochure.ts";
@@ -130,8 +130,40 @@ export const embedder = env.embeddingModel
   }
   : undefined;
 
+// The bot's published snapshot, resolved from its pointer (ai_bot_pointers).
+// Returns the frozen content + checksum only when the pointer is in snapshot
+// mode, the snapshot exists, and its frozen core version equals the current
+// core (so a snapshot whose core is ahead of the deployed runtime never runs).
+// Returns null otherwise — the caller decides the fallback.
+export async function loadPublishedSnapshot(a: { bot: Bot }): Promise<{ content: SnapshotContent; checksum: string } | null> {
+  try {
+    const ptr = (await sbSelect(`ai_bot_pointers?bot=eq.${a.bot}&select=mode,snapshot_id`))[0] ?? null;
+    if (!ptr || ptr.mode !== "snapshot" || !ptr.snapshot_id) return null;
+    const snap = (await sbSelect(`ai_snapshots?id=eq.${encodeURIComponent(ptr.snapshot_id)}&select=content,checksum,core_version_frozen`))[0] ?? null;
+    if (!snap || snap.core_version_frozen !== CORE_VERSION) return null;
+    return { content: snap.content as SnapshotContent, checksum: String(snap.checksum || "") };
+  } catch (e) {
+    console.error("loadPublishedSnapshot error", a.bot, e);
+    return null;
+  }
+}
+
+// The hybrid caller must fall back to the legacy FAQ agent for exactly one
+// trainer outcome: the conversation's published snapshot is missing or
+// core-incompatible, so the trainer could not answer. Every other outcome is
+// final — an answered turn (sent / brochure / handoff), a paused conversation,
+// a blocked test number, or a transient error — and must not send a second,
+// legacy reply. Falling back on those is a fail-open that would (for example)
+// send into a conversation the operator paused.
+export function shouldFallbackToFaq(r: LiveResult): boolean {
+  return r.outcome === "blocked_no_published_snapshot";
+}
+
 // One test-number turn on a bot's real chat. Model calls draw on the trainer's
-// daily budget, like the Playground.
+// daily budget, like the Playground. When `production` is true the turn runs
+// over the published snapshot (via runTestTurn's publishedContent), never the
+// live drafts, and the test-number allow-list is skipped in favour of the
+// AI-replies switch.
 export async function runTrainerTestTurn(a: {
   bot: Bot; convId: string; phone: string; to: string; text: string; ad: { isAd: boolean; adText?: string; project?: string }; allowMedia: boolean; production?: boolean; replyToMessageId?: string;
 }): Promise<LiveResult> {
@@ -141,7 +173,18 @@ export async function runTrainerTestTurn(a: {
   // A failed setup is traced on the turn, never thrown into the bot.
   const searchDocs = await _internals.docSearchPort({ db, llm, env, embedWith } as Parameters<typeof _internals.docSearchPort>[0])
     .catch((e) => async () => { throw e; });
-  return runTestTurn({ ...a, replyModel: env.replyModel, allowNonTest: !!a.production }, {
+  // Production answers run over the published snapshot; a test-number turn
+  // runs over the live drafts. Resolve the snapshot up front so a stale or
+  // core-mismatched publish is surfaced as a blocked turn, never a reply from
+  // content that was never certified.
+  const publishedContent = a.production ? await loadPublishedSnapshot(a) : undefined;
+  // Production without a compatible published snapshot must never answer from
+  // live drafts — the caller (the bot's hybrid FAQ) falls back to the legacy
+  // agent instead. No turn row is written for a snapshot that isn't there.
+  if (a.production && !publishedContent) {
+    return { outcome: "blocked_no_published_snapshot", turnId: null, sent: 0, blocked: "no compatible published snapshot" };
+  }
+  return runTestTurn({ ...a, replyModel: env.replyModel, allowNonTest: !!a.production, publishedContent }, {
     callModel, inventory, searchDocs, probeDocument: probe, probeImage: probe,
     select: db.select, insert: db.insert, patch: db.patch,
     upsert: (table, row) => sbUpsert(table, [row], table === "ai_conversation_state" ? "conversation_id" : "id"),
