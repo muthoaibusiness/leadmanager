@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { freezeContent, resolveProject, emptyState } from "./trainer-core.ts";
+import { freezeContent, resolveProject, emptyState, type ItemRow } from "./trainer-core.ts";
 import { WECON_PROJECTS } from "./fixtures/wecon-projects.ts";
 
 // Project resolution over the real 11 projects and their reviewed aliases.
@@ -70,4 +70,26 @@ test("two projects named in one message both resolve, so the bot asks which one"
 test("a short alias inside another word does not resolve", () => {
   assert.deepEqual(R("osmani hospital er pashe").projects, []);
   assert.deepEqual(R("sapphires are blue").projects, []);
+});
+
+// An ad whose text names an area the project sits in (Citizen is in Lohagara)
+// resolves to that project even though no project alias appears in the ad text.
+// A bare opaque ad id must never resolve to a guess.
+test("an ad naming an area resolves to the single project there", () => {
+  const projects: ItemRow[] = [
+    { id: "p-cit", kind: "project", revision: 1, status: "active", bots: ["eyad", "dubai"], project_ref: null,
+      body: { name: "Wecon Citizen Avenue", region: "Chattogram", area: "লোহাগাড়া", aliases: { en: ["wecon citizen avenue", "citizen avenue"], banglish: ["citizen"], bn: ["সিটিজেন"] }, media: {} } },
+    { id: "p-nuz", kind: "project", revision: 1, status: "active", bots: ["eyad", "dubai"], project_ref: null,
+      body: { name: "Wecon Nuznan", region: "Dhaka", area: "Jolshiri", aliases: { en: ["wecon nuznan"], banglish: ["nuznan"], bn: ["নুজনান"] }, media: {} } },
+  ];
+  const ad = { isAd: true, adText: "লোহাগাড়া শপ বুকিং" };
+  const r = resolveProject("আমি দোকান চাই", emptyState(), ad, projects);
+  assert.deepEqual(r.projects, ["p-cit"]);
+  assert.equal(r.source, "ad");
+});
+test("an opaque ad id with no area match stays unresolved, never guessed", () => {
+  const ad = { isAd: true, adText: "ad_9832" };
+  const r = resolveProject("আমি দোকান চাই", emptyState(), ad, content.projects);
+  assert.deepEqual(r.projects, []);
+  assert.equal(r.ambiguous, false);
 });

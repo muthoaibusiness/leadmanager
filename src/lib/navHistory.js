@@ -20,7 +20,6 @@ export const VIEW_TITLES = {
   bookings: 'Sales Activity',
   team: 'My Team',
   accounts: 'Users',
-  relay: 'WhatsApp Relay',
   aitrainer: 'AI Trainer',
   metacapi: 'Meta CAPI',
   requests: 'Hold Requests',

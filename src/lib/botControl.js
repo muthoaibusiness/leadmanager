@@ -8,7 +8,7 @@ export const BOT_FILTER_ALL = 'all';
 
 // Bots whose production path routes through the AI Trainer and reads the
 // published snapshot. Keep in step with the bot's deploy state.
-export const BOT_READS_POINTER = new Set(['eyad']);
+export const BOT_READS_POINTER = new Set(['eyad', 'dubai']);
 export const botReadsPointer = (bot) => BOT_READS_POINTER.has(bot);
 
 export function filterBots(bots, choice) {

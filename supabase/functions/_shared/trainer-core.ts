@@ -9,6 +9,7 @@
 export const CORE_VERSION = "1.10.0";
 
 import { docExcerpts, type DocHit } from "./trainer-docs.ts";
+import { talkIntentReply } from "./ai.ts";
 import { GENERIC } from "./trainer-words.ts";
 import { inventoryEvidence, type Inventory } from "./trainer-inventory.ts";
 import { afterBrochure, brochureRequest, deliverBrochures, projectWords, type DocMessage, type Probe } from "./trainer-brochure.ts";
@@ -239,6 +240,16 @@ function mentioned(text: string, projects: ItemRow[]): string[] {
 // The projects a text names by alias. Exported for the brochure path.
 export const namedProjects = (text: string, projects: ItemRow[]) => mentioned(text, projects);
 
+// A project's area/address words, for resolving an ad whose text names a place
+// (e.g. an ad for "Lohagara" shop bookings) rather than the project's alias.
+function areaWords(p: ItemRow): string[] {
+  const b = p.body || {};
+  // \p{M} keeps Bangla vowel signs attached, as in mentioned().
+  return [b.address, b.region, Array.isArray(b.tags) ? b.tags.join(" ") : "", b.area]
+    .filter((x) => typeof x === "string").flatMap((x) => x.split(/[^\p{L}\p{M}\p{N}]+/u).filter(Boolean))
+    .map(norm).filter((w) => w.length >= 3 && !GENERIC.has(w));
+}
+
 export function resolveProject(
   text: string, state: ConvState, ad: { isAd: boolean; adText?: string }, projects: ItemRow[],
 ): { projects: string[]; source: "explicit" | "state" | "ad" | null; ambiguous: boolean } {
@@ -251,6 +262,14 @@ export function resolveProject(
     const fromAd = mentioned(ad.adText, projects);
     if (fromAd.length === 1) return { projects: fromAd, source: "ad", ambiguous: false };
     if (fromAd.length > 1) return { projects: [], source: null, ambiguous: true };
+    // No project alias in the ad text, but the ad may name an area/place the
+    // project sits in (Lohagara → Citizen Avenue). Match area words in the ad
+    // text; only a single project may win, otherwise stay ambiguous rather than
+    // guess from an opaque ad id.
+    const adWords = norm(ad.adText).split(/[^\p{L}\p{M}\p{N}]+/u).filter(Boolean);
+    const areaHits = projects.filter((p) => areaWords(p).some((w) => adWords.includes(w))).map((p) => p.id);
+    if (areaHits.length === 1) return { projects: areaHits, source: "ad", ambiguous: false };
+    if (areaHits.length > 1) return { projects: [], source: null, ambiguous: true };
   }
   return { projects: [], source: null, ambiguous: false };
 }
@@ -393,6 +412,7 @@ export function livePricesAllowed(c: SnapshotContent, bot: Bot, resolved: string
 export function buildPrompt(
   c: SnapshotContent, bot: Bot, history: Turn[], text: string, state: ConvState, resolved: string[], lang: string, live?: string,
   retrieved?: { items: ItemRow[]; examples: ItemRow[] }, docs?: string,
+  ad?: { isAd: boolean; adText?: string },
 ): { system: string; messages: { role: "user" | "assistant"; content: string }[] } {
   const ctx = retrieved ?? retrieveContext(c, bot, text, resolved);
   const of = (k: Kind) => ctx.items.filter((i) => i.kind === k);
@@ -409,7 +429,10 @@ export function buildPrompt(
     ...c.projects.map((p) => `- [${p.id}] ${p.body.name}${p.body.region ? ` (${p.body.region})` : ""}`),
     "",
     resolvedProjects.length ? "Projects in this conversation:\n" + resolvedProjects.map(projectLine).join("\n") : "No project is resolved yet. If the customer's question needs one, ask which project or area they mean.",
-    "",
+    ...(ad?.isAd && ad.adText ? [
+      `This customer reached you through an ad: ${ad.adText}. Keep answers about the project/area that ad pointed at unless they explicitly name another.`,
+      "",
+    ] : []),
     "Business rules (always follow):",
     ...of("rule").map((r) => `- [${r.id}] ${r.body.name}: when ${r.body.when}; must ${r.body.must}${r.body.must_not ? `; must not ${r.body.must_not}` : ""}${r.body.parameters ? `; parameters ${JSON.stringify(r.body.parameters)}` : ""}`),
     "",
@@ -593,7 +616,11 @@ export const FALLBACK = {
 const GREETING = [/^(hi|hello|hey|salam|assalamu ?alaikum|as-?salamu ?alaikum|good (morning|evening|afternoon)|kemon achen)[\s!.?]*$/i,
   /^(আসসালামু আলাইকুম|সালাম|হাই|হ্যালো|কেমন আছেন)[\s!.?।]*$/];
 const WANTS_PERSON = [/(agent|manush|human|person|consultant).*(kotha|talk|speak)/i, /(kotha|talk|speak).*(agent|manush|human|person)/i,
-  /(এজেন্ট|মানুষ).*কথা/];
+  /(এজেন্ট|মানুষ|কনসালট্যান্ট).*কথা/,
+  // Contact/availability questions — "when & how can I talk" (কখন ও কিভাবে
+  // কথা বলতে পারবো) — are a handoff, not a meeting offer: the customer wants a
+  // person, and the model must not invent a meeting or availability in reply.
+  /কখন.*কথা|কিভাবে.*কথা|কি\s*ভাবে.*কথা|কথা বলতে পারবো|কথা বলবো|(when|how).*(can|will).*(talk|speak|contact)/i];
 
 export async function runTurn(a: {
   content: SnapshotContent; bot: Bot; text: string; history: Turn[]; state: ConvState;
@@ -609,6 +636,13 @@ export async function runTurn(a: {
   if (GREETING.some((g) => g.test(t))) {
     trace.pre = "greeting";
     return { reply: "", media: [], handoff: false, stateNext: base, outcome: a.returning ? "skipped_greeting" : "skipped_greeting_new", trace };
+  }
+  // Direct answer for "when/how can I talk" (কখন/কীভাবে কথা বলতে পারবো):
+  // a grounded answer, never a meeting offer or a generic handoff.
+  const talk = talkIntentReply(a.text);
+  if (talk) {
+    trace.pre = "talk_intent";
+    return { reply: talk.reply, media: [], handoff: false, stateNext: base, outcome: "ok", trace };
   }
   if (WANTS_PERSON.some((g) => g.test(a.text))) {
     trace.pre = "wants_person";
@@ -710,7 +744,7 @@ async function groundedTurn(a: Parameters<typeof runTurn>[0], lang: "bn" | "bang
       trace.documents = docHits.map((h) => ({ id: h.id, document_id: h.document_id, version: h.document_version, chunk_no: h.chunk_no, title: h.title, section: h.section, score: h.score }));
     } catch (e) { trace.documents = { error: e instanceof Error ? e.message : String(e) }; }
   }
-  const prompt = buildPrompt(a.content, a.bot, history, a.text, a.state, res.projects, lang, live, ctx, docExcerpts(docHits));
+  const prompt = buildPrompt(a.content, a.bot, history, a.text, a.state, res.projects, lang, live, ctx, docExcerpts(docHits), a.ad);
   const scoped = [...ctx.items, ...ctx.examples];
   trace.items_in_scope = scoped.map((i) => `${i.id}@${i.revision}`);
   trace.retrieval = ctx.trace;
