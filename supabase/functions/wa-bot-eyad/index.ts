@@ -23,7 +23,7 @@ import {
   CORS, json, SUPABASE_URL, SERVICE_KEY, WASENDER_BASE,
   claimEvent, getCredentials, getActiveProjects, getRecentHistory, sendWaMessageMirrored, getKnowledge, getCorrections,
   findLeadForNote, logNoteActivity, getBotSettings, aiStillOn, verifyWebhook, getProjectBySendCode, fillWelcomeTemplate, fixLeadPhoneFromNote, splitPhoneFromNote,
-  logConversationHistory,
+  logConversationHistory, canonicalConvJid, storedAdContext,
 } from "../_shared/wa.ts";
 import type { BotSettings } from "../_shared/wa.ts";
 import {
@@ -325,6 +325,23 @@ async function handleInbound(p: ParsedEvent): Promise<void> {
   const status = statusRows?.[0] ?? {};
   const msgCount = Array.isArray(status.message_logs) ? status.message_logs.length : 0;
 
+  // ── AI Trainer: the primary responder for every eligible customer text ───
+  // Runs before any legacy/canned flow. When it is eligible, the legacy reply
+  // branches below are skipped, so the AI Trainer is never trumped by a canned
+  // answer; their business side-effects (flow-stage bookkeeping, forwarding,
+  // region sync) still run afterwards. Pause and agent-takeover are enforced
+  // inside the trainer turn.
+  const trainerEligible = !!(settings.faqAgentEnabled && p.text && upsert.takeover !== true && p.remote);
+  // The ad referral rides on the first message only; a customer who clicked an ad
+  // (prelead carries the click id) keeps that ad for every later turn.
+  const runTrainer = async () => {
+    let ad = { isAd: p.isAd, adText: p.adText };
+    if (!ad.isAd && (status.ctwa_clid || status.wa_ad_id)) ad = await storedAdContext(p.phone);
+    const r = await runTrainerTestTurn({ bot: "eyad", convId: `eyad:${p.convJid}`, phone: p.phone, to: p.target, text: p.text,
+      ad, allowMedia: settings.aiMediaEnabled, production: true });
+    console.log("trainer turn", { phone: p.phone, outcome: r.outcome, sent: r.sent, blocked: r.blocked, turnId: r.turnId });
+  };
+
   // ── New Contact? → Welcome ──────────────────────────────────────────────
   // The n8n graph suppressed the welcome whenever should_drip was true (an
   // ad click with a project interest), because that branch went to a drip
@@ -352,7 +369,7 @@ async function handleInbound(p: ParsedEvent): Promise<void> {
     if (upsert.property_interest !== DUBAI_CAMPAIGN_PROJECT) {
       await sbPatchJson("preleads", `id=eq.${encodeURIComponent(preleadId)}`, { property_interest: DUBAI_CAMPAIGN_PROJECT }).catch(() => {});
     }
-    const convId = `eyad:${p.remote}`;
+    const convId = `eyad:${p.convJid}`;
     const takeover = upsert.takeover === true;
     let starting = upsert.is_new === true;
     if (!starting && !stage0 && !takeover) {
@@ -365,25 +382,17 @@ async function handleInbound(p: ParsedEvent): Promise<void> {
       bot: "eyad", assigned: false, pid: encodeURIComponent(preleadId), convId, phone: p.phone, waTo: p.target, text: p.text, quoted: p.quoted,
       isNew: upsert.is_new === true, starting, stage: stage0, stageAt: undefined, takeover, msgCount, project,
       greetingEnabled: settings.welcomeEnabled, greetingText: DUBAI_GREETING_TEXT,
-      aiWillAnswer: !!(settings.faqAgentEnabled && p.text && !takeover && p.remote && !isLandOffer(p.text)
-        && (needsAiReply(p.text, p.isAd || !!p.ctwaClid) || settings.trainerTest)),
+      aiWillAnswer: trainerEligible && !isLandOffer(p.text) && needsAiReply(p.text, !!(p.isAd || status.ctwa_clid || status.wa_ad_id)),
       replyToMessageId: p.deliveryId || undefined,
     });
     if (handled) return;
-    if (settings.faqAgentEnabled && p.text && !takeover && p.remote && !isLandOffer(p.text)
-        && (needsAiReply(p.text, p.isAd || !!p.ctwaClid) || settings.trainerTest)) {
-      if (settings.trainerTest) {
-        const r = await runTrainerTestTurn({ bot: "eyad", convId, phone: p.phone, to: p.target, text: p.text,
-          ad: { isAd: p.isAd, adText: p.adText }, allowMedia: settings.aiMediaEnabled });
-        console.log("trainer test turn", { phone: p.phone, outcome: r.outcome, sent: r.sent, turnId: r.turnId });
-      } else {
-        await runFaqAgent("eyad", p.phone, p.target, p.remote, p.text, {
-          adProject: DUBAI_CAMPAIGN_PROJECT, profilesAlreadySent: true, allowMedia: settings.aiMediaEnabled,
-        });
-      }
-    }
+    // Everything the script does not cover goes to the AI Trainer, but only for an
+    // ad customer's own question (buttons and small talk already have their answer).
+    if (trainerEligible && !isLandOffer(p.text) && needsAiReply(p.text, !!(p.isAd || status.ctwa_clid || status.wa_ad_id))) await runTrainer();
     return; // never auto-forwards from here
   }
+
+  if (trainerEligible) await runTrainer();
 
   // A land seller ("do you buy land in Cox's Bazar?") who happened to click
   // an ad is not a Jolshiri buyer: generic hello, no brochure flow, and the

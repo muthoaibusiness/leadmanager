@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  isForeignNumber, isAdFaqOrSmallTalk, needsAiReply, floorPlanPlan, brochureItem, floorPlanAskText, brochureAskText, consentsTo, refuses, shouldGreet, shouldCitizenGreet,
+  isForeignNumber, isAdFaqOrSmallTalk, needsAiReply, floorPlanPlan, brochureItem, floorPlanAskText, brochureAskText, consentsTo, refuses, shouldGreet, shouldCitizenGreet, isFloorPlanAsk, isLocationAsk, locationText,
   DUBAI_STAGE, DUBAI_STAGES, DOCS_ASK_PREFIX,
 } from "./dubai-flow.ts";
 
@@ -130,4 +130,16 @@ test("stages are distinct from the Eyad flow's, so the two crons never touch eac
   const eyad = ["greeted", "asked_profile", "profile_sent", "asked_agent", "agent_ack", "agent_assigned"];
   for (const s of DUBAI_STAGES) { assert.ok(s.startsWith("dubai_"), s); assert.ok(!eyad.includes(s), s); }
   assert.equal(new Set(DUBAI_STAGES).size, Object.keys(DUBAI_STAGE).length);
+});
+
+test("floor-plan ask: typed in English or Bangla, or the ad button; a payment plan is not one", () => {
+  for (const t of ["ফ্লোর প্ল্যান ও শপের পজিশন দেখতে চাই", "floor plan please", "Send me the floorplan", "ফ্লোর প্ল্যান দেন"]) assert.equal(isFloorPlanAsk(t), true, t);
+  for (const t of ["মূল্য ও পেমেন্ট প্ল্যান জানতে চাই", "price?", "বিস্তারিত জানতে চাই"]) assert.equal(isFloorPlanAsk(t), false, t);
+});
+
+test("location ask: where is the project; office questions are not one; text comes from the catalog", () => {
+  for (const t of ["লোকেশন কোথায় জানান", "মার্কেট কোন খানে হচ্ছে?", "send location", "where is the project"]) assert.equal(isLocationAsk(t), true, t);
+  for (const t of ["সৌদিতে কি আপনাদের অফিস আছে", "দুবাই অফিসের ঠিকানা ও অ্যাপয়েন্টমেন্ট চাই", "price?", "ফ্লোর প্ল্যান দেখতে চাই"]) assert.equal(isLocationAsk(t), false, t);
+  assert.equal(locationText({ name: "Wecon Citizen Avenue", address: "Amirabad, Lohagara, Chattogram", google_map_url: "https://maps.app.goo.gl/x" }), "Wecon Citizen Avenue is located at Amirabad, Lohagara, Chattogram.\nGoogle Map: https://maps.app.goo.gl/x");
+  assert.equal(locationText({ name: "X" }), null);
 });

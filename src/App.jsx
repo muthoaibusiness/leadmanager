@@ -62,6 +62,7 @@ const PAGES = {
   ReportsView: () => import('./components/views/ReportsView.jsx'),
   AgentPerformanceView: () => import('./components/views/AgentPerformanceView.jsx'),
   PerfReportsView: () => import('./components/views/PerfReportsView.jsx'),
+  CampaignView: () => import('./components/views/CampaignView.jsx'),
   InventoryView: () => import('./components/views/InventoryView.jsx'),
   ConversationsView: () => import('./components/views/ConversationsView.jsx'),
 };
@@ -96,7 +97,7 @@ const OVERLAYS = {
 
 const lazyAll = (loaders) => Object.fromEntries(Object.entries(loaders).map(([k, f]) => [k, lazyChunk(f)]));
 
-const { AgentDash, TeamLeadDash, ManagementDash, MasterDash, LeadsView, CalendarView, TeamView, AccountsView, RelayView, AiTrainerView, MetaCapiView, RequestsView, ProfileView, PropertiesView, AvailableUnitsView, BookingsView, PipelineView, ClientsView, ReportsView, AgentPerformanceView, PerfReportsView, InventoryView, ConversationsView } = lazyAll(PAGES);
+const { AgentDash, TeamLeadDash, ManagementDash, MasterDash, LeadsView, CalendarView, TeamView, AccountsView, RelayView, AiTrainerView, MetaCapiView, RequestsView, ProfileView, PropertiesView, AvailableUnitsView, BookingsView, PipelineView, ClientsView, ReportsView, AgentPerformanceView, PerfReportsView, CampaignView, InventoryView, ConversationsView } = lazyAll(PAGES);
 const OVERLAY_COMPONENTS = Object.entries(lazyAll(OVERLAYS));
 const LandingPage = lazyChunk(() => import('./components/LandingPage.jsx'));
 const SignIn1 = lazyChunk(() => import('./components/ui/modern-stunning-sign-in.jsx').then(m => ({ default: m.SignIn1 })));
@@ -274,6 +275,7 @@ function PageHero() {
     reports: { sub: 'Live sales analytics' },
     agentperf: { sub: 'Per-role scorecards & funnels' },
     perfreports: { sub: '' },
+    campaign: { sub: 'Citizen Avenue · Eyad + Dubai' },
     bookings: { sub: 'Payments, instalments & dues' },
     team: { sub: `${teamAgents} agents` },
     accounts: { sub: 'Team list · create & manage accounts' },
@@ -373,6 +375,7 @@ function PageBody() {
   if (view === 'reports') return <ReportsView />;
   if (view === 'agentperf') return <AgentPerformanceView />;
   if (view === 'perfreports') return <PerfReportsView />;
+  if (view === 'campaign') return <CampaignView />;
   if (view === 'team') return <TeamView />;
   if (view === 'accounts') return <AccountsView />;
   if (view === 'relay') return <RelayView />;

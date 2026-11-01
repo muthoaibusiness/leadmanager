@@ -182,7 +182,7 @@ const patchRow = (row: FlowRow, stage: string, count: number) =>
 async function processDubaiGreeted(): Promise<number> {
   const cutoff = new Date(Date.now() - DUBAI_DOCS_WAIT_MS).toISOString();
   const rows = await claimRows(
-    `flow_stage=eq.${DUBAI_STAGE.greeted}&WA=eq.Jaber&stage_at=lte.${encodeURIComponent(cutoff)}&takeover=not.is.true&${DUBAI_COLS}`,
+    `flow_stage=eq.${DUBAI_STAGE.greeted}&WA=in.(Jaber,Eyad)&stage_at=lte.${encodeURIComponent(cutoff)}&takeover=not.is.true&${DUBAI_COLS}`,
     { flow_stage: "dubai_claim_docs" },
   );
   const projects = rows.length ? await getActiveProjects() : [];
@@ -194,10 +194,10 @@ async function processDubaiGreeted(): Promise<number> {
     if (replied || !project) { await patchRow(row, DUBAI_STAGE.done, count); acted++; continue; }
     const fpAsk = floorPlanAskText(project);
     if (fpAsk) {
-      await sendText("dubai", row.phone, fpAsk);
+      await sendText(botFor(row) ?? "dubai", row.phone, fpAsk);
       await patchRow(row, DUBAI_STAGE.askedDocs, count);
     } else if (brochureItem(project)) {
-      await sendText("dubai", row.phone, brochureAskText(project));
+      await sendText(botFor(row) ?? "dubai", row.phone, brochureAskText(project));
       await patchRow(row, DUBAI_STAGE.askedBrochure, count);
     } else {
       await patchRow(row, DUBAI_STAGE.done, count);
@@ -212,7 +212,7 @@ async function processDubaiGreeted(): Promise<number> {
 async function processDubaiAutoSend(): Promise<number> {
   const cutoff = new Date(Date.now() - DUBAI_AUTO_SEND_WAIT_MS).toISOString();
   const rows = await claimRows(
-    `flow_stage=eq.${DUBAI_STAGE.askedDocs}&WA=eq.Jaber&stage_at=lte.${encodeURIComponent(cutoff)}&takeover=not.is.true&${DUBAI_COLS}`,
+    `flow_stage=eq.${DUBAI_STAGE.askedDocs}&WA=in.(Jaber,Eyad)&stage_at=lte.${encodeURIComponent(cutoff)}&takeover=not.is.true&${DUBAI_COLS}`,
     { flow_stage: "dubai_claim_auto" },
   );
   const projects = rows.length ? await getActiveProjects() : [];
@@ -225,11 +225,11 @@ async function processDubaiAutoSend(): Promise<number> {
     const items = floorPlanPlan(project);
     for (let i = 0; i < items.length; i++) {
       if (i) await new Promise((r) => setTimeout(r, 5500));
-      await sendDocItem("dubai", row.phone, items[i]);
+      await sendDocItem(botFor(row) ?? "dubai", row.phone, items[i]);
     }
     if (brochureItem(project)) {
       await new Promise((r) => setTimeout(r, 5500));
-      await sendText("dubai", row.phone, brochureAskText(project));
+      await sendText(botFor(row) ?? "dubai", row.phone, brochureAskText(project));
       await patchRow(row, DUBAI_STAGE.askedBrochure, count);
     } else {
       await patchRow(row, DUBAI_STAGE.done, count);
@@ -243,14 +243,15 @@ async function processDubaiAutoSend(): Promise<number> {
 async function processDubaiFinal(): Promise<number> {
   const cutoff = new Date(Date.now() - DUBAI_FINAL_WAIT_MS).toISOString();
   const rows = await claimRows(
-    `flow_stage=in.(${DUBAI_STAGE.askedBrochure},${DUBAI_STAGE.brochureSent})&WA=eq.Jaber&stage_at=lte.${encodeURIComponent(cutoff)}&takeover=not.is.true&${DUBAI_COLS}`,
+    `flow_stage=in.(${DUBAI_STAGE.askedBrochure},${DUBAI_STAGE.brochureSent})&WA=in.(Jaber,Eyad)&stage_at=lte.${encodeURIComponent(cutoff)}&takeover=not.is.true&${DUBAI_COLS}`,
     { flow_stage: "dubai_claim_final" },
   );
   let acted = 0;
   for (const row of rows) {
     const count = messageCount(row);
     const replied = count - (row.stage_msg_count ?? 0) > 0;
-    if (!replied) await sendText("dubai", row.phone, DUBAI_FINAL_TEXT);
+    // Only the Dubai bot auto-forwards, so only there is a consultant really assigned.
+    if (!replied && botFor(row) === "dubai") await sendText("dubai", row.phone, DUBAI_FINAL_TEXT);
     await patchRow(row, DUBAI_STAGE.done, count);
     acted++;
   }
