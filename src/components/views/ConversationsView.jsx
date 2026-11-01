@@ -10,7 +10,7 @@ import { pushNotify } from '../../lib/pushNotify.js';
 import useChanged from '../../hooks/useChanged.js';
 import {
   waLoadConversations, waLoadMessages, waMarkRead, waSendMessage, waRetry,
-  waSubscribe, matchLead, mergeStatus, isChatAdmin, isLeadAssignedOrForwardedTo, waAiState,
+  waSubscribe, matchLead, mergeStatus, isChatAdmin, waSeesAllChats, isLeadAssignedOrForwardedTo, waAiState,
 } from '../../lib/wa.js';
 
 // How many missing avatars to backfill right after the list loads, enough to
@@ -48,7 +48,7 @@ export default function ConversationsView() {
   }, [dbVersion]);
   // For non-admin agents: only show conversations for leads forwarded or assigned to this agent
   const visibleConvs = useMemo(() => {
-    if (isChatAdmin(user)) return convs;
+    if (waSeesAllChats(user)) return convs;
     return convs.filter(c => {
       const l = c.leadId ? getLead(c.leadId) || matchLead(c, leads) : matchLead(c, leads);
       return isLeadAssignedOrForwardedTo(l, user);

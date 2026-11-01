@@ -11,9 +11,9 @@ import { NAV_META } from '../lib/navMeta.js';
 // Sections render a label + their visible items; a group renders a header that
 // opens/closes its child pages. Visibility is driven by canSee(user, key).
 const SECTIONS = [
-  { label: null, keys: ['dashboard', 'companies', 'reports', 'agentperf', 'perfreports', 'requests'] },
+  { label: null, keys: ['dashboard', 'companies', 'reports', 'agentperf', 'perfreports', 'campaign', 'requests'] },
   { label: 'Sales Team', keys: ['leadsGroup', 'conversations', 'calendar', 'properties'] },
-  { label: 'Admin', keys: ['inventory', 'team', 'accounts', 'relay', 'aitrainer', 'metacapi'] },
+  { label: 'Admin', keys: ['inventory', 'team', 'accounts', 'aitrainer', 'metacapi'] },
 ];
 
 // Collapsible groups. The header only opens/closes; each child is a page, and

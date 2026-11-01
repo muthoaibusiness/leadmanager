@@ -211,6 +211,35 @@ function extractJson(raw: string): AgentReply | null {
   return null;
 }
 
+export type LlmFailureKind = "auth" | "provider" | "parse" | "network";
+export interface LlmFailure {
+  kind: LlmFailureKind;
+  status?: number;
+  message?: string;
+}
+export interface AskAgentIo {
+  fetch?: typeof fetch;
+  record?: (f: LlmFailure) => void | Promise<void>;
+}
+
+// Direct answer for "when/how can I talk" intents (কখন/কীভাবে কথা বলতে পারবো).
+// These were previously answered by the model with generic contact details or a
+// meeting offer instead of a concrete answer. Matched here, with the reply
+// text, so a customer gets a direct, grounded answer and no model call is
+// spent (or a slow generic one sent). Narrow: requires both a talk verb and a
+// when/how cue, so ordinary questions pass through.
+const TALK_INTENT_RE = /কথা বল|কথায়|কথা বলতে|talk/i;
+const TALK_WHEN_RE = /কখন|কবে|when/i;
+const TALK_HOW_RE = /কীভাবে|কিভাবে|কি ভাবে|কেমনে|how/i;
+export function talkIntentReply(text: string): { reply: string } | null {
+  const t = text.trim();
+  if (!TALK_INTENT_RE.test(t)) return null;
+  if (!TALK_WHEN_RE.test(t) && !TALK_HOW_RE.test(t)) return null;
+  return {
+    reply: "আপনি এখনই এই চ্যাটেই কথা বলতে পারবেন। একটি সুনির্দিষ্ট প্রশ্ন করলে আমি সরাসরি উত্তর দেব। আর কোনো সেলস এক্সপার্টের সাথে মিটিং করতে চাইলে সুবিধামতো দিন ও সময় জানালে আমি ব্যবস্থা করে দেব।",
+  };
+}
+
 export async function askAgent(
   history: { role: "user" | "assistant"; text: string }[],
   userText: string,
@@ -218,10 +247,15 @@ export async function askAgent(
   adProject?: string,
   knowledge: { title: string; body: string }[] = [],
   corrections: { customer_message: string; corrected_reply: string }[] = [],
+  io: AskAgentIo = {},
 ): Promise<AgentReply> {
   const apiKey = Deno.env.get("OPENROUTER_API_KEY") ?? "";
+  const record = (f: LlmFailure) => { void io.record?.(f); };
+  const talk = talkIntentReply(userText);
+  if (talk) return { reply: talk.reply, send: null, confident: true };
   if (!apiKey) {
     console.error("askAgent: OPENROUTER_API_KEY not configured");
+    record({ kind: "auth", message: "OPENROUTER_API_KEY not configured" });
     return { reply: "", send: null, confident: false };
   }
 
@@ -232,7 +266,7 @@ export async function askAgent(
   ];
 
   try {
-    const res = await fetch(OPENROUTER_URL, {
+    const res = await (io.fetch ?? fetch)(OPENROUTER_URL, {
       signal: AbortSignal.timeout(30_000),
       method: "POST",
       headers: {
@@ -241,10 +275,12 @@ export async function askAgent(
         "HTTP-Referer": "https://wepro.app",
         "X-Title": "WEPRO WhatsApp Agent",
       },
-      body: JSON.stringify({ model: model(), messages, temperature: 0.2 }),
+      body: JSON.stringify({ model: model(), messages, temperature: 0.2, max_tokens: 400 }),
     });
     if (!res.ok) {
-      console.error("askAgent: OpenRouter error", res.status, await res.text());
+      const text = await res.text();
+      console.error("askAgent: OpenRouter error", res.status, text);
+      record({ kind: "provider", status: res.status, message: text.slice(0, 300) });
       return { reply: "", send: null, confident: false };
     }
     const body = await res.json();
@@ -255,6 +291,7 @@ export async function askAgent(
       // went off-script. Log it, but never forward unparsed content (it may
       // be raw JSON or a stray preamble, not something to show a customer).
       console.error("askAgent: could not extract JSON from model output", content.slice(0, 500));
+      record({ kind: "parse", message: content.slice(0, 300) });
       return { reply: "", send: null, confident: false };
     }
     // One line per decision so a silent thread can be audited from the logs.
@@ -262,6 +299,7 @@ export async function askAgent(
     return parsed;
   } catch (e) {
     console.error("askAgent: request failed", e);
+    record({ kind: "network", message: e instanceof Error ? e.message : String(e) });
     return { reply: "", send: null, confident: false };
   }
 }

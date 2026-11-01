@@ -231,6 +231,24 @@ Deno.serve(async (req) => {
     if (prev && (STATUS_RANK[prev] ?? 0) > STATUS_RANK.SENT) status = prev;
   }
 
+  // A bot send is stored by the bot under Wasender's own numeric message id, and
+  // WhatsApp echoes it back under its real id: same message, different wa_id, so
+  // the unique index does not catch it. Fold the echo into the bot's row (it
+  // then carries the real id for delivery receipts) instead of showing it twice.
+  if (fromMe) {
+    const since = new Date(Date.now() - 5 * 60_000).toISOString();
+    const recent = await sbSelect(
+      `wa_messages?conversation_id=eq.${encodeURIComponent(convId)}&direction=eq.OUT&type=eq.${media.type}&created_at=gte.${encodeURIComponent(since)}&select=id,wa_id,body,media_name,sender_name&order=created_at.desc&limit=10`,
+    );
+    const twin = (recent ?? []).find((m: any) =>
+      m.sender_name && m.wa_id && m.wa_id !== msgId && /^\d+$/.test(String(m.wa_id)) &&
+      (media.type === "text" ? m.body === text : (m.media_name || "") === (media.name ?? "")));
+    if (twin) {
+      await sbPatch("wa_messages", `id=eq.${encodeURIComponent(twin.id)}`, { wa_id: msgId });
+      return json({ ok: true, merged: true });
+    }
+  }
+
   const preview = text || media.name || media.type;
   await sbUpsert("wa_messages", [{
     id: msgId,

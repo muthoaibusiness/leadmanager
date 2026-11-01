@@ -79,10 +79,11 @@ export default function ChatThread({ messages, loading, onRetry, hasOlder, loadi
         {messages.map((m, i) => {
           const day = days[i];
           const sep = day !== (i ? days[i - 1] : '');
+          const replyTo = m.replyToMessageId ? messages.find((p) => p.id === m.replyToMessageId) : null;
           return (
             <div key={m.id}>
               {sep && <div className="wa-day"><span>{day}</span></div>}
-              <MessageBubble msg={m} onRetry={onRetry} onOpenImage={setLightbox} />
+              <MessageBubble msg={m} onRetry={onRetry} onOpenImage={setLightbox} replyTo={replyTo} />
             </div>
           );
         })}

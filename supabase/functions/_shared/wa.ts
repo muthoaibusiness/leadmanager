@@ -4,6 +4,7 @@
 // browser bundle never imports this file.
 
 import { samePhone } from "./phone.ts";
+import { type LlmFailure } from "./ai.ts";
 
 // Override only for a local dev stack (a fake Wasender); unset in production.
 export const WASENDER_BASE = Deno.env.get("WASENDER_BASE") || "https://wasenderapi.com/api";
@@ -153,11 +154,12 @@ export async function sendWaMessageMirrored(
   convId: string,
   phone: string,
   msg: { type: "text" | "image" | "document"; text?: string; mediaUrl?: string; fileName?: string },
+  opts: { replyToMessageId?: string } = {},
 ): Promise<boolean> {
   // storeWaId on for the legacy agent too: the fromMe echo wa-webhook mirrors
   // back then collides on the wa_id index instead of showing as a second
   // copy of every bot message, and the id is the handle for a later unsend.
-  return (await sendWaMessageMirroredId(account, to, convId, phone, msg, { senderName: "AI Agent", storeWaId: true })) !== null;
+  return (await sendWaMessageMirroredId(account, to, convId, phone, msg, { senderName: "AI Agent", storeWaId: true, replyToMessageId: opts.replyToMessageId })) !== null;
 }
 
 // Same as sendWaMessageMirrored, returning the Wasender message id ("" when
@@ -172,7 +174,7 @@ export async function sendWaMessageMirroredId(
   convId: string,
   phone: string,
   msg: { type: "text" | "image" | "document"; text?: string; mediaUrl?: string; fileName?: string },
-  opts: { senderName: string; storeWaId: boolean },
+  opts: { senderName: string; storeWaId: boolean; replyToMessageId?: string },
 ): Promise<string | null> {
   const { token } = await getCredentials(account);
   if (!token) {
@@ -246,6 +248,7 @@ export async function sendWaMessageMirroredId(
     // UI lists, "AI Trainer" for a test-number reply.
     sender_name: opts.senderName,
     wa_timestamp: now,
+    ...(opts.replyToMessageId ? { reply_to_message_id: opts.replyToMessageId } : {}),
   }]);
   return waId;
 }
@@ -324,6 +327,20 @@ export async function getBotSettings(bot: BotName, phone?: string): Promise<BotS
     trainerTest: false,
     campaignProject: String(src.campaign_project || ""),
   };
+}
+
+// The ad a customer came in through, for the turns that carry no ad payload.
+// WhatsApp attaches the ad referral to the first message only, and it can land on
+// the customer's LID thread while later messages arrive on the phone thread — so
+// the bot would ask "which project?" of someone who clicked a project's ad. The
+// referral is kept on wa_conversations.ad_meta; this finds it by phone.
+export async function storedAdContext(phone: string): Promise<{ isAd: boolean; adText: string }> {
+  const tail = String(phone || "").replace(/\D/g, "").slice(-10);
+  if (tail.length < 8) return { isAd: false, adText: "" };
+  const rows = await sbSelect("wa_conversations?phone=like.*" + tail + "&source=eq.AD&select=ad_meta&order=last_message_at.desc.nullslast&limit=1");
+  const m = rows?.[0]?.ad_meta;
+  if (!m) return { isAd: false, adText: "" };
+  return { isAd: true, adText: [m.title, m.body, m.greetingMessageBody].filter(Boolean).join("\n").slice(0, 600) };
 }
 
 // Re-read just before each customer send so an OFF toggle mid-turn is honoured.
@@ -448,6 +465,27 @@ export async function logNoteActivity(leadId: string, companyId: string | null, 
     timestamp: new Date().toISOString(),
     company_id: companyId,
   }]);
+}
+
+// Persist an OpenRouter/provider failure to the bot_llm_failures ledger
+// (migration 0056). Fire-and-forget: a failing write must never break the
+// turn or mask the original error.
+export async function persistLlmFailure(bot: string | null, f: LlmFailure): Promise<void> {
+  try {
+    const r = await fetch(`${SUPABASE_URL}/rest/v1/bot_llm_failures`, {
+      method: "POST",
+      headers: { ...svcHeaders(), Prefer: "return=minimal" },
+      body: JSON.stringify({
+        bot,
+        kind: f.kind,
+        status: f.status ?? null,
+        message: f.message ? String(f.message).slice(0, 500) : null,
+      }),
+    });
+    if (!r.ok) console.error("persistLlmFailure: insert failed", r.status);
+  } catch (e) {
+    console.error("persistLlmFailure: write failed", e);
+  }
 }
 
 // ── phone / jid ─────────────────────────────────────────────────────────────
