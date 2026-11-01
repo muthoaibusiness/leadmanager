@@ -222,6 +222,24 @@ export interface AskAgentIo {
   record?: (f: LlmFailure) => void | Promise<void>;
 }
 
+// Direct answer for "when/how can I talk" intents (কখন/কীভাবে কথা বলতে পারবো).
+// These were previously answered by the model with generic contact details or a
+// meeting offer instead of a concrete answer. Matched here, with the reply
+// text, so a customer gets a direct, grounded answer and no model call is
+// spent (or a slow generic one sent). Narrow: requires both a talk verb and a
+// when/how cue, so ordinary questions pass through.
+const TALK_INTENT_RE = /কথা বল|কথায়|কথা বলতে|talk/i;
+const TALK_WHEN_RE = /কখন|কবে|when/i;
+const TALK_HOW_RE = /কীভাবে|কিভাবে|কি ভাবে|কেমনে|how/i;
+export function talkIntentReply(text: string): { reply: string } | null {
+  const t = text.trim();
+  if (!TALK_INTENT_RE.test(t)) return null;
+  if (!TALK_WHEN_RE.test(t) && !TALK_HOW_RE.test(t)) return null;
+  return {
+    reply: "আপনি এখনই এই চ্যাটেই কথা বলতে পারবেন। একটি সুনির্দিষ্ট প্রশ্ন করলে আমি সরাসরি উত্তর দেব। আর কোনো সেলস এক্সপার্টের সাথে মিটিং করতে চাইলে সুবিধামতো দিন ও সময় জানালে আমি ব্যবস্থা করে দেব।",
+  };
+}
+
 export async function askAgent(
   history: { role: "user" | "assistant"; text: string }[],
   userText: string,
@@ -233,6 +251,8 @@ export async function askAgent(
 ): Promise<AgentReply> {
   const apiKey = Deno.env.get("OPENROUTER_API_KEY") ?? "";
   const record = (f: LlmFailure) => { void io.record?.(f); };
+  const talk = talkIntentReply(userText);
+  if (talk) return { reply: talk.reply, send: null, confident: true };
   if (!apiKey) {
     console.error("askAgent: OPENROUTER_API_KEY not configured");
     record({ kind: "auth", message: "OPENROUTER_API_KEY not configured" });

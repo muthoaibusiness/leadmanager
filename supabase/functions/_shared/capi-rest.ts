@@ -74,10 +74,12 @@ export function restDeps(o: Opts): CapiDeps {
       });
       return { attempt_no: Number((Array.isArray(out) ? out[0] : out)?.attempt_no) || 0 };
     },
-    async settings() { return (await (await get("capi_settings?id=eq.default&select=ui_recovery_paused,updated_at,updated_by")).json())[0] ?? { ui_recovery_paused: false }; },
+    async settings() { return (await (await get("capi_settings?id=eq.default&select=ui_recovery_paused,manual_send_enabled,updated_at,updated_by")).json())[0] ?? { ui_recovery_paused: false, manual_send_enabled: true }; },
     async saveSettings(s) {
-      const r = await o.fetch(`${o.url}/rest/v1/capi_settings?id=eq.default`, { method: "PATCH", headers: { ...H, Prefer: "return=minimal" },
-        body: JSON.stringify({ ui_recovery_paused: s.ui_recovery_paused, updated_by: s.updated_by, updated_at: new Date(o.now()).toISOString() }) });
+      const body: Record<string, unknown> = { updated_by: s.updated_by, updated_at: new Date(o.now()).toISOString() };
+      if (s.ui_recovery_paused !== undefined) body.ui_recovery_paused = s.ui_recovery_paused;
+      if (s.manual_send_enabled !== undefined) body.manual_send_enabled = s.manual_send_enabled;
+      const r = await o.fetch(`${o.url}/rest/v1/capi_settings?id=eq.default`, { method: "PATCH", headers: { ...H, Prefer: "return=minimal" }, body: JSON.stringify(body) });
       if (!r.ok) throw new Error(`settings update failed: ${r.status}`);
     },
     async postMeta(body) {

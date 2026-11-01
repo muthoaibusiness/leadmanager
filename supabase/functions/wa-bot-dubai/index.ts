@@ -40,12 +40,12 @@ import {
   CORS, json, SUPABASE_URL, SERVICE_KEY, WASENDER_BASE,
   claimEvent, getCredentials, getActiveProjects, getRecentHistory, sendWaMessageMirrored, getKnowledge, getCorrections,
   findLeadForNote, logNoteActivity, getBotSettings, aiStillOn, verifyWebhook, fillWelcomeTemplate, fixLeadPhoneFromNote, splitPhoneFromNote,
-  logConversationHistory, storedAdContext,
+  logConversationHistory,
 } from "../_shared/wa.ts";
 import { askAgent, resolveMedia, fixGrammar, matchJolshiriBundle, matchNamedProject, isLandOffer, brochureCaption } from "../_shared/ai.ts";
 import { DUBAI_STAGE, DUBAI_CAMPAIGN_PROJECT, DUBAI_GREETING_TEXT, needsAiReply } from "../_shared/dubai-flow.ts";
 import { runCitizenFlow } from "../_shared/citizen-flow.ts";
-import { runTrainerTestTurn } from "../_shared/trainer-deno.ts";
+import { runTrainerTestTurn, shouldFallbackToFaq } from "../_shared/trainer-deno.ts";
 
 // ── local REST helpers ───────────────────────────────────────────────────
 // _shared/wa.ts's sbRpc/sbPatch deliberately return only ok/not-ok (wa-send
@@ -438,36 +438,38 @@ async function handleInbound(evt: ParsedEvent): Promise<void> {
 
   // The scripted Citizen Avenue flow (greeting, floor plan / video, brochure,
   // price and location answers) is shared with the Eyad bot.
-  const handled = await runCitizenFlow({
+  await runCitizenFlow({
     bot: "dubai", assigned: true, pid, convId, phone: evt.phone, waTo: evt.waTo, text: evt.text, quoted: evt.quoted,
     isNew, starting, stage, stageAt: row.stage_at, takeover, msgCount, project,
     greetingEnabled: settings.welcomeEnabled,
     greetingText: settings.welcomeMessage ? fillWelcomeTemplate(settings.welcomeMessage, evt.name) : DUBAI_GREETING_TEXT,
     aiWillAnswer: !!(settings.faqAgentEnabled && evt.text && evt.remote && !isLandOffer(evt.text)
       && (needsAiReply(evt.text, adLead) || settings.trainerTest)),
+    faqAgentEnabled: settings.faqAgentEnabled,
     replyToMessageId: evt.messageId || undefined,
+    // The FAQ agent is merged into the citizen flow: it owns substantive
+    // questions, so the greeting never doubles with it, and duplicate webhook
+    // deliveries can't produce a second response.
+    faq: (settings.faqAgentEnabled && evt.text && !takeover && evt.remote && !isLandOffer(evt.text)
+      && (needsAiReply(evt.text, adLead) || settings.trainerTest))
+      ? () => (async () => {
+          // Hybrid authority: the published AI Trainer is primary; the legacy
+          // FAQ agent is a controlled fallback when the trainer has no
+          // compatible published snapshot or fails to produce a usable reply.
+          const r = await runTrainerTestTurn({ bot: "dubai", convId, phone: evt.phone, to: evt.waTo, text: evt.text,
+            ad: { isAd: evt.isAd, adText: evt.adText }, allowMedia: settings.aiMediaEnabled, production: true,
+            replyToMessageId: evt.messageId || undefined });
+          console.log("trainer turn", { phone: evt.phone, outcome: r.outcome, sent: r.sent, turnId: r.turnId });
+          if (!shouldFallbackToFaq(r)) return;
+          await runFaqAgent("dubai", evt.waTo, evt.remote, evt.text, {
+            adProject: projectName || undefined,
+            profilesAlreadySent: [DUBAI_STAGE.askedBrochure, DUBAI_STAGE.brochureSent].includes(stage as any),
+            noBundle: true, allowMedia: settings.aiMediaEnabled,
+            replyToMessageId: evt.messageId || undefined,
+          });
+        })()
+      : undefined,
   });
-  if (handled) return;
-
-  // 3. A grounded AI reply for an ad customer's own question. Ad buttons,
-  // greetings, media placeholders and land offers get none; anything the
-  // model cannot ground in the catalog stays silent (confident=false).
-  if (settings.faqAgentEnabled && evt.text && !takeover && evt.remote && !isLandOffer(evt.text)
-      && (needsAiReply(evt.text, adLead) || settings.trainerTest)) {
-    // Test mode on and an allow-listed number (getBotSettings): the AI Trainer
-    // core answers instead of the legacy agent. Everything else runs unchanged.
-    if (settings.trainerTest) {
-      const r = await runTrainerTestTurn({ bot: "dubai", convId, phone: evt.phone, to: evt.waTo, text: evt.text,
-        ad: evt.isAd || !adLead ? { isAd: evt.isAd, adText: evt.adText } : await storedAdContext(evt.phone), allowMedia: settings.aiMediaEnabled });
-      console.log("trainer test turn", { phone: evt.phone, outcome: r.outcome, sent: r.sent, turnId: r.turnId });
-      return;
-    }
-    const docsDone = [DUBAI_STAGE.askedBrochure, DUBAI_STAGE.brochureSent].includes(stage as any);
-    await runFaqAgent("dubai", evt.waTo, evt.remote, evt.text, {
-      adProject: projectName || undefined, profilesAlreadySent: docsDone, noBundle: true, allowMedia: settings.aiMediaEnabled,
-      replyToMessageId: evt.messageId || undefined,
-    });
-  }
 }
 
 // ── FAQ agent: Jolshiri bundle on keyword, otherwise a tightly gated

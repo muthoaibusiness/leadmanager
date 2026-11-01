@@ -23,16 +23,18 @@ import {
   CORS, json, SUPABASE_URL, SERVICE_KEY, WASENDER_BASE,
   claimEvent, getCredentials, getActiveProjects, getRecentHistory, sendWaMessageMirrored, getKnowledge, getCorrections,
   findLeadForNote, logNoteActivity, getBotSettings, aiStillOn, verifyWebhook, getProjectBySendCode, fillWelcomeTemplate, fixLeadPhoneFromNote, splitPhoneFromNote,
-  logConversationHistory, canonicalConvJid, storedAdContext,
+  logConversationHistory,
 } from "../_shared/wa.ts";
 import type { BotSettings } from "../_shared/wa.ts";
 import {
-  askAgent, resolveMedia, fixGrammar, matchJolshiriBundle, buildJolshiriBundle,
-  FLOW_AUTO_PROFILE_TEXT, FLOW_AGENT_YES_TEXT, GENERIC_WELCOME_TEXT, isAffirmative, isProfileConsent,
-  isJolshiriProject, matchNamedProject, isPriceQuestion, isLandOffer, FLOW_PRICE_AGENT_TEXT, brochureCaption,
+  askAgent, resolveMedia, fixGrammar, matchJolshiriBundle,
+  GENERIC_WELCOME_TEXT, isJolshiriProject, matchNamedProject, isLandOffer,
 } from "../_shared/ai.ts";
-import { runTrainerTestTurn } from "../_shared/trainer-deno.ts";
-import { DUBAI_CAMPAIGN_PROJECT, DUBAI_GREETING_TEXT, DUBAI_STAGE, needsAiReply } from "../_shared/dubai-flow.ts";
+import { runTrainerTestTurn, shouldFallbackToFaq } from "../_shared/trainer-deno.ts";
+import {
+  DUBAI_CAMPAIGN_PROJECT, DUBAI_GREETING_TEXT, DUBAI_STAGE, needsAiReply,
+  JOLSHIRI_FLOW, GENERIC_FLOW,
+} from "../_shared/dubai-flow.ts";
 import { runCitizenFlow } from "../_shared/citizen-flow.ts";
 
 // ── fixed literals from the source workflow ──────────────────────────────
@@ -325,23 +327,6 @@ async function handleInbound(p: ParsedEvent): Promise<void> {
   const status = statusRows?.[0] ?? {};
   const msgCount = Array.isArray(status.message_logs) ? status.message_logs.length : 0;
 
-  // ── AI Trainer: the primary responder for every eligible customer text ───
-  // Runs before any legacy/canned flow. When it is eligible, the legacy reply
-  // branches below are skipped, so the AI Trainer is never trumped by a canned
-  // answer; their business side-effects (flow-stage bookkeeping, forwarding,
-  // region sync) still run afterwards. Pause and agent-takeover are enforced
-  // inside the trainer turn.
-  const trainerEligible = !!(settings.faqAgentEnabled && p.text && upsert.takeover !== true && p.remote);
-  // The ad referral rides on the first message only; a customer who clicked an ad
-  // (prelead carries the click id) keeps that ad for every later turn.
-  const runTrainer = async () => {
-    let ad = { isAd: p.isAd, adText: p.adText };
-    if (!ad.isAd && (status.ctwa_clid || status.wa_ad_id)) ad = await storedAdContext(p.phone);
-    const r = await runTrainerTestTurn({ bot: "eyad", convId: `eyad:${p.convJid}`, phone: p.phone, to: p.target, text: p.text,
-      ad, allowMedia: settings.aiMediaEnabled, production: true });
-    console.log("trainer turn", { phone: p.phone, outcome: r.outcome, sent: r.sent, blocked: r.blocked, turnId: r.turnId });
-  };
-
   // ── New Contact? → Welcome ──────────────────────────────────────────────
   // The n8n graph suppressed the welcome whenever should_drip was true (an
   // ad click with a project interest), because that branch went to a drip
@@ -362,6 +347,13 @@ async function handleInbound(p: ParsedEvent): Promise<void> {
   // Conversations. Contacts already inside an Eyad (Jolshiri) stage are left to
   // that flow.
   const stage0: string = status.flow_stage || "";
+  const takeover = upsert.takeover === true;
+  let starting = upsert.is_new === true;
+  if (!starting && !stage0 && !takeover) {
+    const convId = `eyad:${p.remote}`;
+    const out = await sbSelectJson(`wa_messages?conversation_id=eq.${encodeURIComponent(convId)}&direction=eq.OUT&select=id&limit=1`);
+    starting = out.length === 0;
+  }
   const adNamedCitizen = !!p.adText && matchNamedProject(p.adText, projects as any[])?.name === DUBAI_CAMPAIGN_PROJECT;
   const citizen = (!stage0 || stage0.startsWith("dubai_")) &&
     (stage0.startsWith("dubai_") || named?.name === DUBAI_CAMPAIGN_PROJECT || adNamedCitizen || upsert.property_interest === DUBAI_CAMPAIGN_PROJECT);
@@ -369,117 +361,76 @@ async function handleInbound(p: ParsedEvent): Promise<void> {
     if (upsert.property_interest !== DUBAI_CAMPAIGN_PROJECT) {
       await sbPatchJson("preleads", `id=eq.${encodeURIComponent(preleadId)}`, { property_interest: DUBAI_CAMPAIGN_PROJECT }).catch(() => {});
     }
-    const convId = `eyad:${p.convJid}`;
-    const takeover = upsert.takeover === true;
-    let starting = upsert.is_new === true;
-    if (!starting && !stage0 && !takeover) {
-      const out = await sbSelectJson(`wa_messages?conversation_id=eq.${encodeURIComponent(convId)}&direction=eq.OUT&select=id&limit=1`);
-      starting = out.length === 0;
-    }
+    const convId = `eyad:${p.remote}`;
     const full = await getActiveProjects();
     const project = (full as any[]).find((x) => x.name === DUBAI_CAMPAIGN_PROJECT) ?? null;
-    const handled = await runCitizenFlow({
+    await runCitizenFlow({
       bot: "eyad", assigned: false, pid: encodeURIComponent(preleadId), convId, phone: p.phone, waTo: p.target, text: p.text, quoted: p.quoted,
       isNew: upsert.is_new === true, starting, stage: stage0, stageAt: undefined, takeover, msgCount, project,
       greetingEnabled: settings.welcomeEnabled, greetingText: DUBAI_GREETING_TEXT,
-      aiWillAnswer: trainerEligible && !isLandOffer(p.text) && needsAiReply(p.text, !!(p.isAd || status.ctwa_clid || status.wa_ad_id)),
+      aiWillAnswer: !!(settings.faqAgentEnabled && p.text && !takeover && p.remote && !isLandOffer(p.text)
+        && (needsAiReply(p.text, p.isAd || !!p.ctwaClid) || settings.trainerTest)),
+      faqAgentEnabled: settings.faqAgentEnabled,
       replyToMessageId: p.deliveryId || undefined,
+      // FAQ agent merged into the citizen flow — one owner per substantive
+      // question; duplicate deliveries can't produce a second response.
+      faq: (settings.faqAgentEnabled && p.text && !takeover && p.remote && !isLandOffer(p.text)
+        && (needsAiReply(p.text, p.isAd || !!p.ctwaClid) || settings.trainerTest))
+        ? () => (async () => {
+            // Hybrid authority: published AI Trainer primary, legacy FAQ fallback.
+            const r = await runTrainerTestTurn({ bot: "eyad", convId, phone: p.phone, to: p.target, text: p.text,
+              ad: { isAd: p.isAd, adText: p.adText }, allowMedia: settings.aiMediaEnabled, production: true,
+              replyToMessageId: p.deliveryId || undefined });
+            console.log("trainer turn", { phone: p.phone, outcome: r.outcome, sent: r.sent, turnId: r.turnId });
+            if (!shouldFallbackToFaq(r)) return;
+            await runFaqAgent("eyad", p.phone, p.target, p.remote, p.text, {
+              adProject: DUBAI_CAMPAIGN_PROJECT, profilesAlreadySent: true, allowMedia: settings.aiMediaEnabled,
+            });
+          })()
+        : undefined,
     });
-    if (handled) return;
-    // Everything the script does not cover goes to the AI Trainer, but only for an
-    // ad customer's own question (buttons and small talk already have their answer).
-    if (trainerEligible && !isLandOffer(p.text) && needsAiReply(p.text, !!(p.isAd || status.ctwa_clid || status.wa_ad_id))) await runTrainer();
     return; // never auto-forwards from here
   }
 
-  if (trainerEligible) await runTrainer();
-
-  // A land seller ("do you buy land in Cox's Bazar?") who happened to click
-  // an ad is not a Jolshiri buyer: generic hello, no brochure flow, and the
-  // LLM's land rule keeps everything else silent for a human to pick up.
+  // ── Every other contact (Jolshiri, or a generic direct knock) runs through
+  // the same engine, configured per project — single owner per inbound, so a
+  // greeting never doubles with a FAQ/scripted answer. The engine returns true
+  // when it fully handled the message (scripted stage, price, or FAQ); a plain
+  // opener that only got the greeting falls through to the auto-forward check.
   const landOffer = !!p.text && isLandOffer(p.text);
-  if (settings.welcomeEnabled && upsert.takeover !== true && upsert.is_new === true) {
-    if (isJolshiriProject(upsert.property_interest) && !landOffer) {
-      // Jolshiri lead (ad or named): the admin welcome and the follow-up
-      // clock — 5 minutes of silence asks about the profiles, an hour of
-      // silence after that asks about a dedicated agent. No auto-forward.
-      await sendWaText(p.target, settings.welcomeMessage ? fillWelcomeTemplate(settings.welcomeMessage, p.name) : welcomeText(p.name));
-      await sbPatchJson("preleads", `id=eq.${encodeURIComponent(preleadId)}`, {
-        flow_stage: "greeted", stage_at: new Date().toISOString(), stage_msg_count: msgCount,
-      }).catch(() => {});
-    } else {
-      // Direct knock, or a non-Jolshiri project: generic hello, no Jolshiri flow.
-      await sendWaText(p.target, GENERIC_WELCOME_TEXT);
-    }
-  }
-
-  // ── Follow-up flow stage 3 — "yes" to the stage 2a profile offer sends
-  // the bundle right away instead of waiting for the next cron tick.
-  if (status.flow_stage === "asked_profile" && upsert.takeover !== true && isProfileConsent(p.text, p.quoted)) {
-    const convId = `eyad:${p.remote}`;
-    const bundle = buildJolshiriBundle(await getActiveProjects(), FLOW_AUTO_PROFILE_TEXT);
-    if (bundle) {
-      await sendWaMessageMirrored("eyad", p.target, convId, p.phone, { type: "text", text: bundle.message });
-      for (let i = 0; i < bundle.brochures.length; i++) {
-        await new Promise((r) => setTimeout(r, 5500));
-        const b = bundle.brochures[i];
-        await sendWaMessageMirrored("eyad", p.target, convId, p.phone, {
-          type: "document", mediaUrl: b.url, fileName: `${b.project.name} Brochure.pdf`, text: brochureCaption(b.project),
-        });
-      }
-      await sbPatchJson("preleads", `id=eq.${encodeURIComponent(preleadId)}`, {
-        flow_stage: "profile_sent", stage_at: new Date().toISOString(), stage_msg_count: msgCount,
-      }).catch(() => {});
-      return;
-    }
-  }
-
-  // ── FAQ agent — not part of the n8n port, an addition on top of it.
-  // Never runs once a human has taken over (/t), and only on real text (an
-  // ad click with no message body, or a photo with no caption, has nothing
-  // for the model to answer).
-  // ── Follow-up flow stage 4 — "yes" to the dedicated-agent question gets a
-  // one-line acknowledgement and closes the flow. Deliberately no auto
-  // lead/forward here: a human reads the thread and acts.
-  if (status.flow_stage === "asked_agent" && upsert.takeover !== true && isAffirmative(p.text)) {
-    await sendWaMessageMirrored("eyad", p.target, `eyad:${p.remote}`, p.phone, { type: "text", text: FLOW_AGENT_YES_TEXT });
-    await sbPatchJson("preleads", `id=eq.${encodeURIComponent(preleadId)}`, {
-      flow_stage: "agent_ack", stage_at: new Date().toISOString(), stage_msg_count: msgCount,
-    }).catch(() => {});
-    return;
-  }
-
-  // Price / payment question (not the very first ad message — that one gets
-  // the greeting + brochure flow): offer a dedicated agent, jump to stage 4.
-  const agentAlreadyOffered = ["asked_agent", "agent_ack", "agent_assigned"].includes(status.flow_stage);
-  if (upsert.is_new !== true && p.text && isPriceQuestion(p.text) && !agentAlreadyOffered && upsert.takeover !== true) {
-    await sendWaMessageMirrored("eyad", p.target, `eyad:${p.remote}`, p.phone, { type: "text", text: FLOW_PRICE_AGENT_TEXT });
-    await sbPatchJson("preleads", `id=eq.${encodeURIComponent(preleadId)}`, {
-      flow_stage: "asked_agent", stage_at: new Date().toISOString(), stage_msg_count: msgCount,
-    }).catch(() => {});
-    return;
-  }
-
-  // Once the profiles are out (keyword, stage 2b or stage 3) the bundle is
-  // never sent again — the gated LLM answer still runs for other questions.
-  const profilesAlreadySent = ["profile_sent", "asked_agent", "agent_ack", "agent_assigned"].includes(status.flow_stage);
-  if (settings.faqAgentEnabled && p.text && upsert.takeover !== true && p.remote && settings.trainerTest) {
-    // Test mode on and an allow-listed number (getBotSettings): the AI Trainer
-    // core answers instead of the legacy agent. Everything else above and
-    // below runs unchanged.
-    const r = await runTrainerTestTurn({ bot: "eyad", convId: `eyad:${p.remote}`, phone: p.phone, to: p.target, text: p.text,
-      ad: { isAd: p.isAd, adText: p.adText }, allowMedia: settings.aiMediaEnabled });
-    console.log("trainer test turn", { phone: p.phone, outcome: r.outcome, sent: r.sent, turnId: r.turnId });
-  } else if (settings.faqAgentEnabled && p.text && upsert.takeover !== true && p.remote) {
-    const sent = await runFaqAgent("eyad", p.phone, p.target, p.remote, p.text, {
-      adProject: upsert.property_interest || undefined, profilesAlreadySent: profilesAlreadySent || landOffer, allowMedia: settings.aiMediaEnabled,
-    });
-    if (sent) {
-      await sbPatchJson("preleads", `id=eq.${encodeURIComponent(preleadId)}`, {
-        flow_stage: "profile_sent", stage_at: new Date().toISOString(), stage_msg_count: msgCount,
-      }).catch(() => {});
-    }
-  }
+  const jolshiri = isJolshiriProject(upsert.property_interest);
+  const jFlow = jolshiri ? JOLSHIRI_FLOW : GENERIC_FLOW;
+  const jGreeting = jolshiri
+    ? (settings.welcomeMessage ? fillWelcomeTemplate(settings.welcomeMessage, p.name) : welcomeText(p.name))
+    : GENERIC_WELCOME_TEXT;
+  const jFaqGate = settings.faqAgentEnabled && p.text && !takeover && p.remote && !landOffer;
+  const handled = await runCitizenFlow({
+    bot: "eyad", assigned: false, pid: encodeURIComponent(preleadId), convId: `eyad:${p.remote}`,
+    phone: p.phone, waTo: p.target, text: p.text, quoted: p.quoted,
+    isNew: upsert.is_new === true, starting, stage: stage0, stageAt: undefined, takeover, msgCount,
+    project: (projects as any[]).find((x) => x.name === upsert.property_interest) ?? null,
+    projects: projects as any[],
+    greetingEnabled: settings.welcomeEnabled, greetingText: jGreeting, cfg: jFlow,
+    aiWillAnswer: !!jFaqGate,
+    faqAgentEnabled: settings.faqAgentEnabled,
+    replyToMessageId: p.deliveryId || undefined,
+    faq: jFaqGate
+      ? () => (async () => {
+          // Hybrid authority: published AI Trainer primary, legacy FAQ fallback.
+          const r = await runTrainerTestTurn({ bot: "eyad", convId: `eyad:${p.remote}`, phone: p.phone, to: p.target, text: p.text,
+            ad: { isAd: p.isAd, adText: p.adText }, allowMedia: settings.aiMediaEnabled, production: true,
+            replyToMessageId: p.deliveryId || undefined });
+          console.log("trainer turn", { phone: p.phone, outcome: r.outcome, sent: r.sent, turnId: r.turnId });
+          if (!shouldFallbackToFaq(r)) return;
+          await runFaqAgent("eyad", p.phone, p.target, p.remote, p.text, {
+            adProject: upsert.property_interest || undefined,
+            profilesAlreadySent: ["profile_sent", "asked_agent", "agent_ack", "agent_assigned"].includes(status.flow_stage) || landOffer,
+            allowMedia: settings.aiMediaEnabled,
+          });
+        })()
+      : undefined,
+  });
+  if (handled) return; // a scripted stage or the FAQ answered — one owner
 
   const phoneDigits = p.phone.replace(/\D/g, "");
   const isBD = phoneDigits.startsWith("880");

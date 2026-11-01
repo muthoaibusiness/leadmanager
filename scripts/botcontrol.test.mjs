@@ -23,24 +23,22 @@ test('today in production: legacy pointer, replies off, one untested candidate',
   assert.equal(v.canRunTests, true); assert.equal(v.canPublish, false); assert.equal(v.canRollback, false);
 });
 
-test('a published pointer is never shown as live while the bots do not read it', () => {
+test('a published pointer is shown as live only when the bot reads it', () => {
   const v = botControlView({ bot: 'dubai', settings: { faq_agent_enabled: true }, pointer: { mode: 'snapshot', snapshot_id: 's3' },
     snapshots: [snap('s3', 3, 'published', { published_at: '2026-10-19' })], runs: [] });
-  assert.deepEqual(v.live, { kind: 'legacy' });
+  assert.equal(v.live.kind, 'version'); assert.equal(v.live.version_no, 3);
   assert.deepEqual(v.pointer, { version_no: 3, published_at: '2026-10-19' });
   assert.equal(v.canRollback, true);
-  const wired = botControlView({ bot: 'dubai', settings: { faq_agent_enabled: true }, pointer: { mode: 'snapshot', snapshot_id: 's3' }, snapshots: [snap('s3', 3, 'published')], runs: [], pointersAreLive: true });
-  assert.equal(wired.live.kind, 'version'); assert.equal(wired.live.version_no, 3);
+  const unwired = botControlView({ bot: 'dubai', settings: { faq_agent_enabled: true }, pointer: { mode: 'snapshot', snapshot_id: 's3' }, snapshots: [snap('s3', 3, 'published')], runs: [], pointersAreLive: false });
+  assert.deepEqual(unwired.live, { kind: 'legacy' });
 });
 
-test('eyad reads the pointer: a published snapshot IS what customers get', () => {
-  const v = botControlView({ bot: 'eyad', settings: { faq_agent_enabled: true }, pointer: { mode: 'snapshot', snapshot_id: 's3' },
-    snapshots: [snap('s3', 3, 'published', { published_at: '2026-10-19' })], runs: [] });
-  assert.equal(v.live.kind, 'version'); assert.equal(v.live.version_no, 3);
-  // Dubai is not wired: same rows still read as legacy.
-  const d = botControlView({ bot: 'dubai', settings: { faq_agent_enabled: true }, pointer: { mode: 'snapshot', snapshot_id: 's3' },
-    snapshots: [snap('s3', 3, 'published')], runs: [] });
-  assert.deepEqual(d.live, { kind: 'legacy' });
+test('both bots read the pointer: a published snapshot IS what customers get', () => {
+  for (const bot of ['eyad', 'dubai']) {
+    const v = botControlView({ bot, settings: { faq_agent_enabled: true }, pointer: { mode: 'snapshot', snapshot_id: 's3' },
+      snapshots: [snap('s3', 3, 'published', { published_at: '2026-10-19' })], runs: [] });
+    assert.equal(v.live.kind, 'version'); assert.equal(v.live.version_no, 3, bot);
+  }
 });
 
 test('candidate tests: running, failing, incomplete and passing decide whether Publish is enabled', () => {
