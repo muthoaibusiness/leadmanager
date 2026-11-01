@@ -45,7 +45,7 @@ import {
 import { askAgent, resolveMedia, fixGrammar, matchJolshiriBundle, matchNamedProject, isLandOffer, brochureCaption } from "../_shared/ai.ts";
 import { DUBAI_STAGE, DUBAI_CAMPAIGN_PROJECT, DUBAI_GREETING_TEXT, needsAiReply } from "../_shared/dubai-flow.ts";
 import { runCitizenFlow } from "../_shared/citizen-flow.ts";
-import { runTrainerTestTurn, trainerAnswered } from "../_shared/trainer-deno.ts";
+import { runTrainerTestTurn, shouldFallbackToFaq } from "../_shared/trainer-deno.ts";
 
 // ── local REST helpers ───────────────────────────────────────────────────
 // _shared/wa.ts's sbRpc/sbPatch deliberately return only ok/not-ok (wa-send
@@ -460,7 +460,7 @@ async function handleInbound(evt: ParsedEvent): Promise<void> {
             ad: { isAd: evt.isAd, adText: evt.adText }, allowMedia: settings.aiMediaEnabled, production: true,
             replyToMessageId: evt.messageId || undefined });
           console.log("trainer turn", { phone: evt.phone, outcome: r.outcome, sent: r.sent, turnId: r.turnId });
-          if (trainerAnswered(r)) return;
+          if (!shouldFallbackToFaq(r)) return;
           await runFaqAgent("dubai", evt.waTo, evt.remote, evt.text, {
             adProject: projectName || undefined,
             profilesAlreadySent: [DUBAI_STAGE.askedBrochure, DUBAI_STAGE.brochureSent].includes(stage as any),

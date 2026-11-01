@@ -148,14 +148,15 @@ export async function loadPublishedSnapshot(a: { bot: Bot }): Promise<{ content:
   }
 }
 
-// True when a trainer turn actually answered the customer: a message went out
-// (sent > 0), or a brochure/handoff sequence produced a reply. A blocked,
-// fallback, error or skipped turn is not an answer, so the hybrid caller falls
-// through to the legacy FAQ agent.
-export function trainerAnswered(r: LiveResult): boolean {
-  if (r.sent > 0) return true;
-  const o = String(r.outcome || "");
-  return o.startsWith("brochure_") || o === "handoff_requested";
+// The hybrid caller must fall back to the legacy FAQ agent for exactly one
+// trainer outcome: the conversation's published snapshot is missing or
+// core-incompatible, so the trainer could not answer. Every other outcome is
+// final — an answered turn (sent / brochure / handoff), a paused conversation,
+// a blocked test number, or a transient error — and must not send a second,
+// legacy reply. Falling back on those is a fail-open that would (for example)
+// send into a conversation the operator paused.
+export function shouldFallbackToFaq(r: LiveResult): boolean {
+  return r.outcome === "blocked_no_published_snapshot";
 }
 
 // One test-number turn on a bot's real chat. Model calls draw on the trainer's

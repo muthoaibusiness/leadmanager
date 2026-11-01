@@ -30,7 +30,7 @@ import {
   askAgent, resolveMedia, fixGrammar, matchJolshiriBundle,
   GENERIC_WELCOME_TEXT, isJolshiriProject, matchNamedProject, isLandOffer,
 } from "../_shared/ai.ts";
-import { runTrainerTestTurn, trainerAnswered } from "../_shared/trainer-deno.ts";
+import { runTrainerTestTurn, shouldFallbackToFaq } from "../_shared/trainer-deno.ts";
 import {
   DUBAI_CAMPAIGN_PROJECT, DUBAI_GREETING_TEXT, DUBAI_STAGE, needsAiReply,
   JOLSHIRI_FLOW, GENERIC_FLOW,
@@ -382,7 +382,7 @@ async function handleInbound(p: ParsedEvent): Promise<void> {
               ad: { isAd: p.isAd, adText: p.adText }, allowMedia: settings.aiMediaEnabled, production: true,
               replyToMessageId: p.deliveryId || undefined });
             console.log("trainer turn", { phone: p.phone, outcome: r.outcome, sent: r.sent, turnId: r.turnId });
-            if (trainerAnswered(r)) return;
+            if (!shouldFallbackToFaq(r)) return;
             await runFaqAgent("eyad", p.phone, p.target, p.remote, p.text, {
               adProject: DUBAI_CAMPAIGN_PROJECT, profilesAlreadySent: true, allowMedia: settings.aiMediaEnabled,
             });
@@ -421,7 +421,7 @@ async function handleInbound(p: ParsedEvent): Promise<void> {
             ad: { isAd: p.isAd, adText: p.adText }, allowMedia: settings.aiMediaEnabled, production: true,
             replyToMessageId: p.deliveryId || undefined });
           console.log("trainer turn", { phone: p.phone, outcome: r.outcome, sent: r.sent, turnId: r.turnId });
-          if (trainerAnswered(r)) return;
+          if (!shouldFallbackToFaq(r)) return;
           await runFaqAgent("eyad", p.phone, p.target, p.remote, p.text, {
             adProject: upsert.property_interest || undefined,
             profilesAlreadySent: ["profile_sent", "asked_agent", "agent_ack", "agent_assigned"].includes(status.flow_stage) || landOffer,
