@@ -113,6 +113,36 @@ test("config reports only whether a token is configured", async () => {
   assert.deepEqual((await call(w.deps, "config")).body.data.token, { configured: false });
 });
 
+test("config reports the manual-send switch; settings.set toggles it and persists", async () => {
+  const w = world([L("a")]);
+  assert.equal((await call(w.deps, "config")).body.data.manual_send_enabled, true, "defaults on (existing behavior unchanged)");
+  const r = await call(w.deps, "settings.set", { manual_send_enabled: false });
+  assert.equal(r.status, 200);
+  assert.equal(r.body.data.manual_send_enabled, false);
+  assert.equal(w.settings.manual_send_enabled, false, "persisted");
+  assert.equal((await call(w.deps, "config")).body.data.manual_send_enabled, false);
+  assert.equal((await call(w.deps, "settings.set", { manual_send_enabled: true })).body.data.manual_send_enabled, true);
+});
+
+test("settings.set still only accepts booleans and requires at least one known field", async () => {
+  const w = world([]);
+  for (const p of [{ ui_recovery_paused: "yes" }, { manual_send_enabled: "off" }, {}]) {
+    assert.equal((await call(w.deps, "settings.set", p)).status, 422, JSON.stringify(p));
+  }
+  assert.equal(w.settings.manual_send_enabled, undefined, "nothing written for a bad toggle");
+});
+
+test("manual send off refuses a confirmed retry and sends nothing; preview still works", async () => {
+  const w = world([L("a")]);
+  await call(w.deps, "settings.set", { manual_send_enabled: false });
+  const pre = await call(w.deps, "retry", { lead_ids: ["a"] });
+  assert.equal(pre.status, 200); assert.equal(pre.body.data.preview.eligible, 1); // preview (read-only) still works
+  const r = await call(w.deps, "retry", { lead_ids: ["a"], confirm: true });
+  assert.equal(r.status, 409); assert.match(r.body.error.message, /Manual sending is disabled/);
+  assert.equal(w.sent.length, 0); assert.equal(w.attempts.length, 0);
+});
+
+
 // ── list / summary ──────────────────────────────────────────────────────────
 test("list pages server-side and filters by status", async () => {
   const leads = Array.from({ length: 30 }, (_, i) => L("p" + i));
@@ -244,31 +274,33 @@ test("D1: reads take the caller from the verified session, never from body.userI
   assert.equal((await call(w.deps, "list", {}, "agent")).status, 403);
 });
 
-// No privileged action may rely on a user id sent by the browser. Until
-// verified sessions ship (Phase 1B), sending and changing settings are off
-// unless the server is explicitly started in a mode that allows them: a local
-// stack (CAPI_ALLOW_UNVERIFIED_ACTOR=local) for development, never production.
-test("D1: with no verified session, retry and settings.set are refused (fail closed); reads still work", async () => {
+// D1: verification comes from the session, never from the browser's userId.
+// Without a valid session every action is refused (fail closed); a verified
+// account may send and change settings with no deployment opt-in.
+test("D1: without a verified session every action is refused; nothing is sent", async () => {
   const w = world([L("a")]);
-  w.deps.allowUnverifiedActor = () => false;
-  const r = await call(w.deps, "retry", { lead_ids: ["a"], confirm: true });
-  assert.equal(r.status, 403); assert.match(r.body.error.message, /verified sign-in/);
-  const preview = await call(w.deps, "retry", { lead_ids: ["a"] });
-  assert.equal(preview.status, 403, "even the preview, which is the first step of a send");
-  const s = await call(w.deps, "settings.set", { ui_recovery_paused: true });
-  assert.equal(s.status, 403);
+  w.deps.verify = async () => { throw Object.assign(new Error("Sign in required"), { status: 401 }); };
+  for (const [action, payload] of [
+    ["summary", {}], ["list", {}], ["config", {}], ["history", { id: "a" }],
+    ["retry", { lead_ids: ["a"], confirm: true }], ["settings.set", { ui_recovery_paused: true }],
+    ["bot.set", { bot: "eyad", enabled: false }],
+  ] as const) {
+    const r = await call(w.deps, action as string, payload as any);
+    assert.equal(r.status, 401, `${action} must be refused without a verified session`);
+  }
   assert.equal(w.sent.length, 0); assert.equal(w.attempts.length, 0); assert.equal(w.settings.ui_recovery_paused, false);
-  for (const a of ["summary", "list", "config"]) assert.equal((await call(w.deps, a)).status, 200, a);
-  assert.equal((await call(w.deps, "history", { id: "a" })).status, 200);
-  const cfg = (await call(w.deps, "config")).body.data;
-  assert.equal(cfg.actions_enabled, false, "the page is told, so it can say why");
 });
 
-test("D1: the default, with no explicit opt-in, is fail closed", async () => {
+test("D1: a verified, authorized account can send and change settings by default (no env opt-in)", async () => {
   const w = world([L("a")]);
   delete (w.deps as any).allowUnverifiedActor;
-  assert.equal((await call(w.deps, "retry", { lead_ids: ["a"], confirm: true })).status, 403);
-  assert.equal(w.sent.length, 0);
+  const cfg = (await call(w.deps, "config")).body.data;
+  assert.equal(cfg.actions_enabled, true, "the page is told it can act");
+  const r = await call(w.deps, "retry", { lead_ids: ["a"], confirm: true });
+  assert.equal(r.status, 200); assert.deepEqual(r.body.data.results[0].result, "accepted");
+  assert.deepEqual(w.sent.map((b) => b.data[0].event_id), ["a"]);
+  const s = await call(w.deps, "settings.set", { manual_send_enabled: false });
+  assert.equal(s.status, 200); assert.equal(s.body.data.manual_send_enabled, false);
 });
 
 // ── agent qualification ─────────────────────────────────────────────────────
@@ -361,10 +393,13 @@ test("bot.set refuses an unknown bot or a non-boolean, and changes nothing", asy
   assert.deepEqual(w.bots.map((b) => b.meta_capi_enabled), [true, true]);
 });
 
-test("D1: bot.set is a privileged action and fails closed without a verified sign-in; bots still reads", async () => {
+test("D1: bot.set requires a verified session; with one a verified admin can change bot switches", async () => {
   const w = world([]);
-  w.deps.allowUnverifiedActor = () => false;
-  assert.equal((await call(w.deps, "bot.set", { bot: "eyad", enabled: false })).status, 403);
+  w.deps.verify = async () => { throw Object.assign(new Error("Sign in required"), { status: 401 }); };
+  assert.equal((await call(w.deps, "bot.set", { bot: "eyad", enabled: false })).status, 401);
   assert.deepEqual(w.bots.map((b) => b.meta_capi_enabled), [true, true]);
-  assert.equal((await call(w.deps, "bots")).status, 200);
+  assert.equal((await call(w.deps, "bots")).status, 401, "reads also need a session");
+  w.deps.verify = async () => ({ id: "mgr", role: "MANAGEMENT", is_active: true, company_id: null, team_id: null, allowed_features: null });
+  const r = await call(w.deps, "bot.set", { bot: "eyad", enabled: false });
+  assert.equal(r.status, 200); assert.equal(r.body.data.bots.find((b: any) => b.bot === "eyad").meta_capi_enabled, false);
 });

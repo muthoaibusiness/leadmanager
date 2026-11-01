@@ -72,7 +72,7 @@ function Dialog({ title, onClose, children, wide }) {
   );
 }
 
-function History({ api, lead, tz, canAct, paused, onClose, onSent, showToast }) {
+function History({ api, lead, tz, canAct, paused, manualSendOn, onClose, onSent, showToast }) {
   const [rows, setRows] = useState(null);
   const [err, setErr] = useState(null);
   const [pre, setPre] = useState(null);
@@ -84,7 +84,7 @@ function History({ api, lead, tz, canAct, paused, onClose, onSent, showToast }) 
     return () => { live = false; };
   }, [api, lead.id, n]);
   const t = (iso) => fmtTime(iso, tz);
-  const eligible = canAct && !paused && lead.qualified !== false && (lead.status === 'pending' || lead.status === 'failed');
+  const eligible = canAct && !paused && manualSendOn && lead.qualified !== false && (lead.status === 'pending' || lead.status === 'failed');
   // One lead, same path as a batch: server preview first, then an explicit send.
   const ask = async () => { setBusy(true); try { setPre(await api('retry', { lead_ids: [lead.id] })); } catch (e) { showToast(e.message, 'err'); } finally { setBusy(false); } };
   const send = async () => {
@@ -371,6 +371,12 @@ export default function MetaCapiPanel({ api, showToast, onDelete, refreshRef, on
     catch (e) { showToast(e.message, 'err'); }
     finally { setBusy(false); }
   };
+  const setManualSend = async (v) => {
+    setBusy(true);
+    try { const c = await api('settings.set', { manual_send_enabled: v }); setView((o) => ({ ...o, cfg: c })); }
+    catch (e) { showToast(e.message, 'err'); }
+    finally { setBusy(false); }
+  };
   const filtered = q.search || q.from || q.to || tab !== 'all';
   const nFilters = (tab !== 'all') + !!(q.from || q.to);
 
@@ -391,9 +397,19 @@ export default function MetaCapiPanel({ api, showToast, onDelete, refreshRef, on
       <section className="analytics-card mcx-head">
         <div className="mcx-meta">
           <div className="ait-trace">
-            Dataset {cfg?.dataset_id ?? '…'} · token {cfg ? (cfg.token.configured ? 'configured' : 'missing') : '…'} (kept on the server, never shown) · CRM recovery {cfg ? (cfg.ui_recovery_paused ? 'paused' : 'on') : '…'}
+            Dataset {cfg?.dataset_id ?? '…'} · token {cfg ? (cfg.token.configured ? 'configured' : 'missing') : '…'} (kept on the server, never shown) · CRM recovery {cfg ? (cfg.ui_recovery_paused ? 'paused' : 'on') : '…'} · manual send {cfg ? (cfg.manual_send_enabled === false ? 'off' : 'on') : '…'}
           </div>
-          {canAct && <button type="button" className="btn btn-g btn-sm" disabled={busy} onClick={() => pause(!cfg.ui_recovery_paused)}><Mi>{cfg.ui_recovery_paused ? 'play_arrow' : 'pause'}</Mi>{cfg.ui_recovery_paused ? 'Resume recovery' : 'Pause recovery'}</button>}
+          {canAct && (
+            <div className="mcx-switches">
+              <button type="button" role="switch" aria-checked={cfg?.manual_send_enabled !== false} aria-label="Manual send to Meta"
+                className={`bc-switch ${cfg?.manual_send_enabled !== false ? 'on' : ''}`} disabled={busy}
+                onClick={() => setManualSend(!(cfg?.manual_send_enabled !== false))}>
+                <span className="bc-knob" aria-hidden="true" />
+                <span className="bc-switch-txt">{cfg?.manual_send_enabled !== false ? 'Manual send on' : 'Manual send off'}</span>
+              </button>
+              <button type="button" className="btn btn-g btn-sm" disabled={busy} onClick={() => pause(!cfg.ui_recovery_paused)}><Mi>{cfg.ui_recovery_paused ? 'play_arrow' : 'pause'}</Mi>{cfg.ui_recovery_paused ? 'Resume recovery' : 'Pause recovery'}</button>
+            </div>
+          )}
         </div>
         <div className="mcx-stats" aria-label="Meta CAPI summary">
           <Stat label="Total ad leads" n={sum?.total} />
@@ -464,8 +480,8 @@ export default function MetaCapiPanel({ api, showToast, onDelete, refreshRef, on
 
         <div className="bulk-bar" role="toolbar" aria-label="Selected leads">
           <span className="bulk-ct" aria-live="polite">{sel.size} selected</span>
-          <button type="button" className="btn btn-p btn-sm" disabled={busy || !canAct || !toSendIds.length || cfg?.ui_recovery_paused} onClick={ask}
-            title={!canAct ? 'Needs a verified sign-in' : undefined}><Mi>send</Mi>Send<span className="mcx-wide"> selected</span>{toSendIds.length && toSendIds.length !== sel.size ? ` (${toSendIds.length})` : ''}</button>
+          <button type="button" className="btn btn-p btn-sm" disabled={busy || !canAct || !toSendIds.length || cfg?.ui_recovery_paused || cfg?.manual_send_enabled === false} onClick={ask}
+            title={!canAct ? 'Needs a verified sign-in' : cfg?.manual_send_enabled === false ? 'Manual sending is off' : undefined}><Mi>send</Mi>Send<span className="mcx-wide"> selected</span>{toSendIds.length && toSendIds.length !== sel.size ? ` (${toSendIds.length})` : ''}</button>
           {onDelete && (
             <button type="button" className="btn btn-sm" style={{ background: 'var(--red-l)', color: 'var(--red)' }} disabled={busy || !sel.size}
               onClick={() => { setPreview(null); setDelAsk(rows.filter((r) => sel.has(r.id))); }}><Mi>delete</Mi>Delete</button>
@@ -563,7 +579,7 @@ export default function MetaCapiPanel({ api, showToast, onDelete, refreshRef, on
           ? <div className="pg-wrap"><span className="pg-info">{data.total} lead{data.total === 1 ? '' : 's'}</span></div>
           : <Pagination page={page} total={data.total} pageSize={PAGE} onChange={goPage} />)}
       </section>
-      {open && <History api={api} lead={open} tz={tz} canAct={canAct} paused={!!cfg?.ui_recovery_paused} onClose={() => setOpen(null)} onSent={refresh} showToast={showToast} />}
+      {open && <History api={api} lead={open} tz={tz} canAct={canAct} paused={!!cfg?.ui_recovery_paused} manualSendOn={cfg?.manual_send_enabled !== false} onClose={() => setOpen(null)} onSent={refresh} showToast={showToast} />}
       {rep && <ReportPreview key={rep.url} rep={rep} onClose={closeRep} />}
     </div>
   );

@@ -11,10 +11,10 @@
 // no action returns it, and nothing derived from it but "configured" leaves.
 //
 // CR-001 decision D1: every action, reads included, takes its caller from the
-// verified session. The actions that change something (retry, which sends to
-// Meta, settings.set, bot.set) additionally stay off unless
-// allowUnverifiedActor() is true (CAPI_ALLOW_UNVERIFIED_ACTOR=local, a local
-// stack only), so Meta CAPI sending remains disabled until it is approved.
+// verified session, and privileged actions (retry, which sends to Meta,
+// settings.set, bot.set) require one too: loadActor fail-closes with 401 when
+// there is no valid session, so sending is on for any verified, authorized
+// admin. The D1 test exercises the 401 path.
 //
 // Sending, the same event the bots send (wa-bot-eyad v61 / wa-bot-dubai v58):
 // LeadSubmitted, business_messaging, whatsapp, event_id = lead id, the lead's
@@ -68,7 +68,7 @@ export type CapiDeps = {
   setBot(bot: string, enabled: boolean): Promise<Row | null>;
   record(a: Attempt): Promise<{ attempt_no: number }>;
   settings(): Promise<Row>;
-  saveSettings(p: { ui_recovery_paused: boolean; updated_by: string }): Promise<void>;
+  saveSettings(p: { ui_recovery_paused?: boolean; manual_send_enabled?: boolean; updated_by: string }): Promise<void>;
   postMeta(body: Row): Promise<{ status: number; json: Row; retryAfter?: number | null }>;
   // D1: may this server accept a browser-claimed user id for a privileged action?
   allowUnverifiedActor?: () => boolean;
@@ -150,16 +150,14 @@ function check(lead: Row | null, company: string | null, nowMs: number, resendUn
 // ── actions ─────────────────────────────────────────────────────────────────
 type Actor = Awaited<ReturnType<typeof loadActor>>;
 type Action = (deps: CapiDeps, actor: Actor, p: Row) => Promise<unknown>;
-// Actions that change something. Fail closed until a verified session exists (D1).
-const PRIVILEGED = new Set(["retry", "settings.set", "bot.set"]);
-const unverifiedAllowed = (deps: CapiDeps) => deps.allowUnverifiedActor?.() === true;
-
 const ACTIONS: Record<string, Action> = {
   async config(deps) {
     const s = await deps.settings();
     return { token: { configured: !!deps.token() }, dataset_id: DATASET_ID, window_days: 7, max_batch: MAX_BATCH,
-      actions_enabled: unverifiedAllowed(deps),
-      ui_recovery_paused: !!s.ui_recovery_paused, settings_updated_at: s.updated_at ?? null, settings_updated_by: s.updated_by ?? null };
+      // loadActor already verified the session and the metacapi grant; a caller
+      // that reaches config may act.
+      actions_enabled: true,
+      ui_recovery_paused: !!s.ui_recovery_paused, manual_send_enabled: s.manual_send_enabled !== false, settings_updated_at: s.updated_at ?? null, settings_updated_by: s.updated_by ?? null };
   },
   async summary(deps, actor) { return deps.summary(actor.company); },
   async list(deps, actor, p) {
@@ -184,8 +182,10 @@ const ACTIONS: Record<string, Action> = {
     return { bots: await deps.bots() };
   },
   async "settings.set"(deps, actor, p) {
-    if (typeof p.ui_recovery_paused !== "boolean") throw new Fail(422, "ui_recovery_paused must be true or false");
-    await deps.saveSettings({ ui_recovery_paused: p.ui_recovery_paused, updated_by: actor.id });
+    const has = (k: string) => typeof p[k] === "boolean";
+    if (!has("ui_recovery_paused") && !has("manual_send_enabled")) throw new Fail(422, "ui_recovery_paused or manual_send_enabled must be true or false");
+    await deps.saveSettings({ ...(has("ui_recovery_paused") ? { ui_recovery_paused: p.ui_recovery_paused } : {}),
+      ...(has("manual_send_enabled") ? { manual_send_enabled: p.manual_send_enabled } : {}), updated_by: actor.id });
     return ACTIONS.config(deps, actor, {});
   },
   async retry(deps, actor, p) {
@@ -205,7 +205,9 @@ const ACTIONS: Record<string, Action> = {
       ineligible: count("ineligible") + count("not_found") + count("other_company"), unsure: count("unsure"), locked: 0 };
     if (p.confirm !== true) return { sent: false, preview, warnings };
 
-    if ((await deps.settings()).ui_recovery_paused) throw new Fail(409, "CRM recovery is paused. Resume it before sending.");
+    const s = await deps.settings();
+    if (s.ui_recovery_paused) throw new Fail(409, "CRM recovery is paused. Resume it before sending.");
+    if (s.manual_send_enabled === false) throw new Fail(409, "Manual sending is disabled. Enable it to send.");
     const token = deps.token();
     if (!token) throw new Fail(409, "The Meta CAPI token is not configured on the server.");
 
@@ -260,9 +262,6 @@ export async function handleCapi(req: Request, deps: CapiDeps, allowedOrigin = "
     const actor = await loadActor(deps, req);
     const fn = ACTIONS[String(body.action)];
     if (!fn) throw new Fail(400, "Unknown action");
-    if (PRIVILEGED.has(String(body.action)) && !unverifiedAllowed(deps)) {
-      throw new Fail(403, "Sending and settings need a verified sign-in, which the CRM does not have yet (CR-001 decision D1). Viewing works.");
-    }
     return json({ ok: true, data: await fn(deps, actor, body.payload ?? {}) });
   } catch (e) {
     if (e instanceof Fail) return json({ ok: false, error: { message: e.message } }, e.status);

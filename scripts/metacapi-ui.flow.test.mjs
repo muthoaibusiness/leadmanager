@@ -93,10 +93,8 @@ const deps = {
   async record(a) { const n = attempts.filter((x) => x.lead_id === a.lead_id).length + 1; attempts.push({ ...a, attempt_no: n, attempted_at: new Date(NOW).toISOString() }); if (a.outcome === "accepted") leads.find((l) => l.id === a.lead_id).CAPI_STATUS = "LeadSubmitted"; return { attempt_no: n }; },
   async settings() { return settings; }, async saveSettings(p) { Object.assign(settings, p); },
   async postMeta(body) { sent.push(body); return metaReply; },
-  allowUnverifiedActor: () => allowSend,
   async verify(req) { if (req.headers.get("authorization") !== "Bearer tok-mgr") throw Object.assign(new Error("Sign in required"), { status: 401 }); return deps.user("mgr"); },
 };
-let allowSend = true;
 let listGate = null; // holds list calls, to see the loading state
 let summaryGate = null; // holds summary calls, to prove counts and rows land together
 let failNext = null; // makes the next call of this action fail
@@ -159,7 +157,7 @@ await tick(250);
 ok(!!$(".mcx-boot .ldr") && /Loading Meta CAPI/.test(text()), "the Inventory loader holds the page while the first load runs");
 ok(!$(".mcx-stat") && !$(".mcx-table") && !$('[role="switch"]'), "no counts, rows or bot switches show before everything has arrived");
 release(); listGate = null; await tick(300);
-ok(!!$(".mcx-stat") && !!$(".mcx-table") && $$('[role="switch"]').length === 2, "counts, table and bots appear together");
+ok(!!$(".mcx-stat") && !!$(".mcx-table") && $$('[role="switch"]').length === 3, "counts, table, bot switches and the manual-send switch appear together");
 ok(!document.body.innerHTML.includes(TOKEN), "the token never reaches the page");
 ok(/configured/.test(text()), "token shown only as configured");
 const stat = (label) => $$(".mcx-stat").find((s) => s.textContent.includes(label))?.querySelector(".mcx-stat-n")?.textContent.trim();
@@ -379,6 +377,18 @@ ok(!!sw("Eyad") && !!sw("Dubai"), "one switch per existing bot");
 await click(sw("Dubai")); await tick(60);
 ok(bots.find((b) => b.bot === "dubai").meta_capi_enabled === false && bots.find((b) => b.bot === "eyad").meta_capi_enabled === true, "Off is saved for that bot only");
 await click(sw("Dubai")); await tick(60);
+
+// 12b. manual-send switch: on by default; Off gates the send button; toggling persists
+const manualSw = () => sw("Manual send to Meta");
+ok(!!manualSw() && manualSw().getAttribute("aria-checked") === "true", "the manual-send switch is on by default");
+await click(rowOf("Q00").querySelector('input[type="checkbox"]')); await tick(30);
+ok(!btn("Send selected").disabled, "Send selected is enabled while manual send is on");
+await click(manualSw()); await tick(60);
+ok(settings.manual_send_enabled === false && manualSw().getAttribute("aria-checked") === "false", "Off is saved and the switch reflects it");
+ok(btn("Send selected").disabled, "Send selected is disabled while manual send is off");
+await click(manualSw()); await tick(60);
+ok(settings.manual_send_enabled === true && !btn("Send selected").disabled, "back on");
+await click(rowOf("Q00").querySelector('input[type="checkbox"]')); await tick(30); // clear the selection
 await act(async () => root.unmount());
 {
   const { made, freed, restore } = globalThis.__mcxReport;
@@ -394,16 +404,15 @@ ok(!rowOf("S1") || rowOf("S1").querySelector('input[type="checkbox"]').disabled,
 
 await act(async () => r1.unmount()); // a mounted panel keeps its 60s poll, and the process, alive
 
-// 14. D1: with no verified sign-in, the page shows data but no send, switch or pause works
-allowSend = false; sent.length = 0;
+// 14. D1: a verified sign-in needs no extra deployment gate — every control is live
 const r2 = await mount({ onDelete });
 await tick(300);
-ok(/View only/.test(text()), "the page says why sending is off");
-ok(stat("Total") != null, "the data still loads");
-ok(!$(".mcx-bar [aria-label='Export report']").disabled, "Export still works in view only: it reads, never sends");
-ok(!btn("Pause recovery") && !btn("Resume recovery"), "no pause control");
-ok(btn("Send selected")?.disabled === true, "Send selected is disabled");
-ok($$('[role="switch"]').length === 2 && $$('[role="switch"]').every((b) => b.disabled), "bot switches show their state but cannot be changed");
-ok(sent.length === 0, "nothing sent");
+ok(!/View only/.test(text()), "no 'view only' state for a verified admin");
+ok(stat("Total") != null, "the data loads");
+ok(btn("Pause recovery") || btn("Resume recovery"), "pause control present");
+ok($$('[role="switch"]').length >= 3 && $$('[role="switch"]').every((b) => !b.disabled), "switches are live");
+await click(rowOf("Q00").querySelector('input[type="checkbox"]')); await tick(30);
+ok(!btn("Send selected").disabled, "Send selected is enabled once an eligible lead is picked");
+await click(rowOf("Q00").querySelector('input[type="checkbox"]')); await tick(30); // clear the selection
 await act(async () => r2.unmount());
 console.log(process.exitCode ? "\nFAILED" : "\nall ok");
