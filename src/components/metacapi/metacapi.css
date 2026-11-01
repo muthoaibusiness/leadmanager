@@ -25,6 +25,7 @@
 .mcx-bot { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 12px; border-radius: var(--r); background: var(--surf2); min-width: 0; }
 .mcx-note { display: flex; gap: 8px; align-items: flex-start; font-size: 12.5px; color: var(--t2); }
 .mcx-note .mi { font-size: 16px; color: var(--orange); }
+.mcx-switches { display: flex; gap: 8px 16px; align-items: center; flex-wrap: wrap; }
 
 /* First load: the loader holds the page's space until everything arrives together. */
 .mcx-boot { min-height: min(70vh, 640px); justify-content: center; }

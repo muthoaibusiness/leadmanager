@@ -7,7 +7,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   isPriceQuestion, isLandOffer, matchNamedProject, isJolshiriProject, isAffirmative, isProfileConsent, isNegative,
-  brochureCaption, leadContext, SYSTEM_PROMPT, FLOW_ASK_PROFILE_TEXT, FLOW_PRICE_AGENT_TEXT, type ProjectRow,
+  brochureCaption, leadContext, SYSTEM_PROMPT, FLOW_ASK_PROFILE_TEXT, FLOW_PRICE_AGENT_TEXT, talkIntentReply, type ProjectRow,
 } from "./ai.ts";
 
 const P = (name: string, keywords: string[], address = ""): ProjectRow =>
@@ -160,4 +160,22 @@ test("with no project in context the FAQ prompt says so and carries the which-pr
   const ad = SYSTEM_PROMPT(CATALOG, "Wecon Nuznan", [], []);
   assert.match(ad, /came in through an ad for: Wecon Nuznan/);
   assert.doesNotMatch(ad, /No project is known/);
+});
+
+// Issue 3: "when/how can I talk" intents get a direct answer, not a generic
+// contact/meeting offer. The matcher is narrow — a talk verb plus a when/how cue.
+test("talkIntentReply answers কখন/কীভাবে কথা বলতে পারবো directly", () => {
+  assert.ok(talkIntentReply("কখন কথা বলতে পারবো ?"));
+  assert.ok(talkIntentReply("কখন ও কিভাবে কথা বলতে পারবো ?"));
+  assert.ok(talkIntentReply("কীভাবে আমি কথা বলতে পারি?"));
+  assert.ok(talkIntentReply("When can I talk?"));
+  const r = talkIntentReply("কখন কথা বলতে পারবো ?");
+  assert.match(r!.reply, /এখনই এই চ্যাটেই কথা বলতে পারবেন/);
+  assert.doesNotMatch(r!.reply, /Don t|মিটিং সেট/);
+});
+
+test("talkIntentReply lets ordinary questions and non-talk intents pass through", () => {
+  for (const t of ["লোহাগাড়া কোন জায়গায়", "প্রাইস কত", "ব্রোশিওর পাঠান", "আপনাদের অফিস কোথায়", "Hello", "এইটা কোন প্রজেক্ট?"]) {
+    assert.equal(talkIntentReply(t), null, t);
+  }
 });
