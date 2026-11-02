@@ -15,6 +15,7 @@
 //   $$);
 
 import { inviteLead, recentlyContactedLeadIds } from "../_shared/mela-invite.ts";
+import { sendQualifiedLead, recentlyInterestedLeadIds } from "../_shared/capi-qualified.ts";
 import { CORS, json, sbSelect, sbPatch, SUPABASE_URL, SERVICE_KEY, getActiveProjects, sendWaMessageMirrored } from "../_shared/wa.ts";
 import { buildJolshiriBundle, FLOW_ASK_PROFILE_TEXT, FLOW_AUTO_PROFILE_TEXT, FLOW_ASK_AGENT_TEXT, brochureCaption } from "../_shared/ai.ts";
 import {
@@ -275,7 +276,10 @@ Deno.serve(async (req) => {
     // Mela invitations for leads contacted in the last half hour that the CRM call missed.
     let mela = 0;
     for (const id of await recentlyContactedLeadIds(30)) if ((await inviteLead(id)).status === "sent") mela++;
-    return json({ ok: true, greeted, awaiting, dubaiDocs, dubaiAuto, dubaiFinal, mela });
+    // Leads that went Interested in the last half hour and were not reported to Meta yet.
+    let qualified = 0;
+    for (const id of await recentlyInterestedLeadIds(30)) if ((await sendQualifiedLead(id)).status === "sent") qualified++;
+    return json({ ok: true, greeted, awaiting, dubaiDocs, dubaiAuto, dubaiFinal, mela, qualified });
   } catch (e) {
     console.error("wa-followup error", e);
     return json({ ok: false, error: e instanceof Error ? e.message : String(e) }, 500);

@@ -33,7 +33,7 @@ import {
 import { runTrainerTestTurn, shouldFallbackToFaq } from "../_shared/trainer-deno.ts";
 import {
   DUBAI_CAMPAIGN_PROJECT, DUBAI_GREETING_TEXT, DUBAI_STAGE, needsAiReply,
-  JOLSHIRI_FLOW, GENERIC_FLOW,
+  JOLSHIRI_FLOW, GENERIC_FLOW, floorPlanPlan,
 } from "../_shared/dubai-flow.ts";
 import { runCitizenFlow } from "../_shared/citizen-flow.ts";
 
@@ -639,22 +639,43 @@ async function sendMetaCapiEvent(lead: any, p: ParsedEvent): Promise<void> {
   }
 }
 
+// Temporary: a /send command left no trace anywhere readable, so each step writes one
+// row to bot_llm_failures (service-role only) until the cause is found.
+async function dbg(message: string): Promise<void> {
+  try {
+    await fetch(`${SUPABASE_URL}/rest/v1/bot_llm_failures`, {
+      method: "POST",
+      headers: { apikey: SERVICE_KEY, Authorization: `Bearer ${SERVICE_KEY}`, "Content-Type": "application/json", Prefer: "return=minimal" },
+      body: JSON.stringify({ bot: "eyad", kind: "send_docs", message: message.slice(0, 480) }),
+    });
+  } catch { /* diagnostics only */ }
+}
+
 async function handleSendDocs(p: ParsedEvent): Promise<void> {
+  await dbg(`start ${p.command} remote=${p.remote} target=${p.target} phone=${p.phone}`);
   // Admin-editable mapping (wa_projects.send_code — see the WA Relay tab),
   // replacing the old hardcoded CODE_TO_PROJECT map.
   const project = await getProjectBySendCode(p.command);
-  if (!project) return; // unrecognized /send... code — silent no-op, matches source
+  if (!project) { await dbg(`no project for ${p.command}`); return; } // unrecognized /send... code — no-op, matches source
 
   const convId = `eyad:${p.remote}`;
-  const items: { type: "document" | "image"; url: string; fileName?: string; caption: string }[] = [];
+  // A command the agent typed arrives with the customer's JID as `remote` and no
+  // separate phone; a phone JID is sent to as its plain number, like every other send.
+  const to = p.remote.endsWith("@s.whatsapp.net") ? p.remote.split("@")[0].split(":")[0] : p.target;
+  const items: { type: "document" | "image" | "text"; url: string; fileName?: string; caption: string }[] = [];
   if (project.brochure_url) items.push({ type: "document", url: project.brochure_url, fileName: `${project.name} Brochure.pdf`, caption: brochureCaption(project) });
+  // The floor-plan PDF and the project video link, for the projects that have them.
+  items.push(...floorPlanPlan(project));
   for (const url of (project.photos || []).slice(0, 3)) items.push({ type: "image", url, caption: project.name });
 
+  console.log("send docs", { command: p.command, project: project.name, to, items: items.map((i) => i.type) });
   for (let i = 0; i < items.length; i++) {
     const item = items[i];
-    await sendWaMessageMirrored("eyad", p.target, convId, p.phone, {
-      type: item.type, mediaUrl: item.url, fileName: item.fileName, text: item.caption,
-    });
+    const ok = await sendWaMessageMirrored("eyad", to, convId, p.phone, item.type === "text"
+      ? { type: "text", text: item.caption }
+      : { type: item.type, mediaUrl: item.url, fileName: item.fileName, text: item.caption });
+    await dbg(`step ${i} ${item.type} ok=${ok} to=${to}`);
+    if (!ok) console.error("send docs: send failed", { command: p.command, to, step: i, type: item.type });
     // Wasender's account-protection rate limit is 1 message per 5s.
     if (i < items.length - 1) await new Promise((r) => setTimeout(r, 5500));
   }
@@ -726,6 +747,7 @@ Deno.serve(async (req) => {
       } else if (p.command.startsWith("/f")) {
         if (cmdSettings.manualForwardEnabled) await handleCreateLead(p, cmdSettings);
       } else if (p.command.startsWith("/send")) {
+        await dbg(`dispatch ${p.command} docsCommandEnabled=${cmdSettings.docsCommandEnabled}`);
         if (cmdSettings.docsCommandEnabled) await handleSendDocs(p);
       }
       // any other /command: unrecognized → silent no-op, matches source
@@ -733,6 +755,7 @@ Deno.serve(async (req) => {
     // kind === 'ignore': no-op
   } catch (e) {
     console.error("wa-bot-eyad handler error", e);
+    if (p.kind === "command") await dbg(`handler error: ${e instanceof Error ? e.message : String(e)}`);
     return json({ ok: false, error: e instanceof Error ? e.message : String(e) }, 500);
   }
 

@@ -1731,6 +1731,8 @@ export function changeStatus(leadId, status, user) {
   if (status === 'NOT_INTERESTED') autoTransferNotInterested(leadId, user);
   // Citizen Avenue leads get the Mela invitation the moment they are Contacted. The
   // chat module imports this one, so it is loaded on demand.
+  // Any lead that turns Interested is reported to Meta as QualifiedLead.
+  if (status === 'INTERESTED') import('./wa.js').then(m => m.waCapiQualified(leadId)).catch(() => {});
   if (status === 'CONTACTED' && /citizen/i.test(getLead(leadId)?.propertyInterest || '')) {
     import('./wa.js').then(m => m.waMelaInvite(leadId)).catch(() => {});
   }

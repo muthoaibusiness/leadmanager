@@ -12,6 +12,7 @@ import {
   waLoadConversations, waLoadMessages, waMarkRead, waSendMessage, waRetry, waFetchAvatar,
   waSubscribe, matchLead, mergeStatus, isChatAdmin, waSeesAllChats, isLeadAssignedOrForwardedTo, waAiState,
 } from '../../lib/wa.js';
+import { groupByNumber, mergeThreads } from '../../lib/waGroup.js';
 
 // How many missing avatars to backfill right after the list loads, enough to
 // cover what's on screen without hammering the relay (Wasender is rate-limited).
@@ -51,15 +52,21 @@ export default function ConversationsView() {
     return getDB().leads || [];
   }, [dbVersion]);
   // For non-admin agents: only show conversations for leads forwarded or assigned to this agent
+  // One row per customer: the phone thread and the LID thread of the same number are
+  // folded together (lib/waGroup.js). The stored threads stay separate.
   const visibleConvs = useMemo(() => {
-    if (waSeesAllChats(user)) return convs;
-    return convs.filter(c => {
+    const allowed = waSeesAllChats(user) ? convs : convs.filter(c => {
       const l = c.leadId ? getLead(c.leadId) || matchLead(c, leads) : matchLead(c, leads);
       return isLeadAssignedOrForwardedTo(l, user);
     });
+    return groupByNumber(allowed);
   }, [convs, user, leads]);
 
-  const active = useMemo(() => visibleConvs.find(c => c.id === activeId) || null, [visibleConvs, activeId]);
+  // The open customer, whichever of their threads the id names.
+  const active = useMemo(() => visibleConvs.find(c => c.id === activeId || c.memberIds.includes(activeId)) || null, [visibleConvs, activeId]);
+  // Every thread id of the open customer, for realtime and read marks.
+  const activeMembersRef = useRef(new Set());
+  useEffect(() => { activeMembersRef.current = new Set(active?.memberIds || (activeId ? [activeId] : [])); }, [active, activeId]);
 
   // AI reply / takeover state for the open thread (switch + ai_handoffs).
   // Nothing is set synchronously here; the result is tagged with the thread id
@@ -124,7 +131,7 @@ export default function ConversationsView() {
 
       onMessage: (m) => {
         // Thread currently open → merge into the visible transcript.
-        if (m.conversationId === activeIdRef.current) {
+        if (activeMembersRef.current.has(m.conversationId)) {
           setMsgs(prev => {
             const i = prev.findIndex(x => x.id === m.id);
             if (i === -1) return [...prev, m].sort((a, b) => new Date(a.waTimestamp) - new Date(b.waTimestamp));
@@ -146,9 +153,9 @@ export default function ConversationsView() {
             lastMessageAt: m.waTimestamp,
             lastMessagePreview: m.type === 'text' ? m.body : (m.mediaName || m.type),
             lastMessageDir: m.direction,
-            unreadCount: isNewInbound && m.conversationId !== activeIdRef.current
+            unreadCount: isNewInbound && !activeMembersRef.current.has(m.conversationId)
               ? (c.unreadCount || 0) + 1
-              : (m.conversationId === activeIdRef.current ? 0 : c.unreadCount),
+              : (activeMembersRef.current.has(m.conversationId) ? 0 : c.unreadCount),
           };
           const next = prev.slice();
           next[i] = bumped;
@@ -157,7 +164,7 @@ export default function ConversationsView() {
 
         // Instant notification for inbound messages the agent isn't looking at.
         if (m.direction === 'IN') {
-          const suppress = visibleRef.current && m.conversationId === activeIdRef.current;
+          const suppress = visibleRef.current && activeMembersRef.current.has(m.conversationId);
           pushNotify(
             { id: 'wa-' + m.id, message: `${m.senderName || m.phone}: ${m.type === 'text' ? (m.body || '') : m.type}`.slice(0, 140) },
             { suppress, onClick: () => { setActiveId(m.conversationId); window.focus(); } }
@@ -171,7 +178,7 @@ export default function ConversationsView() {
           if (i === -1) return [c, ...prev];
           const next = prev.slice();
           // Don't let a stale broadcast resurrect a badge on the open thread.
-          next[i] = { ...c, unreadCount: c.id === activeIdRef.current ? 0 : c.unreadCount };
+          next[i] = { ...c, unreadCount: activeMembersRef.current.has(c.id) ? 0 : c.unreadCount };
           return next;
         });
       },
@@ -191,15 +198,18 @@ export default function ConversationsView() {
     setLoadingMsgs(true);
     setMsgs([]);
     try {
-      const list = await waLoadMessages(c.id);
+      // A customer who reached us on two threads reads as one conversation.
+      const ids = c.memberIds?.length ? c.memberIds : [c.id];
+      const lists = await Promise.all(ids.map(id => waLoadMessages(id)));
+      const list = mergeThreads(lists);
       setMsgs(list);
       const oldest = list[0] || null;
       setOlderCursor(oldest?.waTimestamp || null);
       setOlderId(oldest?.id || null);
-      setHasOlder(!!oldest && list.length >= 300);
+      setHasOlder(lists.some(l => l.length >= 300));
       if (c.unreadCount > 0) {
-        await waMarkRead(c.id);
-        setConvs(prev => prev.map(x => (x.id === c.id ? { ...x, unreadCount: 0 } : x)));
+        await Promise.all(ids.map(id => waMarkRead(id)));
+        setConvs(prev => prev.map(x => (ids.includes(x.id) ? { ...x, unreadCount: 0 } : x)));
       }
     } catch {
       showToast('Could not load that conversation.', 'err');
@@ -228,11 +238,13 @@ export default function ConversationsView() {
     if (!active || !olderCursor || loadingOlder) return;
     setLoadingOlder(true);
     try {
-      const older = await waLoadMessages(active.id, { before: olderCursor, beforeId: olderId });
-      setMsgs(prev => [...older, ...prev]);
+      const ids = active.memberIds?.length ? active.memberIds : [active.id];
+      const pages = await Promise.all(ids.map(id => waLoadMessages(id, { before: olderCursor, beforeId: olderId })));
+      const older = mergeThreads(pages);
+      setMsgs(prev => mergeThreads([older, prev]));
       const prevOldest = older[0] || null;
       if (prevOldest) { setOlderCursor(prevOldest.waTimestamp); setOlderId(prevOldest.id); }
-      if (!prevOldest || older.length < 300) setHasOlder(false);
+      if (!prevOldest || !pages.some(p => p.length >= 300)) setHasOlder(false);
     } finally { setLoadingOlder(false); }
   }, [active, olderCursor, olderId, loadingOlder]);
 

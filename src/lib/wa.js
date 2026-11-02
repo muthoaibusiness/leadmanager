@@ -402,6 +402,17 @@ export async function waMelaInvite(leadId) {
   }
 }
 
+// A lead that just became Interested is reported to Meta as QualifiedLead. The relay
+// checks everything (click id, window, the bot's Meta switch) and reports each lead once.
+export async function waCapiQualified(leadId) {
+  try {
+    const r = await authedFetch(`${SB_URL}/functions/v1/capi-qualified`, { method: 'POST', headers: relayHeaders(), body: JSON.stringify({ leadId }) });
+    return r.ok ? await r.json() : null;
+  } catch {
+    return null;
+  }
+}
+
 export async function waSendMessage(settings, { conversation, user, type = 'text', body = '', mediaUrl = '', mediaMime = '', mediaName = '', mediaSize = 0 }) {
   const clientRef = waClientRef();
   const account = normAccount(conversation?.account || waAccountForUser(user));
