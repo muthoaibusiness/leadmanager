@@ -26,8 +26,8 @@ export const FIELD_TARGETS = [
   { key: 'profession', label: 'Profession' },
 ];
 export const DEFAULT_FIELD_MAP = {
-  name: ['full_name', 'name'],
-  phone: ['phone_number', 'phone'],
+  name: ['full_name', 'name', 'first_name'],
+  phone: ['phone_number', 'phone', 'whatsapp_number', 'what_is_your_phone_number'],
   email: ['email'],
   city: ['city'],
   budget: ['budget'],
@@ -39,7 +39,12 @@ export const ASSIGN_MODES = [
   { key: 'agent', label: 'One agent', hint: 'Every lead from this form goes to the same agent.' },
   { key: 'team', label: "A team's lead", hint: "Goes to the team lead, who forwards it." },
   { key: 'round_robin', label: 'Round robin', hint: 'Shared out in turn among the agents you pick.' },
+  { key: 'forward', label: 'Forward to the sales pool', hint: 'Like an agent typing a /f tag in WhatsApp: the pool picks the agent, and the customer can be told who it is.' },
 ];
+// The tags the sales pools answer to (wa_agents.taq); any other /f… tag a pool is set up with works too.
+export const FORWARD_TAGS = ['/fctg', '/fdh', '/fcml', '/fdu'];
+export const cleanTag = (v) => String(v || '').trim().toLowerCase();
+export const validTag = (v) => /^\/f[a-z]{1,10}$/.test(cleanTag(v));
 export const DUPLICATE_POLICIES = [
   { key: 'note', label: 'Add to the existing lead', hint: 'The new answers are saved as a note on the lead that already has this phone.' },
   { key: 'new', label: 'Create another lead', hint: 'Every submission becomes its own lead.' },
@@ -53,6 +58,7 @@ export const NEW_LEAD_STATUSES = [
 export const emptyForm = () => ({
   id: '', form_id: '', label: '', active: true, project: '', source: 'META_ADS', status: '',
   assign_mode: 'none', assign_agent_id: '', assign_team_id: '', assign_pool: [],
+  forward_tag: '/fctg', notify_customer: true,
   field_map: structuredClone(DEFAULT_FIELD_MAP),
 });
 
@@ -77,6 +83,7 @@ export function validateForm(f, { existingFormIds = [] } = {}) {
   if (f.assign_mode === 'agent' && !f.assign_agent_id) e.push('Pick the agent who gets these leads.');
   if (f.assign_mode === 'team' && !f.assign_team_id) e.push('Pick the team.');
   if (f.assign_mode === 'round_robin' && (f.assign_pool || []).length < 2) e.push('Round robin needs at least two agents.');
+  if (f.assign_mode === 'forward' && !validTag(f.forward_tag)) e.push('Enter the forward tag, like /fctg.');
   return e;
 }
 
@@ -91,6 +98,8 @@ export function formToRow(f, companyId, newId) {
     assign_agent_id: f.assign_mode === 'agent' ? f.assign_agent_id || null : null,
     assign_team_id: f.assign_mode === 'team' ? f.assign_team_id || null : null,
     assign_pool: f.assign_mode === 'round_robin' ? f.assign_pool || [] : [],
+    // Only a forwarding form sends these two columns (migration 0060), so every other form still saves before it is run.
+    ...(f.assign_mode === 'forward' ? { forward_tag: cleanTag(f.forward_tag), notify_customer: f.notify_customer !== false } : {}),
     field_map: map, updated_at: new Date().toISOString(),
   };
 }
@@ -98,6 +107,7 @@ export const rowToForm = (r) => ({
   ...emptyForm(), ...r,
   status: r.status || '', assign_agent_id: r.assign_agent_id || '', assign_team_id: r.assign_team_id || '',
   assign_pool: Array.isArray(r.assign_pool) ? r.assign_pool : [],
+  forward_tag: r.forward_tag || '/fctg', notify_customer: r.notify_customer !== false,
   field_map: { ...structuredClone(DEFAULT_FIELD_MAP), ...(r.field_map || {}) },
 });
 

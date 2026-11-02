@@ -23,8 +23,9 @@ import {
 
 export interface CitizenCtx {
   bot: "dubai" | "eyad";
-  // True when a consultant has really been assigned (Dubai auto-forwards; Eyad
-  // does not), which decides whether the "already assigned" price line may be said.
+  // True when a consultant has really been assigned (Dubai forwards at once; Eyad
+  // five minutes in, or when an agent types a /f tag), which decides whether the
+  // "already assigned" price line may be said.
   assigned: boolean;
   pid: string; // already URL-encoded prelead id
   convId: string;

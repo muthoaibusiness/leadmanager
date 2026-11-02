@@ -3,8 +3,8 @@
 // session's one Wasender webhook target (a session can only have one). It
 // forwards the untouched payload to wa-webhook itself (see forwardToMirror
 // below) so the CRM-chat mirror still runs, then handles its own command
-// routing / welcome message / auto-forward / CAPI logic, exactly as the n8n
-// graph did.
+// routing / welcome message / CAPI logic, as the n8n graph did. (The timed
+// auto-forward of new contacts is not here: wa-followup runs it, _shared/forward.ts.)
 //
 // Deploy:  npx supabase functions deploy wa-bot-eyad --no-verify-jwt
 // Secrets: npx supabase secrets set META_CAPI_ACCESS_TOKEN=...
@@ -36,6 +36,7 @@ import {
   JOLSHIRI_FLOW, GENERIC_FLOW, floorPlanPlan,
 } from "../_shared/dubai-flow.ts";
 import { runCitizenFlow } from "../_shared/citizen-flow.ts";
+import { assignedText } from "../_shared/forward-core.ts";
 
 // ── fixed literals from the source workflow ──────────────────────────────
 // Hard-coded in the live n8n workflow for this one bot instance (Eyad /
@@ -46,9 +47,6 @@ const COMPANY_ID = "c1";
 const PRELEAD_LOCATION = "Chitagong"; // sic — verbatim from the n8n node, misspelling included
 const WA_TAG = "Eyad";
 
-// Region → forwarding-pool command (Compute Forward's REGION_CMD map).
-const REGION_CMD: Record<string, string> = { Dhaka: "/fdh", Chattogram: "/fctg", Cumilla: "/fcml" };
-
 // ── customer-facing message templates, verbatim from §3 of the spec ─────
 const firstToken = (name: string) => (name || "").trim().split(/\s+/)[0] || "";
 
@@ -57,9 +55,6 @@ const welcomeText = (name: string) =>
 
 const handoverText = (name: string) =>
   `Hello ${firstToken(name) || "there"}, 👋\n\nThank you for your patience! 🙏\nI’m Eayd from Wecon Properties, and I’ll be continuing this conversation to assist you further.\n\nI’m currently reviewing your previous messages and requirements to make sure I guide you properly. 🤝\n\nPlease allow me a moment — I’ll get back to you shortly with the relevant details.`;
-
-const assignedText = (firstName: string, agentName: string, agentPhone: string) =>
-  `প্রিয় ${firstName || "there"},\n\nআপনার জন্য একজন ডেডিকেটেড এক্সপার্ট নির্ধারণ করা হয়েছে।\n\n👨‍💼 ${agentName}\n📞 ${agentPhone}\n\nতিনি শীঘ্রই আপনার সাথে যোগাযোগ করে সব কিছু বুঝিয়ে দেবেন।`;
 
 const alreadyAssignedText = (firstName: string, agentName: string, agentPhone: string) =>
   `প্রিয় ${firstName || "there"},\n\nআপনি ইতিমধ্যে আমাদের একজন ডেডিকেটেড এক্সপার্টের সাথে যুক্ত আছেন।\n\n👨‍💼 ${agentName}\n📞 ${agentPhone}\n\nতিনি আপনার সব প্রশ্নের উত্তর দিতে থাকবেন।`;
@@ -375,7 +370,7 @@ async function handleInbound(p: ParsedEvent): Promise<void> {
     const full = await getActiveProjects();
     const project = (full as any[]).find((x) => x.name === DUBAI_CAMPAIGN_PROJECT) ?? null;
     await runCitizenFlow({
-      bot: "eyad", assigned: false, pid: encodeURIComponent(preleadId), convId, phone: p.phone, waTo: p.target, text: p.text, quoted: p.quoted,
+      bot: "eyad", assigned: status.forwarded === true, pid: encodeURIComponent(preleadId), convId, phone: p.phone, waTo: p.target, text: p.text, quoted: p.quoted,
       isNew: upsert.is_new === true, starting, stage: stage0, stageAt: undefined, takeover, msgCount, project,
       greetingEnabled: settings.welcomeEnabled, greetingText: DUBAI_GREETING_TEXT,
       aiWillAnswer: !!(settings.faqAgentEnabled && p.text && !takeover && p.remote && !isLandOffer(p.text)
@@ -415,7 +410,7 @@ async function handleInbound(p: ParsedEvent): Promise<void> {
     : GENERIC_WELCOME_TEXT;
   const jFaqGate = settings.faqAgentEnabled && p.text && !takeover && p.remote && !landOffer;
   const handled = await runCitizenFlow({
-    bot: "eyad", assigned: false, pid: encodeURIComponent(preleadId), convId: `eyad:${p.remote}`,
+    bot: "eyad", assigned: status.forwarded === true, pid: encodeURIComponent(preleadId), convId: `eyad:${p.remote}`,
     phone: p.phone, waTo: p.target, text: p.text, quoted: p.quoted,
     isNew: upsert.is_new === true, starting, stage: stage0, stageAt: undefined, takeover, msgCount,
     project: (projects as any[]).find((x) => x.name === upsert.property_interest) ?? null,
@@ -442,45 +437,14 @@ async function handleInbound(p: ParsedEvent): Promise<void> {
   });
   if (handled) return; // a scripted stage or the FAQ answered — one owner
 
-  const phoneDigits = p.phone.replace(/\D/g, "");
-  const isBD = phoneDigits.startsWith("880");
+  // Save the project's region on the prelead. It is what auto-forward goes by (wa-followup
+  // forwards Chattogram and not-yet-placed contacts to /fctg five minutes in, see
+  // _shared/forward.ts) and it is copied to the lead when one is made. The old
+  // "forward after N messages" rule is gone: it forwarded silently, to any region's
+  // pool, and would now double the timed forward.
   const proj = (projects as any[]).find((x) => x.name === upsert.property_interest);
-  const projectRegion: string | null = proj ? proj.region : null;
-
-  let forwardCmd = "";
-  if (!isBD) forwardCmd = "/fdu";
-  else if (projectRegion && REGION_CMD[projectRegion]) forwardCmd = REGION_CMD[projectRegion];
-
-  const eligible =
-    msgCount >= settings.autoForwardAfterMessages && status.forwarded !== true && upsert.takeover !== true && !!forwardCmd;
-
-  // Has Region? → Save Prelead Region (this part IS live/enabled).
-  if (projectRegion) {
-    await sbPatchJson("preleads", `id=eq.${encodeURIComponent(preleadId)}`, { region: projectRegion });
-  }
-
-  // Eligible? → Auto Forward Create Lead was DISABLED in the source n8n
-  // workflow (the lead-create call was wired but never actually ran) — now
-  // admin-controlled via wa_settings.auto_forward_enabled (WA Relay tab),
-  // off by default to match that original behavior until someone turns it
-  // on. The region-sync side effect that followed it in the n8n graph stays
-  // live either way.
-  if (eligible) {
-    if (settings.autoForwardEnabled) {
-      const result = await sbRpcJson("wa_create_lead", {
-        p_phone: p.phone,
-        p_cmd: forwardCmd,
-        p_company_id: COMPANY_ID,
-      });
-      console.log("auto-forward: wa_create_lead", { preleadId, phone: p.phone, forwardCmd, result: result?.status });
-    } else {
-      console.log("auto-forward eligible (auto_forward_enabled is off — lead-create skipped)", {
-        preleadId, phone: p.phone, forwardCmd, msgCount,
-      });
-    }
-    if (projectRegion) {
-      await sbPatchJson("leads", `phone=eq.${encodeURIComponent(p.phone)}`, { region: projectRegion });
-    }
+  if (proj?.region) {
+    await sbPatchJson("preleads", `id=eq.${encodeURIComponent(preleadId)}`, { region: proj.region });
   }
 }
 

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { emptyForm, validateForm, formToRow, rowToForm, keysOf, cleanFormId, validateSettings, ago, FIELD_TARGETS } from './fbLeads.js';
+import { emptyForm, validateForm, formToRow, rowToForm, keysOf, cleanFormId, validateSettings, ago, validTag, cleanTag, FIELD_TARGETS } from './fbLeads.js';
 
 const good = () => ({ ...emptyForm(), form_id: '1234567890123', label: 'Citizen form', project: 'Wecon Citizen Avenue' });
 
@@ -34,11 +34,33 @@ test('saving keeps only what the chosen mode uses and cleans the ids and keys', 
   assert.equal(formToRow({ ...f, id: 'old' }, 'c1', 'newid').id, 'old');
 });
 
+test('a forwarding form needs a tag, and only it sends the forward columns', () => {
+  const fwd = { ...good(), assign_mode: 'forward', forward_tag: ' /FCTG ', notify_customer: true };
+  assert.deepEqual(validateForm(fwd), []);
+  assert.ok(validateForm({ ...fwd, forward_tag: '' }).some((m) => m.includes('forward tag')));
+  assert.ok(validateForm({ ...fwd, forward_tag: 'fctg' }).some((m) => m.includes('forward tag')));   // must start with /f
+  assert.ok(validTag('/fdu') && validTag('/fcml') && !validTag('/t') && !validTag('/f') && !validTag('/f ctg'));
+  assert.equal(cleanTag(' /FCTG '), '/fctg');
+  const r = formToRow(fwd, 'c1', 'newid');
+  assert.equal(r.assign_mode, 'forward');
+  assert.equal(r.forward_tag, '/fctg');
+  assert.equal(r.notify_customer, true);
+  assert.equal(formToRow({ ...fwd, notify_customer: false }, 'c1', 'x').notify_customer, false);
+  // before migration 0060 these columns do not exist, so no other mode may send them
+  assert.equal('forward_tag' in formToRow({ ...good(), assign_mode: 'agent', assign_agent_id: 'u1' }, 'c1', 'x'), false);
+  assert.equal('notify_customer' in formToRow(good(), 'c1', 'x'), false);
+  // and a row from before the migration reads back with the defaults
+  const old = rowToForm({ id: 'x', form_id: '99', label: 'L', project: 'P', assign_mode: 'none' });
+  assert.equal(old.forward_tag, '/fctg');
+  assert.equal(old.notify_customer, true);
+  assert.equal(rowToForm({ id: 'x', form_id: '99', label: 'L', project: 'P', assign_mode: 'forward', forward_tag: '/fdh', notify_customer: false }).notify_customer, false);
+});
+
 test('a stored row reads back as a form, with default field keys filled in', () => {
   const back = rowToForm({ id: 'x', form_id: '99', label: 'L', project: 'P', assign_mode: 'team', assign_team_id: 't1', field_map: { phone: ['mobile'] }, status: null });
   assert.equal(back.assign_team_id, 't1');
   assert.deepEqual(back.field_map.phone, ['mobile']);        // the saved key wins
-  assert.deepEqual(back.field_map.name, ['full_name', 'name']); // a missing one gets the default
+  assert.deepEqual(back.field_map.name, ['full_name', 'name', 'first_name']); // a missing one gets the default
   assert.equal(back.status, '');
   assert.ok(FIELD_TARGETS.every((t) => t.key in back.field_map));
 });

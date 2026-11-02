@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createHmac } from "node:crypto";
-import { verifySignature, leadgenChanges, mapAnswers, parseBudget, pickAssignee, summarizeAnswers, normKey } from "./fb-leads-core.ts";
+import { verifySignature, leadgenChanges, mapAnswers, parseBudget, pickAssignee, summarizeAnswers, normKey, fieldMapOf, pickNext } from "./fb-leads-core.ts";
 
 test("only a body signed with the app secret is accepted", async () => {
   const raw = '{"object":"page"}';
@@ -64,6 +64,14 @@ test("a key typed as the label still matches Facebook's snake_case name, in any 
   assert.equal(mapAnswers(fd, { phone: ["mobile"] }).phone, "");          // a key that is not there still finds nothing
 });
 
+test("a map saved without Facebook's standard key still finds it", () => {
+  const fd = [{ name: "phone", values: ["+8801854843044"] }, { name: "full_name", values: ["hasan"] }];
+  const m = mapAnswers(fd, fieldMapOf({ field_map: { phone: ["phone_number"], name: "Name" } }));
+  assert.equal(m.phone, "8801854843044");
+  assert.equal(m.name, "hasan");
+  assert.deepEqual(fieldMapOf({}).phone.slice(0, 2), ["phone_number", "phone"]);
+});
+
 test("who gets it: one agent, a team lead, a round robin, or nobody", () => {
   const users = [
     { id: "a1", name: "A1", role: "AGENT", team_id: "t1" }, { id: "a2", name: "A2", role: "AGENT", team_id: "t1" },
@@ -77,4 +85,17 @@ test("who gets it: one agent, a team lead, a round robin, or nobody", () => {
   assert.deepEqual([0, 1, 2, 3].map((n) => pickAssignee(rr, users, n).user?.id), ["a1", "a2", "a1", "a2"]);
   assert.equal(pickAssignee({ assign_mode: "none" }, users, 0).user, null);
   assert.equal(pickAssignee({ assign_mode: "round_robin", assign_pool: ["a3"] }, users, 0).user, null);
+});
+
+test("the drip takes the oldest lead that is not a CRM lead yet, and does not let a bad one hold the rest up", () => {
+  const NOW = Date.parse("2026-11-03T12:00:00Z");
+  const L = (id: string, t: string) => ({ id, form_id: "f", created: t });
+  const all = [L("c", "2026-11-02T12:00:00+0000"), L("a", "2026-11-01T12:00:00+0000"), L("b", "2026-11-01T18:00:00+0000"), L("d", "2026-11-02T18:00:00+0000")];
+  const ago = (min: number) => new Date(NOW - min * 60_000).toISOString();
+  assert.equal(pickNext(all, [], NOW)?.id, "a");                                                    // nothing handled: the oldest
+  assert.equal(pickNext(all, [{ leadgen_id: "a", status: "created" }, { leadgen_id: "b", status: "duplicate" }], NOW)?.id, "c");
+  assert.equal(pickNext(all, [{ leadgen_id: "a", status: "failed", processed_at: ago(10) }], NOW)?.id, "b");   // failed 10 min ago: later
+  assert.equal(pickNext(all, [{ leadgen_id: "a", status: "failed", processed_at: ago(90) }], NOW)?.id, "a");   // failed 90 min ago: again
+  assert.equal(pickNext(all, [{ leadgen_id: "a", status: "received", received_at: ago(3) }], NOW)?.id, "b");  // being handled right now
+  assert.equal(pickNext(all, all.map((l) => ({ leadgen_id: l.id, status: "created" })), NOW), null);
 });

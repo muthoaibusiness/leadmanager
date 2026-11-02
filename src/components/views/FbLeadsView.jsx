@@ -7,7 +7,7 @@ import { uid } from '../../lib/helpers.js';
 import { SB_URL, SB_H, ensureFreshToken } from '../../lib/supabase.js';
 import { SRC_LABELS } from '../../lib/constants.js';
 import {
-  SECRETS, FIELD_TARGETS, ASSIGN_MODES, DUPLICATE_POLICIES, NEW_LEAD_STATUSES, webhookUrl, emptyForm, validateForm, validateSettings,
+  SECRETS, FIELD_TARGETS, ASSIGN_MODES, FORWARD_TAGS, DUPLICATE_POLICIES, NEW_LEAD_STATUSES, webhookUrl, emptyForm, validateForm, validateSettings,
   formToRow, rowToForm, keysOf, cleanPageId, ago,
 } from '../../lib/fbLeads.js';
 import '../fbleads/fbleads.css';
@@ -17,6 +17,9 @@ import '../fbleads/fbleads.css';
 // 0059); the credentials are Edge Function secrets and never pass through here.
 
 const TABS = [{ key: 'setup', label: 'Setup' }, { key: 'forms', label: 'Forms' }, { key: 'log', label: 'Received' }];
+// The chips on a Received row: who got the lead, whether the customer was messaged, whether Meta was told.
+const MSG_CHIP = { sent: ['Customer messaged', 'ok'], failed: ['Message failed', 'bad'], off: ['Message off', 'mut'], skipped: ['No message', 'mut'] };
+const CAPI_CHIP = { sent: ['Meta CAPI sent', 'ok'], unclear: ['Meta CAPI unclear', 'warn'], failed: ['Meta CAPI failed', 'bad'], off: ['Meta CAPI off', 'mut'] };
 const EVENT_TONE = { created: 'ok', duplicate: 'warn', skipped: 'mut', failed: 'bad', received: 'mut' };
 
 // A write to PostgREST that says what went wrong in words. A missing table (the
@@ -137,7 +140,8 @@ export default function FbLeadsView() {
   const url = webhookUrl(SB_URL);
   const assignText = (f) => (f.assign_mode === 'agent' ? `Agent: ${nameOf(f.assign_agent_id)}`
     : f.assign_mode === 'team' ? `Team lead of ${teams.find((t) => t.id === f.assign_team_id)?.name || '—'}`
-    : f.assign_mode === 'round_robin' ? `Round robin · ${f.assign_pool.length} agents` : 'Unassigned');
+    : f.assign_mode === 'round_robin' ? `Round robin · ${f.assign_pool.length} agents`
+    : f.assign_mode === 'forward' ? `Forward ${f.forward_tag}${f.notify_customer ? ' · customer messaged' : ''}` : 'Unassigned');
   const setS = (patch) => setSettings((s) => ({ ...s, ...patch }));
   const setF = (patch) => setEditing((f) => ({ ...f, ...patch }));
 
@@ -316,6 +320,18 @@ export default function FbLeadsView() {
                   </div>
                 </div>
               )}
+              {editing.assign_mode === 'forward' && (
+                <>
+                  <label className="fbl-fld"><span>Forward tag</span>
+                    <input list="fbl-tags" value={editing.forward_tag} onChange={(e) => setF({ forward_tag: e.target.value })} placeholder="/fctg" />
+                    <datalist id="fbl-tags">{FORWARD_TAGS.map((t) => <option key={t} value={t} />)}</datalist>
+                  </label>
+                  <label className="fbl-onoff"><span>Message the customer on WhatsApp with who their expert is</span>
+                    <Switch on={editing.notify_customer} onChange={(v) => setF({ notify_customer: v })} label="Message the customer" />
+                  </label>
+                  <p className="fbl-note">Sent from the Eyad number, and only when the Eyad bot's &ldquo;Notify customer when an agent is assigned&rdquo; switch is on. The first message to someone who has never written to that number is what WhatsApp watches most closely, so keep the volume sensible.</p>
+                </>
+              )}
 
               <div className="fbl-fld"><span>Which form question fills which field</span>
                 <p className="fbl-note">Type the question key as Facebook names it. Several keys separated by commas are tried in order.</p>
@@ -343,7 +359,15 @@ export default function FbLeadsView() {
                   {events.map((e) => (
                     <li key={e.leadgen_id}>
                       <span className={`fbl-tag ${EVENT_TONE[e.status] || 'mut'}`}>{e.status}</span>
-                      <span className="fbl-log-main"><b>{forms.find((f) => f.form_id === e.form_id)?.label || `Form ${e.form_id || '—'}`}</b><small>{e.error || e.leadgen_id}</small></span>
+                      <span className="fbl-log-main"><b>{forms.find((f) => f.form_id === e.form_id)?.label || `Form ${e.form_id || '—'}`}</b><small>{e.error || e.leadgen_id}</small>
+                        {(e.agent_name || e.forward_tag || e.customer_msg || e.capi) && (
+                          <span className="fbl-chips">
+                            {e.agent_name && <span className="fbl-tag mut">{e.forward_tag ? `${e.forward_tag} → ` : ''}{e.agent_name}</span>}
+                            {MSG_CHIP[e.customer_msg] && <span className={`fbl-tag ${MSG_CHIP[e.customer_msg][1]}`}>{MSG_CHIP[e.customer_msg][0]}</span>}
+                            {CAPI_CHIP[e.capi] && <span className={`fbl-tag ${CAPI_CHIP[e.capi][1]}`}>{CAPI_CHIP[e.capi][0]}</span>}
+                          </span>
+                        )}
+                      </span>
                       <span className="fbl-log-when">{ago(e.received_at)}</span>
                     </li>
                   ))}

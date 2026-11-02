@@ -99,7 +99,35 @@ export function pickAssignee(form: Row, users: Person[], made: number): Assignee
 
 // The question keys Facebook gives its standard fields; a form's own map wins.
 export const DEFAULT_FIELD_MAP: Record<string, string[]> = {
-  name: ["full_name", "name"], phone: ["phone_number", "phone"], email: ["email"],
-  city: ["city"], budget: ["budget"], profession: ["job_title", "profession"],
+  name: ["full_name", "name", "first_name"], phone: ["phone_number", "phone", "whatsapp_number", "what_is_your_phone_number"], email: ["email", "email_address"],
+  city: ["city", "town/city", "area"], budget: ["budget"], profession: ["job_title", "profession"],
 };
-export const fieldMapOf = (form: Row): Record<string, string[]> => ({ ...DEFAULT_FIELD_MAP, ...(form?.field_map ?? {}) });
+// The form's own keys are tried first, then Facebook's standard ones, so a map saved with
+// only "phone_number" still finds a form whose question is called "phone".
+export const fieldMapOf = (form: Row): Record<string, string[]> => {
+  const own = form?.field_map ?? {};
+  const out: Record<string, string[]> = { ...own };
+  for (const [k, std] of Object.entries(DEFAULT_FIELD_MAP)) {
+    out[k] = [...(Array.isArray(own[k]) ? own[k] : String(own[k] ?? "").split(",")).map((s: string) => s.trim()).filter(Boolean), ...std];
+  }
+  return out;
+};
+
+// ── the backlog drip ────────────────────────────────────────────────────────
+// Leads Meta holds for a form that never became a CRM lead are fed in one at a time. A lead is
+// "done" once its event is created or duplicate; a failed or skipped one is tried again an hour
+// later (so one bad lead cannot hold up the rest), a stuck "received" one after ten minutes.
+export type Pending = { id: string; form_id: string; created: string };
+export type SeenEvent = { leadgen_id: string; status: string; processed_at?: string | null; received_at?: string | null };
+export function pickNext(all: Pending[], events: SeenEvent[], nowMs: number): Pending | null {
+  const seen = new Map(events.map((e) => [e.leadgen_id, e]));
+  const at = (s: string) => Date.parse(s) || 0;
+  for (const l of [...all].sort((a, b) => at(a.created) - at(b.created))) {
+    const e = seen.get(l.id);
+    if (!e) return l;
+    if (e.status === "created" || e.status === "duplicate") continue;
+    const wait = e.status === "received" ? 10 * 60_000 : 60 * 60_000;
+    if (nowMs - at(e.processed_at || e.received_at || "") >= wait) return l;
+  }
+  return null;
+}

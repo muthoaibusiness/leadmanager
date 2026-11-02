@@ -7,10 +7,13 @@
 // one lead. What happened to each one is written back to that row, which is what
 // the page's "Received" tab shows.
 
-import { SUPABASE_URL, SERVICE_KEY, sbSelect, sbUpsert } from "./wa.ts";
+import { SUPABASE_URL, SERVICE_KEY, sbSelect, sbUpsert, sbPatch, getBotSettings } from "./wa.ts";
 import { samePhone } from "./phone.ts";
 import { GRAPH } from "./capi-core.ts";
 import { mapAnswers, pickAssignee, summarizeAnswers, fieldMapOf, type Change, type FieldData } from "./fb-leads-core.ts";
+import { rpcJson, createLeadByTag, tellCustomer } from "./forward.ts";
+import { shouldTell } from "./forward-core.ts";
+import { reportFormLead } from "./fb-capi.ts";
 
 type Row = Record<string, any>;
 export type Outcome = { leadgen_id: string; status: "created" | "duplicate" | "skipped" | "failed" | "repeat"; lead_id?: string; error?: string };
@@ -24,7 +27,12 @@ async function finish(id: string, status: string, extra: Row = {}) {
   await rest(`fb_lead_events?leadgen_id=eq.${encodeURIComponent(id)}`, "PATCH", { status, processed_at: new Date().toISOString(), ...extra });
 }
 
-export async function processLeadgen(c: Change): Promise<Outcome> {
+// `replay`: a lead Meta delivered while intake was off or the form was not set up (skipped) is
+// taken again, which a live webhook delivery never does.
+// What happened to the lead, for the Received tab (migration 0062). A column that is not there yet only loses the chips.
+const keepState = (id: string, st: Row) => rest(`fb_lead_events?leadgen_id=eq.${encodeURIComponent(id)}`, "PATCH", st).catch(() => {});
+
+export async function processLeadgen(c: Change, opts: { replay?: boolean } = {}): Promise<Outcome> {
   const id = c.leadgen_id;
   const settings = (await sbSelect("fb_lead_settings?id=eq.default&select=*"))[0] ?? {};
   const company = settings.company_id ?? "c1";
@@ -35,7 +43,7 @@ export async function processLeadgen(c: Change): Promise<Outcome> {
     if (claim.status !== 409) return { leadgen_id: id, status: "failed", error: `could not record the lead (${claim.status})` };
     const prev = (await sbSelect(`fb_lead_events?leadgen_id=eq.${encodeURIComponent(id)}&select=status,received_at`))[0];
     const stale = prev?.status === "received" && Date.now() - Date.parse(prev.received_at) > 2 * 60_000;
-    if (!(prev?.status === "failed" || stale)) return { leadgen_id: id, status: "repeat" };
+    if (!(prev?.status === "failed" || stale || (opts.replay && prev?.status === "skipped"))) return { leadgen_id: id, status: "repeat" };
     await rest(`fb_lead_events?leadgen_id=eq.${encodeURIComponent(id)}`, "PATCH", { status: "received", error: null });
   }
 
@@ -44,8 +52,10 @@ export async function processLeadgen(c: Change): Promise<Outcome> {
 
   if (settings.enabled !== true) return skip("Facebook intake is switched off");
   if (settings.page_id && c.page_id && String(settings.page_id) !== c.page_id) return skip(`another Page (${c.page_id})`);
-  const form = (await sbSelect(`fb_lead_forms?form_id=eq.${encodeURIComponent(c.form_id)}&select=*&limit=1`))[0];
-  if (!form) return skip(`form ${c.form_id || "?"} is not set up`);
+  // A form nobody set up in Admin is still received: a lead must never be lost because a form was
+  // made on Facebook first. It lands unassigned with the standard question keys; a manager hands it out.
+  const row = (await sbSelect(`fb_lead_forms?form_id=eq.${encodeURIComponent(c.form_id)}&select=*&limit=1`))[0];
+  const form = row ?? { label: `Facebook form ${c.form_id || "?"} (not set up in Admin)`, active: true, project: "", source: "META_ADS", assign_mode: "none", field_map: {} };
   if (form.active === false) return skip(`form "${form.label}" is switched off`);
 
   const token = Deno.env.get("FB_PAGE_ACCESS_TOKEN") ?? "";
@@ -86,8 +96,59 @@ export async function processLeadgen(c: Change): Promise<Outcome> {
     return { leadgen_id: id, status: "duplicate", lead_id: same.id };
   }
 
+  // Forward: the lead takes the route a typed /f… tag takes in WhatsApp (wa_create_lead makes it
+  // and picks the agent from wa_agents; the customer is told who their expert is). If that gives
+  // nothing (no agent free, an unknown tag) the lead is still made below, unassigned, with the
+  // reason on it: a Facebook lead is never dropped.
+  const forward = async (): Promise<Outcome | string> => {
+    const tag = String(form.forward_tag || "/fctg").trim().toLowerCase();
+    // wa_create_lead builds the lead from the contact's prelead (name, number), so there must be one.
+    const pre = await rpcJson("wa_upsert_prelead", { p_phone: m.phone, p_name: m.name, p_message: `Facebook form: ${label}`, p_ad_text: "", p_ctwa_clid: "", p_location: m.city });
+    if (!pre?.id) return "the contact could not be prepared for forwarding";
+    const res = await createLeadByTag(m.phone, tag, company);
+    if (!res) return `the ${tag} forward did not answer`;
+    if (res.status === "exists" && res.lead_id) {
+      await note(String(res.lead_id), `Facebook form answered again (${label}):\n${answersText}`);
+      await finish(id, "duplicate", { lead_id: String(res.lead_id) });
+      return { leadgen_id: id, status: "duplicate", lead_id: String(res.lead_id) };
+    }
+    if (res.status !== "created" || !res.lead_id) {
+      return res.status === "no_agent_available" ? `no agent is free for ${tag}`
+        : res.status === "unknown_command" ? `${tag} is not a forward tag`
+        : `${tag} could not forward (${res.status ?? "no answer"})`;
+    }
+    const leadId = String(res.lead_id);
+    // What the form knows and the WhatsApp contact does not.
+    const patch: Row = { source: form.source || "META_ADS" };
+    for (const [k, v] of Object.entries({ email: m.email, budget: m.budget, profession: m.profession, city: m.city, property_interest: form.project })) if (v) patch[k] = v;
+    const want = form.status || settings.default_status || "NEW";
+    if (want !== "NEW") patch.status = want;
+    await sbPatch("leads", `id=eq.${encodeURIComponent(leadId)}`, patch);
+    // An agent owns this customer now: the bot's "want a dedicated agent?" steps stay quiet.
+    await sbPatch("preleads", `id=eq.${encodeURIComponent(String(pre.id))}`, { flow_stage: "agent_assigned", stage_at: now });
+    let told = "", msg = "skipped";
+    if (form.notify_customer !== false) {
+      const bot = await getBotSettings("eyad", m.phone);
+      if (!shouldTell(res, bot.customerNotifyEnabled)) { told = " The customer was not messaged (that notice is off, or this agent's row says not to)."; msg = "off"; }
+      else if (await tellCustomer(m.phone, res)) { told = " The customer was messaged on WhatsApp."; msg = "sent"; }
+      else { told = " The customer could not be messaged on WhatsApp."; msg = "failed"; }
+    }
+    await sbUpsert("activities", [{ id: crypto.randomUUID(), lead_id: leadId, type: "CREATED", description: `Lead created from Facebook form: ${label}`, user_id: null, user_name: "Facebook Leads", duration_seconds: 0, timestamp: now, company_id: company }]);
+    await note(leadId, `Facebook form answers (${label}):\n${answersText}\n\nForwarded with ${tag}${res.agent_name ? ` to ${res.agent_name}` : ""}.${told}`);
+    const capi = await reportFormLead({ leadId, leadgenId: id, phone: m.phone, name: m.name, companyId: company });
+    await finish(id, "created", { lead_id: leadId });
+    await keepState(id, { agent_name: res.agent_name ?? null, forward_tag: tag, customer_msg: msg, capi });
+    return { leadgen_id: id, status: "created", lead_id: leadId };
+  };
+  let missed = "";
+  if (form.assign_mode === "forward") {
+    const fwd = await forward();
+    if (typeof fwd !== "string") return fwd;
+    missed = fwd;
+  }
+
   const made = (await sbSelect(`fb_lead_events?form_id=eq.${encodeURIComponent(c.form_id)}&status=eq.created&select=leadgen_id&limit=1000`)).length;
-  const who = pickAssignee(form, users, made);
+  const who = form.assign_mode === "forward" ? { user: null, why: missed } : pickAssignee(form, users, made);
   const leadId = rid("l");
   const ins = await rest("leads", "POST", {
     id: leadId, name: m.name, phone: m.phone, email: m.email, company: "—", source: form.source || "META_ADS",
@@ -101,6 +162,9 @@ export async function processLeadgen(c: Change): Promise<Outcome> {
   await sbUpsert("activities", [{ id: crypto.randomUUID(), lead_id: leadId, type: "CREATED", description: `Lead created from Facebook form: ${label}`, user_id: null, user_name: "Facebook Leads", duration_seconds: 0, timestamp: now, company_id: company }]);
   await note(leadId, `Facebook form answers (${label}):\n${answersText}${who.user ? "" : `\n\nNot assigned: ${who.why}.`}`);
   await notify(who.user?.id ?? null, `New Facebook lead: ${m.name}`, leadId);
-  await finish(id, "created", { lead_id: leadId });
+  const capi = await reportFormLead({ leadId, leadgenId: id, phone: m.phone, name: m.name, companyId: company });
+  // A forward that found nobody leaves the reason on the Received tab, where it can be seen.
+  await finish(id, "created", { lead_id: leadId, ...(missed ? { error: `Not forwarded: ${missed}` } : {}) });
+  await keepState(id, { agent_name: who.user?.name ?? null, forward_tag: "", customer_msg: "", capi });
   return { leadgen_id: id, status: "created", lead_id: leadId };
 }

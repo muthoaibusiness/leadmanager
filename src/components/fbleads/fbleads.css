@@ -87,3 +87,5 @@
 .fbl-tag.warn { background: var(--orange-l); color: var(--orange); }
 .fbl-tag.bad { background: var(--red-l); color: var(--red); }
 .fbl-tag.mut { background: var(--surf2); color: var(--t3); }
+.fbl-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+.fbl-chips .fbl-tag { text-transform: none; font-weight: 600; padding: 2px 9px; }

@@ -11,6 +11,7 @@
 // request is refused.
 
 import { CORS, json } from "../_shared/wa.ts";
+import { cronKeyGate } from "../_shared/cron-key.ts";
 import { verifySignature, leadgenChanges } from "../_shared/fb-leads-core.ts";
 import { processLeadgen, type Outcome } from "../_shared/fb-leads.ts";
 
@@ -26,6 +27,26 @@ Deno.serve(async (req) => {
     return json({ error: "Verification failed" }, 403);
   }
   if (req.method !== "POST") return json({ error: "Method not allowed" }, 405);
+
+  // Replay (scripts/fb-replay.mjs): leads Meta already delivered, taken again by id. Same key as
+  // the follow-up cron (x-followup-key); the lead's answers are fetched from Meta as usual. A few
+  // per call, one every 6 s, because each forwarded lead sends a WhatsApp message (1 per 5 s).
+  if (req.headers.get("x-followup-key") !== null) {
+    const gate = cronKeyGate(req, Deno.env.get("FOLLOWUP_CRON_KEY"), "x-followup-key");
+    if (!gate.ok) return json({ ok: false, error: gate.error }, gate.status);
+    let body: any;
+    try { body = await req.json(); } catch { return json({ error: "Invalid JSON" }, 400); }
+    const items = (Array.isArray(body?.replay) ? body.replay : []).slice(0, 8);
+    const results: Outcome[] = [];
+    for (const it of items) {
+      const leadgen_id = String(it?.leadgen_id ?? "").replace(/\D/g, "");
+      if (!leadgen_id) continue;
+      try { results.push(await processLeadgen({ leadgen_id, form_id: String(it?.form_id ?? "").replace(/\D/g, ""), page_id: "" }, { replay: true })); }
+      catch (e) { results.push({ leadgen_id, status: "failed", error: e instanceof Error ? e.message.slice(0, 120) : "error" }); }
+      if (results.at(-1)?.status === "created") await new Promise((r) => setTimeout(r, 6000));
+    }
+    return json({ ok: true, results });
+  }
 
   const secret = Deno.env.get("FB_APP_SECRET") ?? "";
   if (!secret) return json({ error: "FB_APP_SECRET is not set" }, 503);
