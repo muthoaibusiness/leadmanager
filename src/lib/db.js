@@ -1243,11 +1243,15 @@ export function addPropertyFn(p) {
 // saved, so those writes leave the columns (and the local copy) alone. Inserts
 // leave them out too: the columns default to [] (and may not exist before
 // migrations 0021 / 0022).
+// The publish flag is owned by patchPropertyChecked({ publicPublished }) alone:
+// a general save would otherwise write back a stale cached value and silently
+// publish or unpublish the project over another admin's choice.
 function withoutPlans(upd) {
-  if (!upd || !('floorPlans' in upd || 'unitStatuses' in upd)) return upd;
+  if (!upd || !('floorPlans' in upd || 'unitStatuses' in upd || 'publicPublished' in upd)) return upd;
   const rest = { ...upd };
   delete rest.floorPlans;
   delete rest.unitStatuses;
+  delete rest.publicPublished;
   return rest;
 }
 function propRow(p) {
@@ -1331,13 +1335,13 @@ export async function patchPropertyChecked(id, upd) {
   Object.keys(upd).forEach(k => {
     const col = PROP_COLS[k];
     if (!col) throw new Error(`patchPropertyChecked: unsupported field ${k}`);
-    row[col] = full[col];
+    row[col] = k === 'publicPublished' ? !!upd.publicPublished : full[col]; // pToR omits it
   });
   // Strict: a missing column fails the whole PATCH, so a refused save never
   // half-lands (unit changes written, the plan itself not).
   const res = await sbUpdate('properties', id, row, { strict: true });
   if (res.missing) {
-    const mig = { floor_plans: '0021', unit_statuses: '0022' }[res.missing];
+    const mig = { floor_plans: '0021', unit_statuses: '0022', public_published: '0059' }[res.missing];
     return { ok: false, error: mig
       ? `the database has no ${res.missing} column yet (apply migration ${mig})`
       : `the database is missing the ${res.missing} column` };

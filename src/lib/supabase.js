@@ -724,7 +724,8 @@ export function pToR(p) {
     // writes drop them (see propRow in db.js).
     floor_plans: p.floorPlans || [],
     unit_statuses: p.unitStatuses || [],
-    public_published: !!p.publicPublished,
+    // public_published is deliberately absent: only patchPropertyChecked writes
+    // it, so a bulk or general save never sends a stale publish state.
   };
 }
 export function rToP(r) {
@@ -770,16 +771,18 @@ export async function sbGetPropertyRow(id) {
 export async function sbListPublishedProperties() {
   if (!SB_URL || !SB_KEY) return { ok: false, error: 'cloud sync is not configured' };
   try {
-    const r = await sbFetch(`${SB_URL}/rest/v1/properties?public_published=eq.true&order=name&select=id,name,purpose,address,details,handover,listing,images`, { headers: SB_H });
+    // The Catalog keeps photos in media.images (first = cover); legacy rows use images.
+    const r = await sbFetch(`${SB_URL}/rest/v1/properties?public_published=eq.true&order=name&select=id,name,purpose,address,details,handover,listing,images,photos:media->images`, { headers: SB_H });
     if (!r.ok) return { ok: false, error: `the server rejected it (HTTP ${r.status})` };
     const rows = await r.json();
+    const urlOf = (m) => (typeof m === 'string' ? m : m?.url) || null;
     return {
       ok: true,
       projects: (Array.isArray(rows) ? rows : []).map(p => ({
         id: p.id, name: p.name || '', type: p.purpose || '',
         address: p.address || '', details: p.details || '',
         handover: p.handover || '', listing: p.listing || '',
-        cover: (p.images && p.images[0]?.url) || null,
+        cover: urlOf((Array.isArray(p.photos) && p.photos[0]) || (Array.isArray(p.images) && p.images[0])),
       })),
     };
   } catch {
