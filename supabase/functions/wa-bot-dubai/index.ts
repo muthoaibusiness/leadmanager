@@ -40,7 +40,7 @@ import {
   CORS, json, SUPABASE_URL, SERVICE_KEY, WASENDER_BASE,
   claimEvent, getCredentials, getActiveProjects, getRecentHistory, sendWaMessageMirrored, getKnowledge, getCorrections,
   findLeadForNote, logNoteActivity, getBotSettings, aiStillOn, verifyWebhook, fillWelcomeTemplate, fixLeadPhoneFromNote, splitPhoneFromNote,
-  logConversationHistory,
+  logConversationHistory, storedAdContext,
 } from "../_shared/wa.ts";
 import { askAgent, resolveMedia, fixGrammar, matchJolshiriBundle, matchNamedProject, isLandOffer, brochureCaption } from "../_shared/ai.ts";
 import { DUBAI_STAGE, DUBAI_CAMPAIGN_PROJECT, DUBAI_GREETING_TEXT, needsAiReply } from "../_shared/dubai-flow.ts";
@@ -444,20 +444,20 @@ async function handleInbound(evt: ParsedEvent): Promise<void> {
     greetingEnabled: settings.welcomeEnabled,
     greetingText: settings.welcomeMessage ? fillWelcomeTemplate(settings.welcomeMessage, evt.name) : DUBAI_GREETING_TEXT,
     aiWillAnswer: !!(settings.faqAgentEnabled && evt.text && evt.remote && !isLandOffer(evt.text)
-      && (needsAiReply(evt.text, adLead) || settings.trainerTest)),
+      && needsAiReply(evt.text)),
     faqAgentEnabled: settings.faqAgentEnabled,
     replyToMessageId: evt.messageId || undefined,
     // The FAQ agent is merged into the citizen flow: it owns substantive
     // questions, so the greeting never doubles with it, and duplicate webhook
     // deliveries can't produce a second response.
     faq: (settings.faqAgentEnabled && evt.text && !takeover && evt.remote && !isLandOffer(evt.text)
-      && (needsAiReply(evt.text, adLead) || settings.trainerTest))
+      && needsAiReply(evt.text))
       ? () => (async () => {
           // Hybrid authority: the published AI Trainer is primary; the legacy
           // FAQ agent is a controlled fallback when the trainer has no
           // compatible published snapshot or fails to produce a usable reply.
           const r = await runTrainerTestTurn({ bot: "dubai", convId, phone: evt.phone, to: evt.waTo, text: evt.text,
-            ad: { isAd: evt.isAd, adText: evt.adText }, allowMedia: settings.aiMediaEnabled, production: true,
+            ad: { ...(evt.isAd || !adLead ? { isAd: evt.isAd, adText: evt.adText } : await storedAdContext(evt.phone)), ...(adLead && projectName ? { isAd: true, project: projectName } : {}) }, allowMedia: settings.aiMediaEnabled, production: true,
             replyToMessageId: evt.messageId || undefined });
           console.log("trainer turn", { phone: evt.phone, outcome: r.outcome, sent: r.sent, turnId: r.turnId });
           if (!shouldFallbackToFaq(r)) return;

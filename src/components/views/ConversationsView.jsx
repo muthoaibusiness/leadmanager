@@ -320,7 +320,7 @@ export default function ConversationsView() {
                       <span className="wa-src-chip">
                         {aiState.takeover ? 'Human takeover. AI paused'
                           : aiState.repliesOn === false ? 'AI replies off'
-                          : aiState.repliesOn ? (aiState.trainerTest ? 'AI Trainer on' : 'AI replies on')
+                          : aiState.repliesOn ? (aiState.trainerTest ? 'AI Agent on' : 'AI replies on')
                           : 'AI state: global'}
                       </span>
                     )}

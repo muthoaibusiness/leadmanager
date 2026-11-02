@@ -22,13 +22,12 @@ test("ad FAQ buttons, greetings and media placeholders need no custom reply", ()
   ]) assert.equal(isAdFaqOrSmallTalk(t), true, t);
 });
 
-test("anything of the customer's own is a custom-reply case, but only for ad customers", () => {
+test("anything of the customer's own is a custom-reply case", () => {
   for (const t of ["কোন ফ্লোরে বেচা কিনা চলছে। সুযোগ সুবিধা কি?", "What is the price of a shop in P2P?", "বিস্তারিত জানতে চাই। আর কত তলা?", "Is there parking"]) {
     assert.equal(isAdFaqOrSmallTalk(t), false, t);
-    assert.equal(needsAiReply(t, true), true, t);
-    assert.equal(needsAiReply(t, false), false, "no ad, no custom reply: " + t);
+    assert.equal(needsAiReply(t), true, t);
   }
-  assert.equal(needsAiReply("বিস্তারিত জানতে চাই।", true), false);
+  assert.equal(needsAiReply("বিস্তারিত জানতে চাই।"), false);
 });
 
 test("floor plan / video: Citizen Avenue gets a floor-plan PDF and a video; none without either", () => {
