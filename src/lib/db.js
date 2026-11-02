@@ -1323,7 +1323,7 @@ export async function updatePropertyChecked(id, upd) {
 // lacks and still answers ok — fine for background writes, but for a floor
 // plan it would mean a save that only ever existed in this browser.
 // `upd` is camelCase; the keys must be ones pToR maps (floorPlans, variants…).
-const PROP_COLS = { floorPlans: 'floor_plans', unitStatuses: 'unit_statuses', variants: 'variants', units: 'units' };
+const PROP_COLS = { floorPlans: 'floor_plans', unitStatuses: 'unit_statuses', variants: 'variants', units: 'units', publicPublished: 'public_published' };
 export async function patchPropertyChecked(id, upd) {
   const ts = now_();
   const full = pToR({ ...upd, updatedAt: ts });

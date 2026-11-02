@@ -19,6 +19,7 @@ export const NAV_META = {
   accounts: { ico: 'manage_accounts', lbl: 'Users' },
   aitrainer: { ico: 'smart_toy', lbl: 'AI Trainer' },
   metacapi: { ico: 'campaign', lbl: 'Meta CAPI' },
+  publicproject: { ico: 'language', lbl: 'Public Project' },
   companies: { ico: 'corporate_fare', lbl: 'Companies' },
   profile: { ico: 'account_circle', lbl: 'Profile' },
 };
