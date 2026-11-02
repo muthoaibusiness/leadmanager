@@ -23,7 +23,7 @@ import {
   CORS, json, SUPABASE_URL, SERVICE_KEY, WASENDER_BASE,
   claimEvent, getCredentials, getActiveProjects, getRecentHistory, sendWaMessageMirrored, getKnowledge, getCorrections,
   findLeadForNote, logNoteActivity, getBotSettings, aiStillOn, verifyWebhook, getProjectBySendCode, fillWelcomeTemplate, fixLeadPhoneFromNote, splitPhoneFromNote,
-  logConversationHistory,
+  logConversationHistory, storedAdContext,
 } from "../_shared/wa.ts";
 import type { BotSettings } from "../_shared/wa.ts";
 import {
@@ -321,11 +321,22 @@ async function handleInbound(p: ParsedEvent): Promise<void> {
   // below needs message_logs/flow_stage before deciding what to send) ────
   if (!preleadId) return;
   const [statusRows, projects] = await Promise.all([
-    sbSelectJson(`preleads?id=eq.${encodeURIComponent(preleadId)}&select=forwarded,message_logs,flow_stage`),
+    sbSelectJson(`preleads?id=eq.${encodeURIComponent(preleadId)}&select=forwarded,message_logs,flow_stage,ctwa_clid,wa_ad_id`),
     sbSelectJson("wa_projects?select=name,region,keywords,brochure_url"),
   ]);
   const status = statusRows?.[0] ?? {};
   const msgCount = Array.isArray(status.message_logs) ? status.message_logs.length : 0;
+
+  // An ad customer stays one: the click id is on the prelead, while the ad referral
+  // rides on the first message only — judging each message alone silenced every follow-up.
+  const adLead = !!(p.isAd || p.ctwaClid || status.ctwa_clid || status.wa_ad_id);
+  const adFor = async () => {
+    let ad: { isAd: boolean; adText?: string; project?: string } = { isAd: p.isAd, adText: p.adText };
+    if (!ad.isAd && adLead) ad = await storedAdContext(p.phone);
+    // The project the click was recorded against settles which project the ad was for.
+    if (adLead && upsert.property_interest) ad = { ...ad, isAd: true, project: String(upsert.property_interest) };
+    return ad;
+  };
 
   // ── New Contact? → Welcome ──────────────────────────────────────────────
   // The n8n graph suppressed the welcome whenever should_drip was true (an
@@ -369,17 +380,17 @@ async function handleInbound(p: ParsedEvent): Promise<void> {
       isNew: upsert.is_new === true, starting, stage: stage0, stageAt: undefined, takeover, msgCount, project,
       greetingEnabled: settings.welcomeEnabled, greetingText: DUBAI_GREETING_TEXT,
       aiWillAnswer: !!(settings.faqAgentEnabled && p.text && !takeover && p.remote && !isLandOffer(p.text)
-        && (needsAiReply(p.text, p.isAd || !!p.ctwaClid) || settings.trainerTest)),
+        && needsAiReply(p.text)),
       faqAgentEnabled: settings.faqAgentEnabled,
       replyToMessageId: p.deliveryId || undefined,
       // FAQ agent merged into the citizen flow — one owner per substantive
       // question; duplicate deliveries can't produce a second response.
       faq: (settings.faqAgentEnabled && p.text && !takeover && p.remote && !isLandOffer(p.text)
-        && (needsAiReply(p.text, p.isAd || !!p.ctwaClid) || settings.trainerTest))
+        && needsAiReply(p.text))
         ? () => (async () => {
             // Hybrid authority: published AI Trainer primary, legacy FAQ fallback.
             const r = await runTrainerTestTurn({ bot: "eyad", convId, phone: p.phone, to: p.target, text: p.text,
-              ad: { isAd: p.isAd, adText: p.adText }, allowMedia: settings.aiMediaEnabled, production: true,
+              ad: await adFor(), allowMedia: settings.aiMediaEnabled, production: true,
               replyToMessageId: p.deliveryId || undefined });
             console.log("trainer turn", { phone: p.phone, outcome: r.outcome, sent: r.sent, turnId: r.turnId });
             if (!shouldFallbackToFaq(r)) return;
@@ -418,7 +429,7 @@ async function handleInbound(p: ParsedEvent): Promise<void> {
       ? () => (async () => {
           // Hybrid authority: published AI Trainer primary, legacy FAQ fallback.
           const r = await runTrainerTestTurn({ bot: "eyad", convId: `eyad:${p.remote}`, phone: p.phone, to: p.target, text: p.text,
-            ad: { isAd: p.isAd, adText: p.adText }, allowMedia: settings.aiMediaEnabled, production: true,
+            ad: await adFor(), allowMedia: settings.aiMediaEnabled, production: true,
             replyToMessageId: p.deliveryId || undefined });
           console.log("trainer turn", { phone: p.phone, outcome: r.outcome, sent: r.sent, turnId: r.turnId });
           if (!shouldFallbackToFaq(r)) return;

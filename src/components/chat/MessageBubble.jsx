@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import Mi from '../Mi.jsx';
+import { senderDisplayTag } from '../../lib/senderTag.js';
 
 // Delivery ticks, mirroring WhatsApp: one tick sent, two delivered, two accented
 // read, a clock while the relay hasn't confirmed, and a retry affordance on failure.
@@ -49,7 +50,7 @@ export default function MessageBubble({ msg, onRetry, onOpenImage, replyTo }) {
     <div className={`wa-row${out ? ' out' : ''}`}>
       <div className={`wa-bub${out ? ' out' : ''}${msg.status === 'FAILED' ? ' failed' : ''}`}>
         {out && msg.senderName && (
-          <div className="wa-src-chip">{msg.senderName}</div>
+          <div className="wa-src-chip">{senderDisplayTag(msg.senderName)}</div>
         )}
         {replySnippet && (
           <div className="wa-quote" title="In reply to the message above">

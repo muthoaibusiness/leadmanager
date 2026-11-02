@@ -31,6 +31,9 @@ export const NAV_SCOPES = {
   accounts: ['MANAGEMENT'],
   relay: ['MANAGEMENT'],
   aitrainer: ['MANAGEMENT'],
+  // The public, shareable project page and its management/preview tab. Admin
+  // only: it controls what the unauthenticated public page exposes.
+  publicproject: ['MANAGEMENT'],
   // Meta CAPI lead-event delivery and recovery. The meta-capi Edge Function
   // checks the same rule (role, or a saved 'metacapi' grant) on every call.
   metacapi: ['MANAGEMENT', 'MASTER'],
@@ -46,7 +49,7 @@ export const NAV_SCOPES = {
 // people created (without it, only their own) and add corrections to finance
 // history. Checked again server-side by the finance Edge Function, which reads
 // the same allowed_features column.
-export const FEATURE_KEYS = ['dashboard', 'leads', 'add_customer', 'conversations', 'calendar', 'meeting', 'pipeline', 'properties', 'reports', 'agentperf', 'perfreports', 'campaign', 'requests', 'inventory', 'finance_approve', 'team', 'accounts', 'relay', 'aitrainer', 'metacapi', 'self_forward'];
+export const FEATURE_KEYS = ['dashboard', 'leads', 'add_customer', 'conversations', 'calendar', 'meeting', 'pipeline', 'properties', 'reports', 'agentperf', 'perfreports', 'campaign', 'requests', 'inventory', 'finance_approve', 'team', 'accounts', 'relay', 'aitrainer', 'metacapi', 'publicproject', 'self_forward'];
 
 // Default features for a standard role (from NAV_SCOPES). Executive resolves to none.
 export const defaultFeatures = (role) => FEATURE_KEYS.filter(k => (NAV_SCOPES[k] || []).includes(role));

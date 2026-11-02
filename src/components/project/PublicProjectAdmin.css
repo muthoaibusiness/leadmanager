@@ -1,0 +1,34 @@
+/* Public Project admin tab — publish controls and public preview. Spacing and
+   type sizes are one-off layout values, not theme tokens (the app's CSS uses
+   the same inline px pattern). Colors are token-mapped throughout. */
+/* ds-allow-hardcode:start */
+.ppa { max-width: 900px; }
+.ppa-intro { color: var(--t2); font-size: 14px; margin: 0 0 18px; }
+.ppa-intro code { background: var(--surf2); padding: 1px 6px; border-radius: 6px; }
+
+.ppa-list { display: flex; flex-direction: column; gap: 10px; }
+.ppa-muted { color: var(--t3); }
+.ppa-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; border: 1px solid var(--bd); border-radius: var(--r); padding: 14px 16px; background: var(--surf); }
+.ppa-row.is-on { border-color: var(--accent); }
+.ppa-name { font-weight: 600; color: var(--t1); }
+.ppa-sub { font-size: 13px; color: var(--t3); margin-top: 2px; display: flex; flex-direction: column; gap: 2px; }
+.ppa-url { font-size: 12px; color: var(--accent); word-break: break-all; }
+.ppa-acts { display: flex; align-items: center; gap: 8px; }
+
+.ppa-sw { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; }
+.ppa-sw input { position: absolute; opacity: 0; width: 0; height: 0; }
+.ppa-sw-track { width: 40px; height: 22px; border-radius: 999px; background: var(--bd); position: relative; transition: background .15s; flex-shrink: 0; }
+.ppa-sw-track span { position: absolute; top: 3px; left: 3px; width: 16px; height: 16px; border-radius: 50%; background: var(--surf2-solid); transition: transform .15s; }
+.ppa-sw input:checked + .ppa-sw-track { background: var(--accent); }
+.ppa-sw input:checked + .ppa-sw-track span { transform: translateX(18px); }
+.ppa-sw input:focus-visible + .ppa-sw-track { outline: 2px solid var(--accent); outline-offset: 2px; }
+.ppa-sw-label { font-size: 13px; color: var(--t2); }
+
+.ppa-preview { position: fixed; inset: 0; z-index: 60; background: var(--bg); display: flex; flex-direction: column; }
+.ppa-preview-top { display: flex; align-items: center; gap: 14px; padding: 12px 20px; border-bottom: 1px solid var(--bd); }
+.ppa-preview-note { flex: 1; color: var(--t3); font-size: 13px; }
+
+@media (max-width: 640px) {
+  .ppa-acts { width: 100%; justify-content: space-between; }
+}
+/* ds-allow-hardcode:end */

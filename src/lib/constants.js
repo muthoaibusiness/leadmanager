@@ -57,12 +57,13 @@ export const initialFeatures = (u) =>
 export const FEATURE_LABELS = {
   dashboard: 'Home', leads: 'Leads', add_customer: 'Add Customer', conversations: 'Conversations', calendar: 'Calendar', meeting: 'Meeting', pipeline: 'Pipeline', properties: 'Projects',
   reports: 'Reports', agentperf: 'Performance', perfreports: 'Performance Reports', campaign: 'Campaign', requests: 'Requests', inventory: 'Inventory', finance_approve: 'Manage all budgets', team: 'Team',
-  accounts: 'Users & Accounts', relay: 'WhatsApp Relay', aitrainer: 'AI Trainer', metacapi: 'Meta CAPI', self_forward: 'Self-forward leads',
+  accounts: 'Users & Accounts', relay: 'WhatsApp Relay', aitrainer: 'AI Trainer', metacapi: 'Meta CAPI', publicproject: 'Public Project', self_forward: 'Self-forward leads',
 };
 // What a grant does when its label alone doesn't say it.
 export const FEATURE_HINTS = {
   finance_approve: 'Manage all budgets: can edit, archive and restore budgets other people created, and add corrections to finance history. Without it, Inventory users change only their own budgets.',
   self_forward: 'Can forward a lead to themselves from the lead panel, without going through a Team Lead or Management. Meeting Agents always have this; grant it to anyone else who should too.',
+  publicproject: 'Admin only: manage the public, shareable project page and preview what customers see.',
 };
 // Meeting Agent always has this, role-wise — same reasoning as effectiveRole()
 // folding it back to AGENT everywhere else. 'self_forward' in FEATURE_KEYS is

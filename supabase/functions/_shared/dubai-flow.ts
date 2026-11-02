@@ -161,10 +161,10 @@ export function isAdFaqOrSmallTalk(text: string): boolean {
   return parts.every(isCoveredPart);
 }
 
-// An ad customer who wrote something of their own gets the grounded AI reply.
-// Anyone who did not come through the ad gets none (nobody asked us anything
-// the greeting doesn't cover).
-export const needsAiReply = (text: string, adLead: boolean) => adLead && !isAdFaqOrSmallTalk(text);
+// A customer who wrote something of their own gets the grounded AI reply.
+// Pure ad buttons, greetings, media placeholders and emoji get none (nothing
+// a custom reply could add to).
+export const needsAiReply = (text: string): boolean => !isAdFaqOrSmallTalk(text);
 
 // A pure opener: only greetings, small talk, emoji and media placeholders — no
 // substance a substantive answer could add. Ad-button questions are NOT openers
