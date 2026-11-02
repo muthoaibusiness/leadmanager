@@ -5,6 +5,7 @@ import ChatThread from '../chat/ChatThread.jsx';
 import ChatComposer from '../chat/ChatComposer.jsx';
 import ChatLeadPane from '../chat/ChatLeadPane.jsx';
 import { useApp } from '../../context/AppContext.jsx';
+import { senderDisplayTag } from '../../lib/senderTag.js';
 import { getDB, getLead } from '../../lib/db.js';
 import { pushNotify } from '../../lib/pushNotify.js';
 import useChanged from '../../hooks/useChanged.js';
@@ -143,7 +144,7 @@ export default function ConversationsView() {
         if (m.direction === 'IN') {
           const suppress = visibleRef.current && m.conversationId === activeIdRef.current;
           pushNotify(
-            { id: 'wa-' + m.id, message: `${m.senderName || m.phone}: ${m.type === 'text' ? (m.body || '') : m.type}`.slice(0, 140) },
+            { id: 'wa-' + m.id, message: `${senderDisplayTag(m.senderName) || m.phone}: ${m.type === 'text' ? (m.body || '') : m.type}`.slice(0, 140) },
             { suppress, onClick: () => { setActiveId(m.conversationId); window.focus(); } }
           );
         }
@@ -320,7 +321,7 @@ export default function ConversationsView() {
                       <span className="wa-src-chip">
                         {aiState.takeover ? 'Human takeover. AI paused'
                           : aiState.repliesOn === false ? 'AI replies off'
-                          : aiState.repliesOn ? (aiState.trainerTest ? 'AI Agent on' : 'AI replies on')
+                          : aiState.repliesOn ? (aiState.trainerTest ? 'AI Trainer on' : 'AI replies on')
                           : 'AI state: global'}
                       </span>
                     )}
