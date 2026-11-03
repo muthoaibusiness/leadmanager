@@ -126,3 +126,24 @@ export function ago(iso, now = Date.now()) {
   if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
   return `${Math.floor(s / 86400)}d ago`;
 }
+
+// The Received tab's scoreboard: per form, how many leads came in and what became of each.
+//   received = every lead Meta delivered or the drip tried; distributed = became a CRM lead (and was handed out);
+//   queued = waiting in the backlog drip (not a CRM lead yet). Rows are {form_id, status, leadgen_id}.
+export function summarizeEvents(events, queue = []) {
+  const handled = new Set(events.filter((e) => e.status === 'created' || e.status === 'duplicate').map((e) => e.leadgen_id));
+  const by = new Map();
+  const row = (id) => { const k = id || ''; if (!by.has(k)) by.set(k, { form_id: k, received: 0, distributed: 0, duplicate: 0, failed: 0, skipped: 0, queued: 0 }); return by.get(k); };
+  for (const e of events) {
+    const r = row(e.form_id);
+    r.received += 1;
+    if (e.status === 'created') r.distributed += 1;
+    else if (e.status === 'duplicate') r.duplicate += 1;
+    else if (e.status === 'failed') r.failed += 1;
+    else if (e.status === 'skipped') r.skipped += 1;
+  }
+  for (const q of queue) if (!handled.has(q.leadgen_id)) row(q.form_id).queued += 1;
+  const rows = [...by.values()].sort((a, b) => b.received + b.queued - (a.received + a.queued));
+  const total = rows.reduce((t, r) => { for (const k of Object.keys(t)) t[k] += r[k]; return t; }, { received: 0, distributed: 0, duplicate: 0, failed: 0, skipped: 0, queued: 0 });
+  return { rows, total };
+}

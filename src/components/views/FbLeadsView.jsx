@@ -8,7 +8,7 @@ import { SB_URL, SB_H, ensureFreshToken } from '../../lib/supabase.js';
 import { SRC_LABELS } from '../../lib/constants.js';
 import {
   SECRETS, FIELD_TARGETS, ASSIGN_MODES, FORWARD_TAGS, DUPLICATE_POLICIES, NEW_LEAD_STATUSES, webhookUrl, emptyForm, validateForm, validateSettings,
-  formToRow, rowToForm, keysOf, cleanPageId, ago,
+  formToRow, rowToForm, keysOf, cleanPageId, ago, summarizeEvents,
 } from '../../lib/fbLeads.js';
 import '../fbleads/fbleads.css';
 
@@ -39,17 +39,20 @@ const DEFAULT_SETTINGS = { id: 'default', enabled: false, page_id: '', page_name
 
 // Everything the page shows, read in one go.
 async function fetchAll() {
-  const [s, f, e, p] = await Promise.all([
+  const [s, f, e, p, all, bq] = await Promise.all([
     call('fb_lead_settings?id=eq.default&select=*'),
     call('fb_lead_forms?select=*&order=created_at.asc'),
     call('fb_lead_events?select=*&order=received_at.desc&limit=100'),
     call('wa_projects?select=name&is_active=eq.true&order=name'),
+    call('fb_lead_events?select=leadgen_id,form_id,status&limit=1000'),
+    call('fb_lead_backlog?select=leadgen_id,form_id&limit=1000'),   // absent before migration 0063: no queue column
   ]);
   return {
     missing: !!(s.missing || f.missing || e.missing),
     settings: s.data?.[0] || DEFAULT_SETTINGS,
     forms: (f.data || []).map(rowToForm),
     events: e.data || [],
+    score: summarizeEvents(all.data || [], bq.data || []),
     projects: (p.data || []).map((x) => x.name),
   };
 }
@@ -72,6 +75,7 @@ export default function FbLeadsView() {
   const [settings, setSettings] = useState(null);
   const [forms, setForms] = useState([]);
   const [events, setEvents] = useState([]);
+  const [score, setScore] = useState({ rows: [], total: null });
   const [projects, setProjects] = useState([]);
   const [missing, setMissing] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -92,6 +96,7 @@ export default function FbLeadsView() {
       setSettings(d.settings);
       setForms(d.forms);
       setEvents(d.events);
+      setScore(d.score);
     }
     setProjects(d.projects);
     setLoading(false);
@@ -354,6 +359,24 @@ export default function FbLeadsView() {
           {tab === 'log' && (
             <section className="fbl-card">
               <div className="fbl-form-top"><h3>Received</h3><button className="fbl-btn ghost" onClick={load}><Mi>refresh</Mi>Refresh</button></div>
+              {score.total && score.total.received + score.total.queued > 0 && (
+                <div className="fbl-sum-wrap">
+                  <table className="fbl-sum">
+                    <thead><tr><th>Form</th><th>Received</th><th>Distributed</th><th>Duplicate</th><th>Failed</th><th>Skipped</th><th>Queued</th></tr></thead>
+                    <tbody>
+                      {score.rows.map((r) => (
+                        <tr key={r.form_id}>
+                          <td>{forms.find((f) => f.form_id === r.form_id)?.label || `Form ${r.form_id || '—'}`}</td>
+                          <td>{r.received}</td><td className="ok">{r.distributed}</td><td>{r.duplicate}</td>
+                          <td className={r.failed ? 'bad' : ''}>{r.failed}</td><td>{r.skipped}</td><td className={r.queued ? 'warn' : ''}>{r.queued}</td>
+                        </tr>
+                      ))}
+                      <tr className="tot"><td>All forms</td><td>{score.total.received}</td><td className="ok">{score.total.distributed}</td><td>{score.total.duplicate}</td><td className={score.total.failed ? 'bad' : ''}>{score.total.failed}</td><td>{score.total.skipped}</td><td className={score.total.queued ? 'warn' : ''}>{score.total.queued}</td></tr>
+                    </tbody>
+                  </table>
+                  <p className="fbl-note">Distributed = became a CRM lead and was handed out. Queued = waiting for the backlog drip (one every 5 minutes). Counts cover the latest 1000 leads.</p>
+                </div>
+              )}
               {events.length === 0 ? <div className="fbl-empty"><Mi>inbox</Mi>Nothing received yet. Leads from your forms will be listed here with what happened to each.</div> : (
                 <ul className="fbl-log">
                   {events.map((e) => (

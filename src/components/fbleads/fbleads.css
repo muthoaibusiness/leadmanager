@@ -89,3 +89,13 @@
 .fbl-tag.mut { background: var(--surf2); color: var(--t3); }
 .fbl-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
 .fbl-chips .fbl-tag { text-transform: none; font-weight: 600; padding: 2px 9px; }
+.fbl-sum-wrap { overflow-x: auto; margin-bottom: 14px; }
+.fbl-sum { width: 100%; border-collapse: collapse; font-size: 13px; }
+.fbl-sum th { text-align: right; font-size: 11.5px; font-weight: 700; color: var(--t3); padding: 6px 10px; border-bottom: 1px solid var(--bd); white-space: nowrap; }
+.fbl-sum th:first-child, .fbl-sum td:first-child { text-align: left; }
+.fbl-sum td { text-align: right; padding: 8px 10px; border-top: 1px solid var(--bd); color: var(--t1); font-variant-numeric: tabular-nums; }
+.fbl-sum td:first-child { font-weight: 600; max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fbl-sum td.ok { color: var(--green); font-weight: 700; }
+.fbl-sum td.bad { color: var(--red); font-weight: 700; }
+.fbl-sum td.warn { color: var(--orange); font-weight: 700; }
+.fbl-sum tr.tot td { font-weight: 700; border-top: 2px solid var(--bd); }

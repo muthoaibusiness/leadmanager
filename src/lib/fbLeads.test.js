@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { emptyForm, validateForm, formToRow, rowToForm, keysOf, cleanFormId, validateSettings, ago, validTag, cleanTag, FIELD_TARGETS } from './fbLeads.js';
+import { emptyForm, validateForm, formToRow, rowToForm, keysOf, cleanFormId, validateSettings, ago, validTag, cleanTag, summarizeEvents, FIELD_TARGETS } from './fbLeads.js';
 
 const good = () => ({ ...emptyForm(), form_id: '1234567890123', label: 'Citizen form', project: 'Wecon Citizen Avenue' });
 
@@ -75,4 +75,18 @@ test('helpers: ids, keys, settings, time', () => {
   assert.equal(ago('2026-11-02T09:59:30Z', now), '30s ago');
   assert.equal(ago('2026-11-02T09:00:00Z', now), '1h ago');
   assert.equal(ago('2026-10-31T10:00:00Z', now), '2d ago');
+});
+
+test('the scoreboard counts, per form, what came in and what became of it', () => {
+  const ev = [
+    { leadgen_id: '1', form_id: 'A', status: 'created' }, { leadgen_id: '2', form_id: 'A', status: 'created' },
+    { leadgen_id: '3', form_id: 'A', status: 'failed' }, { leadgen_id: '4', form_id: 'B', status: 'duplicate' },
+    { leadgen_id: '5', form_id: 'B', status: 'skipped' },
+  ];
+  const queue = [{ leadgen_id: '3', form_id: 'A' }, { leadgen_id: '1', form_id: 'A' }, { leadgen_id: '9', form_id: 'B' }];
+  const { rows, total } = summarizeEvents(ev, queue);
+  assert.deepEqual(rows.find((r) => r.form_id === 'A'), { form_id: 'A', received: 3, distributed: 2, duplicate: 0, failed: 1, skipped: 0, queued: 1 });   // 1 is done, 3 still waits
+  assert.deepEqual(rows.find((r) => r.form_id === 'B'), { form_id: 'B', received: 2, distributed: 0, duplicate: 1, failed: 0, skipped: 1, queued: 1 });
+  assert.deepEqual(total, { received: 5, distributed: 2, duplicate: 1, failed: 1, skipped: 1, queued: 2 });
+  assert.deepEqual(summarizeEvents([], []).total.received, 0);
 });

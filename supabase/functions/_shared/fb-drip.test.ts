@@ -8,12 +8,13 @@ const ENV: Record<string, string> = { SUPABASE_URL: "https://sb.test", SUPABASE_
 const { dripBacklog } = await import("./fb-drip.ts");
 
 const NOW = Date.parse("2026-11-03T12:00:00Z");
-function world(o: { on?: boolean; slotTaken?: boolean; handled?: string[] } = {}) {
+function world(o: { on?: boolean; slotTaken?: boolean; handled?: string[]; listDenied?: boolean; queued?: any[] } = {}) {
   const calls: { method: string; url: string; body: any }[] = [];
   const json = (d: unknown, s = 200) => new Response(JSON.stringify(d), { status: s, headers: { "Content-Type": "application/json" } });
   (globalThis as any).fetch = async (input: any, init: any = {}) => {
     const url = String(input), method = init.method ?? "GET";
     calls.push({ method, url, body: init.body ? JSON.parse(String(init.body)) : undefined });
+    if (url.includes("/555/leads?") && o.listDenied) return json({ error: { message: "Unsupported get request" } }, 400);
     if (url.includes("/555/leads?")) return json({ data: [{ id: "302", created_time: "2026-11-02T10:00:00+0000" }, { id: "301", created_time: "2026-11-01T10:00:00+0000" }, { id: "300", created_time: "2026-10-31T10:00:00+0000" }] });
     if (url.startsWith("https://graph.facebook.com/")) return json({ field_data: [{ name: "full_name", values: ["Rahim"] }, { name: "phone", values: ["01712345678"] }] });
     if (url.endsWith("/send-message")) return json({ success: true, data: { msgId: "w1" } });
@@ -24,6 +25,7 @@ function world(o: { on?: boolean; slotTaken?: boolean; handled?: string[] } = {}
     if (method !== "GET") return new Response(null, { status: method === "PATCH" ? 204 : 201 });
     if (path.startsWith("fb_lead_settings?id=eq.default&select=enabled")) return json([{ enabled: true, backlog_drip: o.on !== false }]);
     if (path.startsWith("fb_lead_settings")) return json([{ enabled: true, page_id: "1", company_id: "c1", default_status: "NEW", duplicate_policy: "note", notify_agent: true }]);
+    if (path.startsWith("fb_lead_backlog")) return json(o.queued ?? []);
     if (path.startsWith("fb_lead_forms?active")) return json([{ form_id: "555" }]);
     if (path.startsWith("fb_lead_forms")) return json([{ form_id: "555", label: "BD", active: true, project: "P", source: "META_ADS", assign_mode: "forward", forward_tag: "/fctg", notify_customer: true, field_map: {} }]);
     if (path.startsWith("fb_lead_events?leadgen_id=in.")) return json((o.handled ?? []).map((id) => ({ leadgen_id: id, status: "created" })));
@@ -56,4 +58,17 @@ test("off, or its 5-minute slot already used: nothing is fetched or sent", async
 test("nothing left: empty", async () => {
   world({ handled: ["300", "301", "302"] });
   assert.deepEqual(await dripBacklog(NOW), { status: "empty" });
+});
+
+test("Meta will not list the form: the leads queued by id are still fed in, oldest first", async () => {
+  const calls = world({ listDenied: true, queued: [{ leadgen_id: "901", form_id: "555", created_time: "2026-11-02T10:00:00+0000" }, { leadgen_id: "900", form_id: "555", created_time: "2026-11-01T10:00:00+0000" }] });
+  const out: any = await dripBacklog(NOW);
+  assert.equal(out.status, "created");
+  assert.equal(out.leadgen_id, "900");
+  assert.equal(calls.filter((c) => c.url.endsWith("rpc/wa_create_lead")).length, 1);
+});
+
+test("Meta will not list the form and nothing is queued: it says so instead of going quiet", async () => {
+  world({ listDenied: true });
+  await assert.rejects(() => dripBacklog(NOW), /Facebook refused the list/);
 });
