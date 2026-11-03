@@ -111,9 +111,11 @@ returns jsonb language sql stable security definer set search_path = public, pg_
    where p.id = p_id and p.public_published
 $$;
 
+-- Supabase's default privileges grant execute to anon and authenticated
+-- directly, so revoking from public alone leaves them callable.
 revoke all on function public.public_unit_status(jsonb, jsonb), public.public_media(jsonb, text),
   public.public_project_card(public.properties), public.public_projects(), public.public_project(text)
-  from public;
+  from public, anon, authenticated;
 grant execute on function public.public_projects(), public.public_project(text) to anon, authenticated;
 
 notify pgrst, 'reload schema';
