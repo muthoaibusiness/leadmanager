@@ -1,26 +1,23 @@
-// Public project adapter - the shareable, unauthenticated project page.
+// Public project pages: the shareable, unauthenticated portfolio (#/p) and
+// project page (#/p/<id>).
 //
-// Source of truth: the CRM's `properties` table, read through the public anon
-// PostgREST key (the same reader the app uses). Only fields that exist on the
-// row are surfaced; nothing is invented.
-//
-// Mock supplement (development/demo only, OFF by default). Set
-// VITE_PUBLIC_MOCK=1 to enable it. It only adds demo brochures (real public
-// WECON marketing PDFs) so the brochure flow is visible before real brochures
-// are uploaded to a project's docs in the Catalog. Swap to live by uploading a
-// PDF there; no code change is needed.
-//
-// Unit statuses are normalized to the three public states:
+// Source of truth: the CRM's `properties` table, but never read directly. The
+// two RPCs from migration 0060 (public_projects, public_project) return
+// published projects only, with a fixed whitelist of fields. Unit statuses
+// arrive already resolved to the three public states, custom statuses folded
+// into their base:
 //   available -> Available, hold -> Booked, sold -> Sold
-// Custom project statuses (properties.unit_statuses) resolve to their base
-// status first, so internal labels never reach the public page. The floor-plan
-// canvas reuses its own hold/sold styling, so a normalized "booked" is handed
-// to it as its base "hold" for rendering; selection gating uses the public
-// label.
+// Hold metadata (client, holder, expiry, note), rates, prices and company ids
+// never leave the database, so nothing here can show them by mistake.
+//
+// The two Admin > Public Project helpers at the bottom (normalizeStatus,
+// projectCounts) work on the full CRM project an admin already has in memory.
+//
+// Kept free of store imports (supabase.js is loaded lazily) so it is
+// node-testable.
 
 // The public project route, #/p/<propertyId>. Lives outside the app's view
 // routing: it renders unauthenticated, above the login/shell gate (App.jsx).
-// Kept in this standalone module (no store imports) so it is node-testable.
 export const matchPublicRoute = (hash) => {
   const m = /^#\/p\/([^/?#]+)$/.exec(hash || '');
   return m ? { id: decodeURIComponent(m[1]) } : null;
@@ -30,153 +27,153 @@ export const matchPublicRoute = (hash) => {
 // projects; the detail route #/p/<id> is handled by matchPublicRoute.
 export const isPortfolioRoute = (hash) => /^#\/p\/?$/.test(hash || '');
 
-export const PUBLIC_STATUSES = {
-  available: { label: 'Available' },
-  booked: { label: 'Booked' },
-  sold: { label: 'Sold' },
+// Brand for the public pages. Static on purpose: the CRM has no per-company
+// brand settings yet.
+// shortcut: one company's brand, hard-coded. Move to a company profile row
+// when a second company publishes projects.
+export const PUBLIC_BRAND = {
+  name: 'WECON',
+  sub: 'PROPERTIES',
+  full: 'WECON Properties',
+  tagline: 'Residential and commercial projects. Unit availability on these pages comes straight from our sales inventory.',
+  office: '687 Mehedibag, Chattogram 4203',
 };
 
-const BASE_OF = { available: 'available', hold: 'booked', sold: 'sold' };
+// Project names are stored in capitals ("WECON SOUTHDALE"); show them in title case.
+export const displayName = (s = '') => (s && s === s.toUpperCase() ? s.toLowerCase().replace(/\b\w/g, c => c.toUpperCase()) : s);
+
+export const STATUS_LABEL = { available: 'Available', booked: 'Booked', sold: 'Sold' };
 const CANVAS_OF = { available: 'available', booked: 'hold', sold: 'sold' };
 
-// The public status of a unit: custom statuses resolve to their base first.
+export const sft = (n) => (n > 0 ? `${Math.round(n).toLocaleString('en-IN')} sft` : '');
+
+// "2,800 sft", or "70 - 1,678 sft" for a range; '' when there are no sizes.
+export function sizeRange(min, max) {
+  if (!(min > 0)) return '';
+  return max > min ? `${Math.round(min).toLocaleString('en-IN')} - ${sft(max)}` : sft(min);
+}
+
+// Every unit of a public project, flattened, with its variant.
+export function allUnits(project) {
+  return (project?.variants || []).flatMap(v => (v.units || []).map(u => ({ unit: u, variant: v })));
+}
+
+export function countUnits(project) {
+  const c = { available: 0, booked: 0, sold: 0 };
+  for (const { unit } of allUnits(project)) c[unit.status] = (c[unit.status] || 0) + 1;
+  return c;
+}
+
+export const findPublicUnit = (project, id) => allUnits(project).find(x => x.unit.id === id) || null;
+
+// The unit detail card. Only an available unit opens one: booked and sold are
+// visibly unavailable and never open the detail flow.
+export function unitDetail(project, id) {
+  const hit = findPublicUnit(project, id);
+  if (!hit || hit.unit.status !== 'available') return null;
+  const { unit, variant } = hit;
+  return {
+    code: unit.id, status: unit.status, statusLabel: STATUS_LABEL[unit.status],
+    type: variant.name || '', size: unit.size > 0 ? unit.size : null,
+    beds: variant.beds > 0 ? variant.beds : null, baths: variant.baths > 0 ? variant.baths : null,
+  };
+}
+
+// "At a Glance" rows, only those with a value.
+export function glanceRows(project) {
+  const c = countUnits(project);
+  const total = c.available + c.booked + c.sold;
+  return [
+    ['Project type', project.type], ['Location', project.address], ['Handover', project.handover],
+    ['Floors', project.storeys], ['Land area', project.landArea],
+    ['Unit sizes', sizeRange(project.counts?.minSize, project.counts?.maxSize) || project.sizeText],
+    ['Facing', project.facing], ['Total units', total ? String(total) : ''],
+  ].filter(([, v]) => v);
+}
+
+// Floor plans in their saved order.
+export const sortPlans = (plans) => [...(plans || [])].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+
+// The box list FloorPlanCanvas expects for one plan. Status is the canvas base
+// (available/hold/sold/unlinked); the public label rides in `aria`.
+export function planBoxes(project, fp) {
+  const W = fp?.image?.width || 1, H = fp?.image?.height || 1;
+  return (fp?.boxes || []).map(b => {
+    const hit = findPublicUnit(project, b.unitId);
+    const base = { id: b.id, x: b.x * W, y: b.y * H, w: b.w * W, h: b.h * H, color: null, dim: false };
+    if (!hit) return { ...base, label: b.unitId || '-', status: 'unlinked', aria: `${b.unitId || 'Area'}, not linked to a unit` };
+    const { unit, variant } = hit;
+    return {
+      ...base, label: unit.id, sub: sft(unit.size), status: CANVAS_OF[unit.status],
+      aria: `${unit.id}, ${variant.name || 'unit'}${unit.size > 0 ? ', ' + sft(unit.size) : ''}, ${STATUS_LABEL[unit.status].toLowerCase()}`,
+    };
+  });
+}
+
+// Only https links may reach an <img>, <a href> or <image href>.
+export const safeUrl = (u) => (typeof u === 'string' && /^https:\/\//i.test(u) ? u : '');
+
+// ── loading ──────────────────────────────────────────────────────────────────
+export async function loadPublicPortfolio() {
+  const { sbPublicProjects } = await import('./supabase.js');
+  const res = await sbPublicProjects();
+  if (!res.ok) return { error: res.error };
+  return { projects: Array.isArray(res.data) ? res.data : [] };
+}
+
+// opts.preview: the admin preview of an unpublished project. It reads the
+// admin's own cached copy, reduced to the same public fields, so the preview
+// never needs publishing first and never shows more than the public would.
+export async function loadPublicProject(id, opts = {}) {
+  if (opts.preview && opts.source) return { project: toPublic(opts.source) };
+  const { sbPublicProject } = await import('./supabase.js');
+  const res = await sbPublicProject(id);
+  if (!res.ok) return { error: res.error };
+  if (!res.data) return { error: 'unpublished' };
+  return { project: { ...res.data, plans: sortPlans(res.data.plans) } };
+}
+
+// A full CRM project reduced to the public shape the RPC returns. The single
+// client-side twin of public_project() (migration 0060); keep the two in step.
+export function toPublic(p) {
+  const url = (m) => safeUrl(typeof m === 'string' ? m : m?.url);
+  const variants = (p.variants || []).map(v => ({
+    id: v.id, name: v.name || '', size: v.size > 0 ? v.size : null,
+    beds: v.beds > 0 ? v.beds : null, baths: v.baths > 0 ? v.baths : null,
+    units: (v.units || []).map(u => ({ id: u.id, size: u.size > 0 ? u.size : (v.size > 0 ? v.size : null), status: normalizeStatus(p, u) })),
+  }));
+  const sizes = variants.flatMap(v => v.units.map(u => u.size)).filter(n => n > 0);
+  const photos = (p.media?.images || []).map(url).filter(Boolean);
+  return {
+    id: p.id, name: p.name || '', type: p.purpose || '', address: p.address || '', handover: p.handover || '',
+    sizeText: p.sizeText || '', storeys: p.storeys || '', landArea: p.landArea || '', facing: p.facing || '',
+    details: p.details || '', cover: photos[0] || null, photos,
+    brochures: (p.media?.docs || []).map(d => ({ label: d.label || 'Brochure', url: url(d) })).filter(d => d.url),
+    counts: { minSize: sizes.length ? Math.min(...sizes) : null, maxSize: sizes.length ? Math.max(...sizes) : null },
+    variants,
+    plans: sortPlans(p.floorPlans).filter(f => safeUrl(f.image?.url)).map(f => ({
+      id: f.id, name: f.name || 'Floor plan', order: f.order ?? 0,
+      image: { url: f.image.url, width: f.image.width, height: f.image.height },
+      boxes: (f.boxes || []).map(b => ({ id: b.id, x: b.x, y: b.y, w: b.w, h: b.h, unitId: b.unitId })),
+    })),
+  };
+}
+
+// ── Admin helpers (full CRM project in memory) ──────────────────────────────
+const BASE_OF = { available: 'available', hold: 'booked', sold: 'sold' };
+
+// The public status of a CRM unit: custom statuses resolve to their base first.
 export function normalizeStatus(project, unit) {
   const c = unit?.tag ? (project?.unitStatuses || []).find(s => s.id === unit.tag) : null;
   const base = c ? c.base : (unit?.status === 'sold' ? 'sold' : unit?.status === 'hold' ? 'hold' : 'available');
   return BASE_OF[base] || 'sold';
 }
 
-export const unitSizeOf = (u, v) => (u?.size > 0 ? u.size : (v?.size || 0));
-export const unitPriceOf = (u, v) => (u?.price > 0 ? u.price : ((v?.listRate || 0) * unitSizeOf(u, v)));
-
-// The unit with this code anywhere in the project.
-export function findUnitIn(project, id) {
-  for (const v of project?.variants || []) {
-    const u = (v.units || []).find(x => x.id === id);
-    if (u) return { variant: v, unit: u };
-  }
-  return null;
-}
-
-export const sortPlans = (plans) => [...(plans || [])].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
-
-// A summary line for the floor-plan canvas box: code, public status, and size
-// when the unit has one.
-export function boxAria(project, loc, status, fallbackCode = 'Unit') {
-  const label = PUBLIC_STATUSES[status].label;
-  if (!loc) return `${fallbackCode}, not linked to a unit`;
-  const u = loc.unit, v = loc.variant;
-  const size = unitSizeOf(u, v) > 0 ? `${unitSizeOf(u, v).toLocaleString('en-IN')} sqft, ` : '';
-  return `${u.id}, ${v.name || 'unit'}, ${size}${label.toLowerCase()}`;
-}
-
-export const takaFmt = (n) => (n > 0 ? '৳' + Math.round(n).toLocaleString('en-IN') : '');
-
-// Build the box list FloorPlanCanvas expects for one plan. Status passes the
-// canvas base (available/hold/sold/unlinked); the public label rides in `aria`.
-export function planBoxes(project, fp) {
-  const W = fp?.image?.width || 1, H = fp?.image?.height || 1;
-  return (fp?.boxes || []).map(b => {
-    const loc = findUnitIn(project, b.unitId);
-    if (!loc) {
-      return {
-        id: b.id, x: b.x * W, y: b.y * H, w: b.w * W, h: b.h * H,
-        label: b.unitId || '-', status: 'unlinked', color: null, dim: false,
-        aria: `${b.unitId || 'Unit'}, not linked to a unit`,
-      };
-    }
-    const st = normalizeStatus(project, loc.unit);
-    const size = unitSizeOf(loc.unit, loc.variant);
-    const c = loc.unit.tag ? (project?.unitStatuses || []).find(s => s.id === loc.unit.tag) : null;
-    return {
-      id: b.id, x: b.x * W, y: b.y * H, w: b.w * W, h: b.h * H,
-      label: loc.unit.id,
-      sub: size > 0 ? `${size.toLocaleString('en-IN')} sqft` : '',
-      status: CANVAS_OF[st],
-      color: c?.color || null,
-      dim: false,
-      aria: boxAria(project, loc, st, b.unitId),
-    };
-  });
-}
-
-// Public count buckets for the legend, from the whole project (all variants).
+// Public count buckets for a CRM project (all variants).
 export function projectCounts(project) {
   const counts = { available: 0, booked: 0, sold: 0 };
   for (const v of project?.variants || []) {
     for (const u of v.units || []) counts[normalizeStatus(project, u)]++;
   }
   return counts;
-}
-
-// A unit card for the detail panel. Only fields that exist are populated.
-export function unitCard(project, unitId) {
-  const loc = findUnitIn(project, unitId);
-  if (!loc) return null;
-  const st = normalizeStatus(project, loc.unit);
-  const size = unitSizeOf(loc.unit, loc.variant);
-  const price = unitPriceOf(loc.unit, loc.variant);
-  return {
-    code: loc.unit.id,
-    type: loc.variant.name || '',
-    size: size > 0 ? size : null,
-    price: price > 0 ? price : null,
-    status: st,
-    statusLabel: PUBLIC_STATUSES[st].label,
-  };
-}
-
-// ── loading ──────────────────────────────────────────────────────────────────
-const MOCK = (import.meta.env && import.meta.env.VITE_PUBLIC_MOCK) === '1';
-// Real public WECON marketing PDFs, demo-only (never shown unless VITE_PUBLIC_MOCK=1).
-const MOCK_BROCHURES = {
-  pxz4w57qtmrbz2gvm: ['https://drive.usercontent.google.com/download?id=1DaTRvoqv70yDYYCXzKpf'],
-  px45mvl4ymqq7png2: ['https://drive.usercontent.google.com/u/0/uc?id=1QfDkccwseF0Ew3pT8qP5OR'],
-};
-
-export async function loadPublicProject(id, opts = {}) {
-  const { sbGetPropertyRow } = await import('./supabase.js');
-  const res = await sbGetPropertyRow(id);
-  if (res.ok && res.row) {
-    const r = res.row;
-    // The publish toggle gates the live public page. Preview (admin) bypasses it.
-    if (!opts.preview && !r.publicPublished) return { error: 'unpublished' };
-    return {
-      source: 'live',
-      project: {
-        id: r.id,
-        name: r.name,
-        type: r.purpose || '',
-        address: r.address || '',
-        handover: r.handover || '',
-        listing: r.listing || '',
-        details: r.details || '',
-        floorPlans: sortPlans(r.floorPlans),
-        brochures: (r.media?.docs || []).map(d => ({ label: d.label || 'Brochure', url: d.url })),
-        publicPublished: !!r.publicPublished,
-      },
-    };
-  }
-  // Live unreachable or row missing: offer the demo brochure supplement only when
-  // mock is enabled; otherwise a clear error. The floor-plan demo needs the live
-  // row, so a full offline mock is intentionally not fabricated.
-  if (MOCK && id in MOCK_BROCHURES) {
-    return {
-      source: 'mock',
-      project: {
-        id, name: 'Demo project', type: '', address: '', handover: '', listing: '',
-        details: '', floorPlans: [],
-        brochures: MOCK_BROCHURES[id].map(url => ({ label: 'Brochure (demo)', url })),
-      },
-    };
-  }
-  return { error: res.ok ? 'project not found' : 'project could not be loaded' };
-}
-
-// The public portfolio landing: every published project, projected to card fields.
-export async function loadPublicPortfolio() {
-  const { sbListPublishedProperties } = await import('./supabase.js');
-  const res = await sbListPublishedProperties();
-  if (res.ok) return { source: 'live', projects: res.projects };
-  return { error: res.error };
 }

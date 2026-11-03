@@ -766,29 +766,29 @@ export async function sbGetPropertyRow(id) {
   }
 }
 
-// All published projects for the public portfolio landing page: a projection of
-// public fields only (no units, floor plans, variants, or internal notes).
-export async function sbListPublishedProperties() {
+// The public project pages (#/p, #/p/<id>) read only through these two RPCs
+// (migration 0060): published projects, whitelisted fields, never the row.
+// Sent as anon on purpose, even when someone is signed in, so the page shows
+// exactly what a customer sees. { ok, data } or { ok: false, error, missing }.
+async function sbPublicRpc(fn, args) {
   if (!SB_URL || !SB_KEY) return { ok: false, error: 'cloud sync is not configured' };
   try {
-    // The Catalog keeps photos in media.images (first = cover); legacy rows use images.
-    const r = await sbFetch(`${SB_URL}/rest/v1/properties?public_published=eq.true&order=name&select=id,name,purpose,address,details,handover,listing,images,photos:media->images`, { headers: SB_H });
-    if (!r.ok) return { ok: false, error: `the server rejected it (HTTP ${r.status})` };
-    const rows = await r.json();
-    const urlOf = (m) => (typeof m === 'string' ? m : m?.url) || null;
-    return {
-      ok: true,
-      projects: (Array.isArray(rows) ? rows : []).map(p => ({
-        id: p.id, name: p.name || '', type: p.purpose || '',
-        address: p.address || '', details: p.details || '',
-        handover: p.handover || '', listing: p.listing || '',
-        cover: urlOf((Array.isArray(p.photos) && p.photos[0]) || (Array.isArray(p.images) && p.images[0])),
-      })),
-    };
+    const r = await sbFetch(`${SB_URL}/rest/v1/rpc/${fn}`, {
+      method: 'POST',
+      headers: { apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(args),
+    });
+    if (r.ok) return { ok: true, data: await r.json() };
+    let j = {};
+    try { j = JSON.parse(await r.text()); } catch { /* non-JSON error body */ }
+    if (j.code === 'PGRST202' || r.status === 404) return { ok: false, missing: true, error: 'the public project pages are not set up yet (apply migration 0060)' };
+    return { ok: false, error: `the server rejected it (HTTP ${r.status})` };
   } catch {
     return { ok: false, error: 'network error, check your connection' };
   }
 }
+export const sbPublicProjects = () => sbPublicRpc('public_projects', {});
+export const sbPublicProject = (id) => sbPublicRpc('public_project', { p_id: id });
 
 // Project files in Supabase Storage (bucket from migration 0021): public read,
 // anon insert only, so every upload takes a new path and nothing is replaced.
