@@ -747,6 +747,7 @@ export function rToP(r) {
     floorPlans: Array.isArray(r.floor_plans) ? r.floor_plans : [],
     unitStatuses: Array.isArray(r.unit_statuses) ? r.unit_statuses : [],
     publicPublished: !!r.public_published,
+    publicFacts: Array.isArray(r.public_facts) ? r.public_facts : [],
   };
 }
 

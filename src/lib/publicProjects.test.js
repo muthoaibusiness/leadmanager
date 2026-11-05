@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   normalizeStatus, projectCounts, matchPublicRoute, isPortfolioRoute,
-  countUnits, unitDetail, planBoxes, glanceRows, sizeRange, toPublic, safeUrl, sortPlans,
+  countUnits, unitDetail, planBoxes, glanceRows, sizeRange, toPublic, safeUrl, sortPlans, floorStack, isMapLink, mapEmbedUrl,
 } from './publicProjects.js';
 
 // A full CRM project, as the admin store holds it.
@@ -117,4 +117,31 @@ test('isPortfolioRoute matches the bare portfolio landing only', () => {
   assert.equal(isPortfolioRoute('#/p/px12abc34'), false);
   assert.equal(isPortfolioRoute('#/leads'), false);
   assert.equal(isPortfolioRoute(''), false);
+});
+
+test('floorStack: top floor first, units in code order, each unit once, unplaced last', () => {
+  const proj = {
+    variants: [{ id: 'v', name: 'Shop', units: [
+      { id: 'S-10', status: 'available' }, { id: 'S-2', status: 'sold' }, { id: 'S-1', status: 'booked' }, { id: 'S-9', status: 'available' },
+    ] }],
+    plans: [
+      { id: 'g', name: 'Ground', order: 1, boxes: [{ id: 'a', unitId: 'S-10' }, { id: 'b', unitId: 'S-2' }, { id: 'x', unitId: 'GONE' }] },
+      { id: 'u', name: 'Upper', order: 2, boxes: [{ id: 'c', unitId: 'S-1' }, { id: 'd', unitId: 'S-2' }] },
+      { id: 'r', name: 'Roof', order: 3, boxes: [] },
+    ],
+  };
+  const f = floorStack(proj);
+  assert.deepEqual(f.map(x => x.name), ['Roof', 'Upper', 'Ground', 'Other units']);
+  assert.deepEqual(f.map(x => x.units.map(u => u.unit.id)), [[], ['S-1'], ['S-2', 'S-10'], ['S-9']]);
+  assert.deepEqual(floorStack({ variants: proj.variants, plans: [] }).map(x => x.name), ['All units']);
+});
+
+test('map links: detected by label or Google Maps URL, embedded by their place query', () => {
+  const user = 'https://www.google.com/maps?q=796+Lal+Dighi+Par+Rd,+%E0%A6%9A%E0%A6%9F%E0%A7%8D%E0%A6%9F%E0%A6%97%E0%A7%8D%E0%A6%B0%E0%A6%BE%E0%A6%AE,+Bangladesh&ftid=0x30ad275bb4c7e163:0x42e34e1319415e35';
+  assert.equal(isMapLink({ label: 'Map', url: 'https://example.com' }), true);
+  assert.equal(isMapLink({ label: 'Location', url: user }), true);
+  assert.equal(isMapLink({ label: 'More Details', url: 'https://wecon.com.bd/property/jm-heritage-mall/' }), false);
+  assert.equal(mapEmbedUrl(user), `https://maps.google.com/maps?q=${encodeURIComponent('796 Lal Dighi Par Rd, চট্টগ্রাম, Bangladesh')}&output=embed`);
+  assert.equal(mapEmbedUrl('https://www.google.com/maps/place/x'), '');
+  assert.equal(mapEmbedUrl('not a url'), '');
 });

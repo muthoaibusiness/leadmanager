@@ -143,7 +143,14 @@ export function mergeDB(remote, local) {
       };
     }),
     bookings: mergeArr(r.bookings, l.bookings),
-    holdRequests: mergeArr(r.holdRequests, l.holdRequests),
+    // Hold requests: cloud-authoritative, like leads. createHoldRequest inserts
+    // and decideHoldRequest updates the cloud row directly, so a request the
+    // cloud no longer has was deleted there and must not be kept (or pushed
+    // back up) from this cache. Only one created in the last 15 minutes and not
+    // yet on the cloud (its insert still in flight) is kept.
+    holdRequests: r.holdRequests === undefined
+      ? (l.holdRequests || [])
+      : mergeCloudFirst(r.holdRequests, (l.holdRequests || []).filter(x => nowMs - new Date(x?.createdAt || 0).getTime() < 15 * 60 * 1000)),
     activities: mergeActs(r.activities, l.activities),
     notifications: mergeNotifs(r.notifications, l.notifications),
   };
@@ -1559,6 +1566,19 @@ export function cartAdd(leadId, property, unitNo, user) {
   };
   updLead(leadId, { cart });
   addAct(leadId, { type: 'CART', description: 'Added to cart: ' + property.name + (unitNo ? ' · Unit ' + unitNo.replace('U-', '') : ''), userId: user.id, userName: user.name, durationSeconds: 0 });
+}
+
+// Prospects breadcrumb "Save project details": the project, floor and unit a
+// lead is interested in, kept on the lead's cart (stage CART). Never touches
+// the unit's status: that only changes through Reserve / Hold.
+export function saveLeadPick(leadId, { project, variant, floor, unitNo, size, value }, user) {
+  const cart = {
+    propertyId: project.id, propertyName: project.name, variantId: variant?.id || null, floor: floor || '',
+    unitNo, size: size || 0, stage: 'CART', value: value || 0,
+    addedBy: user.id, addedByName: user.name, addedAt: now_(), updatedAt: now_(),
+  };
+  updLead(leadId, { cart, propertyInterest: project.name });
+  addAct(leadId, { type: 'CART', description: `Interest saved: ${project.name}${floor ? ' · ' + floor : ''} · ${unitNo}`, userId: user.id, userName: user.name, durationSeconds: 0 });
 }
 
 export function cartRemove(leadId, user) {

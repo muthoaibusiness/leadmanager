@@ -94,6 +94,30 @@ export function glanceRows(project) {
 // Floor plans in their saved order.
 export const sortPlans = (plans) => [...(plans || [])].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
 
+const byCode = new Intl.Collator('en', { numeric: true, sensitivity: 'base' }).compare;
+
+// The floor list of the Units block, top floor first, as on Available Units:
+// one entry per floor plan with the units boxed on it (code order), then
+// "Other units" for units on no plan ("All units" when there are no plans).
+// A unit boxed on two plans is listed once, on the lower one.
+export function floorStack(project) {
+  const plans = sortPlans(project?.plans);
+  const byId = new Map(allUnits(project).map(x => [x.unit.id, x]));
+  const placed = new Set();
+  const floors = plans.map(f => {
+    const units = [];
+    for (const b of f.boxes || []) {
+      const hit = byId.get(b.unitId);
+      if (hit && !placed.has(hit.unit.id)) { placed.add(hit.unit.id); units.push(hit); }
+    }
+    units.sort((a, b) => byCode(a.unit.id, b.unit.id));
+    return { id: f.id, name: f.name || 'Floor plan', plan: f, units };
+  }).reverse();
+  const rest = [...byId.values()].filter(x => !placed.has(x.unit.id)).sort((a, b) => byCode(a.unit.id, b.unit.id));
+  if (rest.length) floors.push({ id: 'other', name: plans.length ? 'Other units' : 'All units', plan: null, units: rest });
+  return floors;
+}
+
 // The box list FloorPlanCanvas expects for one plan. Status is the canvas base
 // (available/hold/sold/unlinked); the public label rides in `aria`.
 export function planBoxes(project, fp) {
@@ -108,6 +132,17 @@ export function planBoxes(project, fp) {
       aria: `${unit.id}, ${variant.name || 'unit'}${unit.size > 0 ? ', ' + sft(unit.size) : ''}, ${STATUS_LABEL[unit.status].toLowerCase()}`,
     };
   });
+}
+
+// A Catalog link is the project's map when it is labelled "Map" or points at Google Maps.
+export const isMapLink = (l) => /^map$/i.test((l?.label || '').trim()) || /^https:\/\/(www\.)?google\.[a-z.]+\/maps|^https:\/\/maps\.(google\.[a-z.]+|app\.goo\.gl)\//i.test(l?.url || '');
+
+// The embeddable form of a Google Maps link: its place query (?q=) through the
+// keyless /maps?output=embed endpoint. '' when the link carries no query.
+export function mapEmbedUrl(url) {
+  let q;
+  try { q = new URL(url).searchParams.get('q') || ''; } catch { return ''; }
+  return q ? `https://maps.google.com/maps?q=${encodeURIComponent(q)}&output=embed` : '';
 }
 
 // Only https links may reach an <img>, <a href> or <image href>.
@@ -147,8 +182,9 @@ export function toPublic(p) {
   return {
     id: p.id, name: p.name || '', type: p.purpose || '', address: p.address || '', handover: p.handover || '',
     sizeText: p.sizeText || '', storeys: p.storeys || '', landArea: p.landArea || '', facing: p.facing || '',
-    details: p.details || '', cover: photos[0] || null, photos,
+    details: p.details || '', facts: Array.isArray(p.publicFacts) ? p.publicFacts : [], cover: photos[0] || null, photos,
     brochures: (p.media?.docs || []).map(d => ({ label: d.label || 'Brochure', url: url(d) })).filter(d => d.url),
+    links: (p.media?.links || []).map(l => ({ label: l.label || 'Link', url: url(l) })).filter(l => l.url),
     counts: { minSize: sizes.length ? Math.min(...sizes) : null, maxSize: sizes.length ? Math.max(...sizes) : null },
     variants,
     plans: sortPlans(p.floorPlans).filter(f => safeUrl(f.image?.url)).map(f => ({

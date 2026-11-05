@@ -1,6 +1,6 @@
 import { useApp } from '../../context/AppContext.jsx';
 import { getHoldRequests, decideHoldRequest } from '../../lib/db.js';
-import { setUnitStatus } from '../../lib/projects.js';
+import { setUnitStatus, reservedTag, getProjectById, findUnit } from '../../lib/projects.js';
 import { fmtBDT, fmtAgo } from '../../lib/helpers.js';
 import Mi from '../Mi.jsx';
 
@@ -14,7 +14,10 @@ export default function RequestsView() {
 
   const decide = (r, ok) => {
     const updated = decideHoldRequest(r.id, ok, user);
-    if (ok && updated) setUnitStatus(r.propertyId, r.variantId, r.unitId, 'hold', { user, client: { name: r.clientName }, holdUntil: updated.holdUntil, note: 'Booked by management' });
+    const proj = getProjectById(r.propertyId);
+    // Keep the lead id the hold was placed with, so the unit still links to its prospect.
+    const clientId = findUnit(proj, r.unitId)?.unit.clientId || null;
+    if (ok && updated) setUnitStatus(r.propertyId, r.variantId, r.unitId, 'hold', { user, client: { id: clientId, name: r.clientName }, holdUntil: updated.holdUntil, note: 'Booked by management', tag: reservedTag(proj) });
     else setUnitStatus(r.propertyId, r.variantId, r.unitId, 'available', { user });
     refreshDB();
     showToast(ok ? `Hold approved · Unit ${r.unitId}` : `Request rejected · Unit ${r.unitId}`, 'ok');

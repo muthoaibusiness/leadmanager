@@ -159,7 +159,7 @@ export function AppProvider({ children }) {
 
   const nav = useCallback((v) => {
     setView(v);
-    setProjTab('list'); // the sidebar's Projects opens the project list
+    setProjTab(v === 'properties' ? 'units' : 'list'); // the sidebar's Projects opens Available Units
     setTab(0);
     setStatusFilter('ALL');
     setSearch('');

@@ -99,6 +99,8 @@
 
 /* ── Viewer ─────────────────────────────────────────────────────────────── */
 .fpv { min-width: 0; }
+/* First load: the CRM loader in the space the page will take (as Meta CAPI's .fin-loader). */
+.fpv-loader { min-height: min(60vh, 520px); }
 .fpv-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; margin-bottom: 14px; }
 .fpv-proj { max-width: min(100%, 340px); min-width: 0; text-overflow: ellipsis; }
 .fpv-manage { margin-left: auto; }
@@ -286,3 +288,276 @@
 @media (prefers-reduced-motion: reduce) {
   .fp-box .fp-fill { transition: none; }
 }
+
+/* ── Available Units: floor rail · floor map · details (is-rail) ──────────
+   One calm surface per column, theme tokens only. The map is the boxes
+   drawn as vectors (FloorPlanCanvas bare) on the card itself, so it follows
+   the CRM theme; status reads from a soft tint plus a thin edge, and sold is
+   also hatched so colour is never the only signal. */
+.fpv-grid.is-rail {
+  grid-template-columns: 184px minmax(0, 1fr) 340px; grid-template-areas: "rail plan side"; gap: 16px;
+}
+.fpv-grid.is-rail > .fpv-seats { grid-area: plan; }
+
+/* floor rail: every floor by name with its unit count; the picked floor in
+   the selection blue (the same blue as a picked unit, --fp-sel). */
+.fpr {
+  --fpr-sel: #1F6FEB;
+  grid-area: rail; display: flex; flex-direction: column; align-items: stretch; gap: 4px; padding: 8px;
+  background: var(--surf); border: 1px solid var(--bd); border-radius: var(--r-lg, 14px); min-width: 0;
+}
+.fpr-btn {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 10px;
+  min-height: 44px; padding: 10px 12px; border: 1px solid transparent; border-radius: var(--r); background: transparent;
+  color: var(--t1); text-align: left; cursor: pointer; font: 600 13.5px/1.25 var(--font-display);
+}
+.fpr-btn b { font-weight: 600; min-width: 0; overflow-wrap: anywhere; }
+.fpr-btn span { flex: none; font: 500 12px/1.25 var(--font-display); color: var(--t3); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.fpr-btn:hover { background: var(--surf2); }
+.fpr-btn.on { background: var(--fpr-sel); border-color: var(--fpr-sel); color: #FFFFFF; }
+.fpr-btn.on span { color: rgba(255, 255, 255, .82); }
+.fpr-btn:focus-visible { outline: 2px solid var(--fpr-sel); outline-offset: 2px; }
+
+/* floor map card */
+.fpm { background: var(--surf); border: 1px solid var(--bd); border-radius: var(--r-lg, 14px); padding: 16px; gap: 12px; }
+.fpm-hd { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.fpm-hd h3 { margin: 0; font: 700 17px/1.25 var(--font-display); color: var(--t1); }
+.fpm-hd h3 span { font-weight: 500; color: var(--t2); }
+.fpm-hd em { font-style: normal; font-size: 13px; color: var(--t2); font-variant-numeric: tabular-nums; }
+.fpm-legend { padding-top: 10px; border-top: 1px solid var(--bd); }
+
+/* The clean floor plan (a light drawing in either theme), so the boxes keep
+   fixed colours picked for contrast on it: a soft status tint, a thin edge,
+   dark labels. Sold and landowner units are grey and hatched. */
+.fp-stage.is-bare {
+  --fp-av: #2E7D27; --fp-hold: #B7791F; --fp-sold: #8C929A; --fp-unl: #8C929A; --fp-sel: #1F2A24;
+  background: #FAFAF8; border-color: var(--bd);
+}
+.is-bare .fp-box .fp-fill { fill-opacity: .16; rx: 9px; }
+.is-bare .fp-box .fp-edge { stroke-width: 1.25; stroke-opacity: .75; rx: 9px; }
+.is-bare .fp-box.st-hold .fp-fill { fill-opacity: .3; }
+.is-bare .fp-box.st-sold .fp-fill, .is-bare .fp-box.has-c .fp-fill { fill: var(--fp-sold); fill-opacity: .14; }
+.is-bare .fp-box.st-sold .fp-edge, .is-bare .fp-box.has-c .fp-edge { stroke: var(--fp-sold); stroke-opacity: .6; }
+.is-bare .fp-box:hover .fp-fill, .is-bare .fp-box.hl .fp-fill { fill-opacity: .32; }
+.is-bare .fp-box.on .fp-fill { fill-opacity: .36; }
+.is-bare .fp-box.on .fp-edge, .is-bare .fp-box:focus-visible .fp-edge { stroke: var(--fp-sel); stroke-width: 2.5; stroke-opacity: 1; }
+.is-bare .fp-hatch { opacity: .3; }
+.is-bare .fp-lbl { fill: #1F2A24; stroke: none; font-weight: 700; font-family: var(--font-display); }
+.is-bare .fp-lbl-sub { fill: #4B544E; font-weight: 500; }
+.is-bare .fp-lbl-note { fill: #2E7D27; font-weight: 600; }
+.is-bare .st-hold .fp-lbl-note { fill: #8A5A0B; }
+.is-bare .st-sold .fp-lbl-note, .is-bare .has-c .fp-lbl-note { fill: #6B7178; }
+/* A finished artwork plan (image.source 'artwork') already shows each shop's
+   name and colour, so its boxes are invisible hit areas: only hover and the
+   picked shop get an outline. The plan colour system replaces this later. */
+.fp-stage.is-art { --fp-sel: #FFFFFF; background: #0E1116; border-color: var(--bd); }
+.is-art .fp-box .fp-fill { fill: transparent; }
+.is-art .fp-box .fp-edge { stroke: transparent; }
+.is-art .fp-hatch, .is-art .fp-lbl { display: none; }
+.is-art .fp-box.on .fp-fill { fill: #FFFFFF; fill-opacity: .12; }
+.is-art .fp-box.on .fp-edge, .is-art .fp-box:focus-visible .fp-edge { stroke: var(--fp-sel); stroke-width: 3; }
+.is-art .fp-box.dim { opacity: 1; }
+.is-art .fp-box.dim .fp-fill { fill: #0E1116; fill-opacity: .6; }
+.is-art .fp-zoom { background: rgba(14, 17, 22, .9); border-color: rgba(255, 255, 255, .14); }
+.is-art .fp-zoom button { color: #E8EAED; }
+/* The neutral 1st Floor artwork paints every shop in the Available look
+   (#30343B fill, #9298A3 edge). The picked shop is drawn over it in the
+   selected green: #163B29 fill, #22C55E edge. */
+.is-art { --unit-av: #30343B; --unit-av-edge: #9298A3; --unit-sel: #163B29; --unit-sel-edge: #22C55E; }
+.is-art .fp-box.on .fp-fill { fill: var(--unit-sel); fill-opacity: 1; }
+.is-art .fp-box.on .fp-edge, .is-art .fp-box:focus-visible .fp-edge { stroke: var(--unit-sel-edge); stroke-width: 2.5; }
+.is-art .fp-box.on .fp-lbl { display: block; fill: #FFFFFF; stroke: none; font-weight: 600; font-family: var(--font-display); }
+.is-art .fp-box.on .fp-lbl-sub, .is-art .fp-box.on .fp-lbl-note { fill: #BFEFD0; }
+.is-art .fp-box:hover:not(.on) .fp-edge, .is-art .fp-box.hl:not(.on) .fp-edge { stroke: var(--unit-sel-edge); stroke-opacity: .6; stroke-width: 2; }
+/* legend swatches match the map's soft tint */
+.fpm-legend .fp-sw { border-width: 1px; border-radius: 4px; }
+.fpm-legend .fp-sw.st-sold { border-color: #8C929A; background: color-mix(in srgb, #8C929A 18%, transparent); }
+
+/* details: tabs + panel */
+.fpt { display: flex; gap: 2px; padding: 3px; border: 1px solid var(--bd); border-radius: 999px; background: var(--surf); }
+.fpt button {
+  flex: 1 1 0; min-width: 0; display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 36px; padding: 0 10px;
+  border: 0; border-radius: 999px; background: transparent; color: var(--t2); font: 600 13px/1 var(--font-display); cursor: pointer;
+}
+.fpt button .mi { font-size: 17px; }
+.fpt button:hover { color: var(--t1); }
+.fpt button.on { background: var(--t1); color: var(--surf-solid); }
+.fpt button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.is-rail .fpv-card { border-top: 1px solid var(--bd); }
+
+.fpd-hd { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.fpd-hd h2 { margin: 0; font: 700 20px/1.2 var(--font-display); }
+.fpd-hd span { font-size: 13px; color: var(--t3); }
+.fpd-stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 14px; }
+.fpd-stats div { padding: 10px; border-radius: var(--r); background: var(--surf2); min-width: 0; }
+.fpd-stats span { display: block; font-size: 11.5px; color: var(--t3); }
+.fpd-stats b { display: block; margin-top: 2px; font-size: 14px; font-weight: 700; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.fpd-sub { margin: 18px 0 8px; font-size: 13px; font-weight: 700; color: var(--t1); }
+.fpd-sub.is-first { margin-top: 0; }
+.fpd-bar { display: flex; height: 8px; gap: 2px; border-radius: 99px; overflow: hidden; margin-bottom: 8px; }
+.fpd-bar i { flex-basis: 0; }
+.fpd-bar .st-available { background: var(--green); }
+.fpd-bar .st-hold { background: var(--gold); }
+.fpd-bar .st-sold { background: var(--t3); }
+.fpd-bar .st-c { background: var(--st-c); opacity: .6; }
+.fpd-rows { margin: 0; display: grid; }
+.fpd-rows div { display: grid; grid-template-columns: minmax(0, 1fr) auto 44px; gap: 10px; align-items: center; padding: 7px 0; font-size: 13px; }
+.fpd-rows dt { display: flex; align-items: center; gap: 8px; color: var(--t2); min-width: 0; }
+.fpd-rows dd { margin: 0; font-variant-numeric: tabular-nums; color: var(--t1); }
+.fpd-pct { text-align: right; color: var(--t3) !important; }
+.fpd-rows.is-kv div { grid-template-columns: minmax(0, 1fr) auto; border-top: 1px solid var(--bd); }
+.fpd-rows.is-kv div:first-child { border-top: 0; }
+.fpd-rows.is-kv dd { text-align: right; overflow-wrap: anywhere; }
+.fpd-rows .fp-dot.st-sold { background: var(--t3); }
+
+.fpp-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+.fpp-list button {
+  width: 100%; display: flex; flex-direction: column; gap: 2px; padding: 8px 10px; border: 0; border-radius: var(--r);
+  background: transparent; color: var(--t1); text-align: left; cursor: pointer; font: inherit;
+}
+.fpp-list button:hover { background: var(--surf2); }
+.fpp-list button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.fpp-list b { font-size: 13.5px; font-weight: 600; overflow-wrap: anywhere; }
+.fpp-list span { font-size: 12px; color: var(--t3); }
+.fpr-sum { margin: 0 0 6px; font-size: 12px; color: var(--t2); }
+.fpb { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--bd); display: grid; gap: 8px; }
+.fpb h3 { margin: 0; font-size: 13px; font-weight: 700; color: var(--t1); }
+.is-rail .fpv-none { padding: 4px 0; }
+
+.fpv-grid.is-rail.is-fit > .fpr { min-height: 0; overflow-y: auto; }
+/* Fitted to the screen: tighter floor buttons so every floor shows without scrolling the rail. */
+.fpv-grid.is-rail.is-fit > .fpr .fpr-btn { min-height: 36px; padding: 6px 12px; }
+.fpv-grid.is-rail.is-fit > .fpm { min-height: 0; }
+
+@media (max-width: 1279px) {
+  .fpv-grid.is-rail { grid-template-columns: 184px minmax(0, 1fr); grid-template-areas: "rail plan" "rail side"; }
+}
+/* Phones: floors become one scrolling row above the map. */
+@media (max-width: 860px) {
+  .fpv-grid.is-rail { grid-template-columns: minmax(0, 1fr); grid-template-areas: "rail" "plan" "side"; }
+  .fpr { flex-direction: row; overflow-x: auto; padding: 6px; scrollbar-width: none; }
+  .fpr-btn { flex: 0 0 auto; flex-direction: column; align-items: flex-start; gap: 2px; padding: 8px 14px; }
+  .fpm { padding: 12px; }
+  .fpd-stats { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+
+/* Details tab. One column, no row rules: a label on the left, its value on
+   the right, groups split by a single line. The package price is the one
+   large number, because it is what gets quoted. */
+.fpu-hd { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.fpu-hd h2 { margin: 0; font: 700 22px/1.15 var(--font-display); overflow-wrap: anywhere; }
+.fpu-st { display: inline-flex; align-items: center; gap: 6px; flex: none; font-size: 13px; font-weight: 600; color: var(--t2); }
+.fpu-sub { margin: 3px 0 0; font-size: 13px; color: var(--t2); }
+.fpu-price { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 8px; margin: 14px 0 6px; }
+.fpu-price b { font: 700 24px/1.1 var(--font-display); font-variant-numeric: tabular-nums; }
+.fpu-price span { font-size: 12.5px; color: var(--t3); }
+.fpu-price.is-none span { font-size: 13px; color: var(--t2); }
+.fpk { display: grid; margin: 4px 0 0; }
+.fpk div { display: flex; justify-content: space-between; align-items: baseline; gap: 14px; padding: 5px 0; font-size: 13px; }
+.fpk div.sep { margin-top: 6px; padding-top: 11px; border-top: 1px solid var(--bd); }
+.fpk dt { color: var(--t2); }
+.fpk dd { margin: 0; color: var(--t1); font-weight: 500; text-align: right; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.fpu-act { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 6px; margin-top: 14px; }
+.fpu-act .btn { justify-content: center; min-width: 0; }
+.fpu-act .btn-p, .fpu-act .btn-g:nth-child(2) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fpu-none { display: flex; align-items: center; gap: 8px; margin: 0; color: var(--t3); font-size: 13px; }
+.fpu-none .mi { font-size: 20px; }
+.fpf { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--bd); }
+.fpf h3 { margin: 0; font: 700 17px/1.2 var(--font-display); }
+.fpf .fpd-bar { margin: 12px 0 6px; height: 6px; }
+.fpf .fpd-rows div { padding: 4px 0; font-size: 13px; }
+
+/* Details / Customers tabs: a quiet toggle, so the blue floor rail stays the
+   one strong selection on the page. */
+.is-rail .fpt button.on { background: var(--surf2); color: var(--t1); box-shadow: inset 0 0 0 1px var(--bd2); }
+
+/* Artwork plan, units by status (AvailableUnitsView ART): a solid fill in the
+   status's dark unit tone, a thin edge in the status colour, and the label
+   drawn again on top. Available keeps the artwork's own grey. */
+.is-art .art-hold { --art-edge: #E5A83B; --art-fill: #49351B; }
+.is-art .art-landowner { --art-edge: #A78BFA; --art-fill: #33264F; }
+.is-art .art-available { --art-edge: #36A15C; --art-fill: #284531; }
+.is-art .art-reserved { --art-edge: #38BDF8; --art-fill: #17384A; }
+.is-art .fp-box.has-art .fp-fill { fill: var(--art-fill, #30343B); fill-opacity: 1; }
+.is-art .fp-box.has-art .fp-edge { stroke: var(--art-edge); stroke-width: 1.5; }
+.is-art .fp-box.has-art .fp-lbl { display: block; fill: #ECEEF1; stroke: none; font-weight: 600; letter-spacing: 0; font-family: 'Inter', system-ui, sans-serif; }
+.is-art .fp-box.has-art .fp-lbl-sub { fill: #C3C8D0; }
+.is-art .fp-box.has-art .fp-lbl-note { fill: var(--art-edge); }
+.is-art .fp-box.has-art .fp-hatch { display: none; }
+/* Artwork with tint layers: the colour is in the image, so a box is only a
+   hit area plus the hover light; no fill, edge or redrawn label on top. */
+.has-tints .fp-tint { pointer-events: none; }
+.is-art .has-tints .fp-box .fp-fill, .is-art .has-tints .fp-box.has-art .fp-fill, .is-art .has-tints .fp-box.on .fp-fill { fill: transparent; }
+/* Every unit: a hairline border in a lighter shade of its own status colour,
+   crisp at any zoom. The picked unit gets the same shade, full strength. */
+.is-art .has-tints .art-available { --unit-line: #6FA582; }
+.is-art .has-tints .art-hold { --unit-line: #C4A57A; }
+.is-art .has-tints .art-landowner { --unit-line: #9A93B5; }
+.is-art .has-tints .art-reserved { --unit-line: #7FAEC4; }
+.is-art .has-tints .fp-box .fp-edge, .is-art .has-tints .fp-box.has-art .fp-edge { stroke: var(--unit-line, #8C929A); stroke-opacity: .5; stroke-width: 1; }
+.is-art .has-tints .fp-box.on .fp-edge { stroke: var(--unit-line, #8C929A); stroke-opacity: 1; stroke-width: 2; }
+/* The plan's own names are erased from a tinted plan; each code is drawn
+   here instead: crisp at any zoom, a light weight, a soft off-white. */
+.is-art .has-tints .fp-box .fp-lbl, .is-art .has-tints .fp-box.has-art .fp-lbl, .is-art .has-tints .fp-box.on .fp-lbl {
+  display: block; fill: rgba(236, 239, 242, .86); stroke: none;
+  font-family: 'Inter', system-ui, sans-serif; font-weight: 500; letter-spacing: .02em;
+  text-rendering: geometricPrecision;
+}
+.is-art .has-tints .fp-box.on .fp-lbl { fill: #FFFFFF; }
+/* The picked unit on a tinted plan: a cool liquid-glass pane over its status
+   tint, with a bright rim. Hover keeps the warm light; the pick never uses it.
+   ds-allow-hardcode: plan artwork palette, same as the tint lines above. */
+.is-art .has-tints .fp-box.on .fp-fill { fill: var(--fp-glass); }
+.is-art .has-tints .fp-box.on .fp-edge { stroke: #E6F7FF; stroke-opacity: .95; stroke-width: 2; filter: drop-shadow(0 0 3px rgba(143, 211, 236, .6)); }
+.is-art .has-tints .fp-box.on .fp-run { stroke-opacity: 0; animation: none; }
+/* Hover a unit on the map: a warm liquid light (the canvas's amber-to-coral
+   gradient) flows around its outline, like the Prospects Refresh ring.
+   Only while hovered. */
+.fp-run { fill: none; stroke-opacity: 0; pointer-events: none; }
+.is-bare .fp-run { rx: 9px; }
+.fp-box:hover .fp-run, .fp-box.hl .fp-run {
+  stroke-opacity: 1; stroke-linecap: round; stroke-dasharray: 38 62;
+  filter: drop-shadow(0 0 4px rgba(245, 160, 74, .55));
+  animation: fp-run 2.2s cubic-bezier(.45, .05, .55, .95) infinite;
+}
+@keyframes fp-run { to { stroke-dashoffset: -100; } }
+@media (prefers-reduced-motion: reduce) {
+  .fp-box:hover .fp-run, .fp-box.hl .fp-run { animation: none; stroke-dasharray: none; }
+}
+
+/* Desktop fit: the tabs stay put and the details card scrolls inside its column. */
+.fpv-grid.is-rail.is-fit .fpv-side { overflow: hidden; }
+.fpv-grid.is-rail.is-fit .fpv-side > .fpv-card { flex: 1 1 0; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+
+/* Calmer frame: one surface per column without a second border inside it,
+   and more air between the columns. */
+.fpv-grid.is-rail { gap: 20px; }
+.fpm { padding: 18px; gap: 14px; }
+.fpm-hd h3 { font-size: 18px; }
+.fpm-hd em { color: var(--t3); }
+.fpm .fp-stage.is-art { border: 0; }
+.is-rail .fpv-card { padding: 18px; }
+.fpr { padding: 10px; gap: 2px; }
+
+/* One toolbar row: project picker, status chips, search, Manage. On narrow
+   screens the chips and search drop to their own lines under the picker. */
+.fpv-bar .fpv-filters { flex: 1 1 auto; min-width: 0; margin: 0; flex-wrap: nowrap; }
+.fpv-bar .fpv-chips { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; min-width: 0; }
+.fpv-bar .fpv-chip { flex: none; }
+.fpv-bar .fpv-search { flex: 0 1 200px; }
+.fpv-bar .fpv-manage { margin-left: 0; }
+@media (max-width: 1279px) {
+  .fpv-bar .fpv-filters { flex-basis: 100%; order: 3; }
+}
+@media (max-width: 860px) {
+  .fpv-bar .fpv-filters { flex-wrap: wrap; }
+  .fpv-bar .fpv-chips, .fpv-bar .fpv-search { flex: 1 1 100%; }
+}
+
+/* Available Units on desktop is one page: when the columns are fitted to the
+   screen (.is-fit) the page itself never scrolls, and no scroll bar shows.
+   A column taller than the screen still scrolls with the wheel or touch. */
+.pg-body:has(.fpv-grid.is-fit) { overflow: hidden; }
+.fpv-grid.is-fit .fpr, .fpv-grid.is-fit .fpv-side > .fpv-card, .fpv-grid.is-fit > .fpv-seats, .fpv-bar .fpv-chips { scrollbar-width: none; }
+.fpv-grid.is-fit .fpr::-webkit-scrollbar, .fpv-grid.is-fit .fpv-side > .fpv-card::-webkit-scrollbar,
+.fpv-grid.is-fit > .fpv-seats::-webkit-scrollbar, .fpv-bar .fpv-chips::-webkit-scrollbar { display: none; }

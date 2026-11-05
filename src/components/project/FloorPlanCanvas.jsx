@@ -8,8 +8,14 @@ import { rectFrom, clampMove, resizeRect, HANDLES, handlePoint } from '../../lib
 // pixels, so boxes sit on the drawing at any size; zooming and panning just
 // move the viewBox.
 //
-//   image     { url, width, height }
-//   boxes     [{ id, x, y, w, h (image px), label, sub?, status, aria, dim }]
+//   image     { url, width, height, tints? } tints: { [key]: url } copies of the
+//             image tinted per status; a box with art.key (or the picked box,
+//             'selected') shows its tint clipped to its outline
+//   boxes     [{ id, x, y, w, h (image px), label, sub?, note?, status, aria, dim }]
+//             note: a third line (the status name), shown only when the box has room
+//             art?: { key } (class art-<key>) or { edge } the unit's status colours on an artwork plan
+//             pts?: the shop's outline in image px ([[x, y], ...]) when it is not a
+//             rectangle; drawn instead of the box (viewer only, not editable)
 //             status: available | hold | sold | unlinked
 //   editable  boxes can be drawn (tool 'draw'), moved and resized
 //   onSelect(id | null), onHover(id | null)
@@ -188,41 +194,88 @@ export default function FloorPlanCanvas({
 
   return (
     <div className={`fp-stage ${className}`} ref={wrapRef} style={{ '--fp-ar': `${W} / ${H}` }}>
-      <svg ref={svgRef} className="fp-svg" viewBox={`${v.x} ${v.y} ${v.w} ${v.h}`} preserveAspectRatio="xMidYMid meet"
+      <svg ref={svgRef} className={`fp-svg${image.tints ? ' has-tints' : ''}`} viewBox={`${v.x} ${v.y} ${v.w} ${v.h}`} preserveAspectRatio="xMidYMid meet"
         role="group" aria-label={label}
-        style={{ cursor: svgCursor, touchAction: editable || zoomed ? 'none' : 'pan-y' }}
+        style={{ cursor: svgCursor, touchAction: editable || zoomed ? 'none' : 'pan-y', '--fp-glass': `url(#${hatch}-glass)` }}
         onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerCancel}
         onPointerLeave={() => onHover?.(null)}>
         <defs>
           <pattern id={hatch} width={8 / k} height={8 / k} patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
             <line className="fp-hatch-ln" x1="0" y1="0" x2="0" y2={8 / k} strokeWidth={2.5 / k} />
           </pattern>
+          {/* the hover light: a warm amber-to-coral flow */}
+          <linearGradient id={`${hatch}-run`} x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0" stopColor="#FFD08A" />
+            <stop offset=".5" stopColor="#F5A04A" />
+            <stop offset="1" stopColor="#E8785A" />
+          </linearGradient>
+          {/* the picked unit: cool frosted glass, never the warm hover hue. ds-allow-hardcode: plan artwork palette, like the hover gradient */}
+          <linearGradient id={`${hatch}-glass`} x1="0" y1="0" x2=".35" y2="1">
+            <stop offset="0" stopColor="#F2FBFF" stopOpacity=".55" />
+            <stop offset=".45" stopColor="#BFE6F5" stopOpacity=".28" />
+            <stop offset="1" stopColor="#8FD3EC" stopOpacity=".18" />
+          </linearGradient>
         </defs>
         <image href={image.url} x="0" y="0" width={W} height={H} preserveAspectRatio="none" />
+        {/* Tinted copies, each clipped to the shops that take it: the colour keeps
+            the drawing's own light and bevels. */}
+        {image.tints && Object.entries(image.tints).map(([key, href]) => {
+          // A picked shop keeps its status tint; the pick is only an outline (CSS).
+          const mine = boxes.filter(b => b.art?.key === key);
+          if (!mine.length) return null;
+          const clip = `${hatch}-t-${key}`;
+          return (
+            <g key={key} className="fp-tint" aria-hidden="true">
+              <clipPath id={clip}>
+                {mine.map(b => (b.pts ? <polygon key={b.id} points={b.pts.map(p => p.join(',')).join(' ')} />
+                  : <rect key={b.id} x={b.x} y={b.y} width={b.w} height={b.h} />))}
+              </clipPath>
+              <image href={href} x="0" y="0" width={W} height={H} preserveAspectRatio="none" clipPath={`url(#${clip})`} />
+            </g>
+          );
+        })}
         {boxes.map(b0 => {
           const b = live(b0);
           const on = b.id === selectedId;
           const showLabel = b.label && b.w * k >= 16 && b.h * k >= 12;
           return (
             <g key={b.id} data-box={b.id}
-              className={`fp-box st-${b.status}${b.color ? ' has-c' : ''}${on ? ' on' : ''}${b.id === hoverId ? ' hl' : ''}${b.dim ? ' dim' : ''}`}
-              style={b.color ? { '--st-c': b.color } : undefined}
+              className={`fp-box st-${b.status}${b.color ? ' has-c' : ''}${b.art ? ' has-art' : ''}${b.art?.key ? ' art-' + b.art.key : ''}${on ? ' on' : ''}${b.id === hoverId ? ' hl' : ''}${b.dim ? ' dim' : ''}`}
+              style={{ ...(b.color ? { '--st-c': b.color } : {}), ...(b.art?.edge ? { '--art-edge': b.art.edge } : {}) }}
               role="button" tabIndex={0} aria-label={b.aria || b.label} aria-pressed={on}
               onPointerEnter={() => onHover?.(b.id)} onPointerLeave={() => onHover?.(null)}
               onFocus={() => { if (editable) onSelect?.(b.id); }}
               onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSelect?.(b.id); } }}>
-              <rect className="fp-fill" x={b.x} y={b.y} width={b.w} height={b.h} />
-              {b.status === 'sold' && <rect x={b.x} y={b.y} width={b.w} height={b.h} fill={`url(#${hatch})`} className="fp-hatch" />}
-              <rect className="fp-edge" x={b.x} y={b.y} width={b.w} height={b.h} vectorEffect="non-scaling-stroke" />
+              {b.pts && !editable ? (() => {
+                const pts = b.pts.map(p => p.join(',')).join(' ');
+                return (
+                  <>
+                    <polygon className="fp-fill" points={pts} />
+                    {b.status === 'sold' && <polygon points={pts} fill={`url(#${hatch})`} className="fp-hatch" />}
+                    <polygon className="fp-edge" points={pts} vectorEffect="non-scaling-stroke" />
+                    <polygon className="fp-run" points={pts} pathLength="100" strokeWidth={2.5 / k} stroke={`url(#${hatch}-run)`} />
+                  </>
+                );
+              })() : (
+                <>
+                  <rect className="fp-fill" x={b.x} y={b.y} width={b.w} height={b.h} />
+                  {b.status === 'sold' && <rect x={b.x} y={b.y} width={b.w} height={b.h} fill={`url(#${hatch})`} className="fp-hatch" />}
+                  <rect className="fp-edge" x={b.x} y={b.y} width={b.w} height={b.h} vectorEffect="non-scaling-stroke" />
+                  {!editable && <rect className="fp-run" x={b.x} y={b.y} width={b.w} height={b.h} pathLength="100" strokeWidth={2.5 / k} stroke={`url(#${hatch}-run)`} />}
+                </>
+              )}
               {showLabel && (() => {
-                const t = fitLabel(b.label, b.sub, b.w * k, b.h * k);
+                const t = image.tints || b.art ? fitArt(b.label, b.w * k, b.h * k) : fitLabel(b.label, b.sub, b.w * k, b.h * k);
                 if (!t) return null;
-                const f = t.fs / k, cy = b.y + b.h / 2;
+                const f = t.fs / k;
+                const note = t.sub && b.note && b.h * k >= t.fs * 4.6 && b.w * k >= b.note.length * t.fs * 0.5 ? b.note : null;
+                const cy = b.y + b.h / 2 - (note ? f * 0.55 : 0);
                 return (
                   <text className="fp-lbl" x={b.x + b.w / 2} y={t.sub ? cy - f * 0.45 : cy} fontSize={f}
                     strokeWidth={3 / k} textAnchor="middle" dominantBaseline="central">
                     {t.text}
                     {t.sub && <tspan className="fp-lbl-sub" x={b.x + b.w / 2} dy={f * 1.05} fontSize={f * 0.72}>{t.sub}</tspan>}
+                    {note && <tspan className="fp-lbl-note" x={b.x + b.w / 2} dy={f * 1.1} fontSize={f * 0.66}>{note}</tspan>}
                   </text>
                 );
               })()}
@@ -254,6 +307,14 @@ const pick = (r) => ({ x: r.x, y: r.y, w: r.w, h: r.h });
 // a box too small for even that shows none. `sub` (the size) is a second,
 // smaller line, shown only when the box has the room.
 const CH = 0.64; // average glyph width / font size, bold caps and digits
+// An artwork plan's coloured unit: its full code on one line, the size the
+// painted labels have, smaller only when the box is too narrow.
+// One size for every shop (11px on screen), so the map reads evenly; only a
+// box too narrow for it shrinks the text, and below 7px it is left out.
+function fitArt(label, w, h) {
+  const fs = Math.min(11, h * 0.34, (w * 0.82) / (String(label).length * 0.58));
+  return fs >= 7 ? { text: label, fs } : null;
+}
 function fitLabel(label, sub, w, h) {
   const max = Math.min(20, Math.max(11, Math.min(w, h) * 0.24));
   const size = (s, lines = 1) => Math.min(max, (h * 0.8) / (lines * 1.25), (w * 0.88) / (s.length * CH));

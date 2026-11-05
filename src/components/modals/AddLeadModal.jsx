@@ -38,8 +38,20 @@ const initialForm = (isEdit, panLead, defaultSource) => {
   };
 };
 
-export default function AddLeadModal() {
-  const { modal, closeModal, user, panLead, refreshDB, showToast, setPanLead } = useApp();
+// Global use: no props, opened by modal 'add-lead' / 'edit-lead'.
+// Embedded use (Project console → Create lead): `open`, `onClose`, `onCreated`
+// and `interest` (the project, saved as the lead's Project Interest). It never
+// touches the global modal, so the console underneath stays open, and the
+// Project Interest field is hidden because the console fills it.
+export default function AddLeadModal({ open, onClose, onCreated, interest: fixedInterest } = {}) {
+  const app = useApp();
+  const { user, refreshDB, showToast } = app;
+  const embedded = open !== undefined;
+  const modal = embedded ? (open ? 'add-lead' : null) : app.modal;
+  const panLead = embedded ? null : app.panLead;
+  const closeModal = embedded ? onClose : app.closeModal;
+  // Embedded: hand the lead back instead of opening its panel over the console.
+  const setPanLead = embedded ? () => {} : app.setPanLead;
   const isEdit = modal === 'edit-lead';
   const isOpen = modal === 'add-lead' || isEdit;
   const uid = useId(); // field ids, so each <label htmlFor> points at its field
@@ -147,7 +159,7 @@ export default function AddLeadModal() {
     const phone = cleanPhones[0];
     const email = emailRef.current.value.trim();
     const company = companyRef.current.value.trim();
-    const prop = interest.trim();
+    const prop = embedded ? (fixedInterest || '') : interest.trim();
     const profession = profRef.current.value.trim();
     const city = cityRef.current.value.trim();
 
@@ -191,6 +203,7 @@ export default function AddLeadModal() {
         addAct(dup.id, { type: 'NOTE', description: `Re-submitted ${phone} — record updated (already handled by ${owner})`, userId: user.id, userName: user.name, durationSeconds: 0 });
         closeModal(); refreshDB();
         showToast(`Number ${phone} already exists — handled by ${owner}. Record updated.`, 'warn');
+        onCreated?.({ id: dup.id, name, phone });
         setTimeout(() => setPanLead(dup.id), 150);
         return;
       }
@@ -209,6 +222,7 @@ export default function AddLeadModal() {
         return; // leave the modal open so the user can retry
       }
       closeModal(); refreshDB(); showToast('Lead added', 'ok');
+      onCreated?.({ id: res.id, name, phone });
       setTimeout(() => setPanLead(res.id), 150);
     }
   };
@@ -290,10 +304,10 @@ export default function AddLeadModal() {
             </div>
             <div className="fg"><label htmlFor={`${uid}city`}>Customer Location</label><input id={`${uid}city`} className="fi" ref={cityRef} type="text" placeholder="e.g. Dhaka, Chattogram" /></div>
           </div>
-          <div className="fg">
+          {!embedded && <div className="fg">
             <label htmlFor={`${uid}interest`}>Project Interest <span className="fg-hint">— add one or more</span></label>
             <ProjectInterestPicker id={`${uid}interest`} value={interest} onChange={setInterest} />
-          </div>
+          </div>}
         </div>
         <div className="m-ft">
           <button className="btn btn-g" onClick={guard.requestClose} disabled={saving}>Cancel</button>

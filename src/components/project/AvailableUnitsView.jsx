@@ -1,16 +1,17 @@
 import { useState, useEffect, useLayoutEffect, useRef } from 'react';
 import Mi from '../Mi.jsx';
 import { useApp } from '../../context/AppContext.jsx';
-import { ROLES } from '../../lib/constants.js';
+import { ROLES, STATUS_LABELS } from '../../lib/constants.js';
+import { queryLeads, getHoldRequests } from '../../lib/db.js';
 import { hasColumn } from '../../lib/supabase.js';
 import { planProjects, findUnit, unitSize, unitPrice, placedUnitIds, deleteFloorPlan } from '../../lib/projects.js';
 import { toPx, byCode, STATUS, taka, statusLook } from '../../lib/floorPlan.js';
-import { Select, SelectTrigger, SelectValue, SelectPopover, SelectListBox, SelectItem } from '../ui/select.jsx';
 import { Menu, MenuItem, MenuSep } from '../ui/menu.jsx';
 import useProjectNav from '../../hooks/useProjectNav.js';
 import useChanged from '../../hooks/useChanged.js';
 import FloorPlanCanvas from './FloorPlanCanvas.jsx';
 import ProjectsToaster from './ProjectsToaster.jsx';
+import Loader from '../ui/loader.jsx';
 import { useProjectToast } from './projectToast.js';
 import './FloorPlan.css';
 
@@ -28,7 +29,6 @@ import './FloorPlan.css';
 // with that unit already chosen. Management also adds, edits and deletes
 // plans (FloorPlanEditor).
 
-const SQM = 0.09290304;
 const OTHER = 'other'; // the chip for units on no floor plan
 const ALL = 'all-floors'; // Grid: every floor at once, grouped by floor
 const sortPlans = (plans) => [...plans].sort((a, b) => (a.order ?? 0) - (b.order ?? 0) || byCode(a.name || '', b.name || ''));
@@ -41,6 +41,13 @@ const unitRow = (loc) => ({ code: loc.unit.id, loc, status: loc.unit.status, typ
 // SHORT_WORDS: types whose initial would read as a commoner one's (a
 // Showroom is "SH", so it never looks like a Shop's "S").
 const SHORT_WORDS = { showroom: 'SH' };
+// Unit colours on an artwork plan, by status: the tones live in FloorPlan.css
+// (.is-art .art-<key>). Available is the artwork's own paint; a custom status
+// matches by name (Landowner, Reserved), else uses its own colour as the edge.
+const ART = new Set(['hold', 'landowner', 'reserved']);
+// shortcut: the floor summary (counts, area, values) under the unit details is
+// hidden for now; set true to bring it back.
+const SHOW_FLOOR_SUMMARY = false;
 const shortCode = (code) => {
   const m = /^([A-Za-z][A-Za-z ]*?)([\s\-_./]*\d.*)$/.exec(code || '');
   if (!m) return code;
@@ -50,7 +57,7 @@ const shortCode = (code) => {
 };
 
 export default function AvailableUnitsView() {
-  const { user, dbVersion, refreshDB, planSel, setPlanSel, setPlanEdit, openModal, setPropSel, setConsoleAdmin, setConsoleUnit } = useApp();
+  const { user, dbVersion, refreshDB, planSel, setPlanSel, setPlanEdit, openModal, setPropSel, setConsoleAdmin, setConsoleUnit, setPanLead, modal, consoleUnit } = useApp();
   void dbVersion; // re-read the store when realtime or a save changes it
   const toast = useProjectToast();
   const isAdmin = user?.role === ROLES.MGMT;
@@ -65,6 +72,7 @@ export default function AvailableUnitsView() {
   const [ctaOn, setCtaOn] = useState(false); // phone Continue bar: the unit card is still below it
   const gridRef = useRef(null);
   const [paneH, setPaneH] = useState(0); // desktop: the columns' height, fitted to the screen (0 = not fitted)
+  const [tab, setTab] = useState('details'); // right panel: Details (unit + floor) | Customers
 
   // Saving needs migration 0021's column; only Management is told about it.
   useEffect(() => {
@@ -75,18 +83,24 @@ export default function AvailableUnitsView() {
     return () => { live = false; };
   }, [isAdmin]);
 
+  // Customers tab: leads interested in this project, fetched when the tab opens.
+  const [people, setPeople] = useState({ key: '', rows: [], total: 0, failed: false });
+
   const projects = planProjects();
-  const proj = projects.find(p => p.id === planSel.projectId) || projects[0] || null;
+  // Opens on Citizen Avenue Mall when it is in the list, else the first project with plans.
+  const proj = projects.find(p => p.id === planSel.projectId) || projects.find(p => /citizen avenue/i.test(p.name || '')) || projects[0] || null;
   const plans = proj ? sortPlans(proj.floorPlans) : [];
-  const plan = plans.find(fp => fp.id === planSel.planId) || plans[0] || null;
+  // Opens on the 1st Floor when the project has one, else the lowest floor with units.
+  const plan = plans.find(fp => fp.id === planSel.planId) || plans.find(fp => /^1st\b/i.test(fp.name || '') && (fp.boxes || []).length)
+    || plans.find(fp => (fp.boxes || []).length) || plans[0] || null;
   const customs = proj?.unitStatuses || []; // the project's own unit statuses
 
   // Units on no floor plan: the grid's last chip ("All units" when there are no plans).
   const placed = proj ? placedUnitIds(proj) : new Set();
   const others = proj ? proj.variants.flatMap(v => (v.units || []).filter(u => !placed.has(u.id)).map(u => unitRow({ variant: v, unit: u }))) : [];
-  // Grid opens on All floors (no floor picked yet) when there is more than one.
+  // All floors only when asked for (an old link).
   const floorCount = plans.length + (others.length ? 1 : 0);
-  const chip = (planSel.planId === ALL || !planSel.planId) && floorCount > 1 ? ALL
+  const chip = planSel.planId === ALL && floorCount > 1 ? ALL
     : planSel.planId === OTHER && others.length ? OTHER
     : plan?.id || (others.length ? OTHER : null);
   const chipPlan = chip === OTHER || chip === ALL ? null : plan;
@@ -104,6 +118,17 @@ export default function AvailableUnitsView() {
     const id = ric(go);
     return () => { (window.cancelIdleCallback || clearTimeout)(id); imgs.length = 0; };
   }, [planUrls]);
+
+  const peopleKey = tab === 'people' && proj ? `${proj.id}|${user?.id}` : '';
+  useEffect(() => {
+    if (!peopleKey) return;
+    let live = true;
+    queryLeads({ user, involved: true, project: proj.name }, { page: 0, size: 25, sort: 'updated' }).then(res => {
+      if (live) setPeople(res ? { key: peopleKey, rows: res.rows, total: res.total, failed: false } : { key: peopleKey, rows: [], total: 0, failed: true });
+    });
+    return () => { live = false; };
+  }, [peopleKey]); // eslint-disable-line react-hooks/exhaustive-deps -- proj/user are read through the key
+  const peopleReady = people.key === peopleKey;
 
   const pickProject = (id) => setPlanSel({ projectId: id, planId: null });
   const pickPlan = (id) => setPlanSel({ projectId: proj.id, planId: id });
@@ -183,10 +208,33 @@ export default function AvailableUnitsView() {
   const viewPlan = chip === ALL ? (cur ? curPlan : plans[plans.length - 1] || null) : chipPlan;
   const viewRows = viewPlan === chipPlan ? rows : rowsOf(viewPlan);
 
+  // Whole-page loader (Meta CAPI's): the page shows once, complete, after the
+  // shown floor's drawing and its tint layers have loaded, not piece by piece.
+  // A failed image still counts as done; 8s caps a slow network.
+  const viewUrls = viewPlan?.image?.url ? [viewPlan.image.url, ...Object.values(viewPlan.image.tints || {})].join('\n') : '';
+  const [readyUrls, setReadyUrls] = useState(null);
+  useEffect(() => {
+    if (!viewUrls) return;
+    let live = true, left = viewUrls.split('\n').length;
+    const done = () => { if (live && --left <= 0) { live = false; setReadyUrls(viewUrls); } };
+    const imgs = viewUrls.split('\n').map(u => { const i = new Image(); i.onload = i.onerror = done; i.src = u; return i; });
+    const cap = setTimeout(() => { if (live) { live = false; setReadyUrls(viewUrls); } }, 8000);
+    return () => { live = false; clearTimeout(cap); imgs.forEach(i => { i.onload = i.onerror = null; }); };
+  }, [viewUrls]);
+  // Only the first load waits; switching floors after that keeps the page up.
+  const [booted, setBooted] = useState(false);
+  const pageReady = booted || !proj || !viewUrls || readyUrls === viewUrls;
+  if (pageReady && !booted) setBooted(true);
+
   const select = (code, fromPlan) => {
     setSel(code);
+    if (code) setTab('details');
+    // The Book This drawer is open beside the page: hand it the newly picked unit.
+    const r = code && modal === 'project-console' && consoleUnit ? items.find(x => x.code === code && x.loc) : null;
+    if (r?.status === 'available') setConsoleUnit({ projectId: proj.id, variantId: r.loc.variant.id, unitId: r.code });
     if (fromPlan && window.matchMedia('(max-width: 860px)').matches) cardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   };
+  const openOwner = (r) => (r.loc.unit.clientId ? setPanLead(r.loc.unit.clientId) : select(r.code));
   const step = (d) => {
     if (!flat.length) return;
     const i = flat.findIndex(r => r.code === sel);
@@ -196,9 +244,15 @@ export default function AvailableUnitsView() {
   const W = viewPlan?.image?.width || 1, H = viewPlan?.image?.height || 1;
   // A unit's custom status (name + colour, project unitStatuses) or its base one.
   const look = (r) => (r?.loc ? statusLook(proj?.unitStatuses, r.loc.unit) : { status: r?.status, label: STATUS[r?.status]?.label || '', color: null });
+  const artLook = (r) => {
+    if (!r.loc) return null;
+    const l = look(r), key = (l.color ? l.label : r.status).toLowerCase();
+    if (key === 'available' && viewPlan?.image?.tints?.available) return { key }; // the plan's own available tint
+    return ART.has(key) ? { key } : l.color ? { edge: l.color } : null;
+  };
   const tint = (r) => { const l = look(r); return l.color ? { '--st-c': l.color, '--st-ink': l.ink } : undefined; };
   const boxes = viewRows.map(r => ({
-    id: r.box.id, ...toPx(r.box, W, H), label: r.code, sub: r.size ? `${r.size.toLocaleString('en-IN')} sqft` : '', status: r.status, color: look(r).color, dim: !shown(r),
+    id: r.box.id, ...toPx(r.box, W, H), pts: r.box.shape?.map(([x, y]) => [x * W, y * H]), art: artLook(r), label: r.code, sub: r.size ? `${r.size.toLocaleString('en-IN')} sft` : '', note: r.loc ? look(r).label : '', status: r.status, color: look(r).color, dim: !shown(r),
     aria: r.loc ? `${r.code}, ${r.type}, ${r.size} sqft, ${look(r).label}` : `${r.code}, not linked to a unit`,
   }));
   const selBoxId = cur?.box ? cur.box.id : null;
@@ -235,11 +289,34 @@ export default function AvailableUnitsView() {
   const chipName = chip === ALL ? 'All floors' : chips.find(c => c.id === chip)?.name || '';
   // Floor dropdown: top floor first (plans sort bottom-up), units on no plan last,
   // each with how many of its units are available.
+  const unitsOn = (c) => (c.id === OTHER ? others.length : (plans.find(fp => fp.id === c.id)?.boxes || []).filter(b => findUnit(proj, b.unitId)).length);
   const freeOn = (c) => (c.id === OTHER ? others.filter(r => r.status === 'available').length
     : (plans.find(fp => fp.id === c.id)?.boxes || []).filter(b => findUnit(proj, b.unitId)?.unit.status === 'available').length);
-  const floorList = [...chips.filter(c => c.id !== OTHER).reverse(), ...chips.filter(c => c.id === OTHER)].map(c => ({ ...c, free: freeOn(c) }));
+  const floorList = [...chips.filter(c => c.id !== OTHER).reverse(), ...chips.filter(c => c.id === OTHER)].map(c => ({ ...c, free: freeOn(c), total: unitsOn(c) }));
   // First item: every floor at once.
   if (floorList.length > 1) floorList.unshift({ id: ALL, name: 'All floors', free: floorList.reduce((n, f) => n + f.free, 0) });
+  // Floor rail: every floor by name with its unit count, top floor first.
+  const railList = floorList.filter(f => f.id !== ALL);
+  // Floor details: the chosen floor's (or every floor's) units by status, area and rate.
+  const real = items.filter(r => r.loc);
+  const fArea = real.reduce((n, r) => n + (r.size || 0), 0);
+  const priced = real.filter(r => r.price > 0 && r.size > 0);
+  const fRates = priced.map(r => r.price / r.size);
+  const statusRows = [['available', 'Available', counts.available], ['hold', 'On hold', counts.hold], ['sold', 'Sold', counts.sold], ...customs.map(c => ['c:' + c.id, c.name, counts['c:' + c.id], c.color])]
+    .filter(([, , n]) => n > 0);
+  // Floor totals from the units' imported inventory rows (`sheet`), when they have them.
+  const sh = real.map(r => r.loc.unit.sheet).filter(Boolean);
+  const sum = (k, rows = sh) => rows.reduce((n, x) => n + (x[k] || 0), 0);
+  const wecon = sh.filter(x => x.ownership !== 'Landowner');
+  const fCategory = sh.find(x => x.category)?.category || '';
+  const owners = real.filter(r => r.loc.unit.clientName || r.loc.unit.heldByName);
+  // Reservation requests (hold_requests) of the picked unit only; the store
+  // keeps them newest first.
+  const reqs = proj && cur ? getHoldRequests().filter(h => h.propertyId === proj.id && h.unitId === cur.code) : [];
+  const reqCount = (s) => reqs.filter(h => h.status === s).length;
+  // The picked unit's live booking: its newest request that is not rejected.
+  const booking = cur && cur.status !== 'available' ? reqs.find(h => h.unitId === cur.code && h.status !== 'rejected') || null : null;
+  const fTypes = [...new Set(real.map(r => r.type).filter(Boolean))];
   // Unit tiles grouped by type (the left column). Hovering one lights its box
   // on the plan drawing.
   const tiles = () => (
@@ -269,8 +346,8 @@ export default function AvailableUnitsView() {
 
   // Desktop: the three columns fill the screen under the filters, so the page
   // itself stays put; the grid scrolls in its own column while the plan and
-  // the unit card stay in view. Not below 1280px (the columns stack) or on a
-  // screen too short for it, where the page scrolls as before.
+  // the unit card stay in view. Not below 1280px, where the columns stack and
+  // the page scrolls as before.
   const hasGrid = !!proj && !noUnits;
   useLayoutEffect(() => {
     const el = gridRef.current;
@@ -281,7 +358,8 @@ export default function AvailableUnitsView() {
       if (!mq.matches) { setPaneH(0); return; }
       const top = el.getBoundingClientRect().top - sc.getBoundingClientRect().top + sc.scrollTop;
       const h = Math.floor(sc.clientHeight - top - parseFloat(getComputedStyle(sc).paddingBottom));
-      setPaneH(h >= 420 ? h : 0);
+      // Always fit on desktop (the page does not scroll here); never below 320px.
+      setPaneH(Math.max(320, h));
     };
     fit();
     // the scroller's size, and anything above the grid that grows or wraps
@@ -291,8 +369,10 @@ export default function AvailableUnitsView() {
     if (inner) ro.observe(inner);
     mq.addEventListener('change', fit);
     return () => { ro.disconnect(); mq.removeEventListener('change', fit); };
-  }, [hasGrid]);
+  }, [hasGrid, pageReady]); // pageReady: the grid mounts only once the loader goes
 
+
+  if (!pageReady) return <Loader className="fpv-loader" title="Loading Available Units…" subtitle="Fetching floor plans, units and their status" />;
 
   return (
     <div className="fpv">
@@ -314,17 +394,25 @@ export default function AvailableUnitsView() {
                 <option key={p.id} value={p.id}>{p.name || 'Untitled project'}{p.floorPlans.length ? ` · ${p.floorPlans.length} plan${p.floorPlans.length > 1 ? 's' : ''}` : ' · no plan yet'}</option>
               ))}
             </select>
-            {/* Floor: one dropdown for the grid and the plan, top floor first,
-                each floor with its available count. */}
-            {floorList.length > 0 && (
-              <Select className="fpv-floorsel" value={chip || ''} onChange={pickPlan} name="floor">
-                <SelectTrigger aria-label="Floor"><SelectValue placeholder="Pick a floor" /></SelectTrigger>
-                <SelectPopover>
-                  <SelectListBox>
-                    {floorList.map(f => <SelectItem key={f.id} value={f.id} description={`${f.free} available`}>{f.name}</SelectItem>)}
-                  </SelectListBox>
-                </SelectPopover>
-              </Select>
+            {/* Status chips and search, on the project's row: they filter the map. */}
+            {!noUnits && (
+              <div className="fpv-filters">
+                <div className="fpv-chips" role="group" aria-label="Filter by status">
+                  {[['all', 'All', items.length], ['available', 'Available', counts.available], ['hold', 'On hold', counts.hold], ['sold', 'Sold', counts.sold]].map(([k, l, n]) => (
+                    <button key={k} type="button" aria-pressed={stat === k} className={`fpv-chip ch-${k}${stat === k ? ' on' : ''}`} onClick={() => setStat(k)}>
+                      {k !== 'all' && <i className={`fp-dot st-${k}`} />}{l}<b>{n}</b>
+                    </button>
+                  ))}
+                  {/* the project's own statuses, each in its colour */}
+                  {customs.map(c => (
+                    <button key={c.id} type="button" aria-pressed={stat === 'c:' + c.id} className={`fpv-chip ch-custom${stat === 'c:' + c.id ? ' on' : ''}`}
+                      style={{ '--st-c': c.color }} onClick={() => setStat('c:' + c.id)}>
+                      <i className="fp-dot" style={{ background: c.color }} />{c.name}<b>{counts['c:' + c.id]}</b>
+                    </button>
+                  ))}
+                </div>
+                <label className="fpv-search"><Mi>search</Mi><input name="unit-search" value={q} onChange={e => setQ(e.target.value)} placeholder="Find a unit…" aria-label="Find a unit by name" /></label>
+              </div>
             )}
             {/* One Manage menu: this project's consoles and floor plans, and new
                 properties (Management). Edit / Delete need a single floor picked. */}
@@ -352,96 +440,195 @@ export default function AvailableUnitsView() {
             </div>
           ) : (
             <>
-              {/* Status chips and search: they filter the grid and dim the plan's boxes. */}
-              <div className="fpv-filters">
-                <div className="fpv-chips" role="group" aria-label="Filter by status">
-                  {[['all', 'All', items.length], ['available', 'Available', counts.available], ['hold', 'On hold', counts.hold], ['sold', 'Sold', counts.sold]].map(([k, l, n]) => (
-                    <button key={k} type="button" aria-pressed={stat === k} className={`fpv-chip ch-${k}${stat === k ? ' on' : ''}`} onClick={() => setStat(k)}>
-                      {k !== 'all' && <i className={`fp-dot st-${k}`} />}{l}<b>{n}</b>
-                    </button>
-                  ))}
-                  {/* the project's own statuses, each in its colour */}
-                  {customs.map(c => (
-                    <button key={c.id} type="button" aria-pressed={stat === 'c:' + c.id} className={`fpv-chip ch-custom${stat === 'c:' + c.id ? ' on' : ''}`}
-                      style={{ '--st-c': c.color }} onClick={() => setStat('c:' + c.id)}>
-                      <i className="fp-dot" style={{ background: c.color }} />{c.name}<b>{counts['c:' + c.id]}</b>
-                    </button>
-                  ))}
-                </div>
-                <label className="fpv-search"><Mi>search</Mi><input name="unit-search" value={q} onChange={e => setQ(e.target.value)} placeholder="Find a unit…" aria-label="Find a unit by name" /></label>
-              </div>
-
-              {/* Grid · Plan · unit card. */}
-              <div ref={gridRef} className={`fpv-grid is-seats${plans.length ? '' : ' no-plan'}${paneH ? ' is-fit' : ''}`}
+              {/* Floor rail · floor map · details. */}
+              <div ref={gridRef} className={`fpv-grid is-rail${viewPlan ? '' : ' no-plan'}${paneH ? ' is-fit' : ''}`}
                 style={paneH ? { '--fpv-h': `${paneH}px` } : undefined}>
-                {/* The chosen floor's units, between the plan's optional landmarks.
-                    Seat-map style: legend on top, then "Select unit · N selected";
-                    free units are outlined, taken ones solid, the pick solid blue. */}
-                <section className="fpv-seats" aria-label={`Units on ${chipName || 'this floor'}`}>
-                  <div className="fp-legend fps-legend">
-                    <span><i className="fps-sw st-available" />Available</span>
-                    <span><i className="fps-sw is-sel" />Selected</span>
-                    <span><i className="fps-sw st-hold" />On hold</span>
-                    <span><i className="fps-sw st-sold" />Sold</span>
-                    {customs.map(s => <span key={s.id}><i className="fps-sw has-c" style={{ '--st-c': s.color }} />{s.name}</span>)}
-                  </div>
-                  <div className="fps-top"><span>Select unit</span><em>{cur ? `${cur.code} selected` : '0 selected'}</em></div>
-                  {chipPlan?.topLabel && <div className="fps-mark">{chipPlan.topLabel}</div>}
-                  {tiles()}
-                  {chipPlan?.bottomLabel && <div className="fps-mark">{chipPlan.bottomLabel}</div>}
-                </section>
+                {/* Floors, top floor first, each with its unit count. */}
+                <nav className="fpr" aria-label="Floors">
+                  {railList.map(f => (
+                    <button key={f.id} type="button" className={`fpr-btn${f.id === chip ? ' on' : ''}`} aria-pressed={f.id === chip}
+                      aria-label={`${f.name}, ${f.total} units, ${f.free} available`} title={`${f.free} available`} onClick={() => pickPlan(f.id)}>
+                      <b>{f.name}</b><span>{f.total} unit{f.total === 1 ? '' : 's'}</span>
+                    </button>
+                  ))}
+                </nav>
 
-                {/* The drawing (viewPlan). Other units, and a picked unit on no plan, have none. */}
-                {plans.length > 0 && (
-                  <div className="fpv-planwrap">
-                    {viewPlan ? (
-                      <>
-                        <FloorPlanCanvas className="fpv-stage" image={viewPlan.image} boxes={boxes} label={`${viewPlan.name || 'Floor plan'} of ${proj.name || 'the project'}`}
-                          selectedId={selBoxId} hoverId={hover}
-                          onSelect={(id) => { const r = viewRows.find(x => x.box.id === id); if (r) select(r.code, true); }}
-                          onHover={setHover} />
-                        <div className="fp-legend">
-                          {/* All floors: which floor the drawing is */}
-                          {chip === ALL && <b className="fpv-plan-name">{viewPlan.name || 'Floor plan'}</b>}
-                          {['available', 'hold', 'sold'].map(s => <span key={s}><i className={`fp-sw st-${s}`} />{STATUS[s].label}</span>)}
-                          {customs.map(s => <span key={s.id}><i className="fp-sw has-c" style={{ '--st-c': s.color }} />{s.name}</span>)}
-                          {viewRows.some(r => r.status === 'unlinked') && <span><i className="fp-sw st-unlinked" />Not linked</span>}
-                        </div>
-                      </>
-                    ) : (
-                      <div className="fpv-plan-none"><Mi>map</Mi><span>{chip === OTHER || !cur ? 'These units are on no floor plan.' : `${cur.code} is on no floor plan.`}</span></div>
-                    )}
-                  </div>
+                {/* The floor: its boxes drawn as a clean vector map. Units on no
+                    plan (or a project without plans) show as tiles instead. */}
+                {viewPlan ? (
+                  <section className="fpv-planwrap fpm" aria-label={`${viewPlan.name || 'Floor plan'} map`}>
+                    <header className="fpm-hd">
+                      <h3>{viewPlan.name || 'Floor plan'}{fCategory || fTypes.length ? <span> · {fCategory || fTypes.join(', ')}</span> : null}</h3>
+                      {fRates.length > 0 && <em>From {taka(Math.min(...fRates))}/sft</em>}
+                    </header>
+                    {viewPlan.topLabel && <div className="fps-mark">{viewPlan.topLabel}</div>}
+                    <FloorPlanCanvas className={`fpv-stage ${viewPlan.image?.source === 'artwork' ? 'is-art' : 'is-bare'}`} image={viewPlan.image} boxes={boxes} label={`${viewPlan.name || 'Floor plan'} of ${proj.name || 'the project'}`}
+                      selectedId={selBoxId} hoverId={hover}
+                      onSelect={(id) => { const r = viewRows.find(x => x.box.id === id); if (r) select(r.code === sel ? null : r.code, true); }}
+                      onHover={setHover} />
+                    {viewPlan.bottomLabel && <div className="fps-mark">{viewPlan.bottomLabel}</div>}
+                    {/* The artwork paints every shop alike, so a status legend would mislead;
+                        the status chips above carry the counts. */}
+                    {viewPlan.image?.source !== 'artwork' && <div className="fp-legend fpm-legend">
+                      {['available', 'hold', 'sold'].map(s => <span key={s}><i className={`fp-sw st-${s}`} />{STATUS[s].label} ({counts[s]})</span>)}
+                      {customs.map(s => <span key={s.id}><i className="fp-sw has-c" style={{ '--st-c': s.color }} />{s.name} ({counts['c:' + s.id]})</span>)}
+                      {viewRows.some(r => r.status === 'unlinked') && <span><i className="fp-sw st-unlinked" />Not linked</span>}
+                    </div>}
+                  </section>
+                ) : (
+                  <section className="fpv-seats" aria-label={`Units on ${chipName || 'this floor'}`}>
+                    <div className="fps-top"><span>{chipName || 'Units'}</span><em>{cur ? `${cur.code} selected` : `${counts.available} available`}</em></div>
+                    {tiles()}
+                  </section>
                 )}
 
                 <aside className="fpv-side">
-                  <section className="fpv-card" ref={cardRef} aria-live="polite">
-                    {cur ? (
+                  <div className="fpt" role="tablist" aria-label="Details">
+                    {[['details', 'apartment', 'Details'], ['people', 'group', 'Customers']].map(([k, ic, l]) => (
+                      <button key={k} type="button" role="tab" id={`fpt-${k}`} aria-controls="fpt-panel" aria-selected={tab === k}
+                        className={tab === k ? 'on' : ''} onClick={() => setTab(k)}><Mi>{ic}</Mi>{l}</button>
+                    ))}
+                  </div>
+                  <section id="fpt-panel" role="tabpanel" aria-labelledby={`fpt-${tab}`} className="fpv-card" ref={cardRef} aria-live="polite">
+                    {/* Details: the picked unit (its full inventory row, the package price
+                        first because that is what gets quoted), then the floor. Each fact
+                        shows once. */}
+                    {tab === 'details' && (
                       <>
-                        <div className="fpv-eyebrow">{curFloor ? `${curFloor} · ` : ''}{cur.type}</div>
-                        <div className="fpv-name"><h2>{cur.code}</h2><span className={`fp-pill st-${cur.status}${look(cur).color ? ' has-c' : ''}`} style={tint(cur)}>{look(cur).label}</span></div>
-                        <div className="fpv-area">
-                          <span className="big">{cur.size ? cur.size.toLocaleString('en-IN') : '—'}</span><span className="unit">sqft</span>
-                          {cur.size > 0 && <span className="unit">· {(cur.size * SQM).toFixed(1)} m²</span>}
-                        </div>
-                        <dl className="fpv-meta">
-                          <dt>Price</dt><dd>{cur.price ? <>{taka(cur.price)}{cur.size > 0 && <span className="fpv-rate"> · {taka(cur.price / cur.size)}/sqft</span>}</> : '—'}</dd>
-                          <dt>Floor</dt><dd>{curFloor || '—'}</dd>
-                          {cur.loc.unit.clientName && <><dt>Client</dt><dd>{cur.loc.unit.clientName}</dd></>}
-                          {cur.loc.unit.holdUntil
-                            ? <><dt>Booked</dt><dd>Until {new Date(cur.loc.unit.holdUntil).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })}</dd></>
-                            : cur.loc.unit.heldByName && cur.status !== 'available' && <><dt>By</dt><dd>{cur.loc.unit.heldByName}</dd></>}
-                        </dl>
-                        <div className="fpv-nav">
-                          <button type="button" className="btn btn-g btn-sm" onClick={() => step(-1)}><Mi>chevron_left</Mi>Prev</button>
-                          <button type="button" className="btn btn-g btn-sm" onClick={() => step(1)}>Next<Mi>chevron_right</Mi></button>
-                        </div>
-                        {canGo
-                          ? <button type="button" className="btn btn-p btn-sm fpv-open" onClick={() => openConsole(cur)}><Mi>shopping_cart</Mi>Continue with {cur.code}</button>
-                          : <button type="button" className="btn btn-g btn-sm fpv-open" onClick={() => openConsole(null)}><Mi>storefront</Mi>Open project console</button>}
+                        {cur ? (() => {
+                          const x = cur.loc.unit.sheet || {};
+                          const quote = x.package || cur.price || 0;
+                          const rows = [
+                            ['Area', cur.size ? `${cur.size.toLocaleString('en-IN')} sft` : ''],
+                            ['Area range', x.areaRange ? `${x.areaRange} sft` : ''],
+                            ['Ownership', x.ownership || ''],
+                            ['Bottom price', x.bottomRate ? `${taka(x.bottomRate)} / sft` : '', true],
+                            ['Value of shop', x.value ? taka(x.value) : ''],
+                            ['Utility', x.utility ? `${taka(x.utility)}${x.utilityRate ? ` · ${taka(x.utilityRate)} / sft` : ''}` : ''],
+                            ['Common fund', x.commonFund ? taka(x.commonFund) : ''],
+                            ['Total value', x.total ? taka(x.total) : ''],
+                            ['Client', cur.loc.unit.clientName || '', true],
+                            ['Booked until', cur.loc.unit.holdUntil ? new Date(cur.loc.unit.holdUntil).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' }) : ''],
+                            ['Held by', cur.status !== 'available' && !cur.loc.unit.holdUntil ? cur.loc.unit.heldByName || '' : ''],
+                          ].filter(([, v]) => v);
+                          return (
+                            <div className="fpu">
+                              <div className="fpu-hd">
+                                <h2>{cur.code}</h2>
+                                <span className="fpu-st"><i className={`fp-dot st-${cur.status}`} style={look(cur).color ? { background: look(cur).color } : undefined} />{look(cur).label}</span>
+                              </div>
+                              <p className="fpu-sub">{[curFloor, x.category || cur.type].filter(Boolean).join(' · ')}</p>
+                              {quote > 0
+                                ? <p className="fpu-price"><b>{taka(quote)}</b><span>package price</span></p>
+                                : <p className="fpu-price is-none"><span>{x.ownership === 'Landowner' ? 'Landowner shop, not for sale by Wecon' : 'Not priced yet'}</span></p>}
+                              <dl className="fpk">
+                                {rows.map(([k, v, sep], i) => <div key={k} className={sep && i ? 'sep' : undefined}><dt>{k}</dt><dd>{v}</dd></div>)}
+                              </dl>
+                              {cur.status !== 'available' && (cur.loc.unit.clientName || booking) && (
+                                <section className="fpb" aria-label={`Current booking for ${cur.code}`}>
+                                  <h3>Current booking</h3>
+                                  <dl className="fpk">
+                                    {[
+                                      ['Customer', cur.loc.unit.clientName || booking?.clientName || ''],
+                                      ['Phone', booking?.clientPhone || ''],
+                                      ['Requested by', booking?.agentName || cur.loc.unit.heldByName || ''],
+                                      ['Requested', booking?.createdAt ? new Date(booking.createdAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : ''],
+                                      ['Request', booking ? (booking.status === 'pending' ? 'Waiting for approval' : booking.status === 'approved' ? `Approved by ${booking.decidedBy || 'management'}` : 'Rejected') : ''],
+                                      ['Offer', booking?.dealTotal ? taka(booking.dealTotal) : ''],
+                                    ].filter(([, v]) => v).map(([k, v]) => <div key={k}><dt>{k}</dt><dd>{v}</dd></div>)}
+                                  </dl>
+                                  {cur.loc.unit.clientId
+                                    ? <button type="button" className="btn btn-g btn-sm btn-full" onClick={() => setPanLead(cur.loc.unit.clientId)}><Mi>contact_phone</Mi>Contact Customer</button>
+                                    : <p className="fpv-none">This booking names no prospect, so there is no record to open.</p>}
+                                </section>
+                              )}
+                              <div className="fpu-act">
+                                <button type="button" className="btn btn-g btn-sm" onClick={() => step(-1)} aria-label="Previous unit"><Mi>chevron_left</Mi></button>
+                                {canGo
+                                  ? <button type="button" className="btn btn-p btn-sm" onClick={() => openConsole(cur)}><Mi>shopping_cart</Mi>Reserve This {cur.code}</button>
+                                  : <button type="button" className="btn btn-g btn-sm" onClick={() => openConsole(null)}><Mi>storefront</Mi>Open console</button>}
+                                <button type="button" className="btn btn-g btn-sm" onClick={() => step(1)} aria-label="Next unit"><Mi>chevron_right</Mi></button>
+                              </div>
+                            </div>
+                          );
+                        })() : (
+                          <p className="fpu-none"><Mi>touch_app</Mi>Pick a shop on the map to see its price and status.</p>
+                        )}
+
+                        {SHOW_FLOOR_SUMMARY && <section className="fpf" aria-label={`${chipName || 'Floor'} details`}>
+                          <h3>{chipName || 'Floor'}</h3>
+                          <p className="fpu-sub">{[fCategory || fTypes.join(', '), `${real.length} unit${real.length === 1 ? '' : 's'}`].filter(Boolean).join(' · ')}</p>
+                          {real.length > 0 && (
+                            <div className="fpd-bar" aria-hidden="true">
+                              {statusRows.map(([k, , n, c]) => <i key={k} className={`st-${k.startsWith('c:') ? 'c' : k}`} style={{ flexGrow: n, ...(c ? { '--st-c': c } : {}) }} />)}
+                            </div>
+                          )}
+                          <dl className="fpd-rows">
+                            {statusRows.map(([k, l, n, c]) => (
+                              <div key={k}><dt><i className={`fp-dot${k.startsWith('c:') ? '' : ' st-' + k}`} style={c ? { background: c } : undefined} />{l}</dt>
+                                <dd>{n}</dd><dd className="fpd-pct">{Math.round(n / real.length * 100)}%</dd></div>
+                            ))}
+                          </dl>
+                          <dl className="fpk">
+                            <div className="sep"><dt>Sellable area</dt><dd>{fArea.toLocaleString('en-IN')} sft</dd></div>
+                            <div><dt>Rate / sft</dt><dd>{fRates.length ? (Math.min(...fRates) === Math.max(...fRates) ? taka(fRates[0]) : `${taka(Math.min(...fRates))} - ${Math.round(Math.max(...fRates)).toLocaleString('en-IN')}`) : '-'}</dd></div>
+                            {sh.length > 0 && <div><dt>Wecon</dt><dd>{wecon.length} units · {sum('area', wecon).toLocaleString('en-IN')} sft</dd></div>}
+                            {sh.length > 0 && <div><dt>Landowner</dt><dd>{sh.length - wecon.length} units · {(sum('area') - sum('area', wecon)).toLocaleString('en-IN')} sft</dd></div>}
+                            {sum('value') > 0 && <div className="sep"><dt>Value of shops</dt><dd>{taka(sum('value'))}</dd></div>}
+                            {sum('utility') > 0 && <div><dt>Total utility</dt><dd>{taka(sum('utility'))}</dd></div>}
+                            {sum('commonFund') > 0 && <div><dt>Common fund</dt><dd>{taka(sum('commonFund'))}</dd></div>}
+                            {sum('total') > 0 && <div><dt>Total value</dt><dd>{taka(sum('total'))}</dd></div>}
+                            {sum('package') > 0 && <div><dt>Package value</dt><dd>{taka(sum('package'))}</dd></div>}
+                            <div className={sum('value') > 0 ? undefined : 'sep'}><dt>Available value</dt><dd>{taka(real.filter(r => r.status === 'available').reduce((n, r) => n + (r.price || 0), 0))}</dd></div>
+                            {priced.length < real.length && <div><dt>Not priced</dt><dd>{real.length - priced.length} unit{real.length - priced.length === 1 ? '' : 's'}</dd></div>}
+                          </dl>
+                        </section>}
                       </>
-                    ) : (
-                      <div className="fpv-hint"><Mi>touch_app</Mi><span>{viewPlan ? 'Pick a unit on the plan or in the list to see its details.' : 'Pick an available unit to continue with it.'}</span></div>
+                    )}
+                    {/* Customers: who holds or bought a unit on this floor (from the units),
+                        then the project's prospects (leads whose interest names the project). */}
+                    {tab === 'people' && (
+                        <>
+                          <h4 className="fpd-sub is-first">On this floor</h4>
+                          {owners.length ? (
+                            <ul className="fpp-list">
+                              {owners.map(r => (
+                                <li key={r.code}><button type="button" onClick={() => openOwner(r)}>
+                                  <b>{r.loc.unit.clientName || 'No client named'}</b><span>{r.code} · {look(r).label}{r.loc.unit.heldByName ? ` · ${r.loc.unit.heldByName}` : ''}</span>
+                                </button></li>
+                              ))}
+                            </ul>
+                          ) : <p className="fpv-none">No customer is linked to a unit on this floor. Holds and sales made in the project console show here.</p>}
+                          <h4 className="fpd-sub">Reservation requests{cur ? ` · ${cur.code}` : ''}</h4>
+                          {!cur ? <p className="fpv-none">Pick a unit to see its reservation history.</p> : reqs.length ? (
+                            <>
+                              <p className="fpr-sum">{reqs.length} requested · {reqCount('pending')} pending · {reqCount('approved')} approved · {reqCount('rejected')} rejected</p>
+                              <ul className="fpp-list">
+                                {reqs.map(h => (
+                                  <li key={h.id}><button type="button" onClick={() => h.clientId ? setPanLead(h.clientId) : select(h.unitId)}>
+                                    <b>{h.clientName || 'No client named'}</b>
+                                    <span>{[h.status === 'pending' ? 'Pending' : h.status === 'approved' ? 'Approved' : 'Rejected', h.agentName,
+                                      h.createdAt ? new Date(h.createdAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' }) : ''].filter(Boolean).join(' · ')}</span>
+                                  </button></li>
+                                ))}
+                              </ul>
+                            </>
+                          ) : <p className="fpv-none">No reservation requests for {cur.code} yet. Reserve This sends one to management.</p>}
+                          <h4 className="fpd-sub">Prospects for {proj.name || 'this project'}{peopleReady && people.total ? ` · ${people.total}` : ''}</h4>
+                          {!peopleReady ? <p className="fpv-none" role="status">Loading prospects…</p>
+                            : people.failed ? <p className="fpv-none" role="alert">Prospects could not be loaded. Check the connection and open this tab again.</p>
+                            : !people.rows.length ? <p className="fpv-none">No leads name this project in their interest yet.</p>
+                            : (
+                              <ul className="fpp-list">
+                                {people.rows.map(l => (
+                                  <li key={l.id}><button type="button" onClick={() => setPanLead(l.id)}>
+                                    <b>{l.name || l.phone || 'Unnamed lead'}</b><span>{STATUS_LABELS[l.status] || l.status}{l.assignedToName ? ` · ${l.assignedToName}` : ''}</span>
+                                  </button></li>
+                                ))}
+                              </ul>
+                            )}
+                          {peopleReady && people.total > people.rows.length && <p className="fpv-none">Showing the {people.rows.length} most recently updated.</p>}
+                        </>
                     )}
                   </section>
                 </aside>
@@ -449,7 +636,7 @@ export default function AvailableUnitsView() {
                 <div className="fpv-cta" ref={ctaRef}>
                   {canGo && ctaOn && (
                     <button type="button" className="btn btn-p" onClick={() => openConsole(cur)}>
-                      <Mi>shopping_cart</Mi>Continue with {cur.code}
+                      <Mi>shopping_cart</Mi>Reserve This {cur.code}
                     </button>
                   )}
                 </div>

@@ -19,7 +19,7 @@ await db.exec(`create role anon; create role authenticated; create role service_
 const held = { id: 'A2', status: 'hold', size: 1500, clientName: 'Karim Secret', clientId: 'l9', heldBy: 'u1', heldByName: 'Agent Rahim', holdUntil: '2026-12-01', note: 'pays cash', price: 9999999 };
 await db.query(`insert into public.properties values ($1,$2,'Residential','Road 1','2027','G+9','5 Katha','1500 sft','South','Lake view',
   'c1',$3,'[]',$4,$5,$6)`, ['p1', 'Alpha Tower',
-  JSON.stringify({ images: [{ url: 'https://cdn.example/a.jpg' }, { url: 'javascript:alert(1)' }, 'https://cdn.example/b.jpg'], docs: [{ label: 'Brochure', url: 'https://cdn.example/a.pdf' }, { url: 'http://insecure/x.pdf' }] }),
+  JSON.stringify({ images: [{ url: 'https://cdn.example/a.jpg' }, { url: 'javascript:alert(1)' }, 'https://cdn.example/b.jpg'], docs: [{ label: 'Brochure', url: 'https://cdn.example/a.pdf' }, { url: 'http://insecure/x.pdf' }], links: [{ label: 'More', url: 'https://example.com/p' }, { label: 'Bad', url: 'javascript:alert(1)' }] }),
   JSON.stringify([{ id: 'v1', name: '3 Bed', size: 1500, beds: 3, baths: 3, listRate: 12000, floorRate: 200, unitPrefix: 'A', units: [
     { id: 'A1', status: 'available' }, held, { id: 'A3', status: 'sold', size: 1600 }, { id: 'A4', status: 'available', tag: 'cs1' }, { id: 'A5', status: 'weird' }] }]),
   JSON.stringify([{ id: 'f1', name: 'Typical', order: 1, updatedBy: 'u1', updatedAt: 'x', image: { url: 'https://cdn.example/plan.png', width: 2000, height: 1000 }, boxes: [{ id: 'b1', x: 0.1, y: 0.1, w: 0.2, h: 0.2, unitId: 'A1' }] },
@@ -28,7 +28,7 @@ await db.query(`insert into public.properties values ($1,$2,'Residential','Road 
 await db.query(`insert into public.properties (id, name, company_id, variants) values ('p2', 'Beta Hidden', 'c1', '[]')`);
 await db.query(`insert into public.properties (id, name, company_id, variants, media) values ('p3', 'Gamma Plain', 'c2', '[{"id":"v","units":[{"id":"G1","status":"sold"}]}]', '{}')`);
 
-for (const f of ['0059_public_project_publish.sql', '0060_public_project_read.sql']) {
+for (const f of ['0059_public_project_publish.sql', '0060_public_project_read.sql', '0061_public_project_facts.sql']) {
   const m = readFileSync(`supabase/migrations/${f}`, 'utf8');
   await db.exec(m); await db.exec(m); // re-runnable
 }
@@ -84,6 +84,7 @@ await t('detail: only https media and plans survive', async () => {
   assert.deepEqual(p.photos, ['https://cdn.example/a.jpg', 'https://cdn.example/b.jpg']);
   assert.deepEqual(p.brochures, [{ label: 'Brochure', url: 'https://cdn.example/a.pdf' }]);
   assert.deepEqual(p.plans.map(f => f.id), ['f1']);
+  assert.deepEqual(p.links, [{ label: 'More', url: 'https://example.com/p' }]);
 });
 
 await t('detail: project fields come through as stored', async () => {
@@ -96,6 +97,18 @@ await t('a project with empty media still works', async () => {
   assert.deepEqual(p.photos, []); assert.deepEqual(p.brochures, []); assert.equal(p.cover, null);
 });
 
+await t('facts: tabs pass through cleaned; malformed rows and tabs are dropped', async () => {
+  await db.query(`update public.properties set public_facts = $1 where id = 'p1'`, [JSON.stringify([
+    { tab: 'Property Information', rows: [['Type', 'Shopping Cum Commercial'], ['Status', 'On going'], ['Bad'], 'x', ['', 'empty']] },
+    { tab: '', rows: [['a', 'b']] }, { tab: 'Empty', rows: [] }, 'junk',
+    { tab: 'Building Specifications', rows: [['Elevators', '4 Nos.']] }])]);
+  const p = await call(`select public.public_project('p1') r`);
+  assert.deepEqual(p.facts, [
+    { tab: 'Property Information', rows: [['Type', 'Shopping Cum Commercial'], ['Status', 'On going']] },
+    { tab: 'Building Specifications', rows: [['Elevators', '4 Nos.']] }]);
+  assert.deepEqual((await call(`select public.public_project('p3') r`)).facts, []);
+});
+
 await t('anon may call the two public functions and nothing else', async () => {
   const can = async (fn) => (await db.query(`select has_function_privilege('anon', $1, 'execute') ok`, [fn])).rows[0].ok;
   assert.equal(await can('public.public_projects()'), true);
@@ -103,6 +116,7 @@ await t('anon may call the two public functions and nothing else', async () => {
   assert.equal(await can('public.public_unit_status(jsonb, jsonb)'), false);
   assert.equal(await can('public.public_media(jsonb, text)'), false);
   assert.equal(await can('public.public_project_card(public.properties)'), false);
+  assert.equal(await can('public.public_facts_clean(jsonb)'), false);
 });
 
 await t('anon runs the functions without reading properties itself', async () => {

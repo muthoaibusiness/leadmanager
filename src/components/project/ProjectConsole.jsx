@@ -1,12 +1,17 @@
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useLayoutEffect, useMemo, useRef } from 'react';
 import Mi from '../Mi.jsx';
 import { useApp } from '../../context/AppContext.jsx';
-import { getProjectById, setUnitStatus, toProject, pricedVariant, unitPrice } from '../../lib/projects.js';
+import { getProjectById, setUnitStatus, reservedTag, toProject, pricedVariant, unitPrice, unitSize, planProjects, projectFloors } from '../../lib/projects.js';
 import { statusLook } from '../../lib/floorPlan.js';
-import { createHoldRequest, getLeads } from '../../lib/db.js';
+import { Building2, ChevronRight, ChevronsUpDown, DoorOpen, Layers, Store } from 'lucide-react';
+import { Select, SelectTrigger, SelectValue, SelectPopover, SelectListBox, SelectItem } from '../ui/select.jsx';
+import { createHoldRequest, getLeads, getLead } from '../../lib/db.js';
 import { computeDeal, emptyDeal } from '../../lib/deal.js';
 import ProjectCatalog from './ProjectCatalog.jsx';
 import ProjectInvoice from './ProjectInvoice.jsx';
+import { downloadOfferPdf } from '../../lib/offerPdf.js';
+import AddLeadModal from '../modals/AddLeadModal.jsx';
+import { Ring, Meter } from '../dashboards/MobileBits.jsx';
 import { useProjectToast } from './projectToast.js';
 import './ProjectConsole.css';
 import { fmtBDT } from '../../lib/helpers.js';
@@ -36,21 +41,42 @@ function useCountdown(targetMs, active) {
   return `${d}d ${h}h ${m}m ${s}s`;
 }
 
+// One breadcrumb step: an icon, the current value and a dropdown of the
+// alternatives. `current` marks the last step (the unit being sold).
+export function Crumb({ label, icon: Icon, items, value, onChange, placeholder, disabled, current }) {
+  return (
+    <Select className={`pcb-crumb${current ? ' is-current' : ''}`} value={value} onChange={onChange} placeholder={placeholder} disabled={disabled}>
+      <SelectTrigger aria-label={label}><Icon size={16} aria-hidden="true" /><SelectValue /><ChevronsUpDown className="pcb-ud" size={14} aria-hidden="true" /></SelectTrigger>
+      <SelectPopover>
+        <SelectListBox>
+          {items.map(it => <SelectItem key={it.value} value={it.value} description={it.description} disabled={it.disabled}>{it.label}</SelectItem>)}
+        </SelectListBox>
+      </SelectPopover>
+    </Select>
+  );
+}
+
 export default function ProjectConsole() {
-  const { modal, closeModal, propSel, propDraft, setPropDraft, user, refreshDB, dbVersion, consoleAdmin, consoleUnit, setConsoleUnit } = useApp();
+  const { modal, closeModal, propSel, setPropSel, propDraft, setPropDraft, user, refreshDB, dbVersion, consoleAdmin, consoleUnit, setConsoleUnit } = useApp();
   const toast = useProjectToast();
   const isOpen = modal === 'project-console';
   // Gated on isOpen — App.jsx mounts this on every page and it renders nothing
   // until opened, so an ungated call pulled the whole lead book everywhere.
   useLeadBook(isOpen);
   const isAdmin = user?.role === ROLES.MGMT;
+  // Book This (Available Units) hands over a unit: open as a side drawer with
+  // only the Deal cart, like the Prospects lead panel. Anywhere else: the full console.
+  const dealOnly = !!consoleUnit && !consoleAdmin;
 
   const [admin, setAdmin] = useState(false); // admin "back view" toggle
   const [vid, setVid] = useState(null);
+  const [floorSel, setFloorSel] = useState(null); // floor name in the breadcrumb
   const [deal, setDeal] = useState(emptyDeal);
   const [lightbox, setLightbox] = useState(null);
   const [cq, setCq] = useState(''); // client search query
-  const [invoice, setInvoice] = useState(false); // invoice preview overlay
+  const [clientTab, setClientTab] = useState('search'); // 'search' | 'create'
+  const [leadOpen, setLeadOpen] = useState(false); // Create lead form over the console
+  const [moreOpen, setMoreOpen] = useState(false); // Deal cart: More details (prices, add-ons, attachments)
   const [startedAt] = useState(() => Date.now()); // fast-close window anchor
   const [actsEl, setActsEl] = useState(null); // header slot for the catalog's Discard / Save
 
@@ -62,7 +88,14 @@ export default function ProjectConsole() {
   const p = stored || (isNew ? toProject(propDraft) : null);
   // dbVersion: `p` can be the same cached object after an in-place edit.
   const variants = useMemo(() => (p ? p.variants : []), [p, dbVersion]); // eslint-disable-line react-hooks/exhaustive-deps
-  const variant = variants.find(v => v.id === vid) || variants[0] || null;
+  // Floors (plan, else sheet floor, else Other units); a type is offered only
+  // on floors it has units on, so the picked type follows the picked floor.
+  const floors = useMemo(() => (p ? projectFloors(p) : []), [p, dbVersion]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Opens on the 1st Floor when there is one, as Available Units does.
+  const floor = floors.find(f => f.name === floorSel) || floors.find(f => /^1st\b/i.test(f.name)) || floors[0] || null;
+  const onFloor = (u) => !floor || floor.ids.has(u.id);
+  const hasFloor = (v) => v.units.some(onFloor);
+  const variant = variants.find(v => v.id === vid && hasFloor(v)) || variants.find(hasFloor) || variants[0] || null;
 
   // reset when opening a different project. Available Units → Continue hands
   // over a unit (consoleUnit) to start the deal with, if it is still available.
@@ -71,8 +104,21 @@ export default function ProjectConsole() {
     const pick = consoleUnit && consoleUnit.projectId === propSel ? variants.find(v => v.id === consoleUnit.variantId) : null;
     const pickOk = !!pick?.units.some(u => u.id === consoleUnit.unitId && u.status === 'available');
     setVid(pick ? pick.id : null);
-    setDeal(pickOk ? { ...emptyDeal(), variantId: pick.id, unitId: consoleUnit.unitId } : emptyDeal());
-    setCq(''); setAdmin(!!consoleAdmin);
+    setFloorSel(pick ? (floors.find(f => f.ids.has(consoleUnit.unitId))?.name ?? null) : null);
+    // The lead panel's unit picker also hands over its lead as the client.
+    const cl = consoleUnit?.client ? { client: consoleUnit.client } : {};
+    setDeal(pickOk ? { ...emptyDeal(), ...cl, variantId: pick.id, unitId: consoleUnit.unitId } : emptyDeal());
+    setCq(''); setClientTab('search'); setLeadOpen(false); setAdmin(!!consoleAdmin);
+  }
+  // Drawer open, another available unit clicked on the page behind: follow it.
+  // The picked client stays; a deal already in the cart is never swapped.
+  if (useChanged(consoleUnit?.unitId) && isOpen && !opened && dealOnly && consoleUnit && deal.stage === 'browse') {
+    const v = variants.find(x => x.id === consoleUnit.variantId);
+    if (v?.units.some(u => u.id === consoleUnit.unitId && u.status === 'available')) {
+      setVid(v.id);
+      setFloorSel(floors.find(f => f.ids.has(consoleUnit.unitId))?.name ?? null);
+      setDeal(d => ({ ...emptyDeal(), client: d.client, variantId: v.id, unitId: consoleUnit.unitId }));
+    }
   }
   // keep deal.variantId in sync; reset unit when variant changes. Skipped on
   // the opening render: `variant` there still reflects the old vid.
@@ -95,6 +141,9 @@ export default function ProjectConsole() {
   }
 
   const locked = deal.stage !== 'browse'; // editing locked once in the cart
+  // The picked unit was sold or held from Available Units or by someone else
+  // (realtime): drop it from a deal not yet sent, so it is never offered.
+  if (!locked && deal.unitId && variant && !variant.units.some(u => u.id === deal.unitId && u.status === 'available')) setDeal(d => ({ ...d, unitId: null }));
   const fastTarget = startedAt + (p?.fastCloseDays || 0) * 86400000;
   const countdown = useCountdown(fastTarget, isOpen);
 
@@ -106,6 +155,29 @@ export default function ProjectConsole() {
   // unsaved new project just goes away, and unsaved catalog edits are dropped
   // only after the user confirms. A save in flight blocks closing.
   const catalogRef = useRef(null);
+  // Offer step: shrink the offer sheet just enough that the Deal cart fits its
+  // column with no scroll (never below 70%; past that the rail scrolls as before).
+  const railRef = useRef(null);
+  const sheetRef = useRef(null);
+  const [sheetK, setSheetK] = useState(1);
+  const offerStep = isOpen && deal.stage === 'offer';
+  useLayoutEffect(() => {
+    const rail = railRef.current, box = sheetRef.current;
+    if (!offerStep || !rail || !box) { setSheetK(1); return; }
+    const fit = () => {
+      const sheet = box.firstElementChild;
+      if (!sheet) return;
+      const natural = sheet.scrollHeight;                    // unscaled height
+      const shown = natural * (Number(box.dataset.k) || 1);  // height at the current scale
+      const over = rail.scrollHeight - rail.clientHeight;    // how much the rail overflows now
+      const k = Math.max(0.7, Math.min(1, (shown - over) / natural));
+      setSheetK(Math.round(k * 100) / 100);
+    };
+    fit();
+    const ro = new ResizeObserver(fit);
+    ro.observe(rail);
+    return () => ro.disconnect();
+  }, [offerStep]);
   // In the Projects tab the question is a goey-toast confirmation that never
   // blocks the editor. Opened from another tab (Hold Requests), an existing
   // project keeps the browser confirm it always had.
@@ -177,6 +249,10 @@ export default function ProjectConsole() {
     if (!isOpen) return;
     const onKey = (e) => {
       if (e.key !== 'Escape') return;
+      if (leadOpen) return; // the Create lead form on top handles its own Esc
+      // Book This drawer: closes only on its ✕ (browser Back still works); Esc
+      // is left to whatever else has focus, and never reaches App's global close.
+      if (dealOnly) { if (!(e.target instanceof Element && e.target.closest('[role="listbox"]'))) e.stopPropagation(); return; }
       // An open dropdown list (the PROJECT TYPE select) closes itself first.
       if (e.target instanceof Element && e.target.closest('[role="listbox"]')) return;
       e.stopPropagation();
@@ -197,7 +273,8 @@ export default function ProjectConsole() {
 
   const totalUnits = variants.reduce((s, v) => s + v.units.length, 0);
   const availUnits = variants.reduce((s, v) => s + v.units.filter(u => u.status === 'available').length, 0);
-  const vAvail = variant ? variant.units.filter(u => u.status === 'available').length : 0;
+  const floorUnits = variant ? variant.units.filter(onFloor) : [];
+  const vAvail = floorUnits.filter(u => u.status === 'available').length;
   // Floor (bottom) price + total project value are commercially sensitive — only
   // Team Leads and Management see them; initial/meeting agents do not.
   const canSeeFloor = [ROLES.TL, ROLES.MGMT, ROLES.MASTER].includes(user?.role);
@@ -212,6 +289,14 @@ export default function ProjectConsole() {
     : [];
 
   const setUnit = (u) => { if (!locked && u.status === 'available') setDeal(d => ({ ...d, unitId: u.id })); };
+  const pickFloor = (name) => { setFloorSel(name); setDeal(d => ({ ...d, unitId: null })); };
+  // A unit's tone on the 1st Floor artwork (Available Units ART, FloorPlan.css
+  // .art-*): known statuses by name, any other project status by its own colour.
+  const artOf = (u) => {
+    const lk = statusLook(p.unitStatuses, u), key = (lk.color ? lk.label : u.status).toLowerCase();
+    return ['available', 'hold', 'sold', 'landowner', 'reserved'].includes(key) ? { cls: 'art-' + key } : { cls: 'art-custom', style: { '--art-edge': lk.color } };
+  };
+  const unitWord = (u) => (statusLook(p.unitStatuses, u).color ? statusLook(p.unitStatuses, u).label : u.status === 'sold' ? 'Sold' : u.status === 'hold' ? 'On hold' : 'Available');
   const setRate = (k, v) => setDeal(d => ({ ...d, [k]: v === '' ? null : parseFloat(v) }));
   const toggleAddon = (id) => { if (!locked) setDeal(d => ({ ...d, addons: { ...d.addons, [id]: !d.addons[id] } })); };
 
@@ -219,7 +304,7 @@ export default function ProjectConsole() {
   const addToCart = () => { if (deal.unitId && deal.client.id) setDeal(d => ({ ...d, stage: 'offer' })); };
   const holdUnit = () => {
     // TODO(role-gate): if calc.belowFloor, require manager-approval permission before allowing checkout.
-    setUnitStatus(p.id, variant.id, deal.unitId, 'hold', { user, client: { id: deal.client.id, name: deal.client.name }, note: 'Hold requested' });
+    setUnitStatus(p.id, variant.id, deal.unitId, 'hold', { user, client: { id: deal.client.id, name: deal.client.name }, note: 'Hold requested', tag: reservedTag(p) });
     createHoldRequest({
       propertyId: p.id, propertyName: p.name, variantId: variant.id, variantName: variant.name, unitId: deal.unitId,
       clientName: deal.client.name, clientPhone: deal.client.phone, dealTotal: calc.dealTotal, offerRate: calc.offerRate,
@@ -251,15 +336,15 @@ export default function ProjectConsole() {
   return (
     // Outside click = pressed AND released on the backdrop. A text selection
     // dragged across the modal edge is clicked on .mov too, and must not count.
-    <div className="mov on"
+    <div className={`mov on${dealOnly ? ' pc-drawer' : ''}`}
       onPointerDown={e => { backdropRef.current = e.target === e.currentTarget; }}
       onPointerUp={e => { backdropRef.current = backdropRef.current && e.target === e.currentTarget; }}
-      onClick={e => { if (backdropRef.current && e.target === e.currentTarget) requestClose(); backdropRef.current = false; }}>
-      <div className="modal pc-modal" onClick={e => e.stopPropagation()} onPointerDownCapture={dismissAsk} onKeyDownCapture={dismissAsk}>
+      onClick={e => { if (!dealOnly && backdropRef.current && e.target === e.currentTarget) requestClose(); backdropRef.current = false; }}>
+      <div className={`modal pc-modal${dealOnly ? ' is-deal' : ''}`} onClick={e => e.stopPropagation()} onPointerDownCapture={dismissAsk} onKeyDownCapture={dismissAsk}>
         <div className={`pc-top${admin || isNew ? ' pc-top-edit' : ''}`}>
           <div className="pc-top-l"><Mi>storefront</Mi><b>{p.name || (isNew ? 'New property' : '')}</b></div>
           <div className="pc-top-r">
-            {isAdmin && !isNew && (
+            {isAdmin && !isNew && !dealOnly && (
               <div className="pc-toggle">
                 <button className={!admin ? 'on' : ''} onClick={() => setAdmin(false)}>Agent console</button>
                 <button className={admin ? 'on' : ''} onClick={() => setAdmin(true)}>Admin console</button>
@@ -269,7 +354,7 @@ export default function ProjectConsole() {
                 them in). A new property's Discard closes it, so it takes the
                 place of ✕; an existing project keeps ✕ to leave the console. */}
             {(admin || isNew) && <div className="pc-acts" ref={setActsEl} />}
-            {!isNew && <button className="m-x" onClick={requestClose}><Mi>close</Mi></button>}
+            {!isNew && <button className="m-x" onClick={requestClose} aria-label="Close" title="Close"><Mi>close</Mi></button>}
           </div>
         </div>
 
@@ -286,8 +371,8 @@ export default function ProjectConsole() {
           </div>
         ) : (
           <div className="pc-body">
-            {/* ── main column ── */}
-            <div className="pc-main">
+            {/* ── main column ── (left out in the Book This drawer) */}
+            {!dealOnly && <div className="pc-main">
               {/* hero — photo split when a cover exists, else green blueprint */}
               {img0 ? (
                 <div className="phs">
@@ -332,40 +417,63 @@ export default function ProjectConsole() {
                 </div>
               )}
 
-              {/* unit type (variant) picker */}
+              {/* where am I: Project > Floor > Type > Unit, each a dropdown */}
               {variants.length > 0 && (
-                <div className="pc-sec">
-                  <div className="pc-sec-hd">Unit type <span className="pc-sec-note">— like a product variant</span></div>
-                  <div className="pcv-row">
-                    {variants.map(v => {
-                      const av = v.units.filter(u => u.status === 'available').length;
-                      return (
-                        <button key={v.id} className={`pcv${variant?.id === v.id ? ' on' : ''}`} disabled={locked} onClick={() => setVid(v.id)}>
-                          <div className="pcv-top"><span className="pcv-name">{v.name}</span><span className="pcv-avail">{av} avail</span></div>
-                          <div className="pcv-meta">{v.beds} bed · {v.baths} bath · {v.size} sqft</div>
-                          <div className="pcv-price">{crShort(v.listRate * v.size)} · {fmtBDT(v.listRate)}/sqft</div>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
+                <nav className="pcb" aria-label="Unit location">
+                  <ol>
+                    <li>
+                      <Crumb label="Project" icon={Building2} value={p.id} disabled={locked || isNew} onChange={setPropSel}
+                        items={planProjects().map(x => ({ value: x.id, label: x.name || 'Untitled project' }))} />
+                    </li>
+                    {floors.length > 1 && (
+                      <li>
+                        <ChevronRight className="pcb-sep" size={16} aria-hidden="true" />
+                        <Crumb label="Floor" icon={Layers} value={floor?.name} disabled={locked} onChange={pickFloor}
+                          items={floors.map(f => ({ value: f.name, label: f.name,
+                            description: `${variants.reduce((n, v) => n + v.units.filter(u => f.ids.has(u.id) && u.status === 'available').length, 0)} open` }))} />
+                      </li>
+                    )}
+                    <li>
+                      <ChevronRight className="pcb-sep" size={16} aria-hidden="true" />
+                      <Crumb label="Unit type" icon={Store} value={variant?.id} disabled={locked} onChange={setVid}
+                        items={variants.filter(hasFloor).map(v => ({ value: v.id, label: v.name,
+                          description: `${v.units.filter(u => onFloor(u) && u.status === 'available').length} open` }))} />
+                    </li>
+                    <li>
+                      <ChevronRight className="pcb-sep" size={16} aria-hidden="true" />
+                      <Crumb label="Unit" icon={DoorOpen} value={deal.unitId || undefined} placeholder="Pick a unit" disabled={locked} current
+                        onChange={id => { const u = floorUnits.find(x => x.id === id); if (u) setUnit(u); }}
+                        items={floorUnits.map(u => ({ value: u.id, label: u.id, description: unitWord(u), disabled: u.status !== 'available' }))} />
+                    </li>
+                  </ol>
+                </nav>
               )}
 
               {/* unit grid */}
               {variant && (
-                <div className="pc-sec">
-                  <div className="pc-sec-hd">Pick a unit <span className="pc-sec-sub">{vAvail} available</span></div>
+                <div className="pc-sec pc-sec-units">
+                  <div className="pc-sec-hd">{variant.name}{floor && floors.length > 1 ? ` · ${floor.name}` : ''} <span className="pc-sec-sub">{vAvail} available</span></div>
+                  {/* Status counts for this floor and type, counted as Available Units
+                      does: a unit with a project status (Landowner, Reserved, or any
+                      the owner adds) counts there, not in its base, so they add up. */}
                   <div className="pcu-legend">
-                    <span><i className="pcu-sw pcu-sw-open" />Available</span>
-                    <span><i className="pcu-sw pcu-sw-hold" />On hold</span>
-                    <span><i className="pcu-sw pcu-sw-sold" />Sold</span>
-                    <span><i className="pcu-sw pcu-sw-sel" />Selected</span>
+                    {[
+                      ['available', 'Available', 'art-available'], ['hold', 'On hold', 'art-hold'], ['sold', 'Sold', 'art-sold'],
+                      ...(p.unitStatuses || []).map(st => ['c:' + st.id, st.name, ['landowner', 'reserved'].includes(st.name.toLowerCase()) ? 'art-' + st.name.toLowerCase() : 'art-custom', st.color]),
+                    ].map(([k, label, cls, color]) => {
+                      const n = floorUnits.filter(u => (u.tag && (p.unitStatuses || []).some(st => st.id === u.tag) ? 'c:' + u.tag : u.status) === k).length;
+                      return (
+                        <span key={k} className="pcu-stat">
+                          <span className="pcu-stat-l"><i className={`pcu-sw ${cls}`} style={cls === 'art-custom' ? { '--art-edge': color } : undefined} />{label}</span>
+                          <b>{n}</b>
+                        </span>
+                      );
+                    })}
                   </div>
                   <div className="pcu-grid">
-                    {variant.units.map(u => {
+                    {floorUnits.map(u => {
                       // A custom status (project unitStatuses) shows its own name and colour.
                       const lk = statusLook(p.unitStatuses, u);
-                      const lbl = lk.color ? lk.label.toUpperCase() : u.status === 'sold' ? 'SOLD' : u.status === 'hold' ? 'HELD' : 'OPEN';
                       const blocked = u.status !== 'available';
                       const t = [lk.color ? lk.label : u.status === 'sold' ? 'Sold' : u.status === 'hold' ? 'On hold' : 'Available'];
                       if (u.size > 0) t.push(u.size + ' sqft');
@@ -373,11 +481,11 @@ export default function ProjectConsole() {
                       if (u.holdUntil) t.push('Booked by management until ' + new Date(u.holdUntil).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' }));
                       else if (u.heldByName) t.push('By: ' + u.heldByName);
                       return (
-                        <button key={u.id} className={`pcu pcu-${u.status}${lk.color ? ' has-c' : ''}${deal.unitId === u.id ? ' sel' : ''}${blocked ? ' blocked' : ''}`}
-                          style={lk.color ? { '--st-c': lk.color } : undefined}
-                          title={t.join('\n')} aria-disabled={blocked || locked} onClick={() => setUnit(u)}>
-                          <div className="pcu-no">{u.id.replace(/^U-/, '')}</div>
-                          <div className="pcu-st">{lbl}</div>
+                        <button key={u.id} type="button" className={`pcu-t ${artOf(u).cls}${deal.unitId === u.id ? ' on' : ''}${blocked ? ' blocked' : ''}`}
+                          style={artOf(u).style} aria-pressed={deal.unitId === u.id}
+                          title={t.join('\n')} aria-label={t.join(', ')} aria-disabled={blocked || locked} onClick={() => setUnit(u)}>
+                          <span className="pcu-code">{u.id.replace(/^U-/, '')}</span>
+                          {unitSize(u, variant) > 0 && <span className="pcu-sz">{unitSize(u, variant).toLocaleString('en-IN')} sft</span>}
                         </button>
                       );
                     })}
@@ -385,165 +493,195 @@ export default function ProjectConsole() {
                 </div>
               )}
 
-              {/* price & offer */}
-              {variant && calc && (
-                <div className="pc-sec pc-offer">
-                  <div className={`pco-prices${canSeeFloor ? '' : ' solo'}`}>
-                    <div className="pco-box">
-                      <div className="pco-box-l">Top price · list</div>
-                      <div className="pco-box-v">{fmtBDT(pv.listRate)} <small>/ sqft</small></div>
-                      <div className="pco-box-s">Total {crShort(pv.listRate * pv.size)}</div>
-                    </div>
-                    {canSeeFloor && (
-                      <div className="pco-box floor">
-                        <div className="pco-box-l">Bottom price · floor</div>
-                        {pv.floorRate > 0 ? (
-                          <>
-                            <div className="pco-box-v">{fmtBDT(pv.floorRate)} <small>/ sqft</small></div>
-                            <div className="pco-box-s">Total {crShort(pv.floorRate * pv.size)}</div>
-                          </>
-                        ) : (
-                          <div className="pco-box-v" style={{ opacity: .55 }}>Not set</div>
-                        )}
-                      </div>
-                    )}
-                  </div>
+            </div>}
 
-                  <div className="pco-panel">
-                    <div className="pco-row">
-                      <div className="pco-cell">
-                        <div className="pco-lbl">Your offer · rate</div>
-                        <div className="pco-input">
-                          <span className="pco-cur">৳</span>
-                          <input type="number" disabled={locked} value={deal.offerRate ?? ''} placeholder={pv.listRate} onChange={e => setRate('offerRate', e.target.value)} />
-                          <span className="pco-suf">/ sqft</span>
+            {/* ── deal cart rail ── */}
+            <aside className="pc-rail" ref={railRef}>
+                {/* Deal overview (in place of the old stage tracker), the dashboard Overview
+                    card's layout: the unit and where it is, the deal total, then progress. */}
+                {variant && calc && deal.unitId && (() => {
+                  const lead = deal.client.id ? getLead(deal.client.id) : null;
+                  const vsList = pv.listRate > 0 ? Math.round((calc.offerRate / pv.listRate) * 100) : 0;
+                  const stageN = stageIdx(deal.stage) + (deal.client.id ? 1 : 0);
+                  return (
+                    <div className="pdo">
+                      {/* Left: the title. Right: the unit number, mall and floor under it. */}
+                      <div className="pdo-hd">
+                        <span className="pc-rail-ttl"><Mi>shopping_bag</Mi>Deal overview</span>
+                        <div className="pdo-where">
+                          <span className="pdo-unit">{deal.unitId}</span>
+                          <span className="pdo-lbl">{(p.name || '').toLowerCase().replace(/\b\w/g, c => c.toUpperCase())}{floor ? ` · ${floor.name}` : ''}</span>
                         </div>
                       </div>
-                      <div className="pco-cell pco-right">
-                        <div className="pco-lbl">Total offer value</div>
-                        <div className="pco-total">{fmtBDT(calc.offerValue)}</div>
-                        <div className="pco-total-s">{fmtBDT(calc.offerRate)} × {pv.size} sqft</div>
+                      <div className="pdo-grid">
+                        <div><span>Deal total</span><b>{crShort(calc.dealTotal)}</b></div>
+                        <div><span>Rate</span><b>{fmtBDT(calc.offerRate)}<small>/sqft</small></b></div>
+                        <div><span>Size</span><b>{pv.size.toLocaleString('en-IN')} sft</b></div>
                       </div>
-                    </div>
-
-                    <div className="pco-div" />
-
-                    <div className="pco-row">
-                      <div className="pco-cell">
-                        <div className="pco-lbl">Customer's last offer · rate</div>
-                        <div className="pco-input">
-                          <span className="pco-cur">৳</span>
-                          <input type="number" disabled={locked} value={deal.custRate ?? ''} placeholder="—" onChange={e => setRate('custRate', e.target.value)} />
-                          <span className="pco-suf">/ sqft</span>
+                      <div className="pdo-cust">
+                        {deal.client.id ? (
+                          <>
+                            <b>{deal.client.name}</b>
+                            <span>{[deal.client.phone, lead?.city].filter(Boolean).join(' · ') || 'No phone or location'}</span>
+                          </>
+                        ) : <span className="pdo-none">No customer yet. Pick or create one below.</span>}
+                      </div>
+                      <div className="pdo-foot">
+                        <Ring pct={Math.round((stageN / STAGES.length) * 100)} label={`Deal progress ${stageN} of ${STAGES.length}`} />
+                        <div className="pdo-meters">
+                          <Meter label="Progress" value={`Step ${Math.max(1, stageN)} of ${STAGES.length}`} pct={(stageN / STAGES.length) * 100} />
+                          <Meter label="Offer vs list" value={vsList ? `${vsList}%` : '—'} pct={vsList} />
                         </div>
                       </div>
-                      <div className="pco-cell pco-right">
-                        {calc.customerTotal != null ? (
-                          <>
-                            <div className="pco-lbl">Customer total</div>
-                            <div className="pco-total alt">{fmtBDT(calc.customerTotal)}</div>
-                            <div className="pco-total-s">{calc.gap === 0 ? 'matched' : <span className={calc.gap > 0 ? 'pc-gap-hi' : 'pc-gap-lo'}>{calc.gap > 0 ? 'you +' : 'client +'}{fmtBDT(Math.abs(calc.gap))}</span>}</div>
-                          </>
-                        ) : (
-                          <><div className="pco-total alt">—</div><div className="pco-total-s">no customer offer yet</div></>
-                        )}
-                      </div>
                     </div>
-                  </div>
+                  );
+                })()}
 
-                  <button className={`pc-fast${deal.fastClose ? ' on' : ''}`} disabled={locked} onClick={() => setDeal(d => ({ ...d, fastClose: !d.fastClose }))}>
-                    <Mi>bolt</Mi>
-                    <span>Fast-close incentive · −{p.fastClosePct || 0}%</span>
-                    <span className="pc-cd">{deal.fastClose ? countdown : `${p.fastCloseDays || 0}d window`}</span>
-                  </button>
-
-                  {(p.addons || []).length > 0 && (
-                    <div className="pca-sec">
-                      <div className="pca-hd"><span className="pca-ttl">Add-ons</span><span className="pca-note">Not auto-applied · prices set for this project</span></div>
-                      <div className="pca-grid">
-                        {(p.addons || []).map(a => {
-                          const on = !!deal.addons[a.id];
-                          return (
-                            <button key={a.id} className={`pca${on ? ' on' : ''}`} disabled={locked} onClick={() => toggleAddon(a.id)}>
-                              <span className="pca-ic"><Mi>{a.icon || 'add'}</Mi></span>
-                              <span className="pca-nm">{a.name}</span>
-                              <span className="pca-amt">+ {amtShort(a.amount)}</span>
-                              <span className="pca-plus"><Mi>{on ? 'check' : 'add'}</Mi></span>
-                            </button>
-                          );
-                        })}
-                      </div>
+              {/* Offer (moved from the main column): one line, your offer left,
+                  the customer's offer right. Editable while browsing with a unit picked. */}
+              {variant && calc && deal.stage === 'browse' && deal.unitId && (
+                <div className="pco-duo">
+                  <div className="pco-side">
+                    <label className="pco-lbl" htmlFor="pco-offer">Your offer</label>
+                    <div className="pco-input">
+                      <span className="pco-cur">৳</span>
+                      <input id="pco-offer" type="number" inputMode="decimal" disabled={locked} value={deal.offerRate ?? ''} placeholder={Math.round(pv.listRate)} onChange={e => setRate('offerRate', e.target.value)} />
+                      <span className="pco-suf">/sqft</span>
                     </div>
-                  )}
-
-                  <div className="pc-total">
-                    <div><span className="pc-total-l">Deal total</span>
-                      <span className="pc-total-bd">{(calc.discountPct || calc.addOnsTotal)
-                        ? `${calc.discountPct ? `−${calc.discountPct}%` : ''}${calc.discountPct && calc.addOnsTotal ? ' · ' : ''}${calc.addOnsTotal ? `+${amtShort(calc.addOnsTotal)} add-ons` : ''}`
-                        : 'property only'}</span></div>
-                    <div className="pc-total-v">{fmtBDT(calc.dealTotal)}</div>
+                    <div className="pco-total">{crShort(calc.offerValue)}</div>
                   </div>
-                  {calc.belowFloor && <div className="pc-warn"><Mi>warning</Mi>Below floor — needs manager approval</div>}
+                  <div className="pco-side">
+                    <label className="pco-lbl" htmlFor="pco-cust">Customer offer</label>
+                    <div className="pco-input">
+                      <span className="pco-cur">৳</span>
+                      <input id="pco-cust" type="number" inputMode="decimal" disabled={locked} value={deal.custRate ?? ''} placeholder="—" onChange={e => setRate('custRate', e.target.value)} />
+                      <span className="pco-suf">/sqft</span>
+                    </div>
+                    {calc.customerTotal != null ? (
+                      <div className="pco-total alt">{crShort(calc.customerTotal)}
+                        <small className={calc.gap === 0 ? '' : calc.gap > 0 ? 'pc-gap-hi' : 'pc-gap-lo'}>{calc.gap === 0 ? 'matched' : `${calc.gap > 0 ? 'you +' : 'client +'}${crShort(Math.abs(calc.gap))}`}</small>
+                      </div>
+                    ) : <div className="pco-total alt is-none">No offer yet</div>}
+                  </div>
                 </div>
               )}
 
-              {/* attachments */}
-              <div className="pc-sec">
-                <div className="pc-sec-hd att-hd"><Mi>attach_file</Mi>Attachments</div>
-                {photos.length === 0 && docs.length === 0 && links.length === 0 ? (
-                  <div className="pc-empty">No files yet. Add them in <b>Admin · Catalog → Media</b>.</div>
-                ) : (
-                  <>
-                    {photos.length > 0 && (
-                      <div className="att-grp">
-                        <div className="att-gh"><Mi>image</Mi>Photos · {photos.length}</div>
-                        <div className="att-thumbs">{photos.map((m, i) => <img key={i} src={m.url} alt={m.label || ''} onClick={() => setLightbox(m.url)} />)}</div>
-                      </div>
-                    )}
-                    {docs.length > 0 && (
-                      <div className="att-grp">
-                        <div className="att-gh"><Mi>description</Mi>Documents · {docs.length}</div>
-                        {docs.map((d, i) => (
-                          <a key={i} className="att-row" href={d.url} target="_blank" rel="noreferrer">
-                            <span className="att-ic"><Mi>picture_as_pdf</Mi></span>
-                            <span className="att-nm">{d.name || d.label || 'Document'}</span>
-                            {d.url && <span className="att-url">{d.url.replace(/^https?:\/\//, '')}</span>}
-                            <Mi className="att-ext">open_in_new</Mi>
-                          </a>
-                        ))}
-                      </div>
-                    )}
-                    {links.length > 0 && (
-                      <div className="att-grp">
-                        <div className="att-gh"><Mi>link</Mi>Links · {links.length}</div>
-                        {links.map((l, i) => (
-                          <a key={i} className="att-row" href={l.url} target="_blank" rel="noreferrer">
-                            <span className="att-ic"><Mi>link</Mi></span>
-                            <span className="att-nm">{l.label || 'Link'}</span>
-                            {l.url && <span className="att-url">{l.url.replace(/^https?:\/\//, '')}</span>}
-                            <Mi className="att-ext">open_in_new</Mi>
-                          </a>
-                        ))}
-                      </div>
-                    )}
-                  </>
-                )}
-              </div>
-            </div>
+              {/* More details: list / bottom price, fast-close, add-ons, deal total and
+                  attachments, moved here from the main column. Hidden until asked for,
+                  and left out once the offer (invoice) is showing. */}
+              {variant && deal.stage === 'browse' && (
+                <div className="pc-more">
+                  <button type="button" className="pc-more-btn" aria-expanded={moreOpen} aria-controls="pc-more-body" onClick={() => setMoreOpen(o => !o)}>
+                    <Mi>{moreOpen ? 'expand_less' : 'expand_more'}</Mi>{moreOpen ? 'Hide details' : 'More details'}
+                  </button>
+                  {moreOpen && (
+                    <div id="pc-more-body" className="pc-more-body">
+                    {/* price & offer */}
+                    {variant && calc && (
+                      <div className="pc-sec pc-offer">
+                        <div className={`pco-prices${canSeeFloor ? '' : ' solo'}`}>
+                          <div className="pco-box">
+                            <div className="pco-box-l">Top price · list</div>
+                            <div className="pco-box-v">{fmtBDT(pv.listRate)} <small>/ sqft</small></div>
+                            <div className="pco-box-s">Total {crShort(pv.listRate * pv.size)}</div>
+                          </div>
+                          {canSeeFloor && (
+                            <div className="pco-box floor">
+                              <div className="pco-box-l">Bottom price · floor</div>
+                              {pv.floorRate > 0 ? (
+                                <>
+                                  <div className="pco-box-v">{fmtBDT(pv.floorRate)} <small>/ sqft</small></div>
+                                  <div className="pco-box-s">Total {crShort(pv.floorRate * pv.size)}</div>
+                                </>
+                              ) : (
+                                <div className="pco-box-v" style={{ opacity: .55 }}>Not set</div>
+                              )}
+                            </div>
+                          )}
+                        </div>
 
-            {/* ── deal cart rail ── */}
-            <aside className="pc-rail">
-              <div className="pc-rail-hd">
-                <div className="pc-rail-ttl"><Mi>shopping_bag</Mi>Deal cart</div>
-                <div className="pc-rail-sub">Build an offer, then move it down the pipeline</div>
-              </div>
-              <div className="pc-funnel">
-                {STAGES.map((s, i) => (
-                  <div key={s.key} className={`pc-step${stageIdx(deal.stage) >= i + (deal.stage === 'browse' ? 0 : 1) ? ' done' : ''}${stageIdx(deal.stage) === i ? ' cur' : ''}`}>
-                    <span className="pc-step-n">{i + 1}</span>{s.label}
-                  </div>
-                ))}
-              </div>
+                        <button className={`pc-fast${deal.fastClose ? ' on' : ''}`} disabled={locked} onClick={() => setDeal(d => ({ ...d, fastClose: !d.fastClose }))}>
+                          <Mi>bolt</Mi>
+                          <span>Fast-close incentive · −{p.fastClosePct || 0}%</span>
+                          <span className="pc-cd">{deal.fastClose ? countdown : `${p.fastCloseDays || 0}d window`}</span>
+                        </button>
+
+                        {(p.addons || []).length > 0 && (
+                          <div className="pca-sec">
+                            <div className="pca-hd"><span className="pca-ttl">Add-ons</span><span className="pca-note">Not auto-applied · prices set for this project</span></div>
+                            <div className="pca-grid">
+                              {(p.addons || []).map(a => {
+                                const on = !!deal.addons[a.id];
+                                return (
+                                  <button key={a.id} className={`pca${on ? ' on' : ''}`} disabled={locked} onClick={() => toggleAddon(a.id)}>
+                                    <span className="pca-ic"><Mi>{a.icon || 'add'}</Mi></span>
+                                    <span className="pca-nm">{a.name}</span>
+                                    <span className="pca-amt">+ {amtShort(a.amount)}</span>
+                                    <span className="pca-plus"><Mi>{on ? 'check' : 'add'}</Mi></span>
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        )}
+
+                        <div className="pc-total">
+                          <div><span className="pc-total-l">Deal total</span>
+                            <span className="pc-total-bd">{(calc.discountPct || calc.addOnsTotal)
+                              ? `${calc.discountPct ? `−${calc.discountPct}%` : ''}${calc.discountPct && calc.addOnsTotal ? ' · ' : ''}${calc.addOnsTotal ? `+${amtShort(calc.addOnsTotal)} add-ons` : ''}`
+                              : 'property only'}</span></div>
+                          <div className="pc-total-v">{fmtBDT(calc.dealTotal)}</div>
+                        </div>
+                        {calc.belowFloor && <div className="pc-warn"><Mi>warning</Mi>Below floor — needs manager approval</div>}
+                      </div>
+                    )}
+
+                    {/* attachments */}
+                    <div className="pc-sec">
+                      <div className="pc-sec-hd att-hd"><Mi>attach_file</Mi>Attachments</div>
+                      {photos.length === 0 && docs.length === 0 && links.length === 0 ? (
+                        <div className="pc-empty">No files yet. Add them in <b>Admin · Catalog → Media</b>.</div>
+                      ) : (
+                        <>
+                          {photos.length > 0 && (
+                            <div className="att-grp">
+                              <div className="att-gh"><Mi>image</Mi>Photos · {photos.length}</div>
+                              <div className="att-thumbs">{photos.map((m, i) => <img key={i} src={m.url} alt={m.label || ''} onClick={() => setLightbox(m.url)} />)}</div>
+                            </div>
+                          )}
+                          {docs.length > 0 && (
+                            <div className="att-grp">
+                              <div className="att-gh"><Mi>description</Mi>Documents · {docs.length}</div>
+                              {docs.map((d, i) => (
+                                <a key={i} className="att-row" href={d.url} target="_blank" rel="noreferrer">
+                                  <span className="att-ic"><Mi>picture_as_pdf</Mi></span>
+                                  <span className="att-nm">{d.name || d.label || 'Document'}</span>
+                                  {d.url && <span className="att-url">{d.url.replace(/^https?:\/\//, '')}</span>}
+                                  <Mi className="att-ext">open_in_new</Mi>
+                                </a>
+                              ))}
+                            </div>
+                          )}
+                          {links.length > 0 && (
+                            <div className="att-grp">
+                              <div className="att-gh"><Mi>link</Mi>Links · {links.length}</div>
+                              {links.map((l, i) => (
+                                <a key={i} className="att-row" href={l.url} target="_blank" rel="noreferrer">
+                                  <span className="att-ic"><Mi>link</Mi></span>
+                                  <span className="att-nm">{l.label || 'Link'}</span>
+                                  {l.url && <span className="att-url">{l.url.replace(/^https?:\/\//, '')}</span>}
+                                  <Mi className="att-ext">open_in_new</Mi>
+                                </a>
+                              ))}
+                            </div>
+                          )}
+                        </>
+                      )}
+                    </div>
+                    </div>
+                  )}
+                </div>
+              )}
 
               <div className="pc-cart-wrap">
               {!variant ? <div className="pc-cart-empty">Select a project</div> : (
@@ -551,14 +689,12 @@ export default function ProjectConsole() {
                   {deal.stage === 'browse' && (!deal.unitId ? (
                     <div className="pc-cart-empty">
                       <span className="pc-cart-empty-ic"><Mi>grid_view</Mi></span>
-                      <div>Pick a unit from the grid to start.<br />Then add the <b>client's name</b> to send the offer.</div>
+                      {dealOnly
+                        ? <div>This unit is no longer available.<br />Go back and pick another one.</div>
+                        : <div>Pick a unit from the grid to start.<br />Then add the <b>client's name</b> to send the offer.</div>}
                     </div>
                   ) : (
                     <>
-                      <div className="pcl-card">
-                        <div className="pcl-hd">{variant.name} · Unit</div>
-                        <div className="pcl-no">{deal.unitId}</div>
-                      </div>
                       <div className="pcl-rows">
                         <div className="pcl-row"><span>Offer rate</span><b>{fmtBDT(calc.offerRate)}/sqft</b></div>
                         <div className="pcl-row"><span>Offer value · {pv.size} sqft</span><b>{fmtBDT(calc.offerValue)}</b></div>
@@ -567,7 +703,12 @@ export default function ProjectConsole() {
                         <div className="pcl-total"><span>Deal total</span><div className="pcl-total-r"><b>{fmtBDT(calc.dealTotal)}</b><small>{fmtBDT(Math.round(calc.dealTotal / pv.size))}/sqft blended</small></div></div>
                       </div>
                       <div className="pcc-f">
-                        <span>Client (existing customer)</span>
+                        <span>Client</span>
+                        <div className="pcc-tabs" role="tablist" aria-label="Client">
+                          <button type="button" role="tab" aria-selected={clientTab === 'search'} className={clientTab === 'search' ? 'on' : ''} onClick={() => setClientTab('search')}><Mi>search</Mi>Search customer</button>
+                          <button type="button" role="tab" aria-selected={clientTab === 'create'} className={clientTab === 'create' ? 'on' : ''} onClick={() => setClientTab('create')}><Mi>person_add</Mi>Create lead</button>
+                        </div>
+                        {clientTab === 'search' ? (
                         <div className="pcc-search">
                           <Mi>search</Mi>
                           <input value={deal.client.id ? deal.client.name : cq} placeholder="Search customer by name / phone…"
@@ -579,23 +720,30 @@ export default function ProjectConsole() {
                                 <div key={l.id} className="pcc-opt" onClick={() => { setDeal(d => ({ ...d, client: { id: l.id, name: l.name, phone: l.phone } })); setCq(''); }}>
                                   <span className="pcc-opt-n">{l.name}</span><span className="pcc-opt-p">{l.phone}</span>
                                 </div>
-                              )) : <div className="pcc-noopt">No customer found — add them in Leads first</div>}
+                              )) : <div className="pcc-noopt">No customer found. Use Create lead</div>}
                             </div>
                           )}
                         </div>
+                        ) : (
+                          <button type="button" className="btn btn-g btn-full" onClick={() => setLeadOpen(true)}><Mi>person_add</Mi>Add new lead for {deal.unitId}</button>
+                        )}
                       </div>
                       {deal.client.id && <div className="pcc-chosen"><Mi>person</Mi>{deal.client.name}{deal.client.phone ? ` · ${deal.client.phone}` : ''}</div>}
-                      <button className="btn btn-p btn-full" disabled={!deal.client.id} onClick={addToCart}><Mi>send</Mi>Send offer</button>
-                      {!deal.client.id && <div className="pcc-hint">Select an existing customer to continue</div>}
+                      <button className="btn btn-p btn-full" disabled={!deal.client.id} onClick={addToCart}><Mi>send</Mi>Reserve Now</button>
+                      {!deal.client.id && <div className="pcc-hint">{clientTab === 'search' ? 'Select an existing customer to continue' : 'Add the lead, then send the offer'}</div>}
                     </>
                   ))}
 
                   {deal.stage === 'offer' && (
                     <>
-                      <ProjectInvoice inline project={p} variant={pv} deal={deal} calc={calc} agent={user} />
+                      <div className="pc-sheet-fit" ref={sheetRef} data-k={sheetK} style={{ '--k': sheetK }}>
+                        <ProjectInvoice inline project={p} variant={pv} deal={deal} calc={calc} agent={user} />
+                      </div>
                       {calc.belowFloor && <div className="pc-warn sm"><Mi>warning</Mi>below floor — needs manager approval</div>}
-                      <button className="btn btn-g btn-full" onClick={() => setInvoice(true)}><Mi>open_in_full</Mi>Open / print invoice</button>
-                      <button className="btn btn-p btn-full" onClick={holdUnit}><Mi>lock</Mi>Hold unit (checkout)</button>
+                      <div className="pc-offer-acts">
+                        <button className="btn btn-g" onClick={() => downloadOfferPdf({ project: p, variant: pv, deal, calc, agent: user })}><Mi>download</Mi>Download</button>
+                        <button className="btn btn-p" onClick={holdUnit}><Mi>lock</Mi>Hold unit</button>
+                      </div>
                       <button className="btn btn-g btn-full" onClick={() => setDeal(d => ({ ...d, stage: 'browse' }))}>Remove from cart</button>
                     </>
                   )}
@@ -648,7 +796,12 @@ export default function ProjectConsole() {
       </div>
 
       {lightbox && <div className="pc-lightbox" onClick={() => setLightbox(null)}><img src={lightbox} alt="" /><button className="pc-lb-x" onClick={() => setLightbox(null)}><Mi>close</Mi></button></div>}
-      {invoice && variant && calc && <ProjectInvoice project={p} variant={pv} deal={deal} calc={calc} agent={user} onClose={() => setInvoice(false)} />}
+      {/* Create lead: the Prospects Add New Lead form. Project Interest is not
+          asked: it is saved as this project's name (the same form the rest of
+          the app stores), and the unit rides on the deal the lead is picked for. */}
+      <AddLeadModal open={leadOpen} onClose={() => setLeadOpen(false)}
+        interest={p.name || ''}
+        onCreated={l => { setDeal(d => ({ ...d, client: { id: l.id, name: l.name, phone: l.phone } })); setCq(''); setClientTab('search'); }} />
     </div>
   );
 }

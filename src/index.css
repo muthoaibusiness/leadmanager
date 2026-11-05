@@ -11534,16 +11534,34 @@ textarea.fi {
 @keyframes lr-radar { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
 
 /* Lead detail — Assigned | Role two-cell row (above stats / AI score) */
-.ld-agent {
-  display: grid; grid-template-columns: 1fr 1fr;
-  border: 1px solid var(--bd); border-radius: 12px; overflow: hidden; margin-bottom: 13px;
+/* Lead card top: customer on the left, company and interest on the right;
+   one column when the panel is narrow (phone drawer). */
+.ld-card { container-type: inline-size; }
+.ld-top { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 14px 16px; padding: 16px 14px 14px; border-bottom: 1px solid var(--bd); }
+.ld-top .ld-hero { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; padding: 0; border: 0; overflow: visible; }
+.ld-top .ld-hero::before { content: none; }
+.ld-top .ld-eyebrow { letter-spacing: .08em; }
+.ld-top .ld-name { margin: 0; font-size: clamp(18px, 5cqi, 22px); line-height: 1.15; letter-spacing: 0; text-transform: none; font-weight: 800; }
+.ld-top .ld-contacts { align-self: stretch; padding: 0; border: 0; gap: 6px; }
+.ld-top .ld-tags { gap: 6px; align-items: center; min-height: 24px; }
+.ld-top .ld-crow .ld-wa { margin-left: 4px; }
+.ld-meta { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; font-size: 13px; color: var(--t2); }
+.ld-meta li { display: flex; align-items: center; gap: 8px; min-width: 0; overflow-wrap: anywhere; }
+.ld-meta .mi { font-size: 16px; color: var(--t3); flex: none; }
+.ld-meta a { color: var(--t1); }
+.ld-side { min-width: 0; display: flex; flex-direction: column; gap: 8px; }
+.ld-facts { margin: 0; display: grid; gap: 7px; }
+.ld-fact { display: grid; grid-template-columns: 18px minmax(0, 1fr); gap: 8px; align-items: baseline; }
+.ld-fact dt { display: flex; color: var(--t3); }
+.ld-fact dt .mi { font-size: 17px; transform: translateY(3px); }
+.ld-fact dd { margin: 0; display: grid; font-size: 13px; font-weight: 600; color: var(--t1); overflow-wrap: anywhere; }
+.ld-fact-s { font-size: 12px; font-weight: 500; color: var(--t3); }
+.ld-stat-v { display: inline-flex; align-items: center; gap: 8px; }
+.ld-stat-v .mi { font-size: 18px; color: var(--accent); }
+@container (max-width: 460px) {
+  .ld-top { grid-template-columns: 1fr; }
+  .ld-side { padding-top: 14px; border-top: 1px solid var(--bd); }
 }
-.ld-ag-cell { display: flex; align-items: center; gap: 10px; padding: 12px 14px; min-width: 0; }
-.ld-ag-cell:first-child { border-right: 1px solid var(--bd); }
-.ld-ag-cell .mi { font-size: 19px; color: var(--accent); flex: none; }
-.ld-ag-tx { min-width: 0; }
-.ld-ag-l { font-size: 10px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--t3); }
-.ld-ag-v { font-size: 13px; font-weight: 700; color: var(--t1); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 /* ── Admin account switcher (top bar) ──────────────────────────────────── */
 .acsw { position: relative; }
@@ -11935,56 +11953,133 @@ textarea.fi {
   .phs-photo { min-height: 170px; }
 }
 
-/* ═══ Unit-type (variant) picker — product-variant cards ═════════════════ */
-.pc-sec-note { font-weight: 600; color: var(--t3); text-transform: none; letter-spacing: 0; }
-.pcv-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 12px; }
-.pcv {
-  text-align: left; background: var(--surf2); border: 1.5px solid var(--bd); border-radius: 14px;
-  padding: 16px 18px; cursor: pointer; transition: border-color var(--tr), background var(--tr), transform var(--tr);
+/* ═══ Breadcrumb picker: Project > Floor > Type > Unit ═══════════════════
+   Each step is the house Select (ui/select.jsx) drawn as a small bordered
+   pill: icon, value, up-down chevron. Muted chevrons between steps, no box
+   around the row. One line always: on a narrow screen the row scrolls sideways. */
+.pcb ol { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: nowrap; align-items: center; gap: 8px;
+  overflow-x: auto; scrollbar-width: none; }
+.pcb li { display: flex; align-items: center; gap: 8px; flex: none; white-space: nowrap; }
+.pcb-sep { flex: none; color: var(--t3); }
+/* Lead panel copy of the breadcrumb: plain text steps (no pill, no accent
+   rim), wrapping onto a second line instead of scrolling. Console untouched. */
+.ld-pick { margin: 0 0 12px; }
+.ld-pick-acts { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 6px; }
+.ld-pick ol { flex-wrap: wrap; overflow: visible; gap: 2px 4px; }
+.ld-pick li { gap: 4px; flex: 0 1 auto; min-width: 0; }
+.ld-pick .pcb-sep { width: 14px; height: 14px; }
+.ld-pick .pcb-crumb .sel-trigger, .ld-pick .pcb-crumb .sel-trigger:hover, .ld-pick .pcb-crumb .sel-trigger[data-state="open"] {
+  min-height: 28px; padding: 0 4px; gap: 4px; border-color: transparent; background: transparent; font-size: 13px; }
+.ld-pick .pcb-crumb .sel-trigger:focus-visible { outline: 1px solid var(--t3); outline-offset: 0; }
+.ld-pick .pcb-crumb .sel-trigger svg:not(.pcb-ud) { display: none; }
+@media (max-width: 1023px) { .ld-pick .pcb-crumb .sel-trigger { min-height: 44px; } } /* touch targets */
+.pcb-crumb .sel-trigger {
+  gap: 8px; padding: 0 10px; border: 1px solid var(--bd2); border-radius: 8px;
+  background: var(--surf); color: var(--t1); font: 500 14px/1.2 var(--font-display);
 }
-.pcv:hover { transform: translateY(-2px); border-color: var(--bd2); }
-.pcv.on { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, var(--surf2)); box-shadow: 0 0 0 1px var(--accent); }
-.pcv-top { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
-.pcv-name { font-size: 19px; font-weight: 800; color: var(--t1); letter-spacing: -.3px; }
-.pcv-avail { font-size: 13px; font-weight: 700; color: var(--t2); font-variant-numeric: tabular-nums; white-space: nowrap; }
-.pcv.on .pcv-avail { color: var(--accent); }
-.pcv-meta { font-size: 13.5px; color: var(--t3); margin: 9px 0 11px; }
-.pcv-price { font-size: 15.5px; font-weight: 800; color: var(--t1); font-variant-numeric: tabular-nums; letter-spacing: -.2px; }
+.pcb-crumb .sel-trigger:hover, .pcb-crumb .sel-trigger[data-state="open"] { border-color: var(--t3); background: var(--surf2); }
+.pcb-crumb .sel-trigger svg { flex: none; color: var(--t2); }
+.pcb-crumb .sel-chev { display: none; }
+/* Steps before the unit read as plain muted text (still dropdowns); only the
+   unit, the current step, is the bordered pill with its icon. */
+.pcb-crumb:not(.is-current) .sel-trigger { padding: 0 4px; border-color: transparent; background: transparent; color: var(--t2); }
+.pcb-crumb:not(.is-current) .sel-trigger:hover, .pcb-crumb:not(.is-current) .sel-trigger[data-state="open"] { color: var(--t1); background: transparent; border-color: transparent; }
+.pcb-crumb:not(.is-current) .sel-trigger { gap: 4px; }
+.pcb-crumb:not(.is-current) .sel-trigger svg:not(.pcb-ud) { display: none; }
+/* every step keeps its up-down chevron, so each one reads as a dropdown */
+.pcb-crumb .pcb-ud { color: var(--t3); }
+.pcb-crumb .sel-trigger:hover .pcb-ud, .pcb-crumb .sel-trigger[data-state="open"] .pcb-ud { color: var(--t1); }
+@media (min-width: 1024px) { .pcb-crumb .sel-trigger { min-height: 32px; } }
+/* The unit pill, softened to sit with the grid: off-white text, fainter rim. */
+.pcb-crumb.is-current .sel-trigger { color: color-mix(in srgb, var(--t1) 80%, transparent); border-color: color-mix(in srgb, var(--t1) 16%, transparent); }
+.pcb-crumb.is-current .sel-trigger svg { color: var(--t3); }
+.pcb-crumb.is-current .sel-trigger:hover, .pcb-crumb.is-current .sel-trigger[data-state="open"] { color: var(--t1); border-color: color-mix(in srgb, var(--t1) 30%, transparent); }
 
-/* ═══ Pick-a-unit grid — large status cards ══════════════════════════════ */
-.pcu-legend { display: flex; flex-wrap: wrap; gap: 18px; margin-bottom: 14px; font-size: 13px; color: var(--t2); }
-.pcu-legend span { display: inline-flex; align-items: center; gap: 7px; }
-.pcu-sw { width: 16px; height: 16px; border-radius: 5px; border: 1.5px solid var(--bd2); background: var(--surf); }
-.pcu-sw-hold { background: color-mix(in srgb, var(--gold) 30%, var(--surf)); border-color: color-mix(in srgb, var(--gold) 50%, var(--bd2)); }
-.pcu-sw-sold { background: color-mix(in srgb, var(--red) 24%, var(--surf)); border-color: color-mix(in srgb, var(--red) 45%, var(--bd2)); }
-.pcu-sw-sel { background: transparent; border-color: var(--accent); }
-
-.pcu-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(112px, 1fr)); gap: 12px; }
-.pcu {
-  aspect-ratio: 1.18; border-radius: 14px; border: 1.5px solid var(--bd2); background: var(--surf);
-  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px;
-  cursor: pointer; transition: border-color var(--tr), transform var(--tr), box-shadow var(--tr);
+/* ═══ Pick-a-unit grid: the 1st Floor plan's look, as tiles ═══════════════
+   Same tones as Available Units on the artwork (FloorPlan.css .is-art .art-*):
+   a dark fill in the status's unit tone with a thin edge in the status colour.
+   Hover runs the plan's warm liquid light round the edge; the picked unit gets
+   the plan's cool glass fill and pale rim. Layout is the console's own: 7 a row.
+   ds-allow-hardcode: the plan's artwork palette, copied by value (FloorPlan.css). */
+.pcu-legend { display: flex; flex-wrap: wrap; gap: 6px 18px; margin-bottom: 12px; font-size: 13px; color: var(--t2); }
+/* Scoped to the console grid and legend: the floor plan (.fp-box) uses the
+   same art-* class names and must keep FloorPlan.css's own colours. */
+:is(.pcu-grid, .pcu-legend) .art-available { --art-edge: color-mix(in srgb, var(--t1) 34%, transparent); --art-fill: var(--surf); }
+:is(.pcu-grid, .pcu-legend) .art-hold { --art-edge: #E5A83B; }
+:is(.pcu-grid, .pcu-legend) .art-landowner { --art-edge: #A78BFA; }
+:is(.pcu-grid, .pcu-legend) .art-reserved { --art-edge: #38BDF8; }
+:is(.pcu-grid, .pcu-legend) .art-sold { --art-edge: #D23C3C; }
+/* Taken units, quiet: each keeps its hue as a faint tint on one dark base and a
+   softened edge, so the grid reads calm and only the picked unit stands out. */
+:is(.pcu-grid, .pcu-legend) :is(.art-hold, .art-landowner, .art-reserved, .art-sold, .art-custom) {
+  --art-fill: color-mix(in srgb, var(--art-edge) 14%, #15181D);
 }
-.pcu-no { font-size: 23px; font-weight: 800; color: var(--t1); letter-spacing: -.5px; line-height: 1; }
-.pcu-st { font-size: 11px; font-weight: 800; letter-spacing: .09em; }
-/* available */
-.pcu-available .pcu-st { color: var(--green); }
-.pcu-available:hover { border-color: var(--accent); transform: translateY(-2px); box-shadow: var(--sh); }
-/* on hold */
-.pcu-hold { background: color-mix(in srgb, var(--gold) 16%, var(--surf)); border-color: color-mix(in srgb, var(--gold) 38%, var(--bd2)); }
-.pcu-hold .pcu-no, .pcu-hold .pcu-st { color: var(--gold); }
-/* sold */
-.pcu-sold { background: color-mix(in srgb, var(--red) 13%, var(--surf)); border-color: color-mix(in srgb, var(--red) 32%, var(--bd2)); }
-.pcu-sold .pcu-no, .pcu-sold .pcu-st { color: var(--red); }
-/* selected */
-/* custom unit status (project unitStatuses): its colour arrives as --st-c */
-.pcu.has-c { background: color-mix(in srgb, var(--st-c) 14%, var(--surf)); border-color: color-mix(in srgb, var(--st-c) 40%, var(--bd2)); }
-.pcu.has-c .pcu-no, .pcu.has-c .pcu-st { color: var(--st-c); }
-.pcu.sel { border-color: var(--accent); box-shadow: 0 0 0 1.5px var(--accent); background: color-mix(in srgb, var(--accent) 10%, var(--surf)); }
-.pcu.sel .pcu-st { color: var(--accent); }
-/* blocked (hold/sold) — not pickable */
-.pcu.blocked { cursor: not-allowed; }
-.pcu.blocked:hover { transform: none; }
+.pcu-t:is(.art-hold, .art-landowner, .art-reserved, .art-sold, .art-custom):not(.on) { border-color: color-mix(in srgb, var(--art-edge) 55%, transparent); }
+:is(.pcu-grid, .pcu-legend) .art-available .pcu-code { color: color-mix(in srgb, var(--t1) 82%, transparent); }
+:is(.pcu-grid, .pcu-legend) .art-available .pcu-sz { color: var(--t2); }
+
+.pcu-sw { width: 11px; height: 11px; border-radius: 3px; flex: none; background: var(--art-fill); border: 1.5px solid var(--art-edge); }
+
+.pcu-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 8px; }
+/* The unit card and the price card below hug a 7-wide grid of ~74px tiles
+   (7 × 74 + 6 × 8 gaps + 18px padding each side), so their borders line up. */
+.pc-sec-units { width: 100%; max-width: 602px; }
+.pcu-t {
+  position: relative; isolation: isolate;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px;
+  min-height: 54px; padding: 5px 3px; border-radius: 6px; cursor: pointer;
+  background: var(--art-fill); border: 1.5px solid var(--art-edge);
+  font-family: 'Inter', system-ui, sans-serif; transition: box-shadow .15s, border-color .15s;
+}
+/* Soft off-white text (no pure white), easier on the eye over a whole grid. */
+.pcu-code { font-size: 11px; font-weight: 600; color: #C9CED6; line-height: 1.2; }
+.pcu-sz { font-size: 9.5px; font-weight: 500; color: #9AA1AC; line-height: 1.2; white-space: nowrap; }
+
+/* Hover: the warm liquid light (amber to coral, the plan's .fp-run) flowing
+   round the edge. Only while hovered; still under reduced motion. */
+@property --pcu-a { syntax: '<angle>'; inherits: false; initial-value: 0deg; }
+.pcu-t::after {
+  content: ''; position: absolute; inset: -1.5px; z-index: -1; border-radius: inherit; padding: 2px; pointer-events: none;
+  background: conic-gradient(from var(--pcu-a), transparent 0 55%, #FFD08A 70%, #F5A04A 82%, #E8785A 92%, transparent 100%);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
+  opacity: 0; transition: opacity .15s;
+}
+.pcu-t:not(.blocked):hover .pcu-code { font-weight: 800; }
+.pcu-t:not(.blocked):hover .pcu-sz { font-weight: 700; }
+.pcu-t:not(.on):not(.blocked):hover::after { opacity: 1; z-index: 1; animation: pcu-run 2.2s cubic-bezier(.45, .05, .55, .95) infinite; filter: drop-shadow(0 0 4px rgba(245, 160, 74, .55)); }
+@keyframes pcu-run { to { --pcu-a: 360deg; } }
+@media (prefers-reduced-motion: reduce) { .pcu-t:hover::after, .pcu-t.on::before, .pcu-t.on .pcu-code { animation: none; } }
+
+/* Picked: the plan's cool glass pane over the status tone, pale rim and glow. */
+.pcu-t.on {
+  background: linear-gradient(160deg, rgba(242, 251, 255, .16), rgba(191, 230, 245, .08) 45%, rgba(143, 211, 236, .04)), var(--art-fill);
+  border-color: #A9C7D6; box-shadow: 0 0 0 1px rgba(169, 199, 214, .25), 0 0 8px rgba(143, 211, 236, .22);
+}
+/* Picked: only the shop number changes, bold, its letters carrying the hover
+   light (amber to coral) flowing through them at the same pace. */
+.pcu-t.on .pcu-code {
+  font-weight: 900; color: #F5A04A;
+  background: linear-gradient(90deg, #FFD08A, #F5A04A 25%, #E8785A 50%, #F5A04A 75%, #FFD08A) 0 0 / 200% 100%;
+  -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
+  animation: pcu-text-run 2.2s cubic-bezier(.45, .05, .55, .95) infinite;
+}
+@keyframes pcu-text-run { to { background-position: -200% 0; } }
+.pcu-t.on .pcu-sz { color: #B4C2CC; }
+/* A check in the corner: selected reads at a glance and never as a hover. */
+.pcu-t.on::before {
+  content: ''; position: absolute; top: -6px; right: -6px; z-index: 2; width: 16px; height: 16px; border-radius: 50%;
+  /* the hover light itself: amber to coral flowing round, same speed and glow */
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M4 8.5l2.5 2.5L12 5.5' fill='none' stroke='%2314110d' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / 12px no-repeat,
+    conic-gradient(from var(--pcu-a), #FFD08A, #F5A04A 33%, #E8785A 55%, #F5A04A 78%, #FFD08A);
+  box-shadow: 0 0 0 2px var(--surf), 0 0 6px rgba(245, 160, 74, .55);
+  animation: pcu-run 2.2s cubic-bezier(.45, .05, .55, .95) infinite;
+}
+.pcu-t:focus-visible { outline: 2px solid #A9C7D6; outline-offset: 2px; }
+.pcu-t.blocked { cursor: not-allowed; }
+/* 7 per row: SHOP-102 still fits a tile on a 1024px laptop; a phone drops to 5 so each tile stays a 44px+ tap target. */
+@media (max-width: 1023px) { .pcu-t { min-height: 56px; } }
+@media (max-width: 480px) { .pcu-grid { grid-template-columns: repeat(5, minmax(0, 1fr)); } }
 
 /* ═══ Price & offer — reference layout ═══════════════════════════════════ */
 .pco-prices { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 16px; }
@@ -13977,3 +14072,198 @@ input[type="time"]::-webkit-calendar-picker-indicator { opacity: .9; cursor: poi
   .lsp-val { justify-self: end; font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace; font-size: 14px; font-weight: 600; font-variant-numeric: tabular-nums }
   .lsp-pct { justify-self: end; min-width: 28px; text-align: right; font-size: 11.5px; color: var(--mh-mute); font-variant-numeric: tabular-nums }
 }
+
+/* ═══ Price & offer — compact, same width and border as the unit grid card ═══
+   Later in the file so it wins over the earlier price/offer passes. */
+.pc-offer { display: flex; flex-direction: column; gap: 10px; }
+.pc-offer .pco-prices { gap: 8px; margin: 0; }
+.pc-offer .pco-box { padding: 10px 12px; border-radius: 10px; }
+.pc-offer .pco-box-l, .pc-offer .pco-lbl { font-size: 10.5px; margin: 0 0 4px; }
+.pc-offer .pco-box-v { font-size: 16px; margin: 0 0 2px; letter-spacing: -.2px; }
+.pc-offer .pco-box-s { font-size: 11.5px; }
+.pc-offer .pco-panel { padding: 10px 12px; margin: 0; border-radius: 10px; }
+.pc-offer .pco-row { gap: 12px; align-items: center; }
+.pc-offer .pco-div { margin: 10px 0; }
+.pc-offer .pco-input { height: 38px; padding: 0 10px; border-radius: 8px; }
+.pc-offer .pco-input input { font-size: 14px; }
+.pc-offer .pco-total { font-size: 17px; letter-spacing: -.2px; }
+.pc-offer .pco-total-s { font-size: 11px; }
+.pc-offer .pc-fast { margin: 0; padding: 8px 12px; border-radius: 10px; font-size: 12.5px; }
+.pc-offer .pca-sec { margin: 0; }
+.pc-offer .pca-hd { margin-bottom: 6px; }
+.pc-offer .pca-grid { gap: 6px; }
+.pc-offer .pca { min-height: 44px; padding: 6px 8px; gap: 8px; border-radius: 10px; }
+.pc-offer .pca-ic { width: 28px; height: 28px; border-radius: 7px; }
+.pc-offer .pca-ic .mi { font-size: 16px; }
+.pc-offer .pca-nm { font-size: 13px; font-weight: 700; }
+.pc-offer .pca-amt { font-size: 11.5px; white-space: nowrap; }
+.pc-offer .pca-plus { width: 26px; height: 26px; border-radius: 7px; }
+.pc-offer .pca-plus .mi { font-size: 15px; }
+.pc-offer .pc-total { padding: 10px 12px; border-radius: 10px; }
+.pc-offer .pc-total-v { font-size: 18px; }
+
+/* Client: Search customer | Create lead tabs (Project console rail). */
+.pcc-tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 2px; padding: 3px; border: 1px solid var(--bd); border-radius: 10px; background: var(--surf); }
+.pcc-tabs button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 36px; padding: 0 8px;
+  border: 0; border-radius: 7px; background: transparent; color: var(--t2); font: 600 12.5px/1 var(--font-display); cursor: pointer; }
+.pcc-tabs button .mi { font-size: 16px; }
+.pcc-tabs button:hover { color: var(--t1); }
+.pcc-tabs button.on { background: var(--surf2); color: var(--t1); box-shadow: inset 0 0 0 1px var(--bd2); }
+.pcc-tabs button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+/* the lead form opens over the console (.mov is 500 for both) */
+.pc-modal ~ .mov.on, .mov.on + .mov.on { z-index: 510; }
+
+/* Console status counts: "● Landowner 17" inline, one row, wraps on narrow. */
+.pcu-legend { gap: 6px 18px; }
+.pcu-stat { display: inline-flex; align-items: center; gap: 6px; }
+.pcu-stat-l { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--t2); }
+.pcu-stat b { font-size: 13px; font-weight: 800; color: var(--t1); font-variant-numeric: tabular-nums; }
+
+/* Offer pair in the Deal cart: your offer | customer offer, one compact row. */
+.pco-duo { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 14px 18px 0; }
+.pco-duo .pco-side { display: flex; flex-direction: column; gap: 4px; min-width: 0; padding: 8px; border: 1px solid var(--bd); border-radius: 10px; background: var(--surf2); }
+.pco-duo .pco-lbl { margin: 0; font-size: 10.5px; letter-spacing: .04em; }
+.pco-duo .pco-input { height: 34px; padding: 0 8px; gap: 4px; border-radius: 8px; }
+.pco-duo .pco-input input { font-size: 13px; font-weight: 700; }
+.pco-duo .pco-cur, .pco-duo .pco-suf { font-size: 11px; }
+.pco-duo .pco-total { font-size: 14px; letter-spacing: -.2px; line-height: 1.2; }
+.pco-duo .pco-total small { display: block; font-size: 10.5px; font-weight: 600; letter-spacing: 0; }
+.pco-duo .pco-total.is-none { font-size: 12px; font-weight: 600; color: var(--t3); }
+
+/* Desktop: the main column is only as wide as its unit card (602px) and the
+   Deal cart takes the rest, so no blank band sits between them. */
+@media (min-width: 821px) {
+  .pc-body { grid-template-columns: minmax(0, 642px) minmax(348px, 1fr); }
+}
+
+/* Deal overview in the Deal cart: the dashboard Overview card (KpiRow) layout,
+   with its Ring / Meter (MobileBits) styled here because their own CSS is
+   phone-only. Warm accent as the dashboard: #FB8849 / #FFB07A. */
+.pdo { --mh-track: var(--surf2); --mh-warm: #FB8849; --mh-warm-hi: #FFB07A;
+  display: flex; flex-direction: column; gap: 10px; padding: 14px; border: 1px solid var(--bd); border-radius: 14px; background: var(--surf); }
+.pdo-hd { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 13px; font-weight: 700; color: var(--t1); }
+.pdo-chip { padding: 3px 10px; border-radius: 999px; background: var(--surf2); color: var(--t2); font-size: 12px; font-weight: 600; }
+.pdo-lbl { font-size: 12px; color: var(--t2); }
+.pdo-unit { margin-top: -6px; font-size: 26px; font-weight: 800; letter-spacing: -.5px; color: var(--t1); line-height: 1.1; }
+/* Rate gets the middle and the room it needs; total left, size right. */
+.pdo-grid { display: grid; grid-template-columns: auto 1fr auto; gap: 12px; }
+.pdo-grid div:nth-child(2) { align-items: center; text-align: center; }
+.pdo-grid div:nth-child(3) { align-items: flex-end; text-align: right; }
+.pdo-grid div { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.pdo-grid span { font-size: 11.5px; color: var(--t2); }
+.pdo-grid b { font-size: 14px; font-weight: 700; color: var(--t1); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.pdo-grid small { font-size: 11px; font-weight: 500; color: var(--t3); }
+.pdo-cust { display: flex; flex-direction: column; gap: 2px; padding: 10px 0; border-top: 1px solid var(--bd); border-bottom: 1px solid var(--bd); }
+.pdo-cust b { font-size: 14px; font-weight: 700; color: var(--t1); }
+.pdo-cust span { font-size: 12px; color: var(--t2); }
+.pdo-cust .pdo-none { color: var(--t3); }
+.pdo-foot { display: flex; align-items: center; gap: 14px; }
+.pdo-meters { flex: 1; min-width: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.pdo .mh-ring { position: relative; width: 58px; height: 58px; flex-shrink: 0; }
+.pdo .mh-ring > svg { display: block; }
+.pdo .mh-ring > span { position: absolute; inset: 0; display: grid; place-items: center; font-size: 13px; font-weight: 600; color: var(--t1); }
+.pdo .mh-ring-track { fill: none; stroke: var(--mh-track); stroke-width: 6; }
+.pdo .mh-ring-fill { fill: none; stroke: var(--mh-warm); stroke-width: 6; stroke-linecap: round; }
+.pdo .mh-meter { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+.pdo .mh-meter-hd { display: flex; flex-direction: column; gap: 1px; font-size: 12px; }
+.pdo .mh-meter-hd span { color: var(--t2); }
+.pdo .mh-meter-hd b { font-weight: 600; color: var(--t1); white-space: nowrap; }
+.pdo .mh-track { height: 5px; border-radius: 999px; background: var(--mh-track); overflow: hidden; }
+.pdo .mh-fill { height: 100%; border-radius: 999px; background: linear-gradient(90deg, var(--mh-warm-hi), var(--mh-warm)); }
+/* The card takes the old title and tracker spot at the top of the rail. */
+.pc-rail > .pdo { margin: 18px 18px 0; }
+
+/* Eye comfort in the Deal cart: no pure white. The inline offer sheet becomes
+   a soft warm paper on screen (print keeps true white), and the rail's bright
+   text steps down to an off-white. ds-allow-hardcode: paper tones for the sheet. */
+@media screen {
+  .inv-inline .inv-sheet { background: #F6F4F0; color: #2A2D33; }
+  .inv-inline .inv-tbl th, .inv-inline .inv-sum-tot { border-color: #E2DFD8; }
+  .inv-inline .inv-tbl td, .inv-inline .inv-foot { border-color: #EAE7E1; }
+  .inv-inline { box-shadow: none; }
+  /* greys and the logo green darkened a step so they stay AA on the paper tone */
+  .inv-inline :is(.inv-keys span, .inv-lede, .inv-tbl th, .inv-d2, .inv-foot) { color: #5B6270; }
+  .inv-inline .inv-logo { color: #186640; }
+}
+.pc-rail { --t1: rgba(255, 255, 255, .78); }
+:root[data-theme="light"] .pc-rail { --t1: #0A0A0A; }
+.pc-rail .pc-total-v { color: rgba(255, 255, 255, .78); }
+:root[data-theme="light"] .pc-rail .pc-total-v { color: #0A0A0A; }
+/* Rest of the Deal cart (overview to Send offer), dark theme: the last pure
+   white label and the bright green values step down like the text above. */
+:root:not([data-theme="light"]) .pc-rail .pc-total-l { color: rgba(255, 255, 255, .78); }
+:root:not([data-theme="light"]) .pc-rail :is(.pco-total, .pcc-chosen, .pc-gap-hi, .pcl-no) { color: color-mix(in srgb, var(--accent) 74%, var(--surf)); }
+:root:not([data-theme="light"]) .pc-rail .pcc-chosen { background: color-mix(in srgb, var(--accent) 6%, var(--surf)); }
+:root:not([data-theme="light"]) .pc-rail .pcc-chosen { color: color-mix(in srgb, var(--accent) 80%, var(--surf)); }
+:root:not([data-theme="light"]) .pc-rail .btn-p { background: color-mix(in srgb, var(--accent) 76%, var(--surf)); }
+/* Unit type sits after the unit number, quiet, on the same baseline. */
+/* Header right: the unit and its floor, quiet, beside the bold title. */
+.pdo-hd { align-items: flex-start; }
+.pdo-where { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; min-width: 0; text-align: right; }
+.pdo-where .pdo-lbl { font-size: 12px; font-weight: 500; color: var(--t2); }
+.pdo-where .pdo-unit { margin: 0; }
+
+/* Deal cart: More details toggle, and the moved price / add-ons / attachments
+   sections sitting flush in the rail. */
+.pc-more { margin: 12px 18px 0; display: flex; flex-direction: column; gap: 10px; }
+.pc-more-btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 40px; width: 100%;
+  border: 1px solid var(--bd); border-radius: 10px; background: var(--surf2); color: var(--t2);
+  font: 600 13px/1 var(--font-display); cursor: pointer; transition: color var(--tr), border-color var(--tr);
+}
+.pc-more-btn .mi { font-size: 18px; }
+.pc-more-btn:hover { color: var(--t1); border-color: var(--bd2); }
+.pc-more-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.pc-more-body { display: flex; flex-direction: column; gap: 10px; }
+.pc-more-body .pc-sec { padding: 12px; }
+.pc-more-body .pca-grid { grid-template-columns: 1fr; }
+
+/* Book This (Available Units): a slim right-hand drawer holding only the Deal
+   cart, the Prospects lead panel's shape. Non-blocking: no dim, the page behind
+   stays clickable (floors, plan, grid); only its ✕ (or Esc) closes it. */
+.mov.pc-drawer { justify-content: flex-end; align-items: stretch; padding: 0; background: transparent; pointer-events: none; }
+.mov.pc-drawer > .pc-modal { pointer-events: auto; }
+.pc-modal.is-deal {
+  width: min(400px, 100vw); max-width: min(400px, 100vw); height: 100vh; max-height: 100vh;
+  border-radius: 0; border: 0; border-left: 1px solid var(--bd); background: var(--surf);
+  box-shadow: -8px 0 24px rgba(0, 0, 0, .18); transform: translateX(100%); transition: transform .32s cubic-bezier(.4, 0, .2, 1);
+}
+.mov.on .pc-modal.is-deal { transform: translateX(0); }
+.pc-modal.is-deal .pc-top { padding: 10px 14px; gap: 8px; }
+.pc-modal.is-deal .pc-top-l { font-size: 13.5px; min-width: 0; }
+.pc-modal.is-deal .pc-top-l b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pc-modal.is-deal .pc-body { grid-template-columns: minmax(0, 1fr); }
+.pc-modal.is-deal .pc-rail { border-left: 0; }
+/* compact spacing inside the drawer */
+.pc-modal.is-deal .pc-rail > .pdo { margin: 12px 12px 0; padding: 12px; gap: 8px; }
+.pc-modal.is-deal .pco-duo { margin: 10px 12px 0; gap: 6px; }
+.pc-modal.is-deal .pc-more { margin: 10px 12px 0; }
+.pc-modal.is-deal .pc-cart-wrap { padding: 0 12px 12px; }
+.pc-modal.is-deal .pdo-unit { font-size: 22px; }
+@media (prefers-reduced-motion: reduce) { .pc-modal.is-deal { transition: none; } }
+
+/* Deal cart spacing: Deal overview starts at the top of the rail, and the
+   gaps below it and before the offer sheet are tight. */
+.pc-rail > .pdo { margin-top: 10px; }
+.pc-modal.is-deal .pc-rail > .pdo { margin-top: 10px; }
+.pc-rail:has(.inv-inline) .pc-cart-wrap { padding-top: 0; }
+.pc-rail:has(.inv-inline) .pc-cart { padding-top: 0; gap: 8px; }
+.pc-rail .pc-cart > .inv-inline:first-child { margin-top: 10px; }
+/* The offer sheet, a step smaller than before; same layout and colours. */
+.pc-rail .inv-inline .inv-sheet { padding: 14px 14px; }
+.pc-rail .inv-inline .inv-title { font-size: 17px; }
+.pc-rail .inv-inline .inv-logo { font-size: 13px; }
+.pc-rail .inv-inline .inv-top, .pc-rail .inv-inline .inv-keys { margin-bottom: 10px; }
+.pc-rail .inv-inline .inv-cols { margin-bottom: 12px; font-size: 10.5px; }
+.pc-rail .inv-inline .inv-big { font-size: 14.5px; }
+.pc-rail .inv-inline .inv-lede { margin-bottom: 10px; }
+.pc-rail .inv-inline .inv-tbl td { padding: 6px 0; font-size: 11px; }
+.pc-rail .inv-inline .inv-foot { margin-top: 12px; }
+/* Fit to the column: the sheet is scaled by --k (set from the rail's overflow)
+   and its box takes the scaled height, so nothing below jumps or overlaps. */
+.pc-sheet-fit { --k: 1; }
+.pc-sheet-fit > .inv-inline { zoom: var(--k); }
+/* Download | Hold unit side by side, Remove from cart below. */
+.pc-offer-acts { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.pc-offer-acts .btn { justify-content: center; }
+

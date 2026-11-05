@@ -10,7 +10,7 @@
 -- published projects only (public_published, migration 0059) and a fixed
 -- whitelist of fields:
 --   project   id, name, purpose, address, handover, storeys, land_area,
---             size_text, facing, details, photos, brochures
+--             size_text, facing, details, photos, brochures, links
 --   variants  id, name, size, beds, baths
 --   units     id, size, status   (status resolved to available | booked | sold)
 --   plans     id, name, order, image {url, width, height}, boxes {id, x, y, w, h, unitId}
@@ -34,12 +34,12 @@ returns text language sql immutable set search_path = public, pg_temp as $$
     else 'sold' end
 $$;
 
--- Photos and brochures from the Catalog media: https URLs only.
+-- Photos, brochures and links from the Catalog media: https URLs only.
 create or replace function public.public_media(m jsonb, kind text)
 returns jsonb language sql immutable set search_path = public, pg_temp as $$
   select coalesce(jsonb_agg(
-           case when kind = 'docs'
-             then jsonb_build_object('label', coalesce(nullif(x->>'label', ''), 'Brochure'), 'url', coalesce(x->>'url', x #>> '{}'))
+           case when kind in ('docs', 'links')
+             then jsonb_build_object('label', coalesce(nullif(x->>'label', ''), case when kind = 'docs' then 'Brochure' else 'Link' end), 'url', coalesce(x->>'url', x #>> '{}'))
              else to_jsonb(coalesce(x->>'url', x #>> '{}')) end), '[]'::jsonb)
     from jsonb_array_elements(case when jsonb_typeof(m->kind) = 'array' then m->kind else '[]'::jsonb end) x
    where coalesce(x->>'url', x #>> '{}') ~* '^https://'
@@ -79,6 +79,7 @@ returns jsonb language sql stable security definer set search_path = public, pg_
     'facing', coalesce(p.facing, ''), 'details', coalesce(p.details, ''),
     'photos', public.public_media(p.media, 'images'),
     'brochures', public.public_media(p.media, 'docs'),
+    'links', public.public_media(p.media, 'links'),
     'variants', (
       select coalesce(jsonb_agg(jsonb_build_object(
         'id', v->>'id', 'name', coalesce(v->>'name', ''),

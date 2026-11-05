@@ -1,0 +1,420 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WECON Projects (demo)</title>
+<meta name="robots" content="noindex">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&family=Playfair+Display:wght@500;600&display=swap" rel="stylesheet">
+<!--
+  Static demo of the public project portfolio and detail page. Not production.
+  Data comes from data.js, a read-only snapshot with private unit fields removed.
+  Media marked "from bot" comes from wa_projects and is NOT in the CRM Catalog yet.
+  No inquiry form, no lead capture, no analytics, no payment: out of scope.
+-->
+<style>
+/* ds-allow-hardcode:start */
+/* Throwaway static prototype outside the app: it carries its own brand token
+   block below and is not part of the CRM design system. */
+:root {
+  --navy: #0B1B3D; --navy-2: #051026; --gold: #C5A880; --gold-ink: #8A6A3B;
+  --paper: #F7F5F1; --card: #FFFFFF; --ink: #1E283C; --ink-2: #4A5468; --ink-3: #6B7486;
+  --line: #E4E0D8; --on-navy: #EDEEEF; --on-navy-2: #A0A9BA;
+  --avail: #1F7A4D; --avail-bg: #E3F2EA; --booked: #8A5A00; --booked-bg: #FBEFD5; --sold: #9B2C2C; --sold-bg: #F8E1E1;
+  --r: 6px; --shadow: 0 6px 24px rgba(11, 27, 61, .08);
+  --serif: "Playfair Display", Georgia, serif; --sans: Manrope, Inter, system-ui, sans-serif;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--paper); color: var(--ink); font: 15px/1.6 var(--sans); }
+a { color: inherit; }
+img { max-width: 100%; display: block; }
+button { font: inherit; }
+:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+.wrap { max-width: 1200px; margin: 0 auto; padding: 0 20px; }
+.demo-bar { background: #FFF4D6; color: #5A4300; font-size: 13px; text-align: center; padding: 6px 12px; }
+
+/* header */
+.site-head { position: sticky; top: 0; z-index: 20; background: var(--navy); color: var(--on-navy); border-bottom: 1px solid rgba(255,255,255,.08); }
+.site-head .wrap { display: flex; align-items: center; justify-content: space-between; height: 72px; gap: 16px; }
+.brand { display: flex; align-items: center; gap: 12px; text-decoration: none; }
+.brand-mark { width: 40px; height: 40px; border: 1.5px solid var(--gold); color: var(--gold); display: grid; place-items: center; font: 600 18px var(--serif); }
+.brand-name { font: 500 19px/1.1 var(--serif); letter-spacing: .14em; }
+.brand-sub { font-size: 10.5px; letter-spacing: .38em; color: var(--gold); }
+.nav { display: flex; gap: 26px; font-size: 12.5px; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; }
+.nav a { text-decoration: none; padding: 6px 0; border-bottom: 2px solid transparent; }
+.nav a:hover, .nav a[aria-current="page"] { border-color: var(--gold); }
+
+/* hero */
+.hero { background: linear-gradient(100deg, var(--navy) 55%, #16305F); color: var(--on-navy); }
+.hero .wrap { padding-top: 56px; padding-bottom: 52px; }
+.crumb { font-size: 11.5px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; color: var(--on-navy-2); display: flex; gap: 8px; flex-wrap: wrap; }
+.crumb a { text-decoration: none; } .crumb a:hover { color: #fff; }
+.crumb [aria-current] { color: var(--gold); }
+.hero h1 { font: 500 clamp(30px, 5vw, 50px)/1.15 var(--serif); margin: 14px 0 10px; color: #fff; }
+.hero p { margin: 0; color: var(--on-navy-2); }
+.rule { width: 60px; height: 2px; background: var(--gold); margin-top: 22px; }
+
+main { padding: 44px 0 72px; }
+.card { background: var(--card); border-radius: var(--r); box-shadow: var(--shadow); border-top: 3px solid var(--gold); padding: 26px; }
+.card h2 { font: 600 22px/1.2 var(--serif); margin: 0 0 6px; color: var(--navy); }
+.card h2::after { content: ""; display: block; width: 44px; height: 2px; background: var(--gold); margin-top: 10px; }
+.muted { color: var(--ink-3); }
+.small { font-size: 13px; }
+.src { display: inline-block; font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; padding: 2px 8px; border-radius: 99px; background: #EEF0F4; color: var(--ink-2); margin-left: 8px; vertical-align: middle; }
+.src.bot { background: #FFF1D6; color: #7A5200; }
+
+/* portfolio */
+.count-line { font-size: 13.5px; font-weight: 600; color: var(--ink-2); margin: 0 0 18px; }
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); gap: 24px; }
+.pcard { background: var(--card); border-radius: var(--r); box-shadow: var(--shadow); overflow: hidden; text-decoration: none; display: flex; flex-direction: column; transition: transform .15s, box-shadow .15s; }
+.pcard:hover { transform: translateY(-3px); box-shadow: 0 12px 30px rgba(11,27,61,.14); }
+.pcard-media { position: relative; aspect-ratio: 4 / 3; background: var(--navy); }
+.pcard-media img { width: 100%; height: 100%; object-fit: cover; }
+.ph { width: 100%; height: 100%; display: grid; place-items: center; color: var(--gold); font: 500 15px var(--serif); letter-spacing: .1em; text-align: center; padding: 16px;
+  background: repeating-linear-gradient(135deg, rgba(197,168,128,.07) 0 12px, transparent 12px 24px), var(--navy); }
+.pill { position: absolute; top: 14px; left: 14px; font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; padding: 4px 10px; border-radius: 3px; background: var(--gold); color: var(--navy); }
+.pill.sold-out { background: var(--sold); color: #fff; }
+.pcard-body { padding: 18px 20px 20px; display: flex; flex-direction: column; gap: 6px; flex: 1; }
+.loc { font-size: 11.5px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--gold-ink); }
+.pcard h3 { font: 500 21px/1.25 var(--serif); margin: 0; color: var(--navy); }
+.pcard-meta { margin-top: auto; padding-top: 12px; border-top: 1px solid var(--line); display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 13px; color: var(--ink-2); }
+.avail-strip { display: flex; height: 6px; border-radius: 3px; overflow: hidden; background: var(--line); margin-top: 8px; }
+.avail-strip span:nth-child(1) { background: var(--avail); } .avail-strip span:nth-child(2) { background: #C9A227; } .avail-strip span:nth-child(3) { background: var(--sold); }
+
+/* detail */
+.two { display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr); gap: 28px; align-items: start; }
+.stack { display: grid; gap: 28px; }
+.gallery-main { border-radius: var(--r); overflow: hidden; background: var(--navy); aspect-ratio: 16 / 10; box-shadow: var(--shadow); }
+.gallery-main img { width: 100%; height: 100%; object-fit: cover; }
+.thumbs { display: flex; gap: 12px; margin-top: 14px; flex-wrap: wrap; }
+.thumb { width: 104px; height: 70px; padding: 0; border: 2px solid transparent; border-radius: 4px; overflow: hidden; cursor: pointer; background: var(--navy); opacity: .75; }
+.thumb img { width: 100%; height: 100%; object-fit: cover; }
+.thumb[aria-current="true"] { border-color: var(--gold); opacity: 1; }
+.glance { margin: 14px 0 0; }
+.glance div { display: flex; justify-content: space-between; gap: 16px; padding: 12px 0; border-bottom: 1px dashed var(--line); }
+.glance div:last-child { border-bottom: 0; }
+.glance dt { color: var(--ink-3); }
+.glance dd { margin: 0; font-weight: 600; text-align: right; color: var(--navy); }
+
+.legend { display: flex; flex-wrap: wrap; gap: 10px; margin: 16px 0; }
+.chip { border: 1px solid var(--line); background: var(--card); border-radius: 99px; padding: 6px 14px; font-size: 13px; font-weight: 600; cursor: pointer; display: inline-flex; gap: 8px; align-items: center; color: var(--ink-2); }
+.chip[aria-pressed="true"] { border-color: var(--navy); background: var(--navy); color: #fff; }
+.dot { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
+.dot.available { background: var(--avail); } .dot.booked { background: #C9A227; } .dot.sold { background: var(--sold); }
+.variant { margin-top: 20px; }
+.variant h3 { font-size: 14px; font-weight: 700; margin: 0 0 10px; color: var(--navy); }
+.units { display: grid; grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); gap: 8px; }
+.unit { border: 1.5px solid transparent; border-radius: 5px; padding: 8px 6px; text-align: center; font-size: 12.5px; line-height: 1.3; cursor: pointer; }
+.unit b { display: block; font-size: 13.5px; }
+.unit .st { font-size: 10.5px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
+.unit.available { background: var(--avail-bg); color: var(--avail); border-color: #B7DCC8; }
+.unit.available:hover { border-color: var(--avail); }
+.unit.booked { background: var(--booked-bg); color: var(--booked); cursor: not-allowed; }
+.unit.sold { background: var(--sold-bg); color: var(--sold); cursor: not-allowed; text-decoration: line-through; text-decoration-thickness: 1px; }
+.unit.sold .st, .unit.booked .st { text-decoration: none; }
+.unit[aria-pressed="true"] { border-color: var(--navy); box-shadow: 0 0 0 2px var(--navy) inset; }
+.unit-panel { margin-top: 18px; padding: 16px 18px; border-radius: var(--r); background: #F2F4F8; min-height: 64px; }
+.unit-panel dl { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 10px; margin: 8px 0 0; }
+.unit-panel dt { font-size: 12px; color: var(--ink-3); }
+.unit-panel dd { margin: 0; font-weight: 700; color: var(--navy); }
+
+.plan-tabs { display: flex; flex-wrap: wrap; gap: 6px; margin: 14px 0; }
+.plan-stage { position: relative; background: #fff; border: 1px solid var(--line); border-radius: var(--r); overflow: hidden; }
+.plan-stage svg { width: 100%; height: auto; display: block; }
+.plan-stage rect { stroke-width: 3; cursor: pointer; }
+.plan-stage rect.available { fill: rgba(31,122,77,.28); stroke: var(--avail); }
+.plan-stage rect.booked { fill: rgba(201,162,39,.40); stroke: #8A5A00; cursor: not-allowed; }
+.plan-stage rect.sold { fill: url(#hatch); stroke: var(--sold); cursor: not-allowed; }
+.plan-stage rect.unlinked { fill: rgba(107,116,134,.15); stroke: var(--ink-3); cursor: default; }
+.plan-stage rect.sel { stroke: var(--navy); stroke-width: 6; }
+.plan-imgs { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 14px; margin-top: 14px; }
+.plan-imgs figure { margin: 0; background: #fff; border: 1px solid var(--line); border-radius: var(--r); overflow: hidden; }
+.plan-imgs figcaption { padding: 8px 12px; font-size: 13px; font-weight: 600; }
+.doc { display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap; padding: 14px 16px; border: 1px solid var(--line); border-radius: var(--r); margin-top: 14px; }
+.doc-name { font-weight: 700; color: var(--navy); }
+.btn { display: inline-flex; align-items: center; justify-content: center; padding: 10px 20px; border-radius: 99px; font-size: 13px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; text-decoration: none; border: 1.5px solid var(--navy); color: var(--navy); background: transparent; cursor: pointer; }
+.btn.solid { background: var(--gold); border-color: var(--gold); color: var(--navy); }
+.note { margin: 8px 0 0; }
+.unit-title { font-size: 17px; color: var(--navy); }
+.doc-acts { display: flex; gap: 8px; flex-wrap: wrap; }
+.empty { padding: 18px; border: 1px dashed var(--line); border-radius: var(--r); color: var(--ink-3); text-align: center; margin-top: 14px; }
+.map-link { display: inline-block; margin-top: 12px; font-weight: 600; }
+
+/* footer */
+.site-foot { background: var(--navy); color: var(--on-navy-2); font-size: 13.5px; }
+.site-foot .wrap { display: grid; grid-template-columns: 1.4fr 1fr 1fr; gap: 36px; padding-top: 52px; padding-bottom: 40px; }
+.site-foot h4 { font: 500 18px var(--serif); color: #fff; margin: 0 0 16px; }
+.site-foot h4::after { content: ""; display: block; width: 30px; height: 1.5px; background: var(--gold); margin-top: 10px; }
+.site-foot ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.site-foot a { text-decoration: none; } .site-foot a:hover { color: #fff; }
+.foot-bar { border-top: 1px solid rgba(255,255,255,.08); background: var(--navy-2); }
+.foot-bar .wrap { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px; padding-top: 16px; padding-bottom: 16px; font-size: 12.5px; }
+
+@media (max-width: 900px) {
+  .two { grid-template-columns: 1fr; }
+  .site-foot .wrap { grid-template-columns: 1fr; gap: 26px; }
+  .nav { gap: 16px; font-size: 11.5px; }
+}
+@media (max-width: 560px) {
+  .nav a:not(:first-child) { display: none; }
+  .brand-name { font-size: 16px; } .brand-sub { font-size: 9px; }
+  .card { padding: 20px 16px; }
+  .units { grid-template-columns: repeat(auto-fill, minmax(78px, 1fr)); }
+  .thumb { width: 84px; height: 58px; }
+}
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+/* ds-allow-hardcode:end */
+</style>
+</head>
+<body>
+<div class="demo-bar" role="note">Demo, not production. Data is a read-only snapshot. Items tagged <b>from bot</b> are not in the CRM Catalog yet.</div>
+
+<header class="site-head">
+  <div class="wrap">
+    <a class="brand" href="#/p" aria-label="WECON Properties, all projects">
+      <span class="brand-mark" aria-hidden="true">W</span>
+      <span><span class="brand-name">WECON</span><br><span class="brand-sub">PROPERTIES</span></span>
+    </a>
+    <nav class="nav" aria-label="Main">
+      <a href="#/p" id="nav-projects">Projects</a>
+      <a href="#foot">Contact</a>
+    </nav>
+  </div>
+</header>
+
+<div id="app"></div>
+
+<footer class="site-foot" id="foot">
+  <div class="wrap">
+    <div>
+      <h4>WECON Properties</h4>
+      <p>Residential and commercial projects. Unit availability on these pages comes straight from our sales inventory.</p>
+    </div>
+    <div>
+      <h4>Projects</h4>
+      <ul id="foot-projects"></ul>
+    </div>
+    <div>
+      <h4>Office</h4>
+      <ul>
+        <li id="foot-office"></li>
+        <li class="muted small">Hotline, email and social links: not in the CRM yet (decision needed).</li>
+      </ul>
+    </div>
+  </div>
+  <div class="foot-bar"><div class="wrap"><span>&copy; <span id="year"></span> WECON Properties</span><span>Demo build</span></div></div>
+</footer>
+
+<script src="data.js"></script>
+<script>
+(() => {
+  const D = window.WECON_DEMO;
+  const app = document.getElementById('app');
+  const LABEL = { available: 'Available', booked: 'Booked', sold: 'Sold' };
+  const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const safeUrl = u => (/^https:\/\//i.test(u || '') ? u : '');
+  const sft = n => (n ? `${Math.round(n).toLocaleString('en-IN')} sft` : '');
+  const title = s => (s === s.toUpperCase() ? s.toLowerCase().replace(/\b\w/g, c => c.toUpperCase()) : s);
+
+  // CRM media first; bot media (wa_projects) only as a labelled fallback.
+  const media = p => {
+    const crm = p.crm.images.map(safeUrl).filter(Boolean);
+    if (crm.length) return { photos: crm, from: 'crm' };
+    const bot = (p.wa?.photos || []).map(safeUrl).filter(Boolean);
+    return { photos: bot, from: bot.length ? 'bot' : null };
+  };
+  const brochures = p => {
+    const crm = p.crm.docs.filter(d => safeUrl(d.url));
+    if (crm.length) return { docs: crm, from: 'crm' };
+    const b = safeUrl(p.wa?.brochure);
+    return { docs: b ? [{ label: 'Project brochure', url: b }] : [], from: b ? 'bot' : null };
+  };
+  const counts = p => {
+    const c = { available: 0, booked: 0, sold: 0 };
+    p.variants.forEach(v => v.units.forEach(u => c[u.status]++));
+    return c;
+  };
+  const sizeRange = p => {
+    const s = p.variants.flatMap(v => v.units.map(u => u.size)).filter(Boolean);
+    if (!s.length) return p.sizeText || '';
+    const lo = Math.min(...s), hi = Math.max(...s);
+    return lo === hi ? sft(lo) : `${sft(lo).replace(' sft', '')} - ${sft(hi)}`;
+  };
+  const srcTag = from => (from === 'bot' ? '<span class="src bot">from bot</span>' : from === 'crm' ? '<span class="src">CRM</span>' : '');
+
+  function hero(crumbs, h1, sub) {
+    return `<section class="hero"><div class="wrap">
+      <nav class="crumb" aria-label="Breadcrumb">${crumbs}</nav>
+      <h1>${h1}</h1>${sub ? `<p>${sub}</p>` : ''}<div class="rule"></div></div></section>`;
+  }
+
+  function portfolio() {
+    document.title = 'WECON Projects (demo)';
+    const cards = D.projects.map(p => {
+      const c = counts(p), total = c.available + c.booked + c.sold, m = media(p);
+      const pill = total && !c.available ? '<span class="pill sold-out">Sold out</span>' : p.handover ? `<span class="pill">${esc(/^(ready)$/i.test(p.handover) ? 'Ready' : 'Handover ' + p.handover)}</span>` : '';
+      const pct = n => (total ? (n / total * 100).toFixed(2) : 0);
+      return `<a class="pcard" href="#/p/${encodeURIComponent(p.id)}">
+        <div class="pcard-media">${m.photos[0] ? `<img src="${esc(m.photos[0])}" alt="" loading="lazy">` : `<div class="ph">${esc(title(p.name))}</div>`}${pill}</div>
+        <div class="pcard-body">
+          ${p.address ? `<span class="loc">${esc(p.address)}</span>` : ''}
+          <h3>${esc(title(p.name))}</h3>
+          ${total ? `<div class="avail-strip" role="img" aria-label="${c.available} available, ${c.booked} booked, ${c.sold} sold"><span style="width:${pct(c.available)}%"></span><span style="width:${pct(c.booked)}%"></span><span style="width:${pct(c.sold)}%"></span></div>` : ''}
+          <div class="pcard-meta">
+            ${total ? `<span><b>${c.available}</b> of ${total} units available</span>` : ''}
+            ${p.type ? `<span>${esc(p.type)}</span>` : ''}
+            ${sizeRange(p) ? `<span>${esc(sizeRange(p))}</span>` : ''}
+          </div>
+        </div></a>`;
+    }).join('');
+    app.innerHTML = hero('<span>Home</span><span aria-hidden="true">/</span><span aria-current="page">Projects</span>', 'Our Projects', 'Explore WECON residential and commercial projects with live unit availability.')
+      + `<main><div class="wrap"><p class="count-line">Showing ${D.projects.length} projects (demo: all projects shown; production shows published ones only)</p><div class="grid">${cards}</div></div></main>`;
+  }
+
+  function detail(p) {
+    document.title = `${title(p.name)} | WECON (demo)`;
+    const c = counts(p), m = media(p), b = brochures(p);
+    const facts = [
+      ['Project type', p.type], ['Location', p.address], ['Handover', p.handover], ['Floors', p.storeys],
+      ['Land area', p.landArea], ['Unit sizes', sizeRange(p)], ['Facing', p.facing],
+      ['Total units', (c.available + c.booked + c.sold) || p.totalUnits || ''],
+    ].filter(([, v]) => v);
+
+    const gallery = m.photos.length
+      ? `<div class="gallery-main"><img id="g-main" src="${esc(m.photos[0])}" alt="${esc(title(p.name))}, photo 1"></div>
+         ${m.photos.length > 1 ? `<div class="thumbs" role="group" aria-label="Photos">${m.photos.map((u, i) => `<button class="thumb" type="button" data-i="${i}" aria-current="${i === 0}" aria-label="Show photo ${i + 1}"><img src="${esc(u)}" alt="" loading="lazy"></button>`).join('')}</div>` : ''}
+         <p class="small muted note">Photos ${srcTag(m.from)}</p>`
+      : `<div class="gallery-main"><div class="ph">${esc(title(p.name))}<br><span class="small">No photos in the CRM yet</span></div></div>`;
+
+    const plans = p.plans.length
+      ? `<div class="plan-tabs" role="group" aria-label="Floor">${p.plans.map((f, i) => `<button class="chip" type="button" data-plan="${i}" aria-pressed="${i === 0}">${esc(f.name)}</button>`).join('')}</div><div class="plan-stage" id="plan-stage"></div>
+         <p class="small muted note">Tap a green unit on the plan. Booked and sold units can't be selected. ${srcTag('crm')}</p>`
+      : (p.wa?.planImages?.length
+        ? `<p class="small muted">No interactive plan in the CRM for this project. Plan images below ${srcTag('bot')}</p><div class="plan-imgs">${p.wa.planImages.filter(x => safeUrl(x.url)).map(x => `<figure><a href="${esc(x.url)}" target="_blank" rel="noopener"><img src="${esc(x.url)}" alt="${esc(x.label)} floor plan" loading="lazy"></a><figcaption>${esc(x.label)}</figcaption></figure>`).join('')}</div>`
+        : `<div class="empty">No floor plan published for this project yet.</div>`);
+
+    const docs = b.docs.length
+      ? b.docs.map(d => `<div class="doc"><span class="doc-name">${esc(d.label)} ${srcTag(b.from)}</span><span class="doc-acts"><a class="btn" href="${esc(d.url)}" target="_blank" rel="noopener">View</a><a class="btn solid" href="${esc(d.url)}" download>Download</a></span></div>`).join('')
+      : '<div class="empty">No brochure published for this project yet.</div>';
+
+    const unitGroups = p.variants.filter(v => v.units.length).map(v => `<div class="variant" data-variant>
+        <h3>${esc(v.name || 'Units')}${v.size ? ` <span class="muted small">· ${esc(sft(v.size))}</span>` : ''}${v.beds ? ` <span class="muted small">· ${v.beds} bed${v.baths ? `, ${v.baths} bath` : ''}</span>` : ''}</h3>
+        <div class="units">${v.units.map(u => `<button type="button" class="unit ${u.status}" data-unit="${esc(u.id)}" data-status="${u.status}" aria-pressed="false" ${u.status === 'available' ? '' : 'aria-disabled="true"'} aria-label="Unit ${esc(u.id)}, ${LABEL[u.status]}${u.size ? ', ' + sft(u.size) : ''}"><b>${esc(u.id)}</b>${u.size ? `${esc(sft(u.size))}<br>` : ''}<span class="st">${LABEL[u.status]}</span></button>`).join('')}</div>
+      </div>`).join('');
+
+    const map = safeUrl(p.wa?.map);
+    app.innerHTML = hero(`<a href="#/p">Projects</a><span aria-hidden="true">/</span><span aria-current="page">${esc(title(p.name))}</span>`,
+        esc(title(p.name)), [p.handover && `Handover ${esc(p.handover)}`, esc(p.address)].filter(Boolean).join(' | '))
+      + `<main><div class="wrap stack">
+        <div class="two">
+          <div>${gallery}</div>
+          <aside class="card" aria-labelledby="glance-h"><h2 id="glance-h">At a Glance</h2>
+            ${facts.length ? `<dl class="glance">${facts.map(([k, v]) => `<div><dt>${esc(k)}</dt><dd>${esc(v)}</dd></div>`).join('')}</dl>` : '<p class="muted">No project facts in the CRM yet.</p>'}
+            ${map ? `<a class="map-link" href="${esc(map)}" target="_blank" rel="noopener">View on Google Maps</a> ${srcTag('bot')}` : ''}
+          </aside>
+        </div>
+        ${p.details ? `<section class="card"><h2>Project Overview</h2><p>${esc(p.details)}</p></section>` : ''}
+        <section class="card" aria-labelledby="units-h"><h2 id="units-h">Unit Availability</h2>
+          <div class="legend" role="group" aria-label="Filter units by status">
+            <button class="chip" type="button" data-filter="all" aria-pressed="true">All <span>${c.available + c.booked + c.sold}</span></button>
+            ${['available', 'booked', 'sold'].map(k => `<button class="chip" type="button" data-filter="${k}" aria-pressed="false"><i class="dot ${k}" aria-hidden="true"></i>${LABEL[k]} <span>${c[k]}</span></button>`).join('')}
+          </div>
+          ${unitGroups || '<div class="empty">No units listed for this project.</div>'}
+          <div class="unit-panel" id="unit-panel" aria-live="polite"><span class="muted">Select an available unit to see its details.</span></div>
+        </section>
+        <section class="card" aria-labelledby="plan-h"><h2 id="plan-h">Floor Plan</h2>${plans}</section>
+        <section class="card" aria-labelledby="doc-h"><h2 id="doc-h">Brochure</h2>${docs}</section>
+      </div></main>`;
+
+    // gallery
+    app.querySelectorAll('.thumb').forEach(t => t.addEventListener('click', () => {
+      const i = +t.dataset.i, img = document.getElementById('g-main');
+      img.src = m.photos[i]; img.alt = `${title(p.name)}, photo ${i + 1}`;
+      app.querySelectorAll('.thumb').forEach(x => x.setAttribute('aria-current', String(x === t)));
+    }));
+
+    // units: shared selection between grid and plan
+    const panel = document.getElementById('unit-panel');
+    const find = id => { for (const v of p.variants) { const u = v.units.find(x => x.id === id); if (u) return { u, v }; } return null; };
+    let selected = null;
+    const select = id => {
+      const hit = find(id);
+      if (!hit || hit.u.status !== 'available') return; // booked and sold never open details
+      selected = id;
+      app.querySelectorAll('.unit').forEach(el => el.setAttribute('aria-pressed', String(el.dataset.unit === id)));
+      const { u, v } = hit;
+      panel.innerHTML = `<b class="unit-title">Unit ${esc(u.id)}</b> <span class="src" style="background:var(--avail-bg);color:var(--avail)">Available</span>
+        <dl>${v.name ? `<div><dt>Type</dt><dd>${esc(v.name)}</dd></div>` : ''}${u.size ? `<div><dt>Size</dt><dd>${esc(sft(u.size))}</dd></div>` : ''}${v.beds ? `<div><dt>Bedrooms</dt><dd>${v.beds}</dd></div>` : ''}${v.baths ? `<div><dt>Bathrooms</dt><dd>${v.baths}</dd></div>` : ''}</dl>`;
+      drawPlan();
+    };
+    app.querySelectorAll('.unit').forEach(el => el.addEventListener('click', () => select(el.dataset.unit)));
+    app.querySelectorAll('[data-filter]').forEach(ch => ch.addEventListener('click', () => {
+      const f = ch.dataset.filter;
+      app.querySelectorAll('[data-filter]').forEach(x => x.setAttribute('aria-pressed', String(x === ch)));
+      app.querySelectorAll('.unit').forEach(el => { el.hidden = f !== 'all' && el.dataset.status !== f; });
+      app.querySelectorAll('[data-variant]').forEach(g => { g.hidden = ![...g.querySelectorAll('.unit')].some(el => !el.hidden); });
+    }));
+
+    // interactive floor plan (CRM floor_plans with unit boxes)
+    let planIdx = 0;
+    function drawPlan() {
+      const stage = document.getElementById('plan-stage');
+      if (!stage) return;
+      const f = p.plans[planIdx], W = f.image.width || 1000, H = f.image.height || 700;
+      const rects = f.boxes.map(bx => {
+        const hit = find(bx.unitId), st = hit ? hit.u.status : 'unlinked';
+        const label = hit ? `Unit ${bx.unitId}, ${LABEL[st]}` : `${bx.unitId || 'Area'}, not linked to a unit`;
+        return `<rect class="${st}${bx.unitId === selected ? ' sel' : ''}" x="${bx.x * W}" y="${bx.y * H}" width="${bx.w * W}" height="${bx.h * H}" data-unit="${esc(bx.unitId || '')}" ${st === 'available' ? 'tabindex="0" role="button"' : 'role="img"'} aria-label="${esc(label)}"><title>${esc(label)}</title></rect>`;
+      }).join('');
+      stage.innerHTML = `<svg viewBox="0 0 ${W} ${H}" role="group" aria-label="${esc(f.name)} of ${esc(title(p.name))}">
+        <defs><pattern id="hatch" width="18" height="18" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="18" height="18" fill="rgba(155,44,44,.30)"/><line x1="0" y1="0" x2="0" y2="18" style="stroke:var(--sold)" stroke-width="5"/></pattern></defs>
+        <image href="${esc(f.image.url)}" width="${W}" height="${H}"/>${rects}</svg>`;
+      stage.querySelectorAll('rect[role="button"]').forEach(r => {
+        r.addEventListener('click', () => select(r.dataset.unit));
+        r.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); select(r.dataset.unit); } });
+      });
+    }
+    app.querySelectorAll('[data-plan]').forEach(t => t.addEventListener('click', () => {
+      planIdx = +t.dataset.plan;
+      app.querySelectorAll('[data-plan]').forEach(x => x.setAttribute('aria-pressed', String(x === t)));
+      drawPlan();
+    }));
+    drawPlan();
+  }
+
+  function route() {
+    const m = /^#\/p\/([^/?#]+)$/.exec(location.hash);
+    const p = m && D.projects.find(x => x.id === decodeURIComponent(m[1]));
+    document.getElementById('nav-projects').setAttribute('aria-current', p ? 'false' : 'page');
+    if (m && !p) {
+      app.innerHTML = hero('<a href="#/p">Projects</a>', 'Project not found', 'This project is not published.') + '<main><div class="wrap"><a class="btn" href="#/p">See all projects</a></div></main>';
+    } else if (p) detail(p); else portfolio();
+    window.scrollTo(0, 0);
+  }
+
+  // A photo that fails to load (e.g. a Google Drive "download" link) falls back
+  // to the next thumbnail, then to the branded placeholder; never a broken icon.
+  document.addEventListener('error', e => {
+    const img = e.target;
+    if (!(img instanceof HTMLImageElement) || img.dataset.dead) return;
+    img.dataset.dead = '1';
+    const thumb = img.closest('.thumb');
+    if (thumb) { thumb.remove(); return; }
+    const box = img.closest('.pcard-media, .gallery-main, figure');
+    if (box && box.matches('figure')) { box.remove(); return; }
+    const name = img.closest('.pcard')?.querySelector('h3')?.textContent || document.querySelector('h1')?.textContent || 'WECON';
+    const ph = document.createElement('div'); ph.className = 'ph'; ph.textContent = name;
+    img.replaceWith(ph);
+  }, true);
+
+  document.getElementById('foot-projects').innerHTML = D.projects.slice(0, 6).map(p => `<li><a href="#/p/${encodeURIComponent(p.id)}">${esc(title(p.name))}</a></li>`).join('') + '<li><a href="#/p">All projects</a></li>';
+  document.getElementById('foot-office').textContent = D.office || 'Office address not set';
+  document.getElementById('year').textContent = new Date().getFullYear();
+  window.addEventListener('hashchange', route);
+  route();
+})();
+</script>
+</body>
+</html>
