@@ -47,14 +47,15 @@ export async function inviteLead(leadId: string): Promise<InviteResult> {
 
   try {
     const tail = to.slice(-10);
-    const [users, conv, prelead] = await Promise.all([
+    const [users, teams, conv, prelead] = await Promise.all([
       sbSelect("users?select=id,name,role,team_id,phone,is_active&or=(role.eq.TEAM_LEAD,id.eq." + encodeURIComponent(String(lead.assigned_to || "")) + ")"),
+      sbSelect("teams?select=id,name"),
       sbSelect(`wa_conversations?phone=like.*${tail}&order=last_message_at.desc.nullslast&select=id,account,phone&limit=1`),
       sbSelect(`preleads?phone=like.*${tail}&select=WA&order=created_at.desc&limit=1`),
     ]);
     const account = conv[0]?.account ?? (prelead[0]?.WA === "Jaber" ? "dubai" : "eyad");
     const convId = conv[0]?.id ?? `${account}:${to}@s.whatsapp.net`;
-    const contact = pickContact(lead, users);
+    const contact = pickContact(lead, users, teams);
     const id = await sendWaMessageMirroredId(account, to, convId, to, { type: "image", text: melaInviteText(contact), mediaUrl: MELA_CARD_URL, fileName: "mela-invitation.png" },
       { senderName: "AI Agent", storeWaId: true });
     if (id === null) { await release(leadId); return { status: "failed", reason: "WhatsApp send failed" }; }

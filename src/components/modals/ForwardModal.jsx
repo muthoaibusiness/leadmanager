@@ -3,7 +3,8 @@ import Mi from '../Mi.jsx';
 import { useApp } from '../../context/AppContext.jsx';
 import useChanged from '../../hooks/useChanged.js';
 import { getDB, fwdLead, getProperties, updLead, offerComplete, setMeeting, getLead, claimLeadForSelf } from '../../lib/db.js';
-import { sbGetUsersLite, rToU } from '../../lib/supabase.js';
+import { sbGet, sbGetUsersLite, rToU } from '../../lib/supabase.js';
+import { mergeForwardTargets, extraUsersFilter } from '../../lib/forwardTargets.js';
 import { avc, ini, rlabel, fmtBDT } from '../../lib/helpers.js';
 import { ROLES, OFFER_MAX, canSelfForward } from '../../lib/constants.js';
 import useLeadBook from '../../hooks/useLeadBook.js';
@@ -67,6 +68,8 @@ export default function ForwardModal() {
   // per-account, so its teammates are simply not in it.
   const [targets, setTargets] = useState([]);
   const [pq, setPq] = useState('');
+  // Agents outside the team this account may also forward to (users.extra_forward_user_ids, migration 0064).
+  const [extraUsers, setExtraUsers] = useState([]);
 
   const lead = panLead ? getLead(panLead) : null;
   const status = lead?.status;
@@ -105,6 +108,14 @@ export default function ForwardModal() {
   const db = getDB();
 
   useEffect(() => {
+    if (!isAG || !user?.id) return;
+    let live = true;
+    sbGet(`users?select=extra_forward_user_ids&id=eq.${encodeURIComponent(user.id)}`)
+      .then(rows => { if (live) setExtraUsers(Array.isArray(rows?.[0]?.extra_forward_user_ids) ? rows[0].extra_forward_user_ids : []); });
+    return () => { live = false; };
+  }, [isAG, user?.id]);
+
+  useEffect(() => {
     if (!isAG || !user?.teamId || dest === 'self') return;
     let live = true;
     // Agent/team-member hand-off: every other agent on the team, including the
@@ -112,10 +123,14 @@ export default function ForwardModal() {
     // they are valid recipients. The Team Lead destination is a closing
     // hand-off (SITE_VISIT_DONE) that still requires an offer.
     const roleQ = dest === 'tl' ? `role=eq.${ROLES.TL}` : `role=in.(${ROLES.AGENT},${ROLES.EXEC},${ROLES.TL})`;
-    sbGetUsersLite(`${roleQ}&team_id=eq.${user.teamId}&is_active=not.eq.false`)
-      .then(rows => { if (live) setTargets((rows || []).map(rToU).filter(u => u.id !== user.id).sort((a, b) => (a.name || '').localeCompare(b.name || ''))); });
+    // An account with extra_forward_user_ids also sees those agents in the plain hand-off list.
+    const extra = dest === 'agent' ? extraUsersFilter(extraUsers) : null;
+    Promise.all([
+      sbGetUsersLite(`${roleQ}&team_id=eq.${user.teamId}&is_active=not.eq.false`),
+      extra ? sbGetUsersLite(extra) : Promise.resolve([]),
+    ]).then(([rows, more]) => { if (live) setTargets(mergeForwardTargets((rows || []).map(rToU), (more || []).map(rToU), user.id)); });
     return () => { live = false; };
-  }, [isAG, dest, user?.teamId, user?.id]);
+  }, [isAG, dest, user?.teamId, user?.id, extraUsers]);
 
   // Project catalog + live demand (how many leads already interested in each project)
   const projects = [...getProperties()].sort((a, b) => a.name.localeCompare(b.name));

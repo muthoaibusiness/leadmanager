@@ -13,6 +13,7 @@ export const NAV_META = {
   perfreports: { ico: 'description', lbl: 'Reports' },
   campaign: { ico: 'campaign', lbl: 'Campaign' },
   mela: { ico: 'celebration', lbl: 'Avenue Mela' },
+  fbleads: { ico: 'dynamic_form', lbl: 'Facebook Leads' },
   requests: { ico: 'inbox', lbl: 'Requests' },
   properties: { ico: 'folder', lbl: 'Projects' },
   inventory: { ico: 'inventory_2', lbl: 'Inventory' },
@@ -20,6 +21,7 @@ export const NAV_META = {
   accounts: { ico: 'manage_accounts', lbl: 'Users' },
   aitrainer: { ico: 'smart_toy', lbl: 'AI Trainer' },
   metacapi: { ico: 'campaign', lbl: 'Meta CAPI' },
+  publicproject: { ico: 'language', lbl: 'Public Project' },
   companies: { ico: 'corporate_fare', lbl: 'Companies' },
   profile: { ico: 'account_circle', lbl: 'Profile' },
 };

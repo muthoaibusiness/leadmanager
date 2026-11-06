@@ -31,13 +31,17 @@ test("anything of the customer's own is a custom-reply case, but only for ad cus
   assert.equal(needsAiReply("বিস্তারিত জানতে চাই।", true), false);
 });
 
-test("floor plan / video: Citizen Avenue gets a floor-plan PDF and a video; none without either", () => {
+test("floor plan / video: Citizen Avenue gets the floor-plan PDF and the Shorts video (the table's old link is ignored); none without either", () => {
   const c = floorPlanPlan({ name: "Wecon Citizen Avenue", address: "Plot 1, Sector 16, Jolshiri Abashon, Dhaka" });
-  assert.ok(c.length >= 2);
+  assert.equal(c.length, 2);
   assert.equal(c[0].type, "document");
   assert.ok(c[0].url.includes("1NVarSO7peq15fbPS_2pMBKcc6bVe9sfS"));
   assert.equal(c[0].fileName, "Wecon Citizen Avenue Floor Plan.pdf");
-  assert.equal(c[1].caption.includes("https://www.youtube.com/watch?v=Dc5OR3sEcaU"), true);
+  assert.ok(c[1].caption.includes("https://youtube.com/shorts/OU52rrRMNlY"));
+  const stale = floorPlanPlan({ name: "Wecon Citizen Avenue", video_url: "https://www.youtube.com/watch?v=Dc5OR3sEcaU" });
+  assert.equal(stale.length, 2);
+  assert.equal(stale.some((i) => i.caption.includes("Dc5OR3sEcaU")), false);          // a stale wa_projects value cannot be sent
+  assert.equal(floorPlanPlan({ name: "P2P Helthcare", video_url: "https://youtu.be/x" }).some((i) => i.type === "text"), true);   // other projects keep theirs
   assert.deepEqual(floorPlanPlan({ name: "Momtaz Manor" }), []);
   assert.deepEqual(floorPlanPlan(null), []);
   assert.equal(floorPlanAskText({ name: "Wecon Citizen Avenue" }), "Would you like me to send the floor plan and video of Wecon Citizen Avenue?");

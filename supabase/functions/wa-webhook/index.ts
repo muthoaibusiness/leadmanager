@@ -238,11 +238,15 @@ Deno.serve(async (req) => {
   if (fromMe) {
     const since = new Date(Date.now() - 5 * 60_000).toISOString();
     const recent = await sbSelect(
-      `wa_messages?conversation_id=eq.${encodeURIComponent(convId)}&direction=eq.OUT&type=eq.${media.type}&created_at=gte.${encodeURIComponent(since)}&select=id,wa_id,body,media_name,sender_name&order=created_at.desc&limit=10`,
+      `wa_messages?conversation_id=eq.${encodeURIComponent(convId)}&direction=eq.OUT&type=eq.${media.type}&created_at=gte.${encodeURIComponent(since)}&select=id,wa_id,body,caption,media_name,sender_name&order=created_at.asc&limit=10`,
     );
+    // The oldest unpaired bot send of this kind is the one being echoed. A picture's
+    // echo carries a generic file name ("image.jpg"), so media match on the file
+    // name or, failing that, on the caption (the same words the bot sent).
     const twin = (recent ?? []).find((m: any) =>
       m.sender_name && m.wa_id && m.wa_id !== msgId && /^\d+$/.test(String(m.wa_id)) &&
-      (media.type === "text" ? m.body === text : (m.media_name || "") === (media.name ?? "")));
+      (media.type === "text" ? m.body === text
+        : (m.media_name || "") === (media.name ?? "") || (!!text && (m.caption || "") === text)));
     if (twin) {
       await sbPatch("wa_messages", `id=eq.${encodeURIComponent(twin.id)}`, { wa_id: msgId });
       return json({ ok: true, merged: true });

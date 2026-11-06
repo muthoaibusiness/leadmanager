@@ -3,8 +3,8 @@
 // session's one Wasender webhook target (a session can only have one). It
 // forwards the untouched payload to wa-webhook itself (see forwardToMirror
 // below) so the CRM-chat mirror still runs, then handles its own command
-// routing / welcome message / auto-forward / CAPI logic, exactly as the n8n
-// graph did.
+// routing / welcome message / CAPI logic, as the n8n graph did. (The timed
+// auto-forward of new contacts is not here: wa-followup runs it, _shared/forward.ts.)
 //
 // Deploy:  npx supabase functions deploy wa-bot-eyad --no-verify-jwt
 // Secrets: npx supabase secrets set META_CAPI_ACCESS_TOKEN=...
@@ -33,9 +33,10 @@ import {
 import { runTrainerTestTurn, shouldFallbackToFaq } from "../_shared/trainer-deno.ts";
 import {
   DUBAI_CAMPAIGN_PROJECT, DUBAI_GREETING_TEXT, DUBAI_STAGE, needsAiReply,
-  JOLSHIRI_FLOW, GENERIC_FLOW,
+  JOLSHIRI_FLOW, GENERIC_FLOW, floorPlanPlan,
 } from "../_shared/dubai-flow.ts";
 import { runCitizenFlow } from "../_shared/citizen-flow.ts";
+import { assignedText } from "../_shared/forward-core.ts";
 
 // ── fixed literals from the source workflow ──────────────────────────────
 // Hard-coded in the live n8n workflow for this one bot instance (Eyad /
@@ -46,9 +47,6 @@ const COMPANY_ID = "c1";
 const PRELEAD_LOCATION = "Chitagong"; // sic — verbatim from the n8n node, misspelling included
 const WA_TAG = "Eyad";
 
-// Region → forwarding-pool command (Compute Forward's REGION_CMD map).
-const REGION_CMD: Record<string, string> = { Dhaka: "/fdh", Chattogram: "/fctg", Cumilla: "/fcml" };
-
 // ── customer-facing message templates, verbatim from §3 of the spec ─────
 const firstToken = (name: string) => (name || "").trim().split(/\s+/)[0] || "";
 
@@ -57,9 +55,6 @@ const welcomeText = (name: string) =>
 
 const handoverText = (name: string) =>
   `Hello ${firstToken(name) || "there"}, 👋\n\nThank you for your patience! 🙏\nI’m Eayd from Wecon Properties, and I’ll be continuing this conversation to assist you further.\n\nI’m currently reviewing your previous messages and requirements to make sure I guide you properly. 🤝\n\nPlease allow me a moment — I’ll get back to you shortly with the relevant details.`;
-
-const assignedText = (firstName: string, agentName: string, agentPhone: string) =>
-  `প্রিয় ${firstName || "there"},\n\nআপনার জন্য একজন ডেডিকেটেড এক্সপার্ট নির্ধারণ করা হয়েছে।\n\n👨‍💼 ${agentName}\n📞 ${agentPhone}\n\nতিনি শীঘ্রই আপনার সাথে যোগাযোগ করে সব কিছু বুঝিয়ে দেবেন।`;
 
 const alreadyAssignedText = (firstName: string, agentName: string, agentPhone: string) =>
   `প্রিয় ${firstName || "there"},\n\nআপনি ইতিমধ্যে আমাদের একজন ডেডিকেটেড এক্সপার্টের সাথে যুক্ত আছেন।\n\n👨‍💼 ${agentName}\n📞 ${agentPhone}\n\nতিনি আপনার সব প্রশ্নের উত্তর দিতে থাকবেন।`;
@@ -375,7 +370,7 @@ async function handleInbound(p: ParsedEvent): Promise<void> {
     const full = await getActiveProjects();
     const project = (full as any[]).find((x) => x.name === DUBAI_CAMPAIGN_PROJECT) ?? null;
     await runCitizenFlow({
-      bot: "eyad", assigned: false, pid: encodeURIComponent(preleadId), convId, phone: p.phone, waTo: p.target, text: p.text, quoted: p.quoted,
+      bot: "eyad", assigned: status.forwarded === true, pid: encodeURIComponent(preleadId), convId, phone: p.phone, waTo: p.target, text: p.text, quoted: p.quoted,
       isNew: upsert.is_new === true, starting, stage: stage0, stageAt: undefined, takeover, msgCount, project,
       greetingEnabled: settings.welcomeEnabled, greetingText: DUBAI_GREETING_TEXT,
       aiWillAnswer: !!(settings.faqAgentEnabled && p.text && !takeover && p.remote && !isLandOffer(p.text)
@@ -415,7 +410,7 @@ async function handleInbound(p: ParsedEvent): Promise<void> {
     : GENERIC_WELCOME_TEXT;
   const jFaqGate = settings.faqAgentEnabled && p.text && !takeover && p.remote && !landOffer;
   const handled = await runCitizenFlow({
-    bot: "eyad", assigned: false, pid: encodeURIComponent(preleadId), convId: `eyad:${p.remote}`,
+    bot: "eyad", assigned: status.forwarded === true, pid: encodeURIComponent(preleadId), convId: `eyad:${p.remote}`,
     phone: p.phone, waTo: p.target, text: p.text, quoted: p.quoted,
     isNew: upsert.is_new === true, starting, stage: stage0, stageAt: undefined, takeover, msgCount,
     project: (projects as any[]).find((x) => x.name === upsert.property_interest) ?? null,
@@ -442,45 +437,14 @@ async function handleInbound(p: ParsedEvent): Promise<void> {
   });
   if (handled) return; // a scripted stage or the FAQ answered — one owner
 
-  const phoneDigits = p.phone.replace(/\D/g, "");
-  const isBD = phoneDigits.startsWith("880");
+  // Save the project's region on the prelead. It is what auto-forward goes by (wa-followup
+  // forwards Chattogram and not-yet-placed contacts to /fctg five minutes in, see
+  // _shared/forward.ts) and it is copied to the lead when one is made. The old
+  // "forward after N messages" rule is gone: it forwarded silently, to any region's
+  // pool, and would now double the timed forward.
   const proj = (projects as any[]).find((x) => x.name === upsert.property_interest);
-  const projectRegion: string | null = proj ? proj.region : null;
-
-  let forwardCmd = "";
-  if (!isBD) forwardCmd = "/fdu";
-  else if (projectRegion && REGION_CMD[projectRegion]) forwardCmd = REGION_CMD[projectRegion];
-
-  const eligible =
-    msgCount >= settings.autoForwardAfterMessages && status.forwarded !== true && upsert.takeover !== true && !!forwardCmd;
-
-  // Has Region? → Save Prelead Region (this part IS live/enabled).
-  if (projectRegion) {
-    await sbPatchJson("preleads", `id=eq.${encodeURIComponent(preleadId)}`, { region: projectRegion });
-  }
-
-  // Eligible? → Auto Forward Create Lead was DISABLED in the source n8n
-  // workflow (the lead-create call was wired but never actually ran) — now
-  // admin-controlled via wa_settings.auto_forward_enabled (WA Relay tab),
-  // off by default to match that original behavior until someone turns it
-  // on. The region-sync side effect that followed it in the n8n graph stays
-  // live either way.
-  if (eligible) {
-    if (settings.autoForwardEnabled) {
-      const result = await sbRpcJson("wa_create_lead", {
-        p_phone: p.phone,
-        p_cmd: forwardCmd,
-        p_company_id: COMPANY_ID,
-      });
-      console.log("auto-forward: wa_create_lead", { preleadId, phone: p.phone, forwardCmd, result: result?.status });
-    } else {
-      console.log("auto-forward eligible (auto_forward_enabled is off — lead-create skipped)", {
-        preleadId, phone: p.phone, forwardCmd, msgCount,
-      });
-    }
-    if (projectRegion) {
-      await sbPatchJson("leads", `phone=eq.${encodeURIComponent(p.phone)}`, { region: projectRegion });
-    }
+  if (proj?.region) {
+    await sbPatchJson("preleads", `id=eq.${encodeURIComponent(preleadId)}`, { region: proj.region });
   }
 }
 
@@ -639,22 +603,43 @@ async function sendMetaCapiEvent(lead: any, p: ParsedEvent): Promise<void> {
   }
 }
 
+// Temporary: a /send command left no trace anywhere readable, so each step writes one
+// row to bot_llm_failures (service-role only) until the cause is found.
+async function dbg(message: string): Promise<void> {
+  try {
+    await fetch(`${SUPABASE_URL}/rest/v1/bot_llm_failures`, {
+      method: "POST",
+      headers: { apikey: SERVICE_KEY, Authorization: `Bearer ${SERVICE_KEY}`, "Content-Type": "application/json", Prefer: "return=minimal" },
+      body: JSON.stringify({ bot: "eyad", kind: "send_docs", message: message.slice(0, 480) }),
+    });
+  } catch { /* diagnostics only */ }
+}
+
 async function handleSendDocs(p: ParsedEvent): Promise<void> {
+  await dbg(`start ${p.command} remote=${p.remote} target=${p.target} phone=${p.phone}`);
   // Admin-editable mapping (wa_projects.send_code — see the WA Relay tab),
   // replacing the old hardcoded CODE_TO_PROJECT map.
   const project = await getProjectBySendCode(p.command);
-  if (!project) return; // unrecognized /send... code — silent no-op, matches source
+  if (!project) { await dbg(`no project for ${p.command}`); return; } // unrecognized /send... code — no-op, matches source
 
   const convId = `eyad:${p.remote}`;
-  const items: { type: "document" | "image"; url: string; fileName?: string; caption: string }[] = [];
+  // A command the agent typed arrives with the customer's JID as `remote` and no
+  // separate phone; a phone JID is sent to as its plain number, like every other send.
+  const to = p.remote.endsWith("@s.whatsapp.net") ? p.remote.split("@")[0].split(":")[0] : p.target;
+  const items: { type: "document" | "image" | "text"; url: string; fileName?: string; caption: string }[] = [];
   if (project.brochure_url) items.push({ type: "document", url: project.brochure_url, fileName: `${project.name} Brochure.pdf`, caption: brochureCaption(project) });
+  // The floor-plan PDF and the project video link, for the projects that have them.
+  items.push(...floorPlanPlan(project));
   for (const url of (project.photos || []).slice(0, 3)) items.push({ type: "image", url, caption: project.name });
 
+  console.log("send docs", { command: p.command, project: project.name, to, items: items.map((i) => i.type) });
   for (let i = 0; i < items.length; i++) {
     const item = items[i];
-    await sendWaMessageMirrored("eyad", p.target, convId, p.phone, {
-      type: item.type, mediaUrl: item.url, fileName: item.fileName, text: item.caption,
-    });
+    const ok = await sendWaMessageMirrored("eyad", to, convId, p.phone, item.type === "text"
+      ? { type: "text", text: item.caption }
+      : { type: item.type, mediaUrl: item.url, fileName: item.fileName, text: item.caption });
+    await dbg(`step ${i} ${item.type} ok=${ok} to=${to}`);
+    if (!ok) console.error("send docs: send failed", { command: p.command, to, step: i, type: item.type });
     // Wasender's account-protection rate limit is 1 message per 5s.
     if (i < items.length - 1) await new Promise((r) => setTimeout(r, 5500));
   }
@@ -726,6 +711,7 @@ Deno.serve(async (req) => {
       } else if (p.command.startsWith("/f")) {
         if (cmdSettings.manualForwardEnabled) await handleCreateLead(p, cmdSettings);
       } else if (p.command.startsWith("/send")) {
+        await dbg(`dispatch ${p.command} docsCommandEnabled=${cmdSettings.docsCommandEnabled}`);
         if (cmdSettings.docsCommandEnabled) await handleSendDocs(p);
       }
       // any other /command: unrecognized → silent no-op, matches source
@@ -733,6 +719,7 @@ Deno.serve(async (req) => {
     // kind === 'ignore': no-op
   } catch (e) {
     console.error("wa-bot-eyad handler error", e);
+    if (p.kind === "command") await dbg(`handler error: ${e instanceof Error ? e.message : String(e)}`);
     return json({ ok: false, error: e instanceof Error ? e.message : String(e) }, 500);
   }
 

@@ -45,6 +45,7 @@ import {
 import { askAgent, resolveMedia, fixGrammar, matchJolshiriBundle, matchNamedProject, isLandOffer, brochureCaption } from "../_shared/ai.ts";
 import { DUBAI_STAGE, DUBAI_CAMPAIGN_PROJECT, DUBAI_GREETING_TEXT, needsAiReply } from "../_shared/dubai-flow.ts";
 import { runCitizenFlow } from "../_shared/citizen-flow.ts";
+import { tagFor } from "../_shared/forward-core.ts";
 import { runTrainerTestTurn, shouldFallbackToFaq } from "../_shared/trainer-deno.ts";
 
 // ── local REST helpers ───────────────────────────────────────────────────
@@ -425,7 +426,7 @@ async function handleInbound(evt: ParsedEvent): Promise<void> {
   // Bangladeshi numbers too — with no message to the customer. A hidden number
   // has no phone to forward, so a human picks that one up.
   if (starting && settings.autoForwardEnabled && !takeover && !evt.isLid && !(!isNew && (await findLeadForNote(evt.phone)))) {
-    const lead = await sbRpcJson("wa_create_lead", { p_phone: evt.phone, p_cmd: "/fdu", p_company_id: "c1" });
+    const lead = await sbRpcJson("wa_create_lead", { p_phone: evt.phone, p_cmd: tagFor(evt.phone, "/fdu"), p_company_id: "c1" });   // a Saudi (966) number goes to /fctg instead
     if (lead?.lead_id) {
       await logConversationHistory(String(lead.lead_id), "c1", evt.phone, "Dubai Bot (auto-forward)");
       if (settings.metaCapiEnabled && lead.status === "created" && (lead.ctwa_clid || evt.ctwaClid || "") !== "") {

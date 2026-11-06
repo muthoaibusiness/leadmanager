@@ -10,6 +10,7 @@ import { pushUnreadSummary, requestNotifyPermission } from './lib/pushNotify.js'
 import { kbd } from './lib/helpers.js';
 import { ROLES, canSee, effectiveRole, DRAWER_MQ } from './lib/constants.js';
 import { VIEW_TITLES, homeView } from './lib/navHistory.js';
+import { matchPublicRoute, isPortfolioRoute } from './lib/publicProjects.js';
 import useMediaQuery from './hooks/useMediaQuery.js';
 import lazyChunk from './lib/lazyChunk.js';
 
@@ -63,8 +64,10 @@ const PAGES = {
   PerfReportsView: () => import('./components/views/PerfReportsView.jsx'),
   CampaignView: () => import('./components/views/CampaignView.jsx'),
   MelaView: () => import('./components/views/MelaView.jsx'),
+  FbLeadsView: () => import('./components/views/FbLeadsView.jsx'),
   InventoryView: () => import('./components/views/InventoryView.jsx'),
   ConversationsView: () => import('./components/views/ConversationsView.jsx'),
+  PublicProjectAdmin: () => import('./components/project/PublicProjectAdmin.jsx'),
 };
 const OVERLAYS = {
   LeadPanel: () => import('./components/LeadPanel.jsx'),
@@ -97,9 +100,11 @@ const OVERLAYS = {
 
 const lazyAll = (loaders) => Object.fromEntries(Object.entries(loaders).map(([k, f]) => [k, lazyChunk(f)]));
 
-const { AgentDash, TeamLeadDash, ManagementDash, MasterDash, LeadsView, CalendarView, TeamView, AccountsView, AiTrainerView, MetaCapiView, RequestsView, ProfileView, PropertiesView, AvailableUnitsView, BookingsView, PipelineView, ClientsView, ReportsView, AgentPerformanceView, PerfReportsView, CampaignView, MelaView, InventoryView, ConversationsView } = lazyAll(PAGES);
+const { AgentDash, TeamLeadDash, ManagementDash, MasterDash, LeadsView, CalendarView, TeamView, AccountsView, AiTrainerView, MetaCapiView, RequestsView, ProfileView, PropertiesView, AvailableUnitsView, BookingsView, PipelineView, ClientsView, ReportsView, AgentPerformanceView, PerfReportsView, CampaignView, MelaView, FbLeadsView, InventoryView, ConversationsView, PublicProjectAdmin } = lazyAll(PAGES);
 const OVERLAY_COMPONENTS = Object.entries(lazyAll(OVERLAYS));
 const LandingPage = lazyChunk(() => import('./components/LandingPage.jsx'));
+const PublicProjectView = lazyChunk(() => import('./components/project/PublicProjectView.jsx'));
+const PublicPortfolio = lazyChunk(() => import('./components/project/PublicPortfolio.jsx'));
 const SignIn1 = lazyChunk(() => import('./components/ui/modern-stunning-sign-in.jsx').then(m => ({ default: m.SignIn1 })));
 // goey-toast brings framer-motion and sonner.
 const ProjectsToaster = lazyChunk(() => import('./components/project/ProjectsToaster.jsx'));
@@ -277,6 +282,7 @@ function PageHero() {
     perfreports: { sub: '' },
     campaign: { sub: 'Citizen Avenue · Eyad + Dubai' },
     mela: { sub: 'Citizen Avenue sales festival' },
+    fbleads: { sub: 'Lead Ads forms → CRM' },
     bookings: { sub: 'Payments, instalments & dues' },
     team: { sub: `${teamAgents} agents` },
     accounts: { sub: 'Team list · create & manage accounts' },
@@ -378,11 +384,13 @@ function PageBody() {
   if (view === 'perfreports') return <PerfReportsView />;
   if (view === 'campaign') return <CampaignView />;
   if (view === 'mela') return <MelaView />;
+  if (view === 'fbleads') return <FbLeadsView />;
   if (view === 'team') return <TeamView />;
   if (view === 'accounts') return <AccountsView />;
   if (view === 'aitrainer') return <AiTrainerView />;
   if (view === 'metacapi') return <MetaCapiView />;
   if (view === 'inventory') return <InventoryView />;
+  if (view === 'publicproject') return <PublicProjectAdmin />;
   if (view === 'requests') return <RequestsView />;
   if (view === 'profile') return <ProfileView />;
   return null;
@@ -483,6 +491,20 @@ export default function App() {
   const [waCheckedFor, setWaCheckedFor] = useState(null); // account whose chat allow-list has answered
   const [entering, setEntering] = useState(false);    // brief loader after login
   const initialized = useRef(false);
+  // The public routes render unauthenticated, above the login/shell gate below.
+  // Bare #/p is the portfolio landing; #/p/<id> is one project's public page.
+  // Neither touches the CRM store or session.
+  const resolvePub = (hash) => isPortfolioRoute(hash) ? { portfolio: true } : matchPublicRoute(hash);
+  const [pub, setPub] = useState(() => resolvePub(window.location.hash));
+  useEffect(() => {
+    const onHash = () => setPub(resolvePub(window.location.hash));
+    window.addEventListener('hashchange', onHash);
+    return () => window.removeEventListener('hashchange', onHash);
+  }, []);
+  const leavePublic = () => {
+    setPub(null);
+    if (user) setView(homeView(user)); // useNavHistory rewrites the hash
+  };
 
   // Pull the cloud snapshot, reconcile it against the local cache, and run the
   // one-time migrations. Deliberately NOT on the first-paint path: the shell
@@ -739,6 +761,24 @@ export default function App() {
       if (u) summarizeUnread(u);
     })();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps -- mount only: restores the session once
+
+  // The public pages render on their own, no login, no app shell.
+  if (pub) {
+    const homeLabel = user ? VIEW_TITLES[homeView(user)] || 'CRM' : '';
+    const exit = user ? leavePublic : null;
+    if (pub.portfolio) {
+      return (
+        <Suspense fallback={null}>
+          <PublicPortfolio homeLabel={homeLabel} onExit={exit} />
+        </Suspense>
+      );
+    }
+    return (
+      <Suspense fallback={null}>
+        <PublicProjectView projectId={pub.id} homeLabel={homeLabel} onExit={exit} />
+      </Suspense>
+    );
+  }
 
   return (
     <>

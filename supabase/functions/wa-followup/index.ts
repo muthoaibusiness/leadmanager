@@ -2,8 +2,10 @@
 // bot's handleInbound (see wa-bot-eyad/wa-bot-dubai, "flow_stage"). Not
 // triggered by WhatsApp: a pg_cron job hits this on a timer (every 1-2 min
 // is enough — the stages themselves wait 5 minutes / 1 hour), since Edge Functions
-// have no way to schedule their own future work. No auto-forward anywhere
-// in this file — stage 4 only asks; a human still has to act on the answer.
+// have no way to schedule their own future work. Stage 4 only asks "want a
+// dedicated agent?" and a human acts on the answer — and never asks a contact
+// who already has one. The one pass that forwards is forwardDueContacts
+// (_shared/forward.ts): Eyad contacts, 5 minutes in, when its switch is on.
 //
 // Deploy: npx supabase functions deploy wa-followup --no-verify-jwt
 // Schedule (run once in the SQL editor — needs pg_cron + pg_net):
@@ -15,7 +17,10 @@
 //   $$);
 
 import { inviteLead, recentlyContactedLeadIds } from "../_shared/mela-invite.ts";
-import { CORS, json, sbSelect, sbPatch, SUPABASE_URL, SERVICE_KEY, getActiveProjects, sendWaMessageMirrored } from "../_shared/wa.ts";
+import { sendQualifiedLead, recentlyInterestedLeadIds } from "../_shared/capi-qualified.ts";
+import { CORS, json, sbPatch, SUPABASE_URL, SERVICE_KEY, getActiveProjects, sendWaMessageMirrored, resolveTarget } from "../_shared/wa.ts";
+import { forwardDueContacts } from "../_shared/forward.ts";
+import { dripBacklog } from "../_shared/fb-drip.ts";
 import { buildJolshiriBundle, FLOW_ASK_PROFILE_TEXT, FLOW_AUTO_PROFILE_TEXT, FLOW_ASK_AGENT_TEXT, brochureCaption } from "../_shared/ai.ts";
 import {
   DUBAI_STAGE, DUBAI_DOCS_WAIT_MS, DUBAI_AUTO_SEND_WAIT_MS, DUBAI_FINAL_WAIT_MS, DUBAI_FINAL_TEXT,
@@ -60,24 +65,8 @@ interface FlowRow {
   stage_msg_count: number | null;
 }
 
-// A conversation's id is "<account>:<remoteJid>" (see waConvId() client-side
-// and each bot's convId). A hidden-number customer's remoteJid ends in
-// "@lid" and is what Wasender needs as `to` — plain digits won't reach them
-// (see wa-bot-eyad's ParsedEvent.target for the inbound-side version of
-// this same lookup).
-async function resolveTarget(account: string, phone: string): Promise<{ to: string; remote: string } | null> {
-  const rows = await sbSelect(
-    `wa_conversations?phone=eq.${encodeURIComponent(phone)}&account=eq.${account}&select=id&order=last_message_at.desc.nullslast&limit=1`,
-  );
-  const convId = rows?.[0]?.id;
-  if (!convId) return { to: phone, remote: phone }; // no conversation row yet — best effort
-  const remote = String(convId).slice(account.length + 1);
-  return { to: remote.endsWith("@lid") ? remote : phone, remote };
-}
-
 async function sendBundle(account: string, phone: string, message: string, brochures: { project: { name: string; address?: string | null }; url: string }[]): Promise<void> {
   const target = await resolveTarget(account, phone);
-  if (!target) return;
   const convId = `${account}:${target.remote}`;
   await sendWaMessageMirrored(account, target.to, convId, phone, { type: "text", text: message });
   for (let i = 0; i < brochures.length; i++) {
@@ -91,7 +80,6 @@ async function sendBundle(account: string, phone: string, message: string, broch
 
 async function sendText(account: string, phone: string, message: string): Promise<void> {
   const target = await resolveTarget(account, phone);
-  if (!target) return;
   await sendWaMessageMirrored(account, target.to, `${account}:${target.remote}`, phone, { type: "text", text: message });
 }
 
@@ -137,7 +125,7 @@ async function processGreeted(): Promise<number> {
 async function processAwaitingReply(): Promise<number> {
   const cutoff = new Date(Date.now() - ONE_HOUR_MS).toISOString();
   const rows: FlowRow[] = await claimRows(
-    `flow_stage=in.(asked_profile,profile_sent)&stage_at=lte.${encodeURIComponent(cutoff)}&takeover=not.is.true&select=id,phone,WA,message_logs,flow_stage,stage_msg_count&limit=200`,
+    `flow_stage=in.(asked_profile,profile_sent)&stage_at=lte.${encodeURIComponent(cutoff)}&takeover=not.is.true&forwarded=not.is.true&select=id,phone,WA,message_logs,flow_stage,stage_msg_count&limit=200`,
     { flow_stage: "awaiting_claimed" },
   );
   let acted = 0;
@@ -171,7 +159,6 @@ const messageCount = (r: FlowRow) => (Array.isArray(r.message_logs) ? r.message_
 
 async function sendDocItem(account: string, phone: string, d: DocItem): Promise<void> {
   const target = await resolveTarget(account, phone);
-  if (!target) return;
   await sendWaMessageMirrored(account, target.to, `${account}:${target.remote}`, phone,
     d.type === "text" ? { type: "text", text: d.caption } : { type: d.type, mediaUrl: d.url, fileName: d.fileName, text: d.caption });
 }
@@ -267,6 +254,11 @@ Deno.serve(async (req) => {
   const gate = cronKeyGate(req, Deno.env.get("FOLLOWUP_CRON_KEY"), "x-followup-key");
   if (!gate.ok) return json({ ok: false, error: gate.error }, gate.status);
   try {
+    // First: it is the one pass with a clock the customer can feel (5 minutes), and the
+    // passes below can run long (a brochure goes out every 5.5 s).
+    const forwarded = await forwardDueContacts().catch((e) => { console.error("wa-followup: auto-forward failed", e); return 0; });
+    // Facebook leads that never reached the CRM, one per 5 minutes (off unless fb_lead_settings.backlog_drip).
+    const fbDrip = await dripBacklog().catch((e) => { console.error("wa-followup: fb drip failed", e); return { status: "failed" }; });
     const greeted = await processGreeted();
     const awaiting = await processAwaitingReply();
     const dubaiDocs = await processDubaiGreeted();
@@ -275,7 +267,10 @@ Deno.serve(async (req) => {
     // Mela invitations for leads contacted in the last half hour that the CRM call missed.
     let mela = 0;
     for (const id of await recentlyContactedLeadIds(30)) if ((await inviteLead(id)).status === "sent") mela++;
-    return json({ ok: true, greeted, awaiting, dubaiDocs, dubaiAuto, dubaiFinal, mela });
+    // Leads that went Interested in the last half hour and were not reported to Meta yet.
+    let qualified = 0;
+    for (const id of await recentlyInterestedLeadIds(30)) if ((await sendQualifiedLead(id)).status === "sent") qualified++;
+    return json({ ok: true, forwarded, fbDrip, greeted, awaiting, dubaiDocs, dubaiAuto, dubaiFinal, mela, qualified });
   } catch (e) {
     console.error("wa-followup error", e);
     return json({ ok: false, error: e instanceof Error ? e.message : String(e) }, 500);

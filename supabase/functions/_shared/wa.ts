@@ -570,6 +570,20 @@ export const phoneToJid = (phone: string) => {
   return d ? `${d}@s.whatsapp.net` : "";
 };
 
+// Where a message to a customer goes, and the thread it belongs to ("<account>:<remote>").
+// A hidden-number customer's thread ends in "@lid" and Wasender needs that JID as `to`;
+// everyone else is sent to as a plain number. A number with no thread yet (a form lead
+// who has never written) gets the phone-JID thread, the one their first reply lands in.
+export async function resolveTarget(account: string, phone: string): Promise<{ to: string; remote: string }> {
+  const rows = await sbSelect(
+    `wa_conversations?phone=eq.${encodeURIComponent(phone)}&account=eq.${account}&select=id&order=last_message_at.desc.nullslast&limit=1`,
+  );
+  const convId = rows?.[0]?.id;
+  if (!convId) return { to: phone, remote: phoneToJid(phone) || phone };
+  const remote = String(convId).slice(account.length + 1);
+  return { to: remote.endsWith("@lid") ? remote : phone, remote };
+}
+
 // Constant-time-ish comparison so a wrong secret doesn't leak length by timing.
 export function safeEqual(a: string, b: string): boolean {
   if (!a || !b || a.length !== b.length) return false;

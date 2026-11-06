@@ -7,6 +7,7 @@ import { getSession } from './db.js';
 
 // One title per page — the hero heading and the label of a Back link to it.
 export const VIEW_TITLES = {
+  publicproject: 'Public Project',
   dashboard: 'Dashboard',
   leads: 'Prospects',
   conversations: 'Conversations',
@@ -19,6 +20,7 @@ export const VIEW_TITLES = {
   perfreports: 'Reports',
   campaign: 'Campaign',
   mela: 'Avenue Mela',
+  fbleads: 'Facebook Leads',
   bookings: 'Sales Activity',
   team: 'My Team',
   accounts: 'Users',
