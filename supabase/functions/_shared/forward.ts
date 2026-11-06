@@ -10,7 +10,7 @@
 
 import { SUPABASE_URL, SERVICE_KEY, sbSelect, sbPatch, claimEvent, getBotSettings, sendWaMessageMirrored, resolveTarget, logConversationHistory } from "./wa.ts";
 import { DATASET_ID, GRAPH, eventBody, classifyMeta } from "./capi-core.ts";
-import { EYAD_TAG, assignedText, dueQuery, hasDialableNumber, shouldTell, BATCH } from "./forward-core.ts";
+import { assignedText, dueQuery, hasDialableNumber, routeFor, shouldTell, BATCH, DUBAI_TAG } from "./forward-core.ts";
 
 const COMPANY = "c1";
 const H = { apikey: SERVICE_KEY, Authorization: `Bearer ${SERVICE_KEY}`, "Content-Type": "application/json" };
@@ -62,7 +62,7 @@ export async function reportLeadSubmitted(leadId: string, ctwaClid: string): Pro
 const releaseClaim = (id: string) =>
   fetch(`${SUPABASE_URL}/rest/v1/wa_webhook_events?id=eq.${encodeURIComponent(id)}`, { method: "DELETE", headers: H }).catch(() => {});
 
-// Eyad contacts that have gone 5 minutes without a human: forward each to /fctg and tell them.
+// Eyad contacts that have gone 5 minutes without a human: forward each (routeFor: /fctg, or /fdu for a foreign number) and, for /fctg, tell them.
 // Run by wa-followup every couple of minutes; returns how many were forwarded this run.
 //
 // Off unless Admin > Bots > Eyad > Auto forward is on (a test number is always on, like every
@@ -74,6 +74,8 @@ export async function forwardDueContacts(nowMs = Date.now()): Promise<number> {
   let done = 0;
   for (const row of due) {
     if (done >= BATCH) break;
+    const tag = routeFor(row);
+    if (!tag) continue;                                     // Dhaka / Cumilla: their own agents
     const settings = await getBotSettings("eyad", row.phone);
     if (!settings.autoForwardEnabled) continue;
     const { remote } = await resolveTarget("eyad", row.phone);
@@ -81,16 +83,16 @@ export async function forwardDueContacts(nowMs = Date.now()): Promise<number> {
 
     const claimId = `autofwd:${row.id}`;
     if (!(await claimEvent(claimId, "auto_forward"))) continue;
-    const lead = await createLeadByTag(row.phone, EYAD_TAG);
+    const lead = await createLeadByTag(row.phone, tag);
     if (!lead) { await releaseClaim(claimId); continue; }
-    console.log("auto-forward", { prelead: row.id, phone: row.phone, tag: EYAD_TAG, status: lead.status });
+    console.log("auto-forward", { prelead: row.id, phone: row.phone, tag, status: lead.status });
     if (lead.status !== "created" || !lead.lead_id) continue;   // already a lead / no agent free / unknown tag: nothing new was made
 
     const id = String(lead.lead_id);
     await logConversationHistory(id, COMPANY, row.phone, "Eyad Bot (auto-forward)");
     if (row.region) await sbPatch("leads", `id=eq.${encodeURIComponent(id)}`, { region: row.region });
     if (settings.metaCapiEnabled && lead.ctwa_clid) await reportLeadSubmitted(id, lead.ctwa_clid);
-    if (shouldTell(lead, settings.customerNotifyEnabled)) { await tellCustomer(row.phone, lead); await sleep(5500); }
+    if (tag !== DUBAI_TAG && shouldTell(lead, settings.customerNotifyEnabled)) { await tellCustomer(row.phone, lead); await sleep(5500); }
     done++;
   }
   return done;

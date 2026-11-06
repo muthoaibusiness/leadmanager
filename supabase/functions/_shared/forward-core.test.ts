@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { dueQuery, hasDialableNumber, shouldTell, assignedText, EYAD_TAG, AFTER_MIN, WINDOW_MIN, BATCH } from "./forward-core.ts";
+import { dueQuery, hasDialableNumber, shouldTell, assignedText, routeFor, isForeign, isSaudi, tagFor, EYAD_TAG, AFTER_MIN, WINDOW_MIN, SCAN } from "./forward-core.ts";
 
 test("Eyad forwards to the Chattogram pool five minutes in", () => {
   assert.equal(EYAD_TAG, "/fctg");
@@ -16,9 +16,8 @@ test("the contacts due are the Eyad ones first heard from 5 to 30 minutes ago, n
   assert.ok(q.includes("created_at=gte.2026-11-03T11:30:00.000Z"));   // WINDOW_MIN = 30: the back catalogue is never touched
   assert.ok(q.includes("created_at=lte.2026-11-03T11:55:00.000Z"));   // AFTER_MIN = 5
   assert.equal(WINDOW_MIN, 30);
-  assert.ok(q.includes("or=(region.is.null,region.eq.Chattogram)")); // Dhaka and Cumilla keep their own pools
   assert.ok(q.includes("order=created_at.asc"));
-  assert.ok(q.includes(`limit=${BATCH}`));
+  assert.ok(q.includes(`limit=${SCAN}`));
 });
 
 test("a hidden number is left to a human; a real one is forwarded", () => {
@@ -46,4 +45,28 @@ test("the message names the expert and falls back to 'there'", () => {
   assert.ok(t.startsWith("প্রিয় Rahim,"));
   assert.ok(t.includes("Karim Hossain") && t.includes("8801711000000"));
   assert.ok(assignedText("", "A", "1").startsWith("প্রিয় there,"));
+});
+
+test("a foreign number goes to Dubai; a Bangladeshi one to /fctg unless its project is in another region", () => {
+  assert.equal(isForeign("971562755330"), true);
+  assert.equal(isForeign("8801712345678"), false);
+  assert.equal(isForeign(""), false);
+  assert.equal(tagFor("96897876988", "/fctg"), "/fdu");
+  assert.equal(tagFor("8801712345678", "/fctg"), "/fctg");
+  assert.equal(routeFor({ phone: "971562755330", region: "Dhaka" }), "/fdu");          // abroad: Dubai, whatever the project
+  assert.equal(routeFor({ phone: "8801712345678", region: null }), "/fctg");
+  assert.equal(routeFor({ phone: "8801712345678", region: "Chattogram" }), "/fctg");
+  assert.equal(routeFor({ phone: "8801712345678", region: "Dhaka" }), null);           // Dhaka and Cumilla keep their own pools
+  assert.equal(routeFor({ phone: "8801712345678", region: "Cumilla" }), null);
+});
+
+test("a Saudi (966) number goes to /fctg, not Dubai", () => {
+  assert.equal(isSaudi("966546481962"), true);
+  assert.equal(isSaudi("+966 54 648 1962"), true);
+  assert.equal(isSaudi("971562755330"), false);
+  assert.equal(tagFor("966546481962", "/fmkt"), "/fctg");               // whatever the form's own tag is
+  assert.equal(tagFor("971562755330", "/fctg"), "/fdu");               // other foreign numbers still go to Dubai
+  assert.equal(tagFor("8801712345678", "/fmkt"), "/fmkt");
+  assert.equal(routeFor({ phone: "966546481962", region: "Dhaka" }), "/fctg");
+  assert.equal(routeFor({ phone: "971562755330", region: null }), "/fdu");
 });

@@ -9,14 +9,14 @@ const ENV: Record<string, string> = { SUPABASE_URL: "https://sb.test", SUPABASE_
 const { processLeadgen } = await import("./fb-leads.ts");
 
 const CHANGE = { leadgen_id: "444", form_id: "555", page_id: "104718884272119" };
-const ANSWERS = [
-  { name: "full_name", values: ["Rahim Uddin"] }, { name: "phone_number", values: ["01712345678"] },
+const answers = (phone: string) => [
+  { name: "full_name", values: ["Rahim Uddin"] }, { name: "phone_number", values: [phone] }, 
   { name: "email", values: ["r@x.com"] }, { name: "city", values: ["Chattogram"] },
 ];
 const CREATED = { status: "created", lead_id: "L-1", first_name: "Rahim", agent_name: "Karim", agent_phone: "8801711000000", notify: true };
 
 type Call = { method: string; url: string; body: any };
-function world(o: { form?: any; createLead?: any; botNotify?: boolean } = {}) {
+function world(o: { form?: any; createLead?: any; botNotify?: boolean; phone?: string } = {}) {
   const calls: Call[] = [];
   const form = { form_id: "555", label: "Citizen form", active: true, project: "Wecon Citizen Avenue", source: "META_ADS", status: null,
     assign_mode: "forward", forward_tag: "/fctg", notify_customer: true, field_map: {}, ...o.form };
@@ -25,7 +25,7 @@ function world(o: { form?: any; createLead?: any; botNotify?: boolean } = {}) {
     const url = String(input), method = init.method ?? "GET";
     calls.push({ method, url, body: init.body ? JSON.parse(String(init.body)) : undefined });
     if (url.includes("/events")) return json({ events_received: 1 });
-    if (url.startsWith("https://graph.facebook.com/")) return json({ field_data: ANSWERS });
+    if (url.startsWith("https://graph.facebook.com/")) return json({ field_data: answers(o.phone ?? "01712345678") });
     if (url.endsWith("/send-message")) return json({ success: true, data: { msgId: "w1" } });
     const path = url.replace("https://sb.test/rest/v1/", "");
     if (path.startsWith("rpc/wa_upsert_prelead")) return json({ id: "pre-1" });
@@ -154,4 +154,23 @@ test("the Received row records who got it, the customer message and the Meta rep
   const off = world({ form: { notify_customer: false } });
   await processLeadgen({ ...CHANGE, leadgen_id: "446" });
   assert.equal(off.filter((c) => c.method === "PATCH" && c.body?.customer_msg !== undefined).at(-1)!.body.customer_msg, "skipped");
+});
+
+test("a foreign number is forwarded to /fdu, the customer is not messaged, and the Received row says so", async () => {
+  const calls = world({ phone: "+971 56 275 5330", createLead: { ...CREATED, agent_name: "Dubai Agent" } });
+  assert.equal((await processLeadgen(CHANGE)).status, "created");
+  assert.equal(calls.find((c) => c.url.endsWith("rpc/wa_create_lead"))!.body.p_cmd, "/fdu");
+  assert.equal(calls.find((c) => c.url.endsWith("rpc/wa_create_lead"))!.body.p_phone, "971562755330");
+  assert.equal(sent(calls).length, 0);
+  assert.ok(notes(calls).find((a: any) => a.type === "NOTE")!.description.includes("Foreign number: sent to the Dubai pool"));
+  const st = calls.filter((c) => c.method === "PATCH" && c.body?.customer_msg !== undefined).at(-1)!.body;
+  assert.equal(st.forward_tag, "/fdu");
+  assert.equal(st.customer_msg, "skipped");
+});
+
+test("a Saudi number goes to /fctg, whatever the form's tag, and the customer is told", async () => {
+  const calls = world({ phone: "+966 54 648 1962", form: { forward_tag: "/fmkt" } });
+  assert.equal((await processLeadgen(CHANGE)).status, "created");
+  assert.equal(calls.find((c) => c.url.endsWith("rpc/wa_create_lead"))!.body.p_cmd, "/fctg");
+  assert.equal(sent(calls).length, 1);
 });

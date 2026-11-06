@@ -71,8 +71,10 @@ const driveFile = (id: string) => `https://drive.usercontent.google.com/download
 export const PROJECT_FLOOR_PLAN_DOC: Record<string, string> = {
   "Wecon Citizen Avenue": driveFile("1NVarSO7peq15fbPS_2pMBKcc6bVe9sfS"),
 };
-export const PROJECT_VIDEO_FALLBACK: Record<string, string> = {
-  "Wecon Citizen Avenue": "https://www.youtube.com/watch?v=Dc5OR3sEcaU",
+// A project's video link that wins over wa_projects.video_url. Citizen Avenue's old YouTube link died (4 Nov 2026), so a
+// stale value in the table cannot be sent; this one is the working Shorts link.
+export const PROJECT_VIDEO: Record<string, string> = {
+  "Wecon Citizen Avenue": "https://youtube.com/shorts/OU52rrRMNlY",
 };
 
 // The floor-plan PDF and the video link, in the order they are sent. Empty when
@@ -82,7 +84,7 @@ export function floorPlanPlan(p: DocsProject | null | undefined): DocItem[] {
   const items: DocItem[] = [];
   const fp = PROJECT_FLOOR_PLAN_DOC[p.name];
   if (fp) items.push({ type: "document", url: fp, fileName: `${p.name} Floor Plan.pdf`, caption: `${p.name} — Floor Plan` });
-  const video = p.video_url || PROJECT_VIDEO_FALLBACK[p.name];
+  const video = PROJECT_VIDEO[p.name] || p.video_url;
   if (video) items.push({ type: "text", url: video, caption: `Project video — ${p.name}\n${video}` });
   return items;
 }

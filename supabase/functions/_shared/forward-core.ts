@@ -8,24 +8,41 @@
 // back catalogue of preleads.
 export const EYAD_TAG = "/fctg";
 export const EYAD_REGION = "Chattogram";
+// A number from outside Bangladesh goes to the Dubai pool (/fdu) whichever way it arrives: a WhatsApp contact
+// of the Eyad number, or a Facebook form. Dubai's own forward never messages the customer, so neither does this one.
+// The exception is Saudi Arabia, below.
+export const DUBAI_TAG = "/fdu";
+export const isForeign = (phone: string) => { const d = String(phone || "").replace(/\D/g, ""); return d.length > 0 && !d.startsWith("880"); };
+// Saudi Arabia (966) is the exception: those numbers go to the Chattogram pool (/fctg) like a Bangladeshi lead, and the
+// customer is told, because most of them are Bangladeshis working there.
+export const isSaudi = (phone: string) => String(phone || "").replace(/\D/g, "").startsWith("966");
+export const tagFor = (phone: string, wanted: string) => (isSaudi(phone) ? EYAD_TAG : isForeign(phone) ? DUBAI_TAG : wanted);
+
 export const AFTER_MIN = 5;
 export const WINDOW_MIN = 30;
-export const BATCH = 10;   // Wasender takes one message per 5 s; a run must fit in the function's time
+export const BATCH = 10;    // Wasender takes one message per 5 s; a run must fit in the function's time
+export const SCAN = 50;     // due contacts looked at per run; some are for other pools and are passed over
 
 // What a customer is told when an agent is assigned (Bangla; the manual /f tags use this text too).
 export const assignedText = (firstName: string, agentName: string, agentPhone: string) =>
   `প্রিয় ${firstName || "there"},\n\nআপনার জন্য একজন ডেডিকেটেড এক্সপার্ট নির্ধারণ করা হয়েছে।\n\n👨‍💼 ${agentName}\n📞 ${agentPhone}\n\nতিনি শীঘ্রই আপনার সাথে যোগাযোগ করে সব কিছু বুঝিয়ে দেবেন।`;
 
-// Eyad contacts due now, oldest first: tagged Eyad, never forwarded, no human has
-// taken over, first heard from between WINDOW_MIN and AFTER_MIN minutes ago, and in
-// Chattogram or not yet placed. A Dhaka or Cumilla contact stays with the agents who
-// own those pools.
+// Eyad contacts due now, oldest first: tagged Eyad, never forwarded, no human has taken over, first
+// heard from between WINDOW_MIN and AFTER_MIN minutes ago. Which pool each goes to is routeFor().
 export function dueQuery(nowMs: number): string {
   const at = (minAgo: number) => encodeURIComponent(new Date(nowMs - minAgo * 60_000).toISOString());
   return "preleads?WA=eq.Eyad&forwarded=not.is.true&takeover=not.is.true"
     + `&created_at=gte.${at(WINDOW_MIN)}&created_at=lte.${at(AFTER_MIN)}`
-    + `&or=(region.is.null,region.eq.${EYAD_REGION})`
-    + `&select=id,phone,region&order=created_at.asc&limit=${BATCH}`;
+    + `&select=id,phone,region&order=created_at.asc&limit=${SCAN}`;
+}
+
+// The pool for a due contact, or null to leave it to a person: a foreign number goes to Dubai; a
+// Bangladeshi one to /fctg when its project is in Chattogram or not placed yet. Dhaka and Cumilla
+// contacts stay with the agents who own those pools.
+export function routeFor(row: { phone: string; region?: string | null }): string | null {
+  if (isSaudi(row.phone)) return EYAD_TAG;
+  if (isForeign(row.phone)) return DUBAI_TAG;
+  return !row.region || row.region === EYAD_REGION ? EYAD_TAG : null;
 }
 
 // A hidden-number ("@lid") thread has no dialable phone: the digits are only an id,

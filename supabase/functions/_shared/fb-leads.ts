@@ -12,7 +12,7 @@ import { samePhone } from "./phone.ts";
 import { GRAPH } from "./capi-core.ts";
 import { mapAnswers, pickAssignee, summarizeAnswers, fieldMapOf, type Change, type FieldData } from "./fb-leads-core.ts";
 import { rpcJson, createLeadByTag, tellCustomer } from "./forward.ts";
-import { shouldTell } from "./forward-core.ts";
+import { shouldTell, tagFor, DUBAI_TAG } from "./forward-core.ts";
 import { reportFormLead } from "./fb-capi.ts";
 
 type Row = Record<string, any>;
@@ -101,7 +101,9 @@ export async function processLeadgen(c: Change, opts: { replay?: boolean } = {})
   // nothing (no agent free, an unknown tag) the lead is still made below, unassigned, with the
   // reason on it: a Facebook lead is never dropped.
   const forward = async (): Promise<Outcome | string> => {
-    const tag = String(form.forward_tag || "/fctg").trim().toLowerCase();
+    const wanted = String(form.forward_tag || "/fctg").trim().toLowerCase();
+    const tag = tagFor(m.phone, wanted);   // a foreign number goes to Dubai, whatever the form says
+    const toDubai = tag === DUBAI_TAG && wanted !== DUBAI_TAG;
     // wa_create_lead builds the lead from the contact's prelead (name, number), so there must be one.
     const pre = await rpcJson("wa_upsert_prelead", { p_phone: m.phone, p_name: m.name, p_message: `Facebook form: ${label}`, p_ad_text: "", p_ctwa_clid: "", p_location: m.city });
     if (!pre?.id) return "the contact could not be prepared for forwarding";
@@ -126,8 +128,8 @@ export async function processLeadgen(c: Change, opts: { replay?: boolean } = {})
     await sbPatch("leads", `id=eq.${encodeURIComponent(leadId)}`, patch);
     // An agent owns this customer now: the bot's "want a dedicated agent?" steps stay quiet.
     await sbPatch("preleads", `id=eq.${encodeURIComponent(String(pre.id))}`, { flow_stage: "agent_assigned", stage_at: now });
-    let told = "", msg = "skipped";
-    if (form.notify_customer !== false) {
+    let told = toDubai ? " Foreign number: sent to the Dubai pool, the customer is not messaged." : "", msg = "skipped";
+    if (form.notify_customer !== false && !toDubai) {
       const bot = await getBotSettings("eyad", m.phone);
       if (!shouldTell(res, bot.customerNotifyEnabled)) { told = " The customer was not messaged (that notice is off, or this agent's row says not to)."; msg = "off"; }
       else if (await tellCustomer(m.phone, res)) { told = " The customer was messaged on WhatsApp."; msg = "sent"; }
