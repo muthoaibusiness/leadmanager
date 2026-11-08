@@ -1,0 +1,56 @@
+/* Avenue Mela dashboard (MelaView). Solid colours only; light and dark follow the
+   app theme. Phone layout first. */
+@import url('https://fonts.googleapis.com/css2?family=Anek+Bangla:wght@400;600;700&family=Plus+Jakarta+Sans:wght@400;600;700&display=swap');
+
+.mela {
+  --m-accent: #7c3aed; --m-on: #ffffff; --m-green: #16a34a; --m-red: #dc2626;
+  --m-bg: var(--surf); --m-card: var(--surf2); --m-line: var(--bd); --m-t1: var(--t1); --m-t2: var(--t2);
+  display: flex; flex-direction: column; gap: 14px; padding-bottom: 24px;
+  font-family: 'Plus Jakarta Sans', 'Anek Bangla', var(--font-display), sans-serif; letter-spacing: 0;
+  color: var(--m-t1);
+}
+.mela :lang(bn), .mela-title, .mela-live { font-family: 'Anek Bangla', 'Plus Jakarta Sans', sans-serif; letter-spacing: 0; }
+.mela-pdf { --m-bg: #ffffff; --m-card: #ffffff; --m-line: #e5e7eb; --m-t1: #111827; --m-t2: #6b7280; padding: 16px; background: #ffffff; }
+.mela-pdf .mela-card { box-shadow: none; border: 1px solid #e5e7eb; }
+
+.mela-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.mela-title { margin: 0; font-size: clamp(22px, 5vw, 28px); font-weight: 700; line-height: 1.2; }
+.mela-live { display: inline-flex; align-items: center; gap: 6px; margin-top: 4px; font-size: 12.5px; font-weight: 600; color: var(--m-green); }
+.mela-live i { width: 8px; height: 8px; border-radius: 50%; background: var(--m-green); }
+.mela-btn { display: inline-flex; align-items: center; gap: 6px; border: 0; background: var(--m-accent); color: var(--m-on); font: 600 13px/1 inherit; padding: 10px 14px; border-radius: 12px; cursor: pointer; }
+.mela-btn:disabled { opacity: .6; cursor: default; }
+.mela-btn:focus-visible, .mela-sorts button:focus-visible { outline: 2px solid var(--m-accent); outline-offset: 2px; }
+
+.mela-err { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-radius: 12px; background: var(--red-l); color: var(--red); font-size: 13px; }
+.mela-err button { margin-left: auto; border: 1px solid currentColor; background: none; color: inherit; border-radius: 8px; padding: 3px 10px; cursor: pointer; }
+.mela-empty { padding: 22px 12px; text-align: center; color: var(--m-t2); font-size: 13px; }
+
+.mela-card { background: var(--m-card); border: 1px solid var(--m-line); border-radius: 18px; padding: 16px; box-shadow: 0 2px 10px rgba(0, 0, 0, .06); min-width: 0; }
+.mela-lbl { font-size: 12.5px; color: var(--m-t2); font-weight: 600; }
+.mela-big { margin-top: 6px; font-size: clamp(26px, 7vw, 34px); font-weight: 700; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.mela-sub { margin-top: 4px; font-size: 12px; color: var(--m-t2); }
+.mela-hl { background: var(--m-accent); border-color: var(--m-accent); color: var(--m-on); }
+.mela-hl .mela-lbl, .mela-hl .mela-sub { color: #ede9fe; }
+
+.mela-row4 { display: grid; gap: 12px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+@media (min-width: 900px) { .mela-row4 { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+.mela-row2 { display: grid; gap: 12px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.mela-pills { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; margin-top: 12px; font-size: 12.5px; color: var(--m-t2); }
+.mela-pills span { display: inline-flex; align-items: center; gap: 6px; }
+.mela-pill { display: inline-grid; place-items: center; min-width: 30px; padding: 3px 10px; border-radius: 999px; font-size: 13px; font-weight: 700; }
+.mela-pill.out { border: 1.5px solid var(--m-accent); color: var(--m-accent); }
+.mela-pill.solid { background: var(--m-accent); color: var(--m-on); border: 1.5px solid var(--m-accent); }
+
+.mela-sorts { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+.mela-sorts button { border: 1px solid var(--m-line); background: transparent; color: var(--m-t2); font: 600 12.5px/1 inherit; padding: 8px 12px; border-radius: 999px; cursor: pointer; }
+.mela-sorts button.on { background: var(--m-accent); border-color: var(--m-accent); color: var(--m-on); }
+.mela-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.mela-list li { display: grid; grid-template-columns: 32px minmax(0, 1fr) auto auto; align-items: center; gap: 12px; padding: 12px 0; border-top: 1px solid var(--m-line); }
+.mela-list li:first-child { border-top: 0; }
+.mela-rank { display: grid; place-items: center; width: 28px; height: 28px; border-radius: 50%; font-size: 13px; font-weight: 700; color: var(--m-t2); }
+.mela-rank.top { background: var(--m-accent); color: var(--m-on); }
+.mela-name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mela-time { font-size: 12.5px; color: var(--m-t2); white-space: nowrap; }
+.mela-time.fast { color: var(--m-green); font-weight: 700; }
+.mela-time.slow { color: var(--m-red); font-weight: 700; }
+.mela-num { min-width: 52px; text-align: right; font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; }

@@ -24,6 +24,10 @@ export const NAV_SCOPES = {
   perfreports: ['MANAGEMENT', 'TEAM_LEAD'],
   // The running ad campaign (Citizen Avenue) across both WhatsApp numbers.
   campaign: ['MANAGEMENT'],
+  // The Citizen Avenue sales-festival (Mela) campaign.
+  mela: ['MANAGEMENT'],
+  // Facebook Lead Ads forms: which form goes to which project and agent.
+  fbleads: ['MANAGEMENT'],
   requests: ['MANAGEMENT'],
   inventory: ['MANAGEMENT'],
   team: ['TEAM_LEAD'],
@@ -49,7 +53,7 @@ export const NAV_SCOPES = {
 // people created (without it, only their own) and add corrections to finance
 // history. Checked again server-side by the finance Edge Function, which reads
 // the same allowed_features column.
-export const FEATURE_KEYS = ['dashboard', 'leads', 'add_customer', 'conversations', 'calendar', 'meeting', 'pipeline', 'properties', 'reports', 'agentperf', 'perfreports', 'campaign', 'requests', 'inventory', 'finance_approve', 'team', 'accounts', 'relay', 'aitrainer', 'metacapi', 'publicproject', 'self_forward'];
+export const FEATURE_KEYS = ['dashboard', 'leads', 'add_customer', 'conversations', 'calendar', 'meeting', 'pipeline', 'properties', 'reports', 'agentperf', 'perfreports', 'campaign', 'mela', 'fbleads', 'requests', 'inventory', 'finance_approve', 'team', 'accounts', 'relay', 'aitrainer', 'metacapi', 'publicproject', 'self_forward'];
 
 // Default features for a standard role (from NAV_SCOPES). Executive resolves to none.
 export const defaultFeatures = (role) => FEATURE_KEYS.filter(k => (NAV_SCOPES[k] || []).includes(role));

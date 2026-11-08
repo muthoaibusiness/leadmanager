@@ -45,3 +45,12 @@ test("the verified actor, not the body, names the sender", async () => {
   const r = await authorizeWaSend(req("Bearer tok-chat"), { action: "send", userId: "mgr" }, verify);
   assert.equal(r.ok && r.actor.id, "chat");
 });
+
+test("get-avatar needs a verified session like send; anonymous is refused, other actions stay unknown", async () => {
+  const ok = await authorizeWaSend(req("Bearer tok-agent"), { action: "get-avatar" }, verify);
+  assert.equal(ok.ok, true);
+  const anon = await authorizeWaSend(req(), { action: "get-avatar" }, verify);
+  assert.deepEqual([anon.ok, (anon as any).status], [false, 401]);
+  const other = await authorizeWaSend(req("Bearer tok-mgr"), { action: "delete-everything" }, verify);
+  assert.deepEqual([other.ok, (other as any).status], [false, 400]);
+});

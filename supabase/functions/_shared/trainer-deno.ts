@@ -165,7 +165,7 @@ export function shouldFallbackToFaq(r: LiveResult): boolean {
 // live drafts, and the test-number allow-list is skipped in favour of the
 // AI-replies switch.
 export async function runTrainerTestTurn(a: {
-  bot: Bot; convId: string; phone: string; to: string; text: string; ad: { isAd: boolean; adText?: string }; allowMedia: boolean; production?: boolean; replyToMessageId?: string;
+  bot: Bot; convId: string; phone: string; to: string; text: string; ad: { isAd: boolean; adText?: string; project?: string }; allowMedia: boolean; production?: boolean; replyToMessageId?: string;
 }): Promise<LiveResult> {
   const { callModel, inventory } = _internals.portsFor({ db, llm, env });
   // The same approved-document search as the Playground, so a test number is
@@ -188,7 +188,7 @@ export async function runTrainerTestTurn(a: {
     callModel, inventory, searchDocs, probeDocument: probe, probeImage: probe,
     select: db.select, insert: db.insert, patch: db.patch,
     upsert: (table, row) => sbUpsert(table, [row], table === "ai_conversation_state" ? "conversation_id" : "id"),
-    send: (to, msg) => sendWaMessageMirroredId(a.bot, to, a.convId, a.phone, msg, { senderName: "AI Agent", storeWaId: true, replyToMessageId: a.replyToMessageId }),
+    send: (to, msg) => sendWaMessageMirroredId(a.bot, to, a.convId, a.phone, msg, { senderName: "AI Trainer", storeWaId: true, replyToMessageId: a.replyToMessageId }),
     sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
   });
 }

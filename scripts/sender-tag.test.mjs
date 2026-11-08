@@ -1,7 +1,7 @@
 // Regression guards for Conversations sender-tag naming (2026-11-02):
 //   - the feature toggle stays "AI Trainer on/off"
 //   - message-level sender tags display as "AI AGENT"
-//   - the backend still sends as "AI Agent"
+//   - the trainer backend sends as "AI Trainer" (the tag above is what Conversations shows)
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -32,8 +32,10 @@ test("message bubble renders sender tags through senderDisplayTag", () => {
   assert.ok(b.includes("senderDisplayTag(msg.senderName)"), "bubble must normalize sender tag");
 });
 
-test("backend still sends as AI Agent, never AI Trainer", () => {
+test("the trainer backend sends as AI Trainer (the bubble shows it as AI AGENT)", () => {
   const d = read("supabase/functions/_shared/trainer-deno.ts");
-  assert.ok(d.includes('senderName: "AI Agent"'), "trainer-deno sends as AI Agent");
-  assert.ok(!d.includes('senderName: "AI Trainer"'), "no AI Trainer sender remains");
+  assert.ok(d.includes('senderName: "AI Trainer"'), "trainer-deno sends as AI Trainer");
+});test('the trainer backend sends as AI Trainer (the bubble shows it as AI AGENT)', () => {
+  const d = read('supabase/functions/_shared/trainer-deno.ts');
+  assert.ok(d.includes('senderName: "AI Trainer"'), 'trainer-deno sends as AI Trainer');
 });

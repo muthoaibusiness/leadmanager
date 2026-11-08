@@ -63,6 +63,8 @@ const PAGES = {
   AgentPerformanceView: () => import('./components/views/AgentPerformanceView.jsx'),
   PerfReportsView: () => import('./components/views/PerfReportsView.jsx'),
   CampaignView: () => import('./components/views/CampaignView.jsx'),
+  MelaView: () => import('./components/views/MelaView.jsx'),
+  FbLeadsView: () => import('./components/views/FbLeadsView.jsx'),
   InventoryView: () => import('./components/views/InventoryView.jsx'),
   ConversationsView: () => import('./components/views/ConversationsView.jsx'),
   PublicProjectAdmin: () => import('./components/project/PublicProjectAdmin.jsx'),
@@ -98,7 +100,7 @@ const OVERLAYS = {
 
 const lazyAll = (loaders) => Object.fromEntries(Object.entries(loaders).map(([k, f]) => [k, lazyChunk(f)]));
 
-const { AgentDash, TeamLeadDash, ManagementDash, MasterDash, LeadsView, CalendarView, TeamView, AccountsView, AiTrainerView, MetaCapiView, RequestsView, ProfileView, PropertiesView, AvailableUnitsView, BookingsView, PipelineView, ClientsView, ReportsView, AgentPerformanceView, PerfReportsView, CampaignView, InventoryView, ConversationsView, PublicProjectAdmin } = lazyAll(PAGES);
+const { AgentDash, TeamLeadDash, ManagementDash, MasterDash, LeadsView, CalendarView, TeamView, AccountsView, AiTrainerView, MetaCapiView, RequestsView, ProfileView, PropertiesView, AvailableUnitsView, BookingsView, PipelineView, ClientsView, ReportsView, AgentPerformanceView, PerfReportsView, CampaignView, MelaView, FbLeadsView, InventoryView, ConversationsView, PublicProjectAdmin } = lazyAll(PAGES);
 const OVERLAY_COMPONENTS = Object.entries(lazyAll(OVERLAYS));
 const LandingPage = lazyChunk(() => import('./components/LandingPage.jsx'));
 const PublicProjectView = lazyChunk(() => import('./components/project/PublicProjectView.jsx'));
@@ -279,6 +281,8 @@ function PageHero() {
     agentperf: { sub: 'Per-role scorecards & funnels' },
     perfreports: { sub: '' },
     campaign: { sub: 'Citizen Avenue · Eyad + Dubai' },
+    mela: { sub: 'Citizen Avenue sales festival' },
+    fbleads: { sub: 'Lead Ads forms → CRM' },
     bookings: { sub: 'Payments, instalments & dues' },
     team: { sub: `${teamAgents} agents` },
     accounts: { sub: 'Team list · create & manage accounts' },
@@ -379,6 +383,8 @@ function PageBody() {
   if (view === 'agentperf') return <AgentPerformanceView />;
   if (view === 'perfreports') return <PerfReportsView />;
   if (view === 'campaign') return <CampaignView />;
+  if (view === 'mela') return <MelaView />;
+  if (view === 'fbleads') return <FbLeadsView />;
   if (view === 'team') return <TeamView />;
   if (view === 'accounts') return <AccountsView />;
   if (view === 'aitrainer') return <AiTrainerView />;

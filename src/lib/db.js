@@ -1753,6 +1753,13 @@ export function changeStatus(leadId, status, user) {
   updLead(leadId, { status, noAnswerCount: 0, noAnswerLockUntil: null });
   addAct(leadId, { type: 'STATUS_CHANGE', description: 'Status → ' + (STATUS_LABELS[status] || status), userId: user.id, userName: user.name, durationSeconds: 0 });
   if (status === 'NOT_INTERESTED') autoTransferNotInterested(leadId, user);
+  // Citizen Avenue leads get the Mela invitation the moment they are Contacted. The
+  // chat module imports this one, so it is loaded on demand.
+  // Any lead that turns Interested is reported to Meta as QualifiedLead.
+  if (status === 'INTERESTED') import('./wa.js').then(m => m.waCapiQualified(leadId)).catch(() => {});
+  if (status === 'CONTACTED' && /citizen/i.test(getLead(leadId)?.propertyInterest || '')) {
+    import('./wa.js').then(m => m.waMelaInvite(leadId)).catch(() => {});
+  }
 }
 
 // A lead that turns Not Interested moves to the company's Not Interested handler

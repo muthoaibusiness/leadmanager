@@ -23,8 +23,9 @@ import {
 
 export interface CitizenCtx {
   bot: "dubai" | "eyad";
-  // True when a consultant has really been assigned (Dubai auto-forwards; Eyad
-  // does not), which decides whether the "already assigned" price line may be said.
+  // True when a consultant has really been assigned (Dubai forwards at once; Eyad
+  // five minutes in, or when an agent types a /f tag), which decides whether the
+  // "already assigned" price line may be said.
   assigned: boolean;
   pid: string; // already URL-encoded prelead id
   convId: string;
@@ -211,8 +212,19 @@ export async function runCitizenFlow(c: CitizenCtx): Promise<boolean> {
   if (cfg.location && !c.takeover && text && isLocationAsk(text)) {
     const loc = locationText(c.project);
     if (loc) {
-      const said = await select(`wa_messages?conversation_id=eq.${encodeURIComponent(c.convId)}&direction=eq.OUT&body=eq.${encodeURIComponent(loc)}&select=id&limit=1`);
-      if (!said.length) await send({ type: "text", text: loc });
+      const convQ = encodeURIComponent(c.convId);
+      const said = await select(`wa_messages?conversation_id=eq.${convQ}&direction=eq.OUT&body=eq.${encodeURIComponent(loc)}&select=id&limit=1`);
+      let sentSomething = false;
+      if (!said.length) { await send({ type: "text", text: loc }); sentSomething = true; }
+      // Then the map picture, when the project has one. Each goes once per contact.
+      const mapUrl = String(c.project?.map_image_url || "");
+      if (mapUrl.startsWith("https://")) {
+        const shown = await select(`wa_messages?conversation_id=eq.${convQ}&direction=eq.OUT&media_url=eq.${encodeURIComponent(mapUrl)}&select=id&limit=1`);
+        if (!shown.length) {
+          if (sentSomething) await wait(5500);
+          await send({ type: "image", mediaUrl: mapUrl, text: `${c.project!.name} — location map` });
+        }
+      }
       return true;
     }
   }

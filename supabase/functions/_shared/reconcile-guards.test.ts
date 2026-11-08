@@ -1,10 +1,9 @@
-// Static regression guards for the Conversations AI Agent reconciliation
-// (2026-11-02). Each invariant mirrors a requested change or a live-only
-// behavior that must survive deployment:
+// Static regression guards for the bots' AI behavior. Each invariant is a live behavior that must
+// survive a deploy:
 //   - persistent ad attribution (storedAdContext / adFor) in both bots
-//   - all-customer reply eligibility (no adLead-only gate)
-//   - reply eligibility independent of trainer_test_mode
-//   - outgoing sender is "AI Agent", never "AI Trainer"
+//   - AI replies go to ad customers only (needsAiReply(text, adLead)); a trainer_test_mode chat is always eligible
+//   - the trainer's outgoing sender stays "AI Trainer" (Conversations shows both as "AI AGENT": src/lib/senderTag.js)
+// Decision 2026-11-05 (merge of asad-dev into dev): the bots keep dev's behavior, which is what production runs.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -17,10 +16,8 @@ const dubai = read("../wa-bot-dubai/index.ts");
 const eyad = read("../wa-bot-eyad/index.ts");
 const trainerDeno = read("trainer-deno.ts");
 
-test("outgoing sender is AI Agent, never AI Trainer", () => {
-  assert.ok(trainerDeno.includes('senderName: "AI Agent"'), "trainer-deno.ts must send as AI Agent");
-  assert.ok(!trainerDeno.includes('senderName: "AI Trainer"'), "no AI Trainer sender remains");
-  assert.ok(!dubai.includes('senderName: "AI Trainer"') && !eyad.includes('senderName: "AI Trainer"'), "bots must not send as AI Trainer");
+test("the trainer sends as AI Trainer", () => {
+  assert.ok(trainerDeno.includes('senderName: "AI Trainer"'), "trainer-deno.ts must send as AI Trainer");
 });
 
 test("persistent ad attribution restored in both bots", () => {
@@ -31,13 +28,12 @@ test("persistent ad attribution restored in both bots", () => {
   assert.ok(dubai.includes("adLead && projectName"), "dubai resolves project from stored ad context");
 });
 
-test("reply eligibility is all-customer, no adLead-only gate", () => {
-  assert.ok(!dubai.includes("needsAiReply(evt.text, adLead)"), "dubai no two-arg gate");
-  assert.ok(!dubai.includes("needsAiReply(p.text, "), "dubai no two-arg gate variant");
-  assert.ok(!eyad.includes("needsAiReply(p.text, p.isAd || !!p.ctwaClid)"), "eyad no two-arg gate");
+test("reply eligibility is ad customers only, via needsAiReply(text, adLead)", () => {
+  assert.ok(dubai.includes("needsAiReply(evt.text, adLead)"), "dubai gates on adLead");
+  assert.ok(eyad.includes("needsAiReply(p.text, adLead)"), "eyad gates on adLead");
 });
 
-test("production eligibility does not depend on trainer_test_mode", () => {
-  assert.ok(!dubai.includes("|| settings.trainerTest"), "dubai eligibility doesn't use trainerTest");
-  assert.ok(!eyad.includes("|| settings.trainerTest"), "eyad eligibility doesn't use trainerTest");
+test("a trainer_test_mode chat is always eligible", () => {
+  assert.ok(dubai.includes("|| settings.trainerTest"), "dubai eligibility includes trainerTest");
+  assert.ok(eyad.includes("|| settings.trainerTest"), "eyad eligibility includes trainerTest");
 });

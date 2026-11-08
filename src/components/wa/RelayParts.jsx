@@ -27,7 +27,7 @@ const CHECKLIST = {
     ['welcome_enabled', 'Intro / greeting message', 'First-contact welcome is not sent.'],
     ['faq_agent_enabled', 'AI reply (FAQ agent)', 'No automatic answers to customer questions.'],
     ['ai_media_enabled', 'AI sends photo / floor plan / brochure', 'AI answers in text only.'],
-    ['auto_forward_enabled', 'Auto forward', 'Leads are never created automatically after the message count below.'],
+    ['auto_forward_enabled', 'Auto forward (5 min after the first message, /fctg)', 'Contacts are not forwarded automatically; agents use the /f… commands. Dhaka and Cumilla contacts, and hidden numbers, are never forwarded automatically.'],
     ['manual_forward_enabled', 'Manual forward (/fdh /fctg /fcml /fdu)', 'Agent forward commands are ignored.'],
     ['docs_command_enabled', 'Document sending (/send… commands)', 'Agent /send commands send nothing.'],
     ['takeover_enabled', 'Takeover (/t)', 'The handover message is not sent.'],
@@ -39,7 +39,7 @@ const CHECKLIST = {
     ['welcome_enabled', 'Intro / greeting message', 'First-contact welcome is not sent.'],
     ['faq_agent_enabled', 'AI reply (FAQ agent)', 'No automatic answers to customer questions.'],
     ['ai_media_enabled', 'AI sends photo / floor plan / brochure', 'AI answers in text only.'],
-    ['auto_forward_enabled', 'Auto forward (create a lead for every new contact)', 'Contacts are saved as pre-leads only, no lead is created.'],
+    ['auto_forward_enabled', 'Auto forward (at once, /fdu; the customer is not messaged)', 'Contacts are saved as pre-leads only, no lead is created.'],
     ['manual_forward_enabled', 'Manual forward (/f… commands)', 'Agent forward commands are ignored.'],
     ['docs_command_enabled', 'Document sending (drip)', 'The documents drip is not started.'],
     ['takeover_enabled', 'Takeover (/t)', 'The handover message is not sent.'],
@@ -99,7 +99,7 @@ If you have any new questions or need further support, feel free to let us know 
 // before the migration has been run.
 const BOT_DEFAULTS = {
   welcome_enabled: true, welcome_message: '', faq_agent_enabled: true, ai_media_enabled: true,
-  auto_forward_enabled: false, auto_forward_after_messages: 3, manual_forward_enabled: true,
+  auto_forward_enabled: false, manual_forward_enabled: true,
   docs_command_enabled: true, takeover_enabled: true, notes_enabled: true,
   customer_notify_enabled: true, meta_capi_enabled: true, test_numbers: [],
 };
@@ -143,8 +143,7 @@ export function BotPanel({ bot, name, blurb, showToast }) {
   const [row, setRow] = useState(null); // null = still loading
   const [busy, setBusy] = useState(null);
   const [text, setText] = useState('');
-  const [n, setN] = useState(3);
-  const [dirty, setDirty] = useState({ text: false, n: false });
+  const [dirty, setDirty] = useState({ text: false });
 
   useEffect(() => {
     let live = true;
@@ -153,7 +152,6 @@ export function BotPanel({ bot, name, blurb, showToast }) {
       const r = { ...BOT_DEFAULTS, ...(bot === 'dubai' ? { auto_forward_enabled: true } : {}), ...(rows?.[0] || {}) };
       setRow(r);
       setText(r.welcome_message || '');
-      setN(r.auto_forward_after_messages ?? 3);
     });
     return () => { live = false; };
   }, [bot]);
@@ -180,14 +178,6 @@ export function BotPanel({ bot, name, blurb, showToast }) {
   const saveText = async () => {
     setBusy('welcome_message');
     if (await save({ welcome_message: text.trim() || null })) setDirty(d => ({ ...d, text: false }));
-    setBusy(null);
-  };
-
-  const saveN = async () => {
-    const value = Math.max(1, Number(n) || 3);
-    setN(value);
-    setBusy('auto_forward_after_messages');
-    if (await save({ auto_forward_after_messages: value })) setDirty(d => ({ ...d, n: false }));
     setBusy(null);
   };
 
@@ -261,20 +251,6 @@ export function BotPanel({ bot, name, blurb, showToast }) {
             </div>
           )}
 
-          {col === 'auto_forward_enabled' && bot === 'eyad' && row.auto_forward_enabled && (
-            <div className="ea-row relay-row">
-              <label style={{ margin: 0, fontWeight: 600 }}>Forward after this many messages</label>
-              <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                <input
-                  type="number" min={1} className="fi" style={{ width: '64px' }}
-                  value={n} onChange={e => { setN(e.target.value); setDirty(d => ({ ...d, n: true })); }}
-                />
-                <button type="button" className="btn btn-g" disabled={!dirty.n || busy === 'auto_forward_after_messages'} onClick={saveN}>
-                  {busy === 'auto_forward_after_messages' ? 'Saving…' : 'Save'}
-                </button>
-              </div>
-            </div>
-          )}
         </div>
       ))}
 

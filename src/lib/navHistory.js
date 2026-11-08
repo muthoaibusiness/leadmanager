@@ -19,6 +19,8 @@ export const VIEW_TITLES = {
   agentperf: 'Performance',
   perfreports: 'Reports',
   campaign: 'Campaign',
+  mela: 'Avenue Mela',
+  fbleads: 'Facebook Leads',
   bookings: 'Sales Activity',
   team: 'My Team',
   accounts: 'Users',
