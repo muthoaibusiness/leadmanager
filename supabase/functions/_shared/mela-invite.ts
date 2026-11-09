@@ -11,6 +11,9 @@ import { SUPABASE_URL, SERVICE_KEY, sbSelect, sbPatch, sendWaMessageMirroredId }
 import { normPhone } from "./phone.ts";
 import { MELA_CARD_URL, MELA_INVITE_ID, MELA_SENT_PREFIX, isCitizenLead, pickContact, melaInviteText } from "./mela.ts";
 
+// The Citizen Avenue Mela is finished (Nov 2026): no invitation card is sent. Set to false to switch it back on.
+const MELA_OVER = true;
+
 export type InviteResult = { status: "sent" | "skipped" | "already" | "failed"; reason?: string };
 
 const H = { apikey: SERVICE_KEY, Authorization: `Bearer ${SERVICE_KEY}`, "Content-Type": "application/json" };
@@ -34,6 +37,7 @@ const release = (leadId: string) =>
   fetch(`${SUPABASE_URL}/rest/v1/activities?id=eq.${encodeURIComponent(MELA_INVITE_ID(leadId))}`, { method: "DELETE", headers: H }).catch(() => {});
 
 export async function inviteLead(leadId: string): Promise<InviteResult> {
+  if (MELA_OVER) return { status: "skipped", reason: "the Mela is over" };
   const lead = (await sbSelect(`leads?id=eq.${encodeURIComponent(leadId)}&select=id,name,phone,status,property_interest,assigned_to,team_id,company_id`))[0];
   if (!lead) return { status: "skipped", reason: "no such lead" };
   if (!isCitizenLead(lead)) return { status: "skipped", reason: "not a Citizen Avenue lead" };
