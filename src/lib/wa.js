@@ -391,17 +391,6 @@ export async function waFetchAvatar(conversation) {
   }
 }
 
-// The Mela invitation for a lead that just became Contacted. The relay checks the
-// lead is a Citizen Avenue one and invites each lead once, so calling it is safe.
-export async function waMelaInvite(leadId) {
-  try {
-    const r = await authedFetch(`${SB_URL}/functions/v1/mela-invite`, { method: 'POST', headers: relayHeaders(), body: JSON.stringify({ leadId }) });
-    return r.ok ? await r.json() : null;
-  } catch {
-    return null;
-  }
-}
-
 // A lead that just became Interested is reported to Meta as QualifiedLead. The relay
 // checks everything (click id, window, the bot's Meta switch) and reports each lead once.
 export async function waCapiQualified(leadId) {

@@ -11,8 +11,6 @@ export const NAV_META = {
   reports: { ico: 'bar_chart', lbl: 'Reports' },
   agentperf: { ico: 'leaderboard', lbl: 'Performance' },
   perfreports: { ico: 'description', lbl: 'Reports' },
-  campaign: { ico: 'campaign', lbl: 'Campaign' },
-  mela: { ico: 'celebration', lbl: 'Avenue Mela' },
   fbleads: { ico: 'dynamic_form', lbl: 'Facebook Leads' },
   requests: { ico: 'inbox', lbl: 'Requests' },
   properties: { ico: 'folder', lbl: 'Projects' },
