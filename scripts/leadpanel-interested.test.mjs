@@ -11,7 +11,7 @@ for (const k of ['document', 'navigator', 'HTMLElement', 'Element', 'Node', 'Eve
   'KeyboardEvent', 'MouseEvent', 'PointerEvent', 'FocusEvent', 'getComputedStyle',
   'requestAnimationFrame', 'cancelAnimationFrame', 'ResizeObserver', 'IntersectionObserver',
   'MutationObserver', 'matchMedia', 'DOMRect', 'HTMLButtonElement', 'HTMLInputElement',
-  'HTMLSelectElement', 'HTMLTextAreaElement', 'SVGElement', 'Text', 'localStorage']) {
+  'HTMLSelectElement', 'HTMLTextAreaElement', 'SVGElement', 'Text', 'DocumentFragment', 'localStorage']) {
   if (w[k]) Object.defineProperty(globalThis, k, { value: w[k], configurable: true, writable: true });
 }
 Object.defineProperty(globalThis, 'window', { value: w, configurable: true, writable: true });
@@ -36,6 +36,10 @@ const { act } = React;
 const db = await import('../src/lib/db.js');
 const LeadPanel = (await import('../src/components/LeadPanel.jsx')).default;
 const { Ctx } = await import('../.gate-harness/appContextStub.jsx');
+// Loaded up front: vite-node stops transforming once this file's top level has
+// run, so a module first imported inside a test (the modal and its dropdowns)
+// would fail to load.
+await import('../src/components/modals/FollowUpModal.jsx');
 
 const AGENT = { id: 'u1', name: 'Agent', role: 'AGENT', companyId: 'c1' };
 const d = db.getDB();
@@ -69,6 +73,17 @@ const mount = ({ user, modal = null } = {}) => {
 };
 
 const btn = (label) => Array.from(container.querySelectorAll('button')).find(b => b.textContent.includes(label));
+// The purpose is a radix dropdown (ui/select.jsx): open it, choose Other, and
+// return the text box Other opens, so a test can type unsaved text into it.
+const pickPurpose = async (root, label) => {
+  const trig = root.querySelector('.sel-trigger[aria-label="Purpose"]');
+  await act(async () => { trig.dispatchEvent(new w.PointerEvent('pointerdown', { bubbles: true, button: 0, pointerType: 'mouse' })); });
+  await act(async () => { await new Promise((r) => setTimeout(r, 30)); });
+  const opt = Array.from(w.document.querySelectorAll('[role="option"]')).find((o) => o.textContent.includes(label));
+  await act(async () => { opt.dispatchEvent(new w.MouseEvent('click', { bubbles: true })); });
+  await act(async () => { await new Promise((r) => setTimeout(r, 20)); });
+  return root.querySelector('input[placeholder="Write the purpose"]');
+};
 const allBtns = () => Array.from(container.querySelectorAll('button')).map(b => ({ text: b.textContent.trim(), disabled: b.disabled }));
 
 test('Interested is visible and enabled at NEW, CONTACTED and NOT_INTERESTED', async () => {
@@ -129,11 +144,10 @@ test('supervisors keep their own action sections (no Interested injection)', asy
   assert.ok(!interested.length, 'TL section does not render an Interested button');
 });
 
-test('FollowUpModal: Save writes the schedule and, only with text, one NOTE row', async () => {
+test('FollowUpModal: Save schedules it with one FOLLOW_UP row carrying the purpose, and no NOTE row', async () => {
   seed({ status: 'INTERESTED' });
   d.leads[0].nextFollowup = null;
   const FollowUpModal = (await import('../src/components/modals/FollowUpModal.jsx')).default;
-  let note = '';
   const value = {
     user: AGENT, panLead: 'L1', setPanLead: () => {},
     modal: 'follow-up', openModal: () => {}, closeModal: () => {},
@@ -142,50 +156,22 @@ test('FollowUpModal: Save writes the schedule and, only with text, one NOTE row'
   };
   const render = () => act(() => root.render(React.createElement(Ctx.Provider, { value }, React.createElement(FollowUpModal))));
   await render(); await flush();
-  const ta = container.querySelector('textarea');
-  assert.ok(ta, 'note textarea renders');
-  // Empty state renders when there are no notes.
-  assert.ok(container.textContent.includes('No shared notes yet.'), 'empty shared-notes state renders');
+  assert.ok(!container.querySelector('textarea'), 'no note box');
+  assert.ok(!Array.from(container.querySelectorAll('.fu2-lbl')).some(l => l.textContent.trim() === 'Project'), 'no project field');
+  const box = await pickPurpose(container, 'Other');
+  assert.ok(box, 'Other opens the purpose box');
   await act(async () => {
-    Object.getOwnPropertyDescriptor(w.HTMLTextAreaElement.prototype, 'value').set.call(ta, 'Client asked to call Tuesday');
-    ta.dispatchEvent(new w.Event('input', { bubbles: true }));
+    Object.getOwnPropertyDescriptor(w.HTMLInputElement.prototype, 'value').set.call(box, 'Loan papers');
+    box.dispatchEvent(new w.Event('input', { bubbles: true }));
   });
   await act(async () => { btn('Save').dispatchEvent(new w.MouseEvent('click', { bubbles: true })); });
-  await flush();
+  await flush(); await flush();
   const acts = d.activities['L1'] || [];
-  const notes = acts.filter(a => a.type === 'NOTE');
-  assert.equal(notes.length, 1, 'exactly one NOTE row');
-  assert.equal(notes[0].description, 'Client asked to call Tuesday');
-  const setActs = acts.filter(a => a.type === 'FOLLOW_UP');
-  assert.ok(setActs.length <= 1, 'no duplicate follow-up row');
+  assert.equal(acts.filter(a => a.type === 'NOTE').length, 0, 'no NOTE row');
+  const fu = acts.filter(a => a.type === 'FOLLOW_UP');
+  assert.equal(fu.length, 1, 'exactly one FOLLOW_UP row');
+  assert.match(fu[0].description, /^Follow-up scheduled — Phone call · Loan papers · /);
   assert.ok(d.leads[0].nextFollowup, 'follow-up scheduled');
-  // Reopen (close then open, as the app does): the reset on open clears the
-  // note, so saving again must not add another NOTE row.
-  value.modal = null; await render(); await flush();
-  value.modal = 'follow-up'; await render(); await flush();
-  await act(async () => { btn('Save').dispatchEvent(new w.MouseEvent('click', { bubbles: true })); });
-  await flush();
-  assert.equal((d.activities['L1'] || []).filter(a => a.type === 'NOTE').length, 1, 'empty note adds no row');
-});
-
-test('FollowUpModal shows shared note history once it exists', async () => {
-  seed({ status: 'INTERESTED' });
-  d.activities['L1'] = [{
-    id: 'a1', type: 'NOTE', description: 'Prefers evening calls', userId: 'u1', userName: 'Agent',
-    companyId: 'c1', timestamp: '2026-10-28T09:00:00.000Z', durationSeconds: 0,
-  }];
-  const FollowUpModal = (await import('../src/components/modals/FollowUpModal.jsx')).default;
-  const value = {
-    user: AGENT, panLead: 'L1', setPanLead: () => {},
-    modal: 'follow-up', openModal: () => {}, closeModal: () => {},
-    refreshDB: () => {}, showToast: () => {},
-    sidebarOpen: false, setChatTarget: () => {}, chatOk: false,
-  };
-  const render = () => act(() => root.render(React.createElement(Ctx.Provider, { value }, React.createElement(FollowUpModal))));
-  await render(); await flush();
-  assert.ok(container.textContent.includes('Shared Lead Notes'), 'shared-notes header renders');
-  assert.ok(container.textContent.includes('Prefers evening calls'), 'agent note shown');
-  assert.ok(!container.textContent.includes('Lead updated'), 'system notes filtered by isAgentNote');
 });
 
 test('agent actions render in the required primary order on a NEW lead', async () => {
@@ -194,11 +180,11 @@ test('agent actions render in the required primary order on a NEW lead', async (
   await render(); await flush();
   const texts = allBtns().map(b => b.text).filter(t => t.length);
   const idx = (s) => texts.findIndex(t => t.includes(s));
-  for (const [a, b] of [['Connected','Interested'],['Interested','Not Interested'],['Not Interested','Attempt'],['Attempt','Forward to Agent'],['Forward to Agent','No Longer Responding'],['No Longer Responding','Log Call'],['Log Call','Add Note']]) {
+  for (const [a, b] of [['Connected','Interested'],['Interested','Not Interested'],['Not Interested','Attempt'],['Attempt','Forward to Agent'],['Forward to Agent','No Longer Responding'],['No Longer Responding','Follow-up'],['Follow-up','Log Call'],['Log Call','Add Note']]) {
     assert.ok(idx(a) >= 0 && idx(b) >= 0, `${a} and ${b} present`);
     assert.ok(idx(a) < idx(b), `${a} before ${b}`);
   }
-  for (const absent of ['Set Meeting','Attend Meeting','Reschedule Meeting','Schedule Site Visit','Mark Visit as Done','Follow-up']) {
+  for (const absent of ['Set Meeting','Attend Meeting','Reschedule Meeting','Schedule Site Visit','Mark Visit as Done']) {
     assert.ok(!texts.some(t => t.includes(absent)), `${absent} hidden at NEW`);
   }
 });
@@ -213,7 +199,23 @@ test('at INTERESTED, Set Meeting, Not Interested and Attempt precede Forward to 
   assert.ok(idx('Set Meeting') < idx('Not Interested'));
   assert.ok(idx('Not Interested') < idx('Attempt'));
   assert.ok(idx('Attempt') < idx('Forward to Agent'));
-  assert.ok(!texts.some(t => t.includes('Follow-up')), 'Follow-up hidden at INTERESTED');
+  assert.ok(texts.some(t => t.includes('Follow-up')), 'Follow-up offered at INTERESTED (every status)');
+});
+
+test('Follow-up is offered at every status, to agents and supervisors; hidden only while follow-ups are stopped', async () => {
+  const TL = { id: 'u2', name: 'Lead', role: 'TEAM_LEAD', companyId: 'c1' };
+  const STATUSES = ['NEW', 'CONTACTED', 'INTERESTED', 'MEETING_SET', 'SITE_VISIT_SCHEDULED', 'SITE_VISIT_DONE', 'NEGOTIATING', 'NOT_INTERESTED', 'DEAL_CLOSED_WON', 'DEAL_CLOSED_LOST'];
+  for (const user of [AGENT, TL]) {
+    for (const status of STATUSES) {
+      seed({ status });
+      d.users = [AGENT, TL];
+      await mount({ user })(); await flush();
+      assert.ok(allBtns().some(b => b.text === 'alarmFollow-up'), `Follow-up at ${status} for ${user.role}`);
+    }
+  }
+  seed({ status: 'CONTACTED', followupSuppressedAt: '2026-11-01T00:00:00.000Z', followupSuppressedReason: 'NO_LONGER_RESPONDING' });
+  await mount({ user: AGENT })(); await flush();
+  assert.ok(!allBtns().some(b => b.text === 'alarmFollow-up'), 'hidden while follow-ups are stopped');
 });
 
 test('meeting/visit actions stay stage-gated (hidden when not applicable)', async () => {
@@ -321,13 +323,9 @@ test('FollowUpModal renders separate Date and Time inputs, not one datetime-loca
   assert.ok(!container.textContent.includes('Today 5 PM'), 'presets removed');
 });
 
-test('FollowUpModal "View all notes" expands the shared notes, and quick-add writes one NOTE row', async () => {
+test('FollowUpModal stays minimal: type, date, time, reminder, purpose; no notes or project', async () => {
   seed({ status: 'INTERESTED' });
-  const notes = Array.from({ length: 5 }, (_, i) => ({
-    id: 'a' + i, type: 'NOTE', description: 'Shared note ' + i, userId: 'u1', userName: 'Agent',
-    companyId: 'c1', timestamp: '2026-10-28T09:00:0' + i + ':00.000Z', durationSeconds: 0,
-  }));
-  d.activities['L1'] = notes;
+  d.activities['L1'] = [{ id: 'a0', type: 'NOTE', description: 'Shared note', userId: 'u1', userName: 'Agent', companyId: 'c1', timestamp: '2026-10-28T09:00:00.000Z', durationSeconds: 0 }];
   const FollowUpModal = (await import('../src/components/modals/FollowUpModal.jsx')).default;
   const value = {
     user: AGENT, panLead: 'L1', setPanLead: () => {},
@@ -335,25 +333,13 @@ test('FollowUpModal "View all notes" expands the shared notes, and quick-add wri
     refreshDB: () => {}, showToast: () => {},
     sidebarOpen: false, setChatTarget: () => {}, chatOk: false,
   };
-  const render = () => act(() => root.render(React.createElement(Ctx.Provider, { value }, React.createElement(FollowUpModal))));
-  await render(); await flush();
-  assert.ok(container.textContent.includes('View all notes (5)'), 'view-all toggle shows the count');
-  await act(async () => {
-    const b = Array.from(container.querySelectorAll('button')).find(x => x.textContent.includes('View all notes'));
-    b.dispatchEvent(new w.MouseEvent('click', { bubbles: true }));
-  });
-  assert.ok(container.textContent.includes('Shared note 4'), 'all five notes visible after expanding');
-  const inp = container.querySelector('input[placeholder="Add a new shared note…"]');
-  assert.ok(inp, 'quick-add shared note field renders');
-  await act(async () => {
-    Object.getOwnPropertyDescriptor(w.HTMLInputElement.prototype, 'value').set.call(inp, 'New shared note');
-    inp.dispatchEvent(new w.Event('input', { bubbles: true }));
-    inp.dispatchEvent(new w.KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
-  });
+  await act(() => root.render(React.createElement(Ctx.Provider, { value }, React.createElement(FollowUpModal))));
   await flush();
-  const acts = d.activities['L1'] || [];
-  const noteActs = acts.filter(a => a.type === 'NOTE' && a.description === 'New shared note');
-  assert.equal(noteActs.length, 1, 'quick-add wrote exactly one NOTE row');
+  const labels = Array.from(container.querySelectorAll('.fu2-lbl')).map(l => l.textContent.trim());
+  assert.deepEqual(labels, ['Type', 'Date', 'Time', 'Reminder', 'Purpose'], 'exactly these fields, no time zone in the labels');
+  assert.equal(container.querySelectorAll('.sel-trigger').length, 2, 'only Reminder and Purpose dropdowns');
+  assert.ok(!container.textContent.includes('Shared note'), 'no shared notes in the form');
+  assert.ok(!container.querySelector('textarea'), 'no note box');
 });
 
 test('changeStatus to INTERESTED pushes one cloud POST and one PATCH (no duplicates)', async () => {
