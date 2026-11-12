@@ -780,6 +780,10 @@ a {
 .msi-input::placeholder { color: rgba(255, 255, 255, 0.45) }
 .msi-input:focus { outline: none; background: rgba(255, 255, 255, 0.14); box-shadow: 0 0 0 2px rgba(94, 197, 100, 0.5) }
 .msi-err { font-size: 13px; color: #f87171; text-align: left }
+.msi-ok { font-size: 13px; color: #5EC564; text-align: left }
+.msi-forgot { text-align: right; margin-top: -2px }
+.msi-forgot a { font-size: 13px; color: rgba(255, 255, 255, 0.75); cursor: pointer; text-decoration: none }
+.msi-forgot a:hover { color: #5EC564; text-decoration: underline }
 .msi-hr { width: 100%; border: none; border-top: 1px solid rgba(255, 255, 255, 0.10) }
 .msi-btn {
   width: 100%;
@@ -14089,6 +14093,18 @@ input[type="time"]::-webkit-calendar-picker-indicator { opacity: .9; cursor: poi
   .fu2-box > .mi { display: none; }
   .fu2-btn { flex: 1; }
 }
+
+/* ── Profile: email verification (EmailVerifyCard) ── ds-allow-hardcode: no spacing tokens. */
+.ev-card { margin: 4px 0 14px; padding: 14px; border: 1px solid var(--bd); border-radius: 14px; background: var(--surf2); display: grid; gap: 12px; }
+.ev-hd { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.ev-ico { width: 38px; height: 38px; border-radius: 11px; display: grid; place-items: center; background: color-mix(in srgb, var(--orange) 14%, transparent); color: var(--orange); }
+.ev-ico.ok { background: color-mix(in srgb, var(--accent) 16%, transparent); color: var(--accent); }
+.ev-txt { flex: 1; min-width: 180px; display: grid; gap: 2px; }
+.ev-txt b { font-size: 14px; color: var(--t1); }
+.ev-txt span { font-size: 12.5px; color: var(--t2); overflow-wrap: anywhere; }
+.ev-row { display: flex; gap: 8px; }
+.ev-code { flex: 1; min-width: 0; max-width: 220px; height: 38px; padding: 0 12px; border: 1px solid var(--bd2); border-radius: 10px; background: var(--surf); color: var(--t1); font: 700 16px/1 var(--font-display); letter-spacing: 4px; outline: 0; }
+.ev-code:focus { border-color: var(--accent); }
 
 /* ── Agent Smart To-Do + Follow-up Activity (dashboards/SmartTodo.jsx) ──
    ds-allow-hardcode: no spacing/type tokens exist in this stylesheet yet. */

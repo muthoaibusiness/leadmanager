@@ -20,7 +20,10 @@ export async function verifiedActor(req: Request, d: ActorDeps): Promise<ActorRo
   if (!m || m[1] === d.anonKey) throw new ActorError(401, "Sign in required");
   let sub: string | undefined;
   try {
-    const r = await d.fetch(`${d.url}/auth/v1/user`, { headers: { apikey: d.anonKey, authorization: `Bearer ${m[1]}` } });
+    // Some projects run functions without SUPABASE_ANON_KEY set; an empty apikey
+    // makes GoTrue refuse every token. The service key is a valid apikey here and
+    // grants nothing extra: GoTrue still answers only for the bearer token's user.
+    const r = await d.fetch(`${d.url}/auth/v1/user`, { headers: { apikey: d.anonKey || d.serviceKey, authorization: `Bearer ${m[1]}` } });
     if (!r.ok) throw new ActorError(401, "Session expired or invalid. Sign in again.");
     sub = (await r.json())?.id;
   } catch (e) {
@@ -43,7 +46,7 @@ export function actorDepsFromEnv(env: (k: string) => string | undefined): ActorD
   return {
     url: env("SUPABASE_URL") ?? "",
     serviceKey: env("SUPABASE_SERVICE_ROLE_KEY") ?? "",
-    anonKey: env("SUPABASE_ANON_KEY") ?? "",
+    anonKey: env("SUPABASE_ANON_KEY") || env("SUPABASE_PUBLISHABLE_KEY") || "",
     fetch: (u, i) => fetch(u, i),
   };
 }
