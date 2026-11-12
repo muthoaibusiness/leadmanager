@@ -5,6 +5,7 @@ import { signIn as authSignIn, restoreSession, consumeAuthRedirect, mustSetPassw
 import SetPasswordCard from './components/SetPasswordCard.jsx';
 import { seedDB, SEED_PROPERTIES, DEMO_PROPERTIES } from './lib/seed.js';
 import { sbLoad, sbSubscribeAll } from './lib/supabase.js';
+import { hasFollowupTable } from './lib/followups.js';
 import { waLoadSettings } from './lib/wa.js';
 import { pushUnreadSummary, requestNotifyPermission } from './lib/pushNotify.js';
 import { kbd } from './lib/helpers.js';
@@ -556,7 +557,9 @@ export default function App() {
     // out of a snapshot that only ever contained one company — see migrateTenancy.
     migrateTenancy(freshDB, forUser);
     migrateProjects(freshDB); // backfill storefront fields (variants/media/fastClose)
-    checkFollowUpReminders(freshDB);
+    // With migration 0067 the server sends follow-up reminders, before the time;
+    // the browser only makes its own while the follow-up table is missing.
+    hasFollowupTable().then(ok => { if (!ok) checkFollowUpReminders(freshDB, forUser); });
     saveDBDeferred(freshDB); // in-memory now, localStorage write on an idle frame
     expireHolds(); // auto-release expired holds (saves internally if any)
     refreshDB();

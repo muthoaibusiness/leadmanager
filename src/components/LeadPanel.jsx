@@ -164,7 +164,7 @@ function Actions({ l }) {
     if (res.error) toastMsg(toast, 'Could not log the attempt. Check the connection and try again.', 'err');
     else if (!res.counted) toastMsg(toast, res.hitCap ? `${MAX_ATTEMPTS} attempts already used. Follow-ups are off.` : 'Follow-ups are off for this lead', 'warn');
     else if (res.hitCap) toastMsg(toast, `${MAX_ATTEMPTS} attempts reached. Follow-ups stopped.`, 'warn');
-    else toastMsg(toast, `No Answer logged (${res.attempts}/${MAX_ATTEMPTS}) · follow-up set for tomorrow`, '');
+    else toastMsg(toast, `No Answer logged (${res.attempts}/${MAX_ATTEMPTS})`, '');
   };
 
   // Stop / resume follow-ups. WHO may do this is decided here in the browser
@@ -270,8 +270,8 @@ function Actions({ l }) {
         <Mi>thumb_down</Mi>Not Interested
       </button>
     );
-    // Attempt — neutral grey outcome: logs a 0-min call attempt, books a next-day
-    // follow-up, keeps current status. Available while chasing first contact (NEW),
+    // Attempt — neutral grey outcome: logs a 0-min call attempt and keeps the
+    // current status. It books no follow-up (0068); the agent uses Follow-up. Available while chasing first contact (NEW),
     // after connecting (CONTACTED), and once interested (3rd stage, confirming
     // before the meeting). Counter restarts each stage; the 5th in a stage stops
     // follow-ups (status unchanged). Hidden once follow-ups are off.
@@ -283,13 +283,6 @@ function Actions({ l }) {
         </button>
       );
     }
-    // After contact — follow-up to keep nurturing. Not at INTERESTED (3rd stage):
-    // that lead is qualified and ready for a meeting.
-    if (l.status === 'CONTACTED' && !block) btns.push(
-      <button key="followup" className="btn btn-full" style={{ background: 'var(--orange-l)', color: 'var(--orange)' }} onClick={() => openModal('follow-up')}>
-        <Mi>alarm</Mi>Follow-up
-      </button>
-    );
 
     // Attended the scheduled meeting → log it, then schedule the site visit/booking.
     if (l.status === 'MEETING_SET' && !l.meetingAttended) btns.push(
@@ -314,7 +307,7 @@ function Actions({ l }) {
         <Mi>check_circle</Mi>Mark Visit as Done
       </button>
     );
-    // Attempt — couldn't reach the client; logs an attempt + next-day follow-up.
+    // Attempt — couldn't reach the client; logs an attempt (no follow-up booked).
     // The 5th in a stage stops follow-ups (status unchanged).
     if (['MEETING_SET', 'SITE_VISIT_SCHEDULED'].includes(l.status) && !block) {
       const att = l.noAnswerCount || 0;
@@ -353,9 +346,6 @@ function Actions({ l }) {
     if (!block) btns.push(
       <button key="ni-noans" className="btn btn-neutral btn-full" onClick={doNoAnswer} disabled={naBusy}>
         <Mi>phone_missed</Mi>Attempt{l.noAnswerCount > 0 ? ` (${l.noAnswerCount}/${MAX_ATTEMPTS})` : ''}
-      </button>,
-      <button key="ni-followup" className="btn btn-full" style={{ background: 'var(--orange-l)', color: 'var(--orange)' }} onClick={() => openModal('follow-up')}>
-        <Mi>alarm</Mi>Follow-up
       </button>
     );
   }
@@ -376,18 +366,11 @@ function Actions({ l }) {
         <Mi>balance</Mi>Mark as Negotiating
       </button>
     );
-    if (inDeal) {
-      if (!block) btns.push(
-        <button key="follow-up" className="btn btn-full" style={{ background: 'var(--orange-l)', color: 'var(--orange)' }} onClick={() => openModal('follow-up')}>
-          <Mi>alarm</Mi>Take Time
-        </button>
-      );
-      btns.push(
-        <button key="lost" className="btn btn-full" style={{ background: 'var(--red-l)', color: 'var(--red)' }} onClick={() => openModal('lost')}>
-          <Mi>thumb_down</Mi>Mark as Lost
-        </button>
-      );
-    }
+    if (inDeal) btns.push(
+      <button key="lost" className="btn btn-full" style={{ background: 'var(--red-l)', color: 'var(--red)' }} onClick={() => openModal('lost')}>
+        <Mi>thumb_down</Mi>Mark as Lost
+      </button>
+    );
   }
 
   if (r === ROLES.MGMT) {
@@ -409,6 +392,14 @@ function Actions({ l }) {
     </button>
   );
 
+  // Follow-up on a lead at any status, for anyone who works it. Hidden only while
+  // follow-ups are stopped for the lead (5 attempts, no longer responding, not
+  // interested twice); a closed deal can still get an after-sale follow-up.
+  if (!block || block === 'closed') btns.push(
+    <button key="followup" className="btn btn-full" style={{ background: 'var(--orange-l)', color: 'var(--orange)' }} onClick={() => openModal('follow-up')}>
+      <Mi>alarm</Mi>Follow-up
+    </button>
+  );
   btns.push(
     <div key="log-call" className="log-call-wrap">
       <LogCall leadId={l.id} triggerClassName="btn btn-full" triggerStyle={{ background: 'var(--blue-l)', color: 'var(--accent)' }} />

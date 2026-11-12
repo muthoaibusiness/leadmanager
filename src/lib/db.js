@@ -1,8 +1,11 @@
 import { ROLES, normRole, isNiHandler, canSelfForward, STATUS_LABELS, SRC_LABELS, PAST_CONTACT, OFFER_MAX } from './constants.js';
+import { pruneNotifList } from './notifRetention.js';
 import { setOfferResolver } from './offerRegistry.js';
 import { uid, now_, fmtBDT, fmtDT, curMonth, startOfMonth, rlabel } from './helpers.js';
 import { leadFilterParam, ORDER } from './leadQuery.js';
 import { COUNTED } from './contactPerf.js';
+import { hasFollowupTable, fToR, pendingFor, rememberPending, followupLine } from './followups.js';
+import { typeOf } from './followupTypes.js';
 import { sbGet, sbGetAll, sbCount, sbPage, hasColumn, sbRpc, sbRpcCall, sbUpdate, sbPatchRows, sbInsert, sbUpsert, sbMarkRead, sbDelete, sbDeleteLeads, sbUserIdsByRole, sbActsForLead, sbLoadActWindow, sbLoadLeadUpdates, sbLoadLeadsSince, ACT_WINDOW_DAYS, lToR, rToL, uToR, rToU, tToR, rToT, aToR, rToA, rToN, tgToR, rToTg, pToR, rToP, bkToR, rToBk, cToR, rToC, hrToR, rToHr, sbUpsertNotifs } from './supabase.js';
 // Bumped from propcrm_v1 when the cloud load became tenant-scoped: every
 // existing browser is carrying a full multi-tenant snapshot under the old key,
@@ -92,7 +95,9 @@ export function mergeDB(remote, local) {
       const m = new Map();
       (rem[k] || []).forEach(n => n && m.set(n.id, n));
       (loc[k] || []).forEach(n => n && m.set(n.id, n));
-      out[k] = [...m.values()];
+      // Same retention rule as the nightly purge (migration 0065): the cache has no
+      // tombstones, so a row the server deleted would otherwise stay here forever.
+      out[k] = pruneNotifList([...m.values()]);
     });
     return out;
   };
@@ -1966,8 +1971,9 @@ export function noAnswerLock(lead) {
   return until && until > new Date() ? until : null;
 }
 
-// "No Answer": a 0-min call attempt, a follow-up for tomorrow, status unchanged.
-// The count lives on the server (lead_log_no_answer, 0049): one atomic
+// "No Answer": a 0-min call attempt, status unchanged. It books no follow-up
+// (0068): the agent sets one with the Follow-up button, and one already booked
+// stays as it is. The count lives on the server (lead_log_no_answer): one atomic
 // increment, at most MAX_ATTEMPTS, and the 5th stops follow-ups. Each click
 // gets one request id, reused on a network retry, so a retry never counts
 // twice; a second click while the first is in flight joins it.
@@ -2019,16 +2025,16 @@ function logNoAnswerLocal(leadId, user) {
   }
   const attempts = prior + 1;
   const hitCap = attempts >= MAX_ATTEMPTS;
-  const next = new Date(); next.setDate(next.getDate() + 1);
-  const patch = { noAnswerCount: attempts, callCount: (lead.callCount || 0) + 1, noAnswerLockUntil: null, nextFollowup: hitCap ? null : nextFollowupFor(lead, next) };
+  const patch = { noAnswerCount: attempts, callCount: (lead.callCount || 0) + 1, noAnswerLockUntil: null };
+  if (hitCap) patch.nextFollowup = null; // the 5th stops follow-ups
   updLead(leadId, patch);
   addAct(leadId, { type: 'CALL', durationSeconds: 0, description: 'Call attempt · No Answer (' + attempts + '/' + MAX_ATTEMPTS + ')', userId: user.id, userName: user.name });
   addAct(leadId, {
     type: 'FOLLOW_UP', durationSeconds: 0,
-    description: hitCap ? MAX_ATTEMPTS + ' attempts reached — follow-ups stopped' : 'Auto follow-up next day — ' + fuWhen(patch.nextFollowup),
+    description: hitCap ? MAX_ATTEMPTS + ' attempts reached — follow-ups stopped' : 'No answer (' + attempts + '/' + MAX_ATTEMPTS + ') — no follow-up booked',
     userId: user.id, userName: user.name,
   });
-  return { attempts, counted: true, hitCap, suppressed: false, nextFollowup: patch.nextFollowup };
+  return { attempts, counted: true, hitCap, suppressed: false, nextFollowup: hitCap ? null : lead.nextFollowup || null };
 }
 
 // Agent attended the scheduled meeting — flag it + log to the timeline.
@@ -2111,8 +2117,83 @@ export function decideHoldRequest(id, approve, user, days = 2) {
 
 // Mark a follow-up task as done — clears the reminder.
 export function clearFollowup(leadId, user) {
-  updLead(leadId, { nextFollowup: null });
-  addAct(leadId, { type: 'FOLLOW_UP', description: 'Follow-up completed', userId: user.id, userName: user.name, durationSeconds: 0 });
+  return completeFollowUp(leadId, {}, user);
+}
+
+// ── Follow-ups with details (migration 0066 lead_followups) ──────────────────
+// Each user action writes exactly ONE FOLLOW_UP activity: Prospects contacted
+// and agent performance count those rows (contactPerf.js). With the table, the
+// database keeps leads.next_followup equal to the pending row (0066 lf_sync_lead),
+// so the lead is only patched locally here; without it, next_followup is written
+// as before and the details live only in the activity line.
+const fuStamp = (iso) => new Date(iso).toLocaleString('en-GB', { weekday: 'short', day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
+const setLocalFollowup = (leadId, iso) => mutate(db => {
+  const i = db.leads.findIndex(l => l.id === leadId);
+  if (i >= 0) db.leads[i] = { ...db.leads[i], nextFollowup: iso };
+});
+
+// f: { dueAt, type, purpose, purposeOther, projectId, projectName, remindMin, noteCode, note }
+// Returns the time it was set for, or null when follow-ups are off for the lead.
+export async function saveFollowUp(leadId, f, user, { customerRequested = false, quiet = false } = {}) {
+  const lead = getLead(leadId);
+  if (!lead || lead.followupSuppressedAt) return null;
+  const due = customerRequested ? new Date(f.dueAt).toISOString() : nextFollowupFor(lead, f.dueAt);
+  if (await hasFollowupTable()) {
+    const row = {
+      ...f, id: 'lf' + uid(), leadId, dueAt: due, status: 'pending', source: 'app',
+      companyId: lead.companyId ?? user.companyId ?? null, ownerId: lead.assignedTo || user.id,
+      createdBy: user.id, createdByName: user.name,
+    };
+    setLocalFollowup(leadId, due);
+    if (customerRequested) updLead(leadId, { followupNotBefore: due });
+    rememberPending(leadId, row);
+    await sbInsert('lead_followups', fToR(row));
+  } else {
+    updLead(leadId, customerRequested ? { nextFollowup: due, followupNotBefore: due } : { nextFollowup: due });
+  }
+  if (!quiet) {
+    addAct(leadId, {
+      type: 'FOLLOW_UP', durationSeconds: 0, userId: user.id, userName: user.name,
+      description: (customerRequested ? 'Follow-up set for when the customer asked — ' : 'Follow-up scheduled — ') + followupLine(f, fuStamp(due)),
+    });
+  }
+  return due;
+}
+
+// Done, optionally with what came of it and the next follow-up (`next`, the
+// same shape saveFollowUp takes). One activity covers both.
+export async function completeFollowUp(leadId, { outcome = '', next = null } = {}, user) {
+  const prev = pendingFor(leadId);
+  if (await hasFollowupTable()) {
+    await sbPatchRows('lead_followups', `lead_id=eq.${encodeURIComponent(leadId)}&status=eq.pending`,
+      { status: 'done', done_by: user.id, done_at: now_(), outcome: outcome || null }, 'id');
+    rememberPending(leadId, null);
+    setLocalFollowup(leadId, null);
+  } else {
+    updLead(leadId, { nextFollowup: null });
+  }
+  const nextAt = next ? await saveFollowUp(leadId, next, user, { quiet: true }) : null;
+  const what = prev ? typeOf(prev.type).label : '';
+  addAct(leadId, {
+    type: 'FOLLOW_UP', durationSeconds: 0, userId: user.id, userName: user.name,
+    description: ['Follow-up completed' + (what ? ' — ' + what : ''), outcome && 'Outcome: ' + outcome,
+      nextAt && 'Next: ' + followupLine(next, fuStamp(nextAt))].filter(Boolean).join(' · '),
+  });
+}
+
+export async function cancelFollowUp(leadId, reason, user) {
+  if (await hasFollowupTable()) {
+    await sbPatchRows('lead_followups', `lead_id=eq.${encodeURIComponent(leadId)}&status=eq.pending`,
+      { status: 'cancelled', cancelled_at: now_(), cancel_reason: reason || 'cancelled' }, 'id');
+    rememberPending(leadId, null);
+    setLocalFollowup(leadId, null);
+  } else {
+    updLead(leadId, { nextFollowup: null });
+  }
+  addAct(leadId, {
+    type: 'FOLLOW_UP', durationSeconds: 0, userId: user.id, userName: user.name,
+    description: 'Follow-up cancelled' + (reason ? ' — ' + reason : ''),
+  });
 }
 
 export function markLostFn(leadId, reason, user) {
@@ -2132,7 +2213,13 @@ export function markLostFn(leadId, reason, user) {
 // follow-up gets a new one. nextFollowup is left as it is — the agent clears it
 // (clearFollowup) or reschedules it.
 const NO_REMINDER = ['DEAL_CLOSED_WON', 'DEAL_CLOSED_LOST'];
-export function checkFollowUpReminders(db) {
+// A reminder is made only by the browser of the agent who holds the lead, and only
+// for a follow-up due in the last week. A manager's browser caches every agent's
+// leads, and once made one reminder per lead per reload for the whole company. The
+// week bound keeps this from re-creating a reminder the nightly purge (0065) removed.
+export const FU_CLIENT_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
+export function checkFollowUpReminders(db, user) {
+  if (!user?.id) return;
   const now = Date.now();
   const toInsert = [];
   if (!db.notifications) db.notifications = {};
@@ -2140,11 +2227,12 @@ export function checkFollowUpReminders(db) {
   (db.leads || []).forEach(lead => {
     const due = Date.parse(lead.nextFollowup);
     if (!(due <= now)) return; // unset, invalid, or not due yet
+    if (now - due > FU_CLIENT_WINDOW_MS) return; // older than a week: not re-announced
+    if (lead.assignedTo !== user.id) return; // only the holder's own browser reminds
     if (NO_REMINDER.includes(lead.status)) return;
     // followupSuppressedAt arrives with migration 0049; until then it is never set.
     if (lead.followupSuppressedAt) return;
-    const to = db.users.find(u => u.id === lead.assignedTo);
-    if (!to) return;
+    const to = (db.users || []).find(u => u.id === user.id) || user;
     const id = `fu-${lead.id}-${to.id}-${due}`;
     const list = db.notifications[to.id] || (db.notifications[to.id] = []);
     if (list.some(n => n.id === id)) return;
@@ -2607,7 +2695,7 @@ export function addNotifs(list, currentUser) {
       const n = { id: 'n' + uid(), type, message, leadId, timestamp: ts, read: false, userId, companyId };
       if (!db.notifications[userId]) db.notifications[userId] = [];
       db.notifications[userId].unshift(n);
-      if (db.notifications[userId].length > 60) db.notifications[userId].length = 60;
+      db.notifications[userId] = pruneNotifList(db.notifications[userId]);
       toInsert.push(n);
     });
   });

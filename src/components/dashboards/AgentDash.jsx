@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useApp } from '../../context/AppContext.jsx';
-import { getDB, clearFollowup, queryLeads } from '../../lib/db.js';
+import { getDB, queryLeads } from '../../lib/db.js';
 import StatCard from '../StatCard.jsx';
 import KpiSheet from '../KpiSheet.jsx';
 import TargetCard from './TargetCard.jsx';
 import DashGreeting from './DashGreeting.jsx';
 import SuccessGauge from '../SuccessGauge.jsx';
 import ConversionPanel from './ConversionPanel.jsx';
+import SmartTodo from './SmartTodo.jsx';
 import Mi from '../Mi.jsx';
 import Spinner, { LoadingBlock } from '../Spinner.jsx';
 import { scoreLead, scoreLabel, periodLabel, leadDisplayStatus } from '../../lib/helpers.js';
@@ -40,7 +41,7 @@ function queueReason(lead, touched, todayStart, todayEnd) {
 // Agent and Meeting Agent dashboards).
 export default function AgentDash() {
   useActWindow(); // pull the recent-activity window; activities are not in the boot load
-  const { user, dbVersion, setPanLead, setChatTarget, chatOk, nav, refreshDB, showToast, dateRange } = useApp();
+  const { user, dbVersion, setPanLead, setChatTarget, chatOk, nav, dateRange } = useApp();
   const [detail, setDetail] = useState(null);
   const phone = useIsPhone();
   void dbVersion; // re-render when DB changes
@@ -193,7 +194,6 @@ export default function AgentDash() {
     view.queue.length > 0 ? `${view.queue.length} ${view.queue.length === 1 ? 'lead' : 'leads'} to work today` : "You're all caught up.",
     view.todayVisits.length > 0 ? `${view.todayVisits.length} ${view.todayVisits.length === 1 ? 'visit' : 'visits'} today` : '',
   ].filter(Boolean).join(' · ');
-  const markDone = (id) => { clearFollowup(id, user); refreshDB(); showToast('Follow-up completed', 'ok'); };
 
   // Meeting → visit pipeline
   const pipelineBlock = (
@@ -335,28 +335,7 @@ export default function AgentDash() {
           {tile('Not interested', n('notInterested'), 'disqualified', () => setDetail({ title: 'Not Interested', query: cardQ.notInterested, total: counts.notInterested }), counts.notInterested ? 'danger' : '')}
         </div>
 
-        <section className="mh-sec" aria-label="Follow-ups due today">
-          <SecHead title="Follow-ups due today" count={view.followToday.length} />
-          {!bookReady ? <LoadingBlock label="Loading follow-ups…" />
-            : view.followToday.length === 0 ? <p className="mh-note">No follow-ups due today. Scheduled ones show here when their day arrives.</p>
-            : view.followToday.map(l => {
-              const fu = new Date(l.nextFollowup);
-              const overdue = fu < view.todayStart;
-              const time = fu.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
-              const day = fu.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' });
-              return (
-                <article key={l.id} className="mh-card mh-row">
-                  <button type="button" className="mh-row-main" onClick={() => setPanLead(l.id)}>
-                    <span className="mh-row-name">{l.name}</span>
-                    <span className="mh-row-meta">{[l.phone, SRC_LABELS[l.source] || l.source].filter(Boolean).join(' · ')}</span>
-                    <span className="mh-row-meta"><span className={`mh-due${overdue ? ' over' : ''}`}>{overdue ? `Overdue · ${day}` : `Due ${time}`}</span> · {leadDisplayStatus(l).label}</span>
-                  </button>
-                  <a className="mh-act dark" href={`tel:${l.phone}`} aria-label={`Call ${l.name}`}><Mi aria-hidden="true">call</Mi></a>
-                  <button type="button" className="mh-act" aria-label={`Mark follow-up done: ${l.name}`} onClick={() => markDone(l.id)}><Mi aria-hidden="true">check</Mi></button>
-                </article>
-              );
-            })}
-        </section>
+        <SmartTodo />
 
         <section className="mh-sec" aria-label="Today's call list">
           <SecHead title="Today's call list" count={view.queue.length} action={view.queue.length > QUEUE_CAP ? 'See all' : null} onAction={() => nav('leads')} />
@@ -401,6 +380,10 @@ export default function AgentDash() {
   return (
     <>
       <div className="iad-page">
+      {/* Two columns from the top: the dashboard on the left, the follow-up
+          to-do (then target, success rate, visits) on the right. */}
+      <div className="iad-layout iad-top">
+      <div className="iad-main">
       {/* Greeting */}
       <DashGreeting user={user} sub={greetSub} />
 
@@ -435,51 +418,8 @@ export default function AgentDash() {
       {/* Where leads drop off, and the last 30 days of stage events */}
       {conversionBlock}
 
-      {/* Follow-ups due today — task list */}
-      <div className="iad-fu">
-        <div className="iad-q-hd">
-          <span className="iad-q-ttl">Follow-ups due today</span>
-          {view.followToday.length > 0 && <span className="iad-q-ct">{view.followToday.length}</span>}
-        </div>
-        {view.followToday.length === 0 ? (
-          <div className="iad-fu-empty">No follow-ups due today. Scheduled ones show here when their day arrives.</div>
-        ) : (
-          <table className="fut">
-            <thead>
-              <tr><th>Customer</th><th>Due</th><th>Status</th><th aria-label="actions" /></tr>
-            </thead>
-            <tbody>
-              {view.followToday.map(l => {
-                const fu = new Date(l.nextFollowup);
-                const overdue = fu < view.todayStart;
-                const time = fu.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
-                const day = fu.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' });
-                return (
-                  <tr key={l.id} onClick={() => setPanLead(l.id)}>
-                    <td><div className="fut-name">{l.name}</div><div className="fut-sub">{l.phone} · {SRC_LABELS[l.source] || l.source}</div></td>
-                    <td><span className={`fut-due${overdue ? ' over' : ''}`}>{overdue ? `Overdue · ${day}` : time}</span></td>
-                    <td><span className="fut-status">{leadDisplayStatus(l).label}</span></td>
-                    <td>
-                      <div className="fut-act">
-                        <a className="fut-ico" href={`tel:${l.phone}`} title="Call" onClick={e => e.stopPropagation()}><Mi>call</Mi></a>
-                        <button className="fut-ico fut-done" title="Mark done"
-                          onClick={e => { e.stopPropagation(); markDone(l.id); }}>
-                          <Mi>check</Mi>
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        )}
-      </div>
-
-      {/* Main (call list) + rail (target · today's meetings) */}
-      <div className="iad-layout">
-        {/* Primary: today's call list */}
-        <div className="iad-main">
+      {/* Today's call list */}
+        <div className="iad-calls">
           <div className="iad-queue">
             <div className="iad-q-hd">
               <span className="iad-q-ttl">Today's call list</span>
@@ -519,9 +459,12 @@ export default function AgentDash() {
             )}
           </div>
         </div>
+      </div>
 
-        {/* Rail: monthly target + success rate + site visits */}
+        {/* Rail: follow-up to-do, monthly target, success rate, site visits */}
         <aside className="iad-rail">
+          {/* Smart To-Do + follow-up activity, stacked top to bottom */}
+          <SmartTodo rail />
           <TargetCard user={user} />
           <SuccessGauge user={user} />
           {todayVisitsCard}

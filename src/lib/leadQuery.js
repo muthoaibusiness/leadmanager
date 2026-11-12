@@ -109,6 +109,12 @@ export const KPI = {
   meetingsSet: (userId) => `meeting_set_by.eq.${lit(userId)}`,
   sourced: (userId) => sourcedBy(userId),
   active: () => `status.not.in.(${CLOSED_STATUSES.join(',')})`,
+  // Smart To-Do buckets, at every status (a follow-up can be set on any lead).
+  // kpiArg is dayBounds() from followups.js, whose followBucket() is the JS twin.
+  // next_followup is toISOString() text, so these string comparisons order by time.
+  followToday: (d) => and(`next_followup.gte.${lit(d.start)}`, `next_followup.lte.${lit(d.end)}`),
+  followMissed: (d) => `next_followup.lt.${lit(d.start)}`,
+  followUpcoming: (d) => `next_followup.gt.${lit(d.end)}`,
 };
 
 // Term builders for the one-off predicates a dashboard needs but that are not
@@ -118,6 +124,8 @@ export const eq = (col, v) => `${col}.eq.${lit(v)}`;
 export const is = (col, v) => `${col}.is.${v}`;          // true / false / null
 export const lt = (col, v) => `${col}.lt.${lit(v)}`;
 export const gt = (col, v) => `${col}.gt.${lit(v)}`;
+export const gte = (col, v) => `${col}.gte.${lit(v)}`;
+export const lte = (col, v) => `${col}.lte.${lit(v)}`;
 export const notNull = (col) => `${col}.not.is.null`;
 // "I handed this lead to X" — previous_assignees carries me, and the lead has
 // since moved on to that role.
@@ -193,4 +201,6 @@ export const ORDER = {
   oldest: 'created_at.asc',
   updated: 'updated_at.desc.nullslast,created_at.desc',
   name: 'name.asc',
+  followup: 'next_followup.asc.nullslast',
+  followupDesc: 'next_followup.desc.nullslast',
 };
