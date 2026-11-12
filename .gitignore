@@ -54,3 +54,7 @@ Citizen-Avenue-customer-questions-BN.pdf
 transfer-barna.sql
 Untouched-new-leads-Citizen-Avenue-campaign.pdf
 CRM-Upgrade-Plan.pdf
+
+# Google OAuth client secret (never commit)
+Google Cloude Credential.json
+*client_secret*.json
