@@ -1,4 +1,4 @@
-import { useCallback } from 'react';
+import { useCallback, useState } from 'react';
 import { useApp } from '../../context/AppContext.jsx';
 import useNavState from '../../hooks/useNavState.js';
 import { isChatAdmin } from '../../lib/wa.js';
@@ -23,15 +23,21 @@ import '../aitrainer/aitrainer.css';
 export default function AiTrainerView() {
   const { user, showToast } = useApp();
   const [tab, setTab] = useNavState('aitrainer.tab', 'knowledge');
+  // The tab row's end slot, as state: a tab portals its round action into it once it is in the DOM.
+  const [actsSlot, setActsSlot] = useState(null);
   // Stable across renders: the tabs load data in effects keyed on `api`, so a
   // new function every render would refetch in a loop.
   const api = useCallback((action, payload) => trainerCall(user, action, payload), [user]);
   if (!isChatAdmin(user)) return <div className="ea-count" style={{ padding: 18 }}>Only Management can use the AI Trainer.</div>;
-  const props = { api, showToast, user };
+  const props = { api, showToast, user, actsSlot };
   return (
     <div className="ait">
-      <AiTrainerPills tabs={AI_TRAINER_TABS} active={tab} onChange={setTab} />
-      <div className="ait-panel" id={`aitrainer-panel-${tab}`} role="tabpanel" aria-labelledby={`aitrainer-tab-${tab}`}>
+      <div className="ait-bar">
+        <AiTrainerPills tabs={AI_TRAINER_TABS} active={tab} onChange={setTab} />
+        <div className="ait-acts" ref={setActsSlot} />
+      </div>
+      {/* Keyed by tab: the panel is the scroller, so a new tab opens at its top. */}
+      <div key={tab} className="ait-panel" id={`aitrainer-panel-${tab}`} role="tabpanel" aria-labelledby={`aitrainer-tab-${tab}`}>
         {tab === 'knowledge' && <KnowledgeTab {...props} />}
         {tab === 'behaviour' && <BehaviourTab {...props} />}
         {tab === 'playground' && <PlaygroundTab {...props} />}

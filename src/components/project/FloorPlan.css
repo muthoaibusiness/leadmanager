@@ -230,19 +230,11 @@
 .fps-top span { font-size: 15px; font-weight: 700; color: var(--t1); }
 .fps-top em { font-style: normal; font-size: 12.5px; font-weight: 700; color: var(--orange); white-space: nowrap; }
 
-/* Floor dropdown (ui/select.jsx) in the toolbar row, a pill like the project picker (.fsel) */
-.fpv-floorsel { flex: 0 1 220px; }
-.fpv-floorsel .sel-trigger { width: 100%; min-height: 40px; height: 40px; padding: 0 14px 0 18px; border-color: var(--bd); border-radius: 999px; font: 600 13px/1.2 var(--font-display); }
 /* the plan's optional landmarks, above / below the units */
 .fps-mark {
   padding: 7px 10px; border-radius: 8px; background: var(--surf2); color: var(--t2);
   font-size: 11.5px; font-weight: 600; letter-spacing: .04em; text-align: center; overflow-wrap: anywhere;
 }
-
-/* Phones: Continue rides along the bottom of the screen, like a checkout bar,
-   until the unit card (with its own Continue) scrolls up to it; then the bar
-   empties (AvailableUnitsView). Wider screens use the button in the unit card. */
-.fpv-cta { display: none; }
 
 /* Laptops: 5 seats a row (272px + 26px + 6px), so the drawing keeps its room */
 @media (max-width: 1599px) {
@@ -259,7 +251,6 @@
   .fpv-stage { max-height: 56vh; }
   .fpv-search { margin-left: 0; flex: 1 1 100%; }
   .fpv-proj { max-width: 100%; flex: 1 1 100%; }
-  .fpv-floorsel { flex: 1 1 140px; }   /* fills the line beside Manage */
   .fpv-manage { margin-left: 0; }
   .fps-tiles { grid-template-columns: repeat(auto-fill, minmax(60px, 1fr)); }
   .is-seats .fps-tiles { grid-template-columns: repeat(auto-fill, 44px); gap: 9px 7px; max-width: 350px; }   /* 6 a row on a phone, 7 at most */
@@ -267,23 +258,6 @@
   .is-seats .fps-sz { font-size: 8.5px; }
   .fps-tile { min-height: 42px; padding: 4px 2px; font-size: 10.5px; }
   .fpv-seats { padding: 10px; }
-  .fpv-cta {
-    /* Sticky offsets count from inside the scroller's padding. .pg-body's
-       padding-bottom is --gutter-y, plus --bnav on phones, so pulling the
-       bar back down by --gutter-y lands it right above the phone bottom bar
-       (or on the screen's edge when there is no bar). bottom: --bnav on top
-       of that padding doubled it and left the bar floating mid-screen. */
-    display: block; position: sticky; bottom: calc(-1 * var(--gutter-y)); z-index: 5; margin: 0 -4px;
-    padding: 10px 4px calc(10px + env(safe-area-inset-bottom, 0px));
-    background: linear-gradient(to top, var(--bg) 70%, transparent);
-  }
-  .fpv-cta .btn { width: 100%; justify-content: center; min-height: 48px; border-radius: 999px; }
-  /* no bar: the empty box only marks the bar's line, so it takes no room */
-  .fpv-cta:empty { padding: 0; background: none; }
-}
-@media (max-width: 767px) {
-  /* the bottom bar's --bnav already clears the home indicator */
-  .fpv-cta { padding-bottom: 10px; }
 }
 @media (prefers-reduced-motion: reduce) {
   .fp-box .fp-fill { transition: none; }
@@ -295,7 +269,7 @@
    the CRM theme; status reads from a soft tint plus a thin edge, and sold is
    also hatched so colour is never the only signal. */
 .fpv-grid.is-rail {
-  grid-template-columns: 184px minmax(0, 1fr) 340px; grid-template-areas: "rail plan side"; gap: 16px;
+  grid-template-columns: 184px minmax(0, 1fr) 390px; grid-template-areas: "rail plan side"; gap: 16px;
 }
 .fpv-grid.is-rail > .fpv-seats { grid-area: plan; }
 
@@ -384,42 +358,28 @@
 .fpt button.on { background: var(--t1); color: var(--surf-solid); }
 .fpt button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .is-rail .fpv-card { border-top: 1px solid var(--bd); }
-
-.fpd-hd { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
-.fpd-hd h2 { margin: 0; font: 700 20px/1.2 var(--font-display); }
-.fpd-hd span { font-size: 13px; color: var(--t3); }
-.fpd-stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 14px; }
-.fpd-stats div { padding: 10px; border-radius: var(--r); background: var(--surf2); min-width: 0; }
-.fpd-stats span { display: block; font-size: 11.5px; color: var(--t3); }
-.fpd-stats b { display: block; margin-top: 2px; font-size: 14px; font-weight: 700; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
-.fpd-sub { margin: 18px 0 8px; font-size: 13px; font-weight: 700; color: var(--t1); }
-.fpd-sub.is-first { margin-top: 0; }
-.fpd-bar { display: flex; height: 8px; gap: 2px; border-radius: 99px; overflow: hidden; margin-bottom: 8px; }
-.fpd-bar i { flex-basis: 0; }
-.fpd-bar .st-available { background: var(--green); }
-.fpd-bar .st-hold { background: var(--gold); }
-.fpd-bar .st-sold { background: var(--t3); }
-.fpd-bar .st-c { background: var(--st-c); opacity: .6; }
-.fpd-rows { margin: 0; display: grid; }
-.fpd-rows div { display: grid; grid-template-columns: minmax(0, 1fr) auto 44px; gap: 10px; align-items: center; padding: 7px 0; font-size: 13px; }
-.fpd-rows dt { display: flex; align-items: center; gap: 8px; color: var(--t2); min-width: 0; }
-.fpd-rows dd { margin: 0; font-variant-numeric: tabular-nums; color: var(--t1); }
-.fpd-pct { text-align: right; color: var(--t3) !important; }
-.fpd-rows.is-kv div { grid-template-columns: minmax(0, 1fr) auto; border-top: 1px solid var(--bd); }
-.fpd-rows.is-kv div:first-child { border-top: 0; }
-.fpd-rows.is-kv dd { text-align: right; overflow-wrap: anywhere; }
-.fpd-rows .fp-dot.st-sold { background: var(--t3); }
-
-.fpp-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
-.fpp-list button {
-  width: 100%; display: flex; flex-direction: column; gap: 2px; padding: 8px 10px; border: 0; border-radius: var(--r);
-  background: transparent; color: var(--t1); text-align: left; cursor: pointer; font: inherit;
+/* Customers tab: three counts, number over label, square tiles in one column. */
+.fpq { margin: 0 0 12px; display: grid; gap: 8px; }
+.fpq div { display: flex; flex-direction: column-reverse; gap: 2px; padding: 12px 14px; border: 1px solid var(--bd); background: var(--surf2); }
+.fpq dt { font-size: 12px; color: var(--t2); overflow-wrap: anywhere; }
+.fpq dd { margin: 0; font: 700 24px/1.1 var(--font-display); color: var(--t1); font-variant-numeric: tabular-nums; }
+/* Under the Reservation requests tile, attached to it: one row per request. */
+.fpq-list { list-style: none; margin: -12px 0 12px; padding: 0; }
+.fpq-list li { border: 1px solid var(--bd); border-top: 0; }
+/* The whole row toggles its details; no chevron, the hover tint says it is clickable. */
+.fpq-list button {
+  width: 100%; min-height: 44px; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 14px;
+  border: 0; border-radius: 0; background: transparent; color: var(--t1); font: inherit; text-align: left; cursor: pointer;
 }
-.fpp-list button:hover { background: var(--surf2); }
-.fpp-list button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
-.fpp-list b { font-size: 13.5px; font-weight: 600; overflow-wrap: anywhere; }
-.fpp-list span { font-size: 12px; color: var(--t3); }
-.fpr-sum { margin: 0 0 6px; font-size: 12px; color: var(--t2); }
+.fpq-list button:hover, .fpq-list button[aria-expanded="true"] { background: var(--surf2); }
+.fpq-list button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.fpq-list b { min-width: 0; font-size: 13px; font-weight: 600; overflow-wrap: anywhere; }
+.fpq-list em { flex: none; font-style: normal; font-size: 12px; color: var(--t2); }
+.fpq-list .fpk { margin: 0; padding: 4px 14px 10px; background: var(--surf2); }
+/* the light rule between customer info and the request details */
+.fpq-list .fpk div.sep { border-top-color: var(--bd2); }
+.fpq-list li.is-empty { padding: 10px 14px; font-size: 12.5px; color: var(--t3); }
+.fpq ~ .btn { border-radius: 0; justify-content: center; }
 .fpb { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--bd); display: grid; gap: 8px; }
 .fpb h3 { margin: 0; font-size: 13px; font-weight: 700; color: var(--t1); }
 .is-rail .fpv-none { padding: 4px 0; }
@@ -438,7 +398,6 @@
   .fpr { flex-direction: row; overflow-x: auto; padding: 6px; scrollbar-width: none; }
   .fpr-btn { flex: 0 0 auto; flex-direction: column; align-items: flex-start; gap: 2px; padding: 8px 14px; }
   .fpm { padding: 12px; }
-  .fpd-stats { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
 
 /* Details tab. One column, no row rules: a label on the left, its value on
@@ -448,28 +407,24 @@
 .fpu-hd h2 { margin: 0; font: 700 22px/1.15 var(--font-display); overflow-wrap: anywhere; }
 .fpu-st { display: inline-flex; align-items: center; gap: 6px; flex: none; font-size: 13px; font-weight: 600; color: var(--t2); }
 .fpu-sub { margin: 3px 0 0; font-size: 13px; color: var(--t2); }
-.fpu-price { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 8px; margin: 14px 0 6px; }
-.fpu-price b { font: 700 24px/1.1 var(--font-display); font-variant-numeric: tabular-nums; }
-.fpu-price span { font-size: 12.5px; color: var(--t3); }
-.fpu-price.is-none span { font-size: 13px; color: var(--t2); }
 .fpk { display: grid; margin: 4px 0 0; }
 .fpk div { display: flex; justify-content: space-between; align-items: baseline; gap: 14px; padding: 5px 0; font-size: 13px; }
 .fpk div.sep { margin-top: 6px; padding-top: 11px; border-top: 1px solid var(--bd); }
 .fpk dt { color: var(--t2); }
 .fpk dd { margin: 0; color: var(--t1); font-weight: 500; text-align: right; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
-.fpu-act { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 6px; margin-top: 14px; }
-.fpu-act .btn { justify-content: center; min-width: 0; }
-.fpu-act .btn-p, .fpu-act .btn-g:nth-child(2) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .fpu-none { display: flex; align-items: center; gap: 8px; margin: 0; color: var(--t3); font-size: 13px; }
 .fpu-none .mi { font-size: 20px; }
-.fpf { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--bd); }
-.fpf h3 { margin: 0; font: 700 17px/1.2 var(--font-display); }
-.fpf .fpd-bar { margin: 12px 0 6px; height: 6px; }
-.fpf .fpd-rows div { padding: 4px 0; font-size: 13px; }
 
 /* Details / Customers tabs: a quiet toggle, so the blue floor rail stays the
    one strong selection on the page. */
 .is-rail .fpt button.on { background: var(--surf2); color: var(--t1); box-shadow: inset 0 0 0 1px var(--bd2); }
+/* Square, not pill: the unit panel uses straight edges throughout. */
+.is-rail .fpt, .is-rail .fpt button { border-radius: 0; }
+.is-rail .fpt { padding: 2px; }
+.is-rail .fpt button { height: 30px; font-size: 12px; gap: 5px; }
+.is-rail .fpt button .mi { font-size: 15px; }
+.is-rail .fpv-side { gap: 10px; }
+.is-rail .fpv-card:has(.pc-embed) { padding: 14px 18px; }
 
 /* Artwork plan, units by status (AvailableUnitsView ART): a solid fill in the
    status's dark unit tone, a thin edge in the status colour, and the label
@@ -561,3 +516,122 @@
 .fpv-grid.is-fit .fpr, .fpv-grid.is-fit .fpv-side > .fpv-card, .fpv-grid.is-fit > .fpv-seats, .fpv-bar .fpv-chips { scrollbar-width: none; }
 .fpv-grid.is-fit .fpr::-webkit-scrollbar, .fpv-grid.is-fit .fpv-side > .fpv-card::-webkit-scrollbar,
 .fpv-grid.is-fit > .fpv-seats::-webkit-scrollbar, .fpv-bar .fpv-chips::-webkit-scrollbar { display: none; }
+
+/* ── Phones (AvailableUnitsView `is-phone`), after the user's calendar
+   reference: Back, title and a grid / list switch; the project with Manage;
+   the status chips; the floor as a month row (name, free count, arrows that
+   step a floor); the units 7 a row like days; the picked unit docked at the
+   bottom with Reserve now, which opens the Deal sheet (index.css .fps-sheet).
+   Customers is a sheet from Manage. ── */
+@media (max-width: 767px) {
+  .fpv-grid.is-rail.is-phone { grid-template-columns: minmax(0, 1fr); grid-template-areas: "plan" "side"; gap: 14px; align-items: start; }
+  /* The page is a column the height of the screen (AvailableUnitsTab.css):
+     header, project, chips and the floor row stay put; only the grid scrolls. */
+  .fpv:has(> .fpv-grid.is-phone) { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+  .fpv:has(> .fpv-grid.is-phone) > :not(.fpv-grid) { flex: none; }
+  .fpv-grid.is-phone { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding-bottom: calc(var(--gutter-y) + env(safe-area-inset-bottom, 0px)); scrollbar-width: none; }
+  .fpv-grid.is-phone::-webkit-scrollbar { display: none; }
+  .is-phone > .fpv-seats { grid-area: plan; padding: 0; background: transparent; border: 0; border-radius: 0; }
+  .is-phone .fps-top, .is-phone .fpv-ghd { display: none; }
+  /* ds-allow-hardcode:start  phone layout: px sizes match the rest of this file (no spacing tokens exist); #fff is text on the fixed --fp-sel blue */
+
+  /* The header itself (.fpv-ph: Back | title | switch, and the Manage icon) is
+     in AvailableUnitsTab.css, shared with the Projects list. */
+  /* The project (uppercase, as the reference) with its dropdown chevron, Manage (tune) at the end;
+     a little lower under the title row */
+  .fpv-ph-pj { display: flex; align-items: center; justify-content: space-between; gap: 4px; min-height: 40px; margin-top: 10px; }
+  /* the trigger is only as wide as the name (the row's spare width stays empty),
+     so its list opens as a compact glass card under the name, not across the screen */
+  .fpv-projsel { flex: 0 1 auto; min-width: 0; max-width: calc(100% - 52px); }
+  .fpv-projsel .sel-trigger { justify-content: flex-start; gap: 4px; width: auto; max-width: 100%; min-height: 32px; padding: 0; border: 0; border-radius: 0; background: transparent; }
+  .fpv-projsel .sel-trigger:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+  .fpv-projsel .sel-chev { color: var(--t1); }
+  .fpv-projsel-tx { font: 700 17px/1.2 var(--font-display); color: var(--t1); text-transform: uppercase; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .sel-content.fpv-projsel-list {
+    min-width: 0; width: max-content; max-width: calc(100vw - 32px); padding: 6px; border-radius: 16px;
+    border: 1px solid color-mix(in srgb, var(--t1) 12%, transparent); background: color-mix(in srgb, var(--surf-solid) 72%, transparent);
+    -webkit-backdrop-filter: blur(16px) saturate(1.2); backdrop-filter: blur(16px) saturate(1.2);
+    box-shadow: 0 12px 32px rgba(0, 0, 0, .18);
+  }
+  .fpv-projsel-list .sel-item { min-height: 44px; padding: 0 12px; border-radius: 10px; font-size: 14px; }
+  .fpv-projsel-list .sel-item[data-highlighted] { background: color-mix(in srgb, var(--t1) 8%, transparent); }
+
+  /* Floor row, the calendar's month row: the floor and its free count, then
+     round arrows that step one floor down or up */
+  .fpv-fh { display: flex; align-items: center; gap: 6px; min-height: 44px; margin: 4px 0 18px; }
+  .fpv-fh > div { flex: 1; min-width: 0; }
+  .fpv-fh h2 { margin: 0; font: 600 18px/1.2 var(--font-display); color: var(--t1); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .fpv-fh small { font: 500 12.5px/1.3 Inter, sans-serif; color: var(--t2); }
+  .fpv-fh-btn { flex: none; display: grid; place-items: center; width: 40px; height: 40px; padding: 0; border: 1px solid var(--bd); border-radius: 50%; background: transparent; color: var(--t1); cursor: pointer; }
+  .fpv-fh-btn:disabled { color: var(--t3); border-color: transparent; cursor: default; }
+  .fpv-fh-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .fpv-fh-btn .mi { font-size: 20px; }
+
+  /* Seat map, as in the user's calendar reference: 6 a row (7 was too tight),
+     the code over its size, no status label. Only a free unit is green with an
+     outline. A taken one has no outline: its code in a soft tone of its status
+     colour and a dot in that colour (the chips' legend). The picked unit gets a ring. */
+  .is-phone .fps-tiles { grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 6px; }
+  .is-phone .fps-tile {
+    --st-tx: var(--t1); position: relative; aspect-ratio: 1; min-width: 0; min-height: 0; padding: 2px; gap: 3px;
+    border: 1px solid transparent; border-radius: var(--r-sm); box-shadow: none;
+    background: color-mix(in srgb, var(--t1) 5%, transparent); color: var(--st-tx); font-size: 11.5px; overflow-wrap: normal;
+  }
+  .is-phone .fps-tile:disabled { opacity: 1; }
+  /* a picked tile scrolls just clear of the scroller's edge (the dock sits below that edge) */
+  .is-phone .fps-tile { scroll-margin-bottom: 8px; }
+  .is-phone .fps-tile.st-available { background: color-mix(in srgb, var(--accent) 12%, transparent); border-color: color-mix(in srgb, var(--accent) 40%, transparent); }
+  .is-phone .fps-tile.st-hold { --st-tx: color-mix(in srgb, var(--st-hold) 55%, var(--t1)); --st-dot: var(--st-hold); }
+  .is-phone .fps-tile.st-sold { --st-tx: color-mix(in srgb, var(--st-sold) 55%, var(--t1)); --st-dot: var(--st-sold); }
+  .is-phone .fps-tile.has-c { --st-tx: color-mix(in srgb, var(--st-c) 55%, var(--t1)); --st-dot: var(--st-c); }
+  .is-phone .fps-tile.st-hold::after, .is-phone .fps-tile.st-sold::after, .is-phone .fps-tile.has-c::after {
+    content: ''; position: absolute; top: 5px; right: 5px; width: 6px; height: 6px; border-radius: 50%; background: var(--st-dot);
+  }
+  .is-phone .fps-tile.st-unlinked { border: 1px dashed var(--bd2); --st-tx: var(--t3); }
+  .is-phone .fps-tile.on { box-shadow: inset 0 0 0 2px var(--t1); }
+  .is-phone .fps-tile:hover:not(:disabled) { transform: none; }
+  .is-phone .fps-code { white-space: nowrap; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+  .is-phone .fps-tile .fps-sz { font-size: 9px; font-weight: 500; color: var(--t2); opacity: 1; }
+
+  /* The picked unit, docked at the bottom like the calendar's total bar: code
+     and size on the left, Reserve now on the right when it is free. */
+  .fpv-rsv {
+    position: fixed; left: 12px; right: 12px; bottom: var(--bnav, 0px); z-index: 60;
+    display: flex; align-items: center; gap: 10px; min-height: 64px; padding: 8px 8px 8px 16px;
+    border-radius: 20px; background: var(--surf2); box-shadow: 0 8px 24px rgba(0, 0, 0, .18);
+  }
+  .fpv-rsv > div { flex: 1; min-width: 0; }
+  .fpv-rsv b { display: block; font: 600 16px/1.2 var(--font-display); color: var(--t1); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .fpv-rsv > div span { font: 500 12.5px/1.3 Inter, sans-serif; color: var(--t2); }
+  .fpv-rsv .btn { flex: none; height: 48px; padding: 0 18px; justify-content: center; gap: 8px; border-radius: 999px; font: 700 13px/1 var(--font-display); letter-spacing: .1em; text-transform: uppercase; }
+  .fpv-rsv .btn .mi { letter-spacing: 0; }
+  /* A taken unit's button reads its status: plain black, the status dot in
+     its own colour. Tapping it opens the details sheet. */
+  .fpv-rsv-st { gap: 8px; border: 1px solid rgba(255, 255, 255, .14); background: #0B0B0C; color: #F5F5F7; }
+  .fpv-rsv-st .fp-dot { width: 8px; height: 8px; border-radius: 50%; box-shadow: 0 0 0 2px rgba(255, 255, 255, .16); }
+  .fpv-rsv-st .fp-dot.has-c, .fpv-rsv-st[style*="--st-c"] .fp-dot { background: var(--st-c); }
+  .fpv-rsv-st:active { transform: scale(.98); }
+  .fpv-rsv-st:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  /* the sheet's taken-unit card, in the sheet's own ink */
+  .fps-panel .fpu { color: var(--rs-ink); }
+  .fps-panel .fpu-hd h2 { font-size: 26px; }
+  /* the sheet's card: floor · type on the left, the status at the row's end */
+  .fps-panel .fpu-sub { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 0; font-size: 14px; }
+  .fps-panel .fpu-sub .fpu-st { font-size: 14px; color: var(--rs-ink); }
+  .fps-panel :is(.fpu-st, .fpu-sub, .fpk dt, .fpv-none) { color: var(--rs-mute); }
+  .fps-panel .fpk dd, .fps-panel .fpb h3 { color: var(--rs-ink); }
+  .fps-panel .fpb { border-top-color: var(--rs-line); }
+  /* The page scroller ends above the dock (64px tall, lifted by --bnav), so
+     no unit is ever under it: the grid scrolls within the room above. */
+  .page:has(.fpv-rsv) .pg-body { margin-bottom: calc(64px + var(--bnav, 0px)); padding-bottom: var(--gutter-y); }
+
+  /* Status chips scroll sideways and fade at the right edge. The project
+     picker and Manage live in the header above, so the bar holds only them. */
+  .fpv-bar { margin-bottom: 0; }
+  .fpv-bar .fpv-filters { order: 3; flex: 1 1 100%; flex-wrap: wrap; margin-bottom: 16px; }
+  .fpv-bar .fpv-chips { flex: 1 1 100%; flex-wrap: nowrap; overflow-x: auto;
+    mask-image: linear-gradient(90deg, #000 85%, transparent); -webkit-mask-image: linear-gradient(90deg, #000 85%, transparent); }
+  /* 16px: iOS Safari zooms the page into any smaller input on focus */
+  .fpv-search input { font-size: 16px; }
+  /* ds-allow-hardcode:end */
+}

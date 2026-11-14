@@ -149,7 +149,7 @@ export default function ManagementDash() {
                 const soldPct = total ? Math.round(sold / total * 100) : 0;
                 const bars = [['Available', available], ['On hold', hold], ['Sold', sold]];
                 return (
-                  <button key={p.id} type="button" className="mh-card mh-proj" onClick={() => pnav.openConsole(p.id, false)}>
+                  <button key={p.id} type="button" className="mh-card mh-proj" onClick={() => pnav.openUnits(p.id)}>
                     <span className="mh-proj-well" aria-hidden="true">
                       {bars.map(([lbl, v]) => (
                         <span key={lbl} className="mh-proj-col">

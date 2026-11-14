@@ -10,7 +10,7 @@ export type WaSendAuth = { ok: true; actor: ActorRow } | { ok: false; status: nu
 
 export async function authorizeWaSend(req: Request, body: { action?: string }, verify: Verify): Promise<WaSendAuth> {
   if (body?.action === "set-credentials") return { ok: false, status: 410, error: "Credential rotation moved to the operator runbook (CR-001)." };
-  if (body?.action !== "send") return { ok: false, status: 400, error: "Unknown action" };
+  if (body?.action !== "send" && body?.action !== "get-avatar") return { ok: false, status: 400, error: "Unknown action" };
   try {
     return { ok: true, actor: await verify(req) };
   } catch (e: any) {

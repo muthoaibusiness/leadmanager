@@ -62,7 +62,7 @@ export const locationText = (p: { name: string; address?: string | null; google_
 };
 export const DUBAI_FINAL_TEXT = "A sales consultant has already been assigned to you. Please keep in touch with them.";
 
-export type DocsProject = { name: string; address?: string | null; brochure_url?: string | null; video_url?: string | null };
+export type DocsProject = { name: string; address?: string | null; brochure_url?: string | null; video_url?: string | null; google_map_url?: string | null; map_image_url?: string | null };
 export type DocItem = { type: "document" | "image" | "text"; url: string; fileName?: string; caption: string };
 
 // Floor-plan PDFs that are not stored in wa_projects (it only holds floor-plan
@@ -71,8 +71,10 @@ const driveFile = (id: string) => `https://drive.usercontent.google.com/download
 export const PROJECT_FLOOR_PLAN_DOC: Record<string, string> = {
   "Wecon Citizen Avenue": driveFile("1NVarSO7peq15fbPS_2pMBKcc6bVe9sfS"),
 };
-export const PROJECT_VIDEO_FALLBACK: Record<string, string> = {
-  "Wecon Citizen Avenue": "https://www.youtube.com/watch?v=Dc5OR3sEcaU",
+// A project's video link that wins over wa_projects.video_url. Citizen Avenue's old YouTube link died (4 Nov 2026), so a
+// stale value in the table cannot be sent; this one is the working Shorts link.
+export const PROJECT_VIDEO: Record<string, string> = {
+  "Wecon Citizen Avenue": "https://youtube.com/shorts/OU52rrRMNlY",
 };
 
 // The floor-plan PDF and the video link, in the order they are sent. Empty when
@@ -82,7 +84,7 @@ export function floorPlanPlan(p: DocsProject | null | undefined): DocItem[] {
   const items: DocItem[] = [];
   const fp = PROJECT_FLOOR_PLAN_DOC[p.name];
   if (fp) items.push({ type: "document", url: fp, fileName: `${p.name} Floor Plan.pdf`, caption: `${p.name} — Floor Plan` });
-  const video = p.video_url || PROJECT_VIDEO_FALLBACK[p.name];
+  const video = PROJECT_VIDEO[p.name] || p.video_url;
   if (video) items.push({ type: "text", url: video, caption: `Project video — ${p.name}\n${video}` });
   return items;
 }
@@ -161,10 +163,10 @@ export function isAdFaqOrSmallTalk(text: string): boolean {
   return parts.every(isCoveredPart);
 }
 
-// A customer who wrote something of their own gets the grounded AI reply.
-// Pure ad buttons, greetings, media placeholders and emoji get none (nothing
-// a custom reply could add to).
-export const needsAiReply = (text: string): boolean => !isAdFaqOrSmallTalk(text);
+// An ad customer who wrote something of their own gets the grounded AI reply.
+// Anyone who did not come through the ad gets none (nobody asked us anything
+// the greeting doesn't cover).
+export const needsAiReply = (text: string, adLead: boolean) => adLead && !isAdFaqOrSmallTalk(text);
 
 // A pure opener: only greetings, small talk, emoji and media placeholders — no
 // substance a substantive answer could add. Ad-button questions are NOT openers

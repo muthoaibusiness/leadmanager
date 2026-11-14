@@ -2,13 +2,19 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useApp } from '../../context/AppContext.jsx';
 import { queryLeads, countLeads, fetchLeadProjects, fetchLastFollowups } from '../../lib/db.js';
 import { selfInvolved } from '../../lib/leadQuery.js';
-import { STATUS_LABELS, ROLES } from '../../lib/constants.js';
+import { STATUS_LABELS, ROLES, canSee } from '../../lib/constants.js';
 import { rlabel } from '../../lib/helpers.js';
 import LeadTable, { PAGE_SIZE } from '../LeadTable.jsx';
+
+const PHONE_PAGE_SIZE = 10; // a phone screen holds about ten rows
 import SearchBox from '../SearchBox.jsx';
 import { ActionSwapCascadeButton } from '../ui/action-swap-cascade.jsx';
 import useChanged from '../../hooks/useChanged.js';
 import useNavState from '../../hooks/useNavState.js';
+import useIsPhone from '../../hooks/useIsPhone.js';
+import Mi from '../Mi.jsx';
+import BackButton from '../BackButton.jsx';
+import RefreshButton from '../RefreshButton.jsx';
 
 // Order the admin's people picker groups the way the pipeline runs, so the
 // dropdown reads top-down rather than alphabetically across mixed roles.
@@ -22,8 +28,11 @@ export default function LeadsView() {
   const {
     user, search, statusFilter, setStatusFilter,
     teamFilter, setTeamFilter, agentFilter: drillAgent, dbVersion, dateRange, db, sortBy,
-    setLeadCounts,
+    setLeadCounts, openModal,
   } = useApp();
+  const phone = useIsPhone();
+  const canAdd = canSee(user, 'add_customer'); // the hero's Add Customer / Import gate
+  const pageSize = phone ? PHONE_PAGE_SIZE : PAGE_SIZE; // phones: 10 leads a page
 
   // Agents get a My Leads ↔ Forwarded toggle.
   const isAgent = user.role === ROLES.AGENT;
@@ -48,7 +57,8 @@ export default function LeadsView() {
 
   // Changing tab/team can retire the chosen project; fall back rather than leave
   // the select rendering blank on a value that is no longer an option.
-  const activeProject = projectOptions.includes(projectFilter) ? projectFilter : 'ALL';
+  // Case-blind: Available Units' See more passes the project's own spelling.
+  const activeProject = projectOptions.find(p => p.toLowerCase() === String(projectFilter).toLowerCase()) || 'ALL';
 
   // A Team Lead picks between their own hand-off queue (the default), one team
   // member, or the whole team book. The roster comes from db.users, which for a
@@ -125,7 +135,7 @@ export default function LeadsView() {
   const seq = useRef(0);
   useEffect(() => {
     const mine = ++seq.current;
-    queryLeads(query, { page, size: PAGE_SIZE, sort: sortBy })
+    queryLeads(query, { page, size: pageSize, sort: sortBy })
       .then(res => {
         if (mine !== seq.current) return;
         // null = the request failed. Keep whatever is on screen rather than
@@ -133,7 +143,7 @@ export default function LeadsView() {
         if (res) setResult(res);
         setDoneKey(fetchKey);
       });
-  }, [fetchKey, qKey, page, sortBy, dbVersion, query]);
+  }, [fetchKey, qKey, page, pageSize, sortBy, dbVersion, query]);
 
   // The Last Follow-up column: the newest FOLLOW_UP and Add Note for the rows on
   // screen, fetched for this page's ids once its rows land. A separate request,
@@ -195,18 +205,42 @@ export default function LeadsView() {
 
   return (
     <>
-      {isAgent && !drillAgent && (
-        // Two beui ActionSwap (cascade) pills. A tab is one item, so clicking
-        // selects it instead of cycling; the Forwarded item's id carries the
-        // count, so a new count rolls in letter by letter.
+      {/* Phones, every role: the Projects pages' header (AvailableUnitsTab.css
+          .fpv-ph): Back, the page name, Refresh at the end. The hero,
+          header bar and bottom bar do not mount here (App.jsx, BottomNav). */}
+      {phone && (
+        <div className="fpv-ph lv-ph">
+          <div className="fpv-ph-top">
+            <BackButton />
+            <h1>Prospects</h1>
+            <RefreshButton />
+          </div>
+        </div>
+      )}
+      {/* One row: the agent's two tabs, then (phones) Import and Add Customer,
+          which the hero carries on wider screens. */}
+      {((isAgent && !drillAgent) || (phone && canAdd)) && (
         <div className="lv-tabs" role="tablist" aria-label="Customer lists">
-          <ActionSwapCascadeButton role="tab" aria-selected={tab === 'mine'} cycle={false}
-            variant={tab === 'mine' ? 'primary' : 'secondary'}
-            items={[{ id: 'mine', label: 'My Leads' }]} onClick={() => setTab('mine')} />
-          <ActionSwapCascadeButton role="tab" aria-selected={tab === 'fwd'} cycle={false}
-            variant={tab === 'fwd' ? 'primary' : 'secondary'}
-            items={[{ id: `fwd-${fwdCount ?? ''}`, label: fwdCount == null ? 'Forwarded' : `Forwarded (${fwdCount})` }]}
-            onClick={() => setTab('fwd')} />
+          {isAgent && !drillAgent && (
+            // Two beui ActionSwap (cascade) pills. A tab is one item, so clicking
+            // selects it instead of cycling; the Forwarded item's id carries the
+            // count, so a new count rolls in letter by letter.
+            <>
+              <ActionSwapCascadeButton role="tab" aria-selected={tab === 'mine'} cycle={false}
+                variant={tab === 'mine' ? 'primary' : 'secondary'}
+                items={[{ id: 'mine', label: 'My Leads' }]} onClick={() => setTab('mine')} />
+              <ActionSwapCascadeButton role="tab" aria-selected={tab === 'fwd'} cycle={false}
+                variant={tab === 'fwd' ? 'primary' : 'secondary'}
+                items={[{ id: `fwd-${fwdCount ?? ''}`, label: fwdCount == null ? 'Forwarded' : `Forwarded (${fwdCount})` }]}
+                onClick={() => setTab('fwd')} />
+            </>
+          )}
+          {phone && canAdd && (
+            <>
+              <button type="button" className="lv-act" onClick={() => openModal('import')}><Mi aria-hidden="true">upload</Mi>Import</button>
+              <button type="button" className="lv-act lv-act-p" onClick={() => openModal('add-lead')} aria-label="Add Customer"><Mi aria-hidden="true">person_add</Mi>Add</button>
+            </>
+          )}
         </div>
       )}
       {/* Compact pill filter bar — everything applies live, no apply button. */}
@@ -259,7 +293,7 @@ export default function LeadsView() {
           </select>
         )}
       </div>
-      <LeadTable leads={result.rows} total={result.total} page={page} onPage={setPage} loading={loading}
+      <LeadTable leads={result.rows} total={result.total} page={page} onPage={setPage} pageSize={pageSize} loading={loading}
         lastFu={fu.map} fuPending={fu.rows !== result.rows} />
     </>
   );

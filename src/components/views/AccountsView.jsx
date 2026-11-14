@@ -15,7 +15,6 @@ import useLeadCounts from '../../hooks/useLeadCounts.js';
 import useOpenUserLeads from '../../hooks/useOpenUserLeads.js';
 import { eq } from '../../lib/leadQuery.js';
 import AccessPanel from '../AccessPanel.jsx';
-import '../finance/finance.css'; // .fin-tabs
 
 // Users & Accounts — one Management page for the whole company roster.
 // Replaces the old Users (team cards) and Accounts (bulk create + flat list)
@@ -340,7 +339,7 @@ export default function AccountsView() {
 
   const TABS = [['users', 'Users', 'group'], ['access', 'Access', 'shield']];
   const tabBar = (
-    <div className="fin-tabs acc-tabs" role="tablist" aria-label="Users and access">
+    <div className="pill-tabs acc-tabs" role="tablist" aria-label="Users and access">
       {TABS.map(([k, l, ic]) => (
         <button key={k} type="button" role="tab" aria-selected={tab === k} className={tab === k ? 'on' : ''} onClick={() => setTab(k)}>
           <Mi>{ic}</Mi>{l}
@@ -348,7 +347,7 @@ export default function AccountsView() {
       ))}
     </div>
   );
-  if (tab === 'access') return <div className="acc">{tabBar}<AccessPanel users={coUsers} /></div>;
+  if (tab === 'access') return <div className="acc">{tabBar}<div className="tab-scroll"><AccessPanel users={coUsers} /></div></div>;
 
   return (
     <div className="acc">
@@ -406,6 +405,8 @@ export default function AccountsView() {
         </div>
       </div>
 
+      {/* Phones: the tabs and toolbar stay put and this scrolls (index.css .tab-scroll). */}
+      <div className="tab-scroll">
       {/* Bulk create */}
       {bulkOpen && (
         <div className="acc-card">
@@ -573,6 +574,7 @@ export default function AccountsView() {
             </motion.div>
           )}
         </AnimatePresence>
+      </div>
       </div>
     </div>
   );

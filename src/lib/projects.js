@@ -27,7 +27,7 @@
 // Everything goes through this module, so swapping to a real API = change the
 // bodies here only — the UI never touches the store directly.
 
-import { getHoldRequests, getProperty, getProperties, addPropertyFn, updatePropertyFn, deletePropertyFn, insertPropertyChecked, updatePropertyChecked, patchPropertyChecked, unitsFromCodes } from './db.js';
+import { getProperty, getProperties, addPropertyFn, updatePropertyFn, deletePropertyFn, insertPropertyChecked, updatePropertyChecked, patchPropertyChecked, unitsFromCodes } from './db.js';
 import { sbGetPropertyRow, uploadProjectMedia } from './supabase.js';
 import { uid } from './helpers.js';
 import { PROJECT_TYPES } from './constants.js';
@@ -109,24 +109,6 @@ export function pricedVariant(variant, unitId) {
 // hold placed from the console or approved in Requests paints in its colour.
 // undefined when the project has none: the unit shows the plain On hold look.
 export const reservedTag = (project) => (project?.unitStatuses || []).find(s => /^reserved$/i.test(String(s.name || '').trim()))?.id;
-
-// The units a lead currently holds or bought, across projects, for its panel:
-// floor, size and the latest price (its newest reserve request's deal total,
-// else the unit's package or list price).
-export function leadUnits(leadId) {
-  if (!leadId) return [];
-  const reqs = getHoldRequests();
-  return listProjects().flatMap(p => (p.variants || []).flatMap(v => (v.units || [])
-    .filter(u => u.clientId === leadId && u.status !== 'available')
-    .map(u => {
-      const req = reqs.find(h => h.propertyId === p.id && h.unitId === u.id && h.dealTotal > 0);
-      return {
-        projectId: p.id, project: p.name || '', code: u.id, status: u.status,
-        floor: projectFloors(p).find(f => f.ids.has(u.id))?.name || '',
-        size: unitSize(u, v), price: req?.dealTotal || u.sheet?.package || unitPrice(u, v),
-      };
-    })));
-}
 
 // Codes of units that have a box on any of the project's floor plans.
 export function placedUnitIds(project) {

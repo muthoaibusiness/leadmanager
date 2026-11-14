@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<title>Available Units: phone demo from the reference image</title>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,400,0..1,0" rel="stylesheet">
+<style>
+/* ds-allow-hardcode:start  throwaway mockup; values mirror src/index.css and FloorPlan.css tokens */
+:root{--bd:rgba(255,255,255,.12);--t1:#fff;--t2:rgba(255,255,255,.62);--t3:rgba(255,255,255,.42);--surf:#151515;--surf2:#1d1d1d;
+  --accent:#54B848;--hold:#E3A322;--sold:#D23C3C;--land:#A78BFA;--resv:#38BDF8;--fd:'Space Grotesk',Inter,sans-serif}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#141414;color:var(--t1);font:400 14px/1.35 Inter,sans-serif;padding:28px 32px;width:820px}
+.mi{font-family:'Material Symbols Rounded';font-size:20px;line-height:1;font-style:normal;display:inline-block}
+.wrap{display:flex;gap:40px;align-items:flex-start}
+.lab{font:600 13px/1 var(--fd);color:rgba(255,255,255,.72);margin-bottom:12px}
+.phone{width:412px;height:915px;border-radius:34px;border:1px solid #2c2c2c;background:#000;overflow:hidden;position:relative}
+.sb{height:32px;display:flex;justify-content:space-between;align-items:center;padding:0 24px;font:500 13px Inter}
+.sb .mi{font-size:16px}
+.pg{height:calc(100% - 32px);overflow:hidden;padding:8px 16px 96px}
+/* header row: Back · title · grid/list toggle */
+.hd{display:flex;align-items:center;gap:12px;height:48px}
+.back{width:36px;height:36px;border-radius:50%;border:1px solid var(--bd);display:grid;place-items:center;flex:none}
+.back .mi{font-size:22px}
+.hd h1{flex:1;font:600 20px/1.2 var(--fd)}
+.vt{display:flex;gap:2px;padding:4px;border-radius:14px;background:var(--surf2)}
+.vt span{width:40px;height:32px;border-radius:10px;display:grid;place-items:center;color:var(--t2)}
+.vt span.on{background:rgba(84,184,72,.14);color:var(--accent)}
+/* project line */
+.pj{display:flex;justify-content:space-between;align-items:baseline;margin:14px 0 12px}
+.pj b{font:600 18px var(--fd)}
+.pj em{font:600 14px Inter;font-style:normal;color:var(--accent)}
+/* count cards */
+.cards{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.card{background:var(--surf2);border-radius:14px;padding:14px 14px 12px}
+.card b{display:block;font:600 24px/1 var(--fd)}
+.card span{display:block;margin-top:10px;font:500 13.5px Inter;color:var(--t2)}
+/* status row + chips */
+.st{display:flex;justify-content:space-between;align-items:center;margin:18px 0 10px}
+.st b{font:600 17px var(--fd)}
+.st .mi{font-size:22px;color:var(--t2)}
+.chips{display:flex;gap:6px;overflow:hidden;-webkit-mask-image:linear-gradient(90deg,#000 85%,transparent);mask-image:linear-gradient(90deg,#000 85%,transparent)}
+.chip{flex:none;height:32px;padding:0 11px;border:1px solid var(--bd);border-radius:999px;display:flex;align-items:center;gap:6px;font:500 12.5px Inter;color:var(--t2)}
+.chip b{color:var(--t1);font-weight:700}
+.chip.on{border-color:var(--accent);color:var(--t1)}
+.dot{width:7px;height:7px;border-radius:50%;flex:none}
+/* floor row */
+.fl{display:flex;justify-content:space-between;align-items:center;height:52px;margin-top:12px;border-top:1px solid var(--bd)}
+.fl b{font:600 17px var(--fd)}
+.fl .mi{color:var(--t2)}
+/* picked unit */
+.unit{border:1px solid var(--bd);border-radius:16px;padding:16px 18px;margin-bottom:12px}
+.unit-hd{display:flex;justify-content:space-between;align-items:center;gap:10px}
+.unit-hd b{font:700 24px/1 var(--fd);letter-spacing:.01em}
+.bdg{display:inline-flex;align-items:center;gap:7px;height:28px;padding:0 10px;border-radius:7px;background:var(--surf2);font:600 12.5px Inter}
+.unit p{margin-top:8px;font-size:14px;color:var(--t2)}
+.unit p+p{margin-top:4px;color:var(--t2)}
+/* tiles: 5 a row, the status as a word */
+.tiles{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px}
+.t{min-width:0;height:66px;padding:0 4px;border-radius:12px;background:var(--surf);border:1px solid var(--bd);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:7px}
+.t b{font:600 13px/1 var(--fd)}
+.t i{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font:600 10.5px/1 Inter;font-style:normal;padding:4px 6px;border-radius:999px;color:var(--c);background:color-mix(in srgb,var(--c) 16%,transparent)}
+.t.av{--c:#6BD35F;background:rgba(84,184,72,.10);border-color:rgba(84,184,72,.45)}
+.t.hold{--c:#F0A847}.t.sold{--c:#F07A7A}.t.land{--c:#C4B5FD}.t.resv{--c:#7DD3FC}
+.t.sel{border-color:var(--t1);box-shadow:inset 0 0 0 1px var(--t1)}
+/* reserve bar */
+.rsv{position:absolute;left:16px;right:16px;bottom:18px;height:54px;border-radius:999px;background:var(--accent);color:#0a0a0a;display:flex;align-items:center;justify-content:center;gap:10px;font:700 14px var(--fd);letter-spacing:.12em;box-shadow:0 -14px 30px #000}
+.rsv .mi{font-size:20px}
+/* notes */
+.notes{width:300px;padding-top:25px}
+.notes h3{font:600 15px var(--fd);margin-bottom:12px}
+.notes ul{list-style:none;display:flex;flex-direction:column;gap:10px}
+.notes li{font-size:12.5px;line-height:1.45;color:rgba(255,255,255,.78);padding-left:12px;border-left:1px solid var(--bd)}
+/* ds-allow-hardcode:end */
+</style></head>
+<body><!-- ds-allow-hardcode:start -->
+<div class="wrap">
+  <div>
+    <div class="lab">Phone · 412 × 915 · dark</div>
+    <div class="phone">
+      <div class="sb"><span>4:33</span><span><span class="mi">signal_cellular_alt</span> <span class="mi">wifi</span> <span class="mi">battery_5_bar</span></span></div>
+      <div class="pg">
+        <div class="hd">
+          <span class="back"><span class="mi">chevron_left</span></span>
+          <h1>Available Units</h1>
+          <div class="vt"><span class="on"><span class="mi">grid_on</span></span><span><span class="mi">format_list_bulleted</span></span></div>
+        </div>
+        <div class="pj"><b>Citizen Avenue Mall</b><em>23 available</em></div>
+        <div class="cards">
+          <div class="card"><b>47</b><span>All</span></div>
+          <div class="card"><b>23</b><span>Available</span></div>
+          <div class="card"><b>5</b><span>On hold</span></div>
+        </div>
+        <div class="st"><b>Status</b><span class="mi">tune</span></div>
+        <div class="chips">
+          <span class="chip on">All <b>47</b></span>
+          <span class="chip"><i class="dot" style="background:var(--accent)"></i>Available <b>23</b></span>
+          <span class="chip"><i class="dot" style="background:var(--hold)"></i>On hold <b>5</b></span>
+          <span class="chip"><i class="dot" style="background:var(--sold)"></i>Sold <b>0</b></span>
+          <span class="chip"><i class="dot" style="background:var(--land)"></i>Landowner <b>17</b></span>
+          <span class="chip"><i class="dot" style="background:var(--resv)"></i>Reserved <b>2</b></span>
+        </div>
+        <div class="fl"><b>1st Floor</b><span class="mi">expand_more</span></div>
+        <div class="unit">
+          <div class="unit-hd"><b>SHOP-113</b><span class="bdg"><i class="dot" style="background:var(--accent)"></i>Available</span></div>
+          <p>1st Floor · Ladies &amp; kids Shop</p>
+          <p>202 sft · ৳39,604/sft · ৳80.0 L</p>
+        </div>
+        <div class="tiles" id="tiles"></div>
+      </div>
+      <div class="rsv"><span class="mi">send</span>RESERVE NOW</div>
+    </div>
+  </div>
+  <div class="notes">
+    <h3>Follows your reference, with real data</h3>
+    <ul>
+      <li>Layout as in the reference: Back, title and grid/list toggle; project with its free count; All / Available / On hold cards; Status row with the Manage icon; chips; floor dropdown; picked unit; 5 tiles a row with the status as a word; Reserve Now.</li>
+      <li>Every number is the 1st floor of Citizen Avenue Mall from your app: 47 units, 23 available, 5 on hold, 17 landowner, 2 reserved. The cards and chips now agree.</li>
+      <li>The picked unit is SHOP-113 with its real size, rate and total (from your PC screen). Its line no longer says "Not available to reserve".</li>
+      <li>Tiles use each unit's real status, including Landowner (shortened to "owner" so it fits 5 a row) and Reserved. The picked tile has a white ring.</li>
+      <li>The list scrolls under a fixed Reserve Now bar; the bar never covers the last row.</li>
+      <li>Not copied: the serif heading font (the app font is used) and the "Illustrative states" note.</li>
+    </ul>
+  </div>
+</div>
+<script>
+// ds-allow-hardcode:start
+// 1st floor, Citizen Avenue Mall, from the app screenshots.
+const K = { av: 'available', hold: 'hold', sold: 'sold', land: 'owner', resv: 'reserved' };
+const land = [101,102,118,119,120,121,122,123,124,125,126,138,139,140,141,142,147], hold = [116,117,136,137,144], resv = [106,135];
+const kind = n => land.includes(n) ? 'land' : hold.includes(n) ? 'hold' : resv.includes(n) ? 'resv' : 'av';
+let h = '';
+for (let n = 101; n <= 147; n++) { const k = kind(n); h += `<div class="t ${k}${n === 113 ? ' sel' : ''}"><b>S-${n}</b><i>${K[k]}</i></div>`; }
+document.getElementById('tiles').innerHTML = h;
+// ds-allow-hardcode:end
+</script>
+<!-- ds-allow-hardcode:end -->
+</body></html>

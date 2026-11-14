@@ -1,0 +1,193 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<title>Available Units: Android redesign mockup</title>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,400,0..1,0" rel="stylesheet">
+<style>
+/* ds-allow-hardcode:start  throwaway mockup; values mirror src/index.css tokens */
+/* Tokens copied from src/index.css (dark theme) and FloorPlan.css. */
+:root{--bd:rgba(255,255,255,.12);--bd2:rgba(255,255,255,.24);--t1:#fff;--t2:rgba(255,255,255,.62);--t3:rgba(255,255,255,.40);
+  --accent:#54B848;--sel:#1F6FEB;--hold:#E3A322;--sold:#D23C3C;--land:#9B87F5;--resv:#38BDF8;--fd:'Space Grotesk',Inter,sans-serif}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#141414;color:var(--t1);font:400 14px/1.35 Inter,sans-serif;padding:28px 32px;width:1240px}
+.mi{font-family:'Material Symbols Rounded';font-size:20px;line-height:1;font-style:normal;display:inline-block;font-feature-settings:'liga'}
+.wrap{display:flex;gap:40px;align-items:flex-start}
+.lab{font:600 13px/1 var(--fd);color:rgba(255,255,255,.72);margin-bottom:12px}
+.phone{width:412px;height:915px;border-radius:34px;border:1px solid #2c2c2c;background:#000;overflow:hidden;position:relative}
+.sb{height:32px;display:flex;justify-content:space-between;align-items:center;padding:0 24px;font:500 13px Inter}
+.sb .mi{font-size:16px}
+.pg{padding:6px 16px 0}
+.back{width:44px;height:44px;border-radius:50%;border:1px solid var(--bd);display:grid;place-items:center}
+h1{font:700 24px/1 var(--fd);text-transform:uppercase;margin:14px 0}
+.seg{display:flex;border:1px solid var(--bd);border-radius:999px;padding:4px;gap:4px}
+.seg>span{flex:1;height:40px;padding:0 14px;border-radius:999px;display:flex;align-items:center;justify-content:center;gap:8px;font:700 13px var(--fd);letter-spacing:.06em;color:var(--t2)}
+.seg>.on{background:var(--accent);color:#0a0a0a}
+.row{display:flex;gap:8px;margin-top:10px}
+.pick{flex:1;min-width:0;height:44px;border:1px solid var(--bd);border-radius:999px;display:flex;align-items:center;justify-content:space-between;padding:0 12px 0 16px;font:600 13px var(--fd);text-transform:uppercase}
+.ib{flex:none;width:44px;height:44px;border:1px solid var(--bd);border-radius:50%;display:grid;place-items:center}
+.chips{display:flex;gap:6px;margin-top:10px;overflow:hidden;-webkit-mask-image:linear-gradient(90deg,#000 82%,transparent);mask-image:linear-gradient(90deg,#000 82%,transparent)}
+.chip{flex:none;height:34px;padding:0 12px;border:1px solid var(--bd);border-radius:999px;display:flex;align-items:center;gap:6px;font:500 13px Inter;color:var(--t2)}
+.chip b{color:var(--t1);font-weight:700}
+.chip.on{border-color:var(--accent);color:var(--t1)}
+.dot{width:7px;height:7px;border-radius:50%;flex:none}
+.search{margin-top:10px;height:44px;border:1px solid var(--bd);border-radius:999px;display:flex;align-items:center;gap:8px;padding:0 14px;color:var(--t3);font-size:16px}
+.ctl{position:relative;display:flex;gap:8px;margin-top:10px}
+.fl{flex:1;min-width:0;height:44px;border:1px solid var(--bd);border-radius:999px;display:flex;align-items:center;gap:8px;padding:0 10px 0 16px}
+.fl b{font:600 14px var(--fd)}
+.fl small{font:600 12px Inter;color:var(--accent)}
+.fl .mi{margin-left:auto;color:var(--t2)}
+.search.sm{flex:0 0 146px;margin-top:0}
+.seats{border:1px solid var(--bd);border-radius:16px;padding:10px 8px;margin-top:12px}
+.tiles{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:5px}
+/* --c: number colour (light shade); --d: dot colour (the chip colour). */
+.av{--c:#fff}.hold{--c:#FFD166;--d:var(--hold)}.land{--c:#C4B5FD;--d:var(--land)}.resv{--c:#7DD3FC;--d:var(--resv)}.sold{--c:#FF9B9B;--d:var(--sold)}
+.t{position:relative;aspect-ratio:1/1;border-radius:8px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;background:rgba(255,255,255,.05)}
+.t b{font:700 11.5px/1 var(--fd);color:var(--c)}
+.t span{font:500 9.5px/1 Inter;color:var(--t3)}
+.t i{position:absolute;top:5px;right:5px;width:6px;height:6px;border-radius:50%;background:var(--d)}
+.t.av{background:rgba(84,184,72,.12);box-shadow:inset 0 0 0 1px rgba(84,184,72,.32)}
+.t.sel{--c:#fff;background:var(--sel)}
+.t.sel span{color:rgba(255,255,255,.85)}
+.menu{position:absolute;left:0;top:52px;width:250px;z-index:5;background:#171717;border:1px solid var(--bd2);border-radius:14px;padding:6px;box-shadow:0 14px 34px rgba(0,0,0,.7)}
+.mr{display:flex;align-items:center;gap:10px;height:42px;padding:0 12px;border-radius:9px;font:500 14px Inter}
+.mr b{width:26px;font:700 13px var(--fd);color:var(--t2)}
+.mr small{margin-left:auto;font:600 12px Inter;color:var(--accent)}
+.mr small.z{color:var(--t3)}
+.mr.on{background:rgba(31,111,235,.22)}
+.mr.on b{color:#fff}
+.dock{position:absolute;left:16px;right:16px;bottom:18px;display:flex;gap:10px;align-items:center}
+.nav{flex:1;height:64px;border-radius:999px;background:rgba(26,26,26,.94);border:1px solid var(--bd);display:flex;justify-content:space-around;align-items:center}
+.nav .mi{font-size:24px;color:var(--t2);position:relative}
+.nav .act{width:48px;height:48px;border-radius:50%;background:rgba(255,255,255,.12);display:grid;place-items:center;color:#fff}
+.nav .nd::after{content:'';position:absolute;top:-4px;right:-6px;width:8px;height:8px;border-radius:50%;background:var(--sold)}
+.fab{width:64px;height:64px;border-radius:50%;border:1px solid var(--bd2);background:rgba(26,26,26,.94);display:grid;place-items:center}
+.fab .mi{font-size:28px}
+/* Projects frame */
+.prow{display:flex;gap:8px;align-items:center}
+.prow .seg{flex:1;min-width:0}
+.prow .seg>span{padding:0 8px}
+.mng{flex:none;height:50px;padding:0 16px;border:1px solid var(--bd2);border-radius:999px;display:flex;align-items:center;justify-content:center;gap:8px;font:700 13px var(--fd);letter-spacing:.06em}
+h2{font:600 19px var(--fd);margin:16px 0 10px}
+h2 span{font-size:14px;color:var(--t2);font-weight:500}
+.pl{list-style:none;display:flex;flex-direction:column;gap:10px}
+.pl li{display:flex;gap:14px;align-items:center}
+.th{width:84px;height:62px;border-radius:12px;background:#1d1d1d;display:grid;place-items:center;color:var(--t3);flex:none}
+.th .mi{font-size:30px}
+.pl b{display:block;font:700 14.5px/1.2 var(--fd);text-transform:uppercase}
+.pl .s{display:block;font-size:13px;color:var(--t2);margin:3px 0 5px}
+.ft{display:flex;gap:8px;align-items:center;font-size:12.5px;color:var(--t2)}
+.bdg{font:700 10.5px/1 Inter;letter-spacing:.05em;color:var(--accent);border:1px solid rgba(84,184,72,.5);border-radius:5px;padding:4px 6px}
+/* Notes */
+.notes{width:260px;padding-top:25px}
+.notes h3{font:600 15px var(--fd);margin-bottom:12px}
+.notes ol{list-style:none;display:flex;flex-direction:column;gap:11px}
+.notes li{display:flex;gap:10px;font-size:12.5px;line-height:1.4;color:rgba(255,255,255,.78)}
+.notes li b{flex:none;width:20px;height:20px;border-radius:6px;border:1px solid var(--bd2);display:grid;place-items:center;font:700 11px var(--fd);color:#fff}
+.notes p{margin-top:16px;font-size:11.5px;line-height:1.45;color:var(--t3)}
+/* ds-allow-hardcode:end */
+</style></head>
+<body><!-- ds-allow-hardcode:start -->
+<div class="wrap">
+
+  <div>
+    <div class="lab">Units · 1st floor (412 × 915)</div>
+    <div class="phone">
+      <div class="sb"><span>4:33</span><span><span class="mi">signal_cellular_alt</span> <span class="mi">wifi</span> <span class="mi">battery_5_bar</span></span></div>
+      <div class="pg">
+        <div class="back"><span class="mi">chevron_left</span></div>
+        <h1>Available units</h1>
+        <div class="seg"><span><span class="mi">apartment</span>Projects</span><span class="on"><span class="mi">map</span>Units</span></div>
+        <div class="row">
+          <div class="pick">Citizen Avenue Mall · 8 plans<span class="mi">expand_more</span></div>
+          <div class="ib" aria-label="Manage"><span class="mi">tune</span></div>
+        </div>
+        <div class="chips">
+          <span class="chip on">All <b>47</b></span>
+          <span class="chip"><i class="dot" style="background:var(--accent)"></i>Available <b>23</b></span>
+          <span class="chip"><i class="dot" style="background:var(--hold)"></i>On hold <b>5</b></span>
+          <span class="chip"><i class="dot" style="background:var(--sold)"></i>Sold <b>0</b></span>
+          <span class="chip"><i class="dot" style="background:var(--land)"></i>Landowner <b>17</b></span>
+          <span class="chip"><i class="dot" style="background:var(--resv)"></i>Reserved <b>2</b></span>
+        </div>
+        <div class="ctl">
+          <div class="fl"><b>1st Floor</b><small>23 free</small><span class="mi">expand_more</span></div>
+          <div class="search sm"><span class="mi">search</span>Find unit</div>
+        </div>
+        <section class="seats"><div class="tiles" id="tiles"></div></section>
+      </div>
+      <div class="dock">
+        <div class="nav"><span class="mi">home</span><span class="mi">person_search</span><span class="act"><span class="mi">folder</span></span><span class="mi nd">menu</span></div>
+        <div class="fab"><span class="mi">add</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div>
+    <div class="lab">Floor dropdown open</div>
+    <div class="phone">
+      <div class="sb"><span>4:33</span><span><span class="mi">signal_cellular_alt</span> <span class="mi">wifi</span> <span class="mi">battery_5_bar</span></span></div>
+      <div class="pg">
+        <div class="back"><span class="mi">chevron_left</span></div>
+        <h1>Available units</h1>
+        <div class="seg"><span><span class="mi">apartment</span>Projects</span><span class="on"><span class="mi">map</span>Units</span></div>
+        <div class="row">
+          <div class="pick">Citizen Avenue Mall · 8 plans<span class="mi">expand_more</span></div>
+          <div class="ib" aria-label="Manage"><span class="mi">tune</span></div>
+        </div>
+        <div class="chips">
+          <span class="chip on">All <b>47</b></span>
+          <span class="chip"><i class="dot" style="background:var(--accent)"></i>Available <b>23</b></span>
+          <span class="chip"><i class="dot" style="background:var(--hold)"></i>On hold <b>5</b></span>
+          <span class="chip"><i class="dot" style="background:var(--sold)"></i>Sold <b>0</b></span>
+          <span class="chip"><i class="dot" style="background:var(--land)"></i>Landowner <b>17</b></span>
+          <span class="chip"><i class="dot" style="background:var(--resv)"></i>Reserved <b>2</b></span>
+        </div>
+        <div class="ctl">
+          <div class="fl"><b>1st Floor</b><small>23 free</small><span class="mi">expand_less</span></div>
+          <div class="search sm"><span class="mi">search</span>Find unit</div>
+          <div class="menu" id="menu"></div>
+        </div>
+        <section class="seats"><div class="tiles" id="tiles2"></div></section>
+      </div>
+      <div class="dock">
+        <div class="nav"><span class="mi">home</span><span class="mi">person_search</span><span class="act"><span class="mi">folder</span></span><span class="mi nd">menu</span></div>
+        <div class="fab"><span class="mi">add</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="notes">
+    <h3>What changes (phone only)</h3>
+    <ol>
+      <li><b>A</b>Subtitle hidden. Manage becomes an icon button beside the project picker: one row, not two.</li>
+      <li><b>B</b>Status chips stay on one row, scroll sideways, and fade at the edge so the hidden ones are discoverable.</li>
+      <li><b>C</b>The floor rail becomes a dropdown, left of a compact search box. Each floor in it shows its free units.</li>
+      <li><b>D</b>Seats use the full width, 6 a row. Only free seats have an outline (soft green box). Taken seats have no outline: a light status-coloured number and a dot in the status colour, the same dot as the chips.</li>
+      <li><b>E</b>Grid gets bottom padding for the dock and the iPhone home bar, so the last row is never hidden.</li>
+      <li><b>F</b>Search text is 16px, so iOS Safari does not zoom on tap.</li>
+      <li><b>G</b>Manage on Projects is an outline button; the solid green stays on the active tab only.</li>
+      <li><b>H</b>"Semi Basement" shows as SB, not Sem.</li>
+    </ol>
+    <p>Units, sizes, statuses and counts on the 1st floor and in the project list come from the current app screenshots. Free counts on the other floors are sample values. PC layout is unchanged.</p>
+  </div>
+
+</div>
+<script>
+// ds-allow-hardcode:start
+const C = { av: '', sel: '', hold: 'var(--hold)', sold: 'var(--sold)', land: 'var(--land)', resv: 'var(--resv)' };
+const U = [
+  [101,'1,221','land'],[102,'715','land'],[103,'387','av'],[104,'251','av'],[105,'162','av'],[106,'1,113','resv'],[107,'202','av'],[108,'245','av'],
+  [109,'336','av'],[110,'264','sel'],[111,'245','av'],[112,'208','av'],[113,'202','av'],[114,'231','av'],[115,'225','av'],[116,'204','hold'],
+  [117,'206','hold'],[118,'134','land'],[119,'202','land'],[120,'156','land'],[121,'170','land'],[122,'175','land'],[123,'175','land'],[124,'285','land'],
+  [125,'120','land'],[126,'156','land'],[127,'205','av'],[128,'200','av'],[129,'210','av'],[130,'286','av'],[131,'181','av'],[132,'125','av'],
+  [133,'122','av'],[134,'160','av'],[135,'204','av'],[136,'171','hold'],[137,'190','hold'],[138,'181','land'],[139,'286','land'],[140,'325','land'],
+  [141,'131','land'],[142,'169','land'],[143,'216','av'],[144,'236','hold'],[145,'165','av'],[146,'215','av'],[147,'236','land']];
+const seat = ([n, sz, k]) => `<div class="t ${k}">${k === 'av' || k === 'sel' ? '' : '<i></i>'}<b>S-${n}</b><span>${sz}</span></div>`;
+for (const id of ['tiles', 'tiles2']) document.getElementById(id).innerHTML = U.map(seat).join('');
+const F = [['5','5th Floor',9],['4','4th Floor',31],['3','3rd Floor',28],['2','2nd Floor',26],['1','1st Floor',23,1],['G','Ground Floor',12],['SB','Semi Basement',6],['B','Basement',0],['Oth','Other units',1]];
+document.getElementById('menu').innerHTML = F.map(([t, n, f, on]) =>
+  `<div class="mr${on ? ' on' : ''}"><b>${t}</b>${n}<small class="${f ? '' : 'z'}">${f} free</small></div>`).join('');
+// ds-allow-hardcode:end
+</script>
+<!-- ds-allow-hardcode:end -->
+</body></html>

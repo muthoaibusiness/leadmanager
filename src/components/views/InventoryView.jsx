@@ -44,7 +44,7 @@ export default function InventoryView() {
   return (
     <div className="fin">
       <div className="fin-bar">
-        <div className="fin-tabs" role="tablist" aria-label="Inventory sections">
+        <div className="pill-tabs" role="tablist" aria-label="Inventory sections">
           {TABS.map(([k, l, ic]) => (
             <button key={k} type="button" role="tab" aria-selected={shown === k} className={shown === k ? 'on' : ''} onClick={() => setTab(k)}>
               <Mi>{ic}</Mi>{l}
@@ -54,7 +54,8 @@ export default function InventoryView() {
         {error && <span className="fin-bar-err"><Mi>warning</Mi>{error}</span>}
         <button type="button" className="fin-refresh" onClick={api.reload} disabled={loading} title="Refresh" aria-label="Refresh"><Mi className={loading ? 'spin' : ''}>sync</Mi></button>
       </div>
-      {shown === 'overview' && <Overview fin={fin} range={dateRange?.range || null} />}
+      {/* Phones: the tab row stays put and this scrolls (index.css .tab-scroll). */}
+      {shown === 'overview' && <div className="tab-scroll"><Overview fin={fin} range={dateRange?.range || null} /></div>}
       {shown === 'budgets' && <Budgets api={api} user={user} budgetId={budgetId} setBudgetId={setBudgetId} onOpenStatement={openStatement} />}
       {shown === 'statements' && <Statements api={api} user={user} invoiceId={invoiceId} setInvoiceId={setInvoiceId} onOpenBudget={openBudget} />}
     </div>

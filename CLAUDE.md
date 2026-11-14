@@ -79,3 +79,7 @@ There is no router. The page on screen is AppContext state (`view`, `projTab`, t
 
 - The header lead count is published by `LeadsView` into `leadCounts` context (not recomputed in the header) so the number always agrees with the table beneath it.
 - Mutations: call a `db.js` function that mutates `_DB`, persists, and pushes to the cloud, then `refreshDB()` to re-render.
+
+## Navigator
+
+Navigator runtime: workflow enforcement (session context, workflow gating, read guarding, intent briefs, completion gating, compact markers) lives in the plugin's hook runtime, not in this file. Off-switches live in `.agent/.nav-config.json`: every hook block has `enabled` (e.g. `workflow_enforcer_hook.enabled: false`), and gating blocks also take `strict_block: false` to warn instead of block. Project docs live in `.agent/`. Start from `.agent/DEVELOPMENT-README.md` and load task/system/SOP docs on demand, not upfront.

@@ -19,6 +19,8 @@ import { ROLES } from '../../lib/constants.js';
 import useLeadBook from '../../hooks/useLeadBook.js';
 import useChanged from '../../hooks/useChanged.js';
 import useNow from '../../hooks/useNow.js';
+import useIsPhone from '../../hooks/useIsPhone.js';
+import useProjectNav from '../../hooks/useProjectNav.js';
 
 const STAGES = [
   { key: 'offer', label: 'Offer' },
@@ -56,17 +58,25 @@ export function Crumb({ label, icon: Icon, items, value, onChange, placeholder, 
   );
 }
 
-export default function ProjectConsole() {
-  const { modal, closeModal, propSel, setPropSel, propDraft, setPropDraft, user, refreshDB, dbVersion, consoleAdmin, consoleUnit, setConsoleUnit } = useApp();
+// Global use: no props, opened by modal 'project-console'.
+// Embedded use (Available Units side panel): `embed` = { projectId, variantId,
+// unitId }, an available unit. Renders only the Deal cart in place, never the
+// modal; key it by unit so each picked unit starts its own deal.
+export default function ProjectConsole({ embed = null } = {}) {
+  const app = useApp();
+  const { modal, closeModal, setPropSel, propDraft, setPropDraft, user, refreshDB, dbVersion } = app;
+  const phone = useIsPhone();
+  const pnav = useProjectNav(); // phones: a new property goes on to its units; Add floor plan from the form
+  const propSel = embed ? embed.projectId : app.propSel;
+  const consoleAdmin = embed ? false : app.consoleAdmin;
+  const consoleUnit = embed;
   const toast = useProjectToast();
-  const isOpen = modal === 'project-console';
+  const isOpen = !!embed || modal === 'project-console';
   // Gated on isOpen — App.jsx mounts this on every page and it renders nothing
   // until opened, so an ungated call pulled the whole lead book everywhere.
   useLeadBook(isOpen);
   const isAdmin = user?.role === ROLES.MGMT;
-  // Book This (Available Units) hands over a unit: open as a side drawer with
-  // only the Deal cart, like the Prospects lead panel. Anywhere else: the full console.
-  const dealOnly = !!consoleUnit && !consoleAdmin;
+  const dealOnly = !!embed; // only the Deal cart
 
   const [admin, setAdmin] = useState(false); // admin "back view" toggle
   const [vid, setVid] = useState(null);
@@ -105,20 +115,8 @@ export default function ProjectConsole() {
     const pickOk = !!pick?.units.some(u => u.id === consoleUnit.unitId && u.status === 'available');
     setVid(pick ? pick.id : null);
     setFloorSel(pick ? (floors.find(f => f.ids.has(consoleUnit.unitId))?.name ?? null) : null);
-    // The lead panel's unit picker also hands over its lead as the client.
-    const cl = consoleUnit?.client ? { client: consoleUnit.client } : {};
-    setDeal(pickOk ? { ...emptyDeal(), ...cl, variantId: pick.id, unitId: consoleUnit.unitId } : emptyDeal());
+    setDeal(pickOk ? { ...emptyDeal(), variantId: pick.id, unitId: consoleUnit.unitId } : emptyDeal());
     setCq(''); setClientTab('search'); setLeadOpen(false); setAdmin(!!consoleAdmin);
-  }
-  // Drawer open, another available unit clicked on the page behind: follow it.
-  // The picked client stays; a deal already in the cart is never swapped.
-  if (useChanged(consoleUnit?.unitId) && isOpen && !opened && dealOnly && consoleUnit && deal.stage === 'browse') {
-    const v = variants.find(x => x.id === consoleUnit.variantId);
-    if (v?.units.some(u => u.id === consoleUnit.unitId && u.status === 'available')) {
-      setVid(v.id);
-      setFloorSel(floors.find(f => f.ids.has(consoleUnit.unitId))?.name ?? null);
-      setDeal(d => ({ ...emptyDeal(), client: d.client, variantId: v.id, unitId: consoleUnit.unitId }));
-    }
   }
   // keep deal.variantId in sync; reset unit when variant changes. Skipped on
   // the opening render: `variant` there still reflects the old vid.
@@ -164,20 +162,23 @@ export default function ProjectConsole() {
   useLayoutEffect(() => {
     const rail = railRef.current, box = sheetRef.current;
     if (!offerStep || !rail || !box) { setSheetK(1); return; }
+    // Embedded, the rail does not scroll: the Available Units panel card around it does.
+    const sc = (embed && rail.closest('.fpv-card')) || rail;
     const fit = () => {
       const sheet = box.firstElementChild;
       if (!sheet) return;
       const natural = sheet.scrollHeight;                    // unscaled height
       const shown = natural * (Number(box.dataset.k) || 1);  // height at the current scale
-      const over = rail.scrollHeight - rail.clientHeight;    // how much the rail overflows now
-      const k = Math.max(0.7, Math.min(1, (shown - over) / natural));
+      const over = sc.scrollHeight - sc.clientHeight;        // how much the scroller overflows now
+      const k = Math.max(embed ? 0.55 : 0.7, Math.min(1, (shown - over) / natural));
       setSheetK(Math.round(k * 100) / 100);
     };
     fit();
     const ro = new ResizeObserver(fit);
     ro.observe(rail);
+    if (sc !== rail) ro.observe(sc);
     return () => ro.disconnect();
-  }, [offerStep]);
+  }, [offerStep, embed]);
   // In the Projects tab the question is a goey-toast confirmation that never
   // blocks the editor. Opened from another tab (Hold Requests), an existing
   // project keeps the browser confirm it always had.
@@ -195,7 +196,6 @@ export default function ProjectConsole() {
     dropAsk();
     askReturnRef.current = null;
     if (propDraft) setPropDraft(null);
-    if (consoleUnit) setConsoleUnit(null); // the next opening starts with no unit picked
     closeModal();
   };
   // Stay (and Esc) hand focus back to where it was, so typing carries on.
@@ -246,13 +246,10 @@ export default function ProjectConsole() {
   // would close the modal directly and skip the check above) and before goey's
   // own Escape handler. Esc first backs out of an open confirmation.
   useEffect(() => {
-    if (!isOpen) return;
+    if (!isOpen || embed) return; // embedded: no modal to close
     const onKey = (e) => {
       if (e.key !== 'Escape') return;
       if (leadOpen) return; // the Create lead form on top handles its own Esc
-      // Book This drawer: closes only on its ✕ (browser Back still works); Esc
-      // is left to whatever else has focus, and never reaches App's global close.
-      if (dealOnly) { if (!(e.target instanceof Element && e.target.closest('[role="listbox"]'))) e.stopPropagation(); return; }
       // An open dropdown list (the PROJECT TYPE select) closes itself first.
       if (e.target instanceof Element && e.target.closest('[role="listbox"]')) return;
       e.stopPropagation();
@@ -264,7 +261,7 @@ export default function ProjectConsole() {
   });
 
   if (!isOpen) return <div className="mov" onClick={closeModal} />;
-  if (!p) return <div className="mov on" onClick={closeModal} />;
+  if (!p) return embed ? null : <div className="mov on" onClick={closeModal} />;
 
   const img0 = p.media?.images?.[0]?.url || p.images?.[0] || '';
   const docs = p.media?.docs || (p.documents || []).filter(d => /pdf|doc/i.test(d.type || d.url || ''));
@@ -336,15 +333,15 @@ export default function ProjectConsole() {
   return (
     // Outside click = pressed AND released on the backdrop. A text selection
     // dragged across the modal edge is clicked on .mov too, and must not count.
-    <div className={`mov on${dealOnly ? ' pc-drawer' : ''}`}
+    <div className={embed ? 'pc-embed' : 'mov on'}
       onPointerDown={e => { backdropRef.current = e.target === e.currentTarget; }}
       onPointerUp={e => { backdropRef.current = backdropRef.current && e.target === e.currentTarget; }}
       onClick={e => { if (!dealOnly && backdropRef.current && e.target === e.currentTarget) requestClose(); backdropRef.current = false; }}>
-      <div className={`modal pc-modal${dealOnly ? ' is-deal' : ''}`} onClick={e => e.stopPropagation()} onPointerDownCapture={dismissAsk} onKeyDownCapture={dismissAsk}>
-        <div className={`pc-top${admin || isNew ? ' pc-top-edit' : ''}`}>
+      <div className={embed ? undefined : 'modal pc-modal'} onClick={embed ? undefined : e => e.stopPropagation()} onPointerDownCapture={dismissAsk} onKeyDownCapture={dismissAsk}>
+        {!embed && <div className={`pc-top${admin || isNew ? ' pc-top-edit' : ''}`}>
           <div className="pc-top-l"><Mi>storefront</Mi><b>{p.name || (isNew ? 'New property' : '')}</b></div>
           <div className="pc-top-r">
-            {isAdmin && !isNew && !dealOnly && (
+            {isAdmin && !isNew && (
               <div className="pc-toggle">
                 <button className={!admin ? 'on' : ''} onClick={() => setAdmin(false)}>Agent console</button>
                 <button className={admin ? 'on' : ''} onClick={() => setAdmin(true)}>Admin console</button>
@@ -356,7 +353,7 @@ export default function ProjectConsole() {
             {(admin || isNew) && <div className="pc-acts" ref={setActsEl} />}
             {!isNew && <button className="m-x" onClick={requestClose} aria-label="Close" title="Close"><Mi>close</Mi></button>}
           </div>
-        </div>
+        </div>}
 
         {admin || isNew ? (
           <div className="pc-adminview">
@@ -366,12 +363,19 @@ export default function ProjectConsole() {
               project={p}
               isNew={isNew}
               onDone={isNew ? requestClose : () => setAdmin(false)}
-              onSaved={() => { dropAsk(); if (isNew) setPropDraft(null); setAdmin(false); }}
+              onSaved={(savedId) => {
+                dropAsk();
+                if (isNew) setPropDraft(null);
+                setAdmin(false);
+                // Phones: a new property opens on its Available units (grid) right away.
+                if (isNew && phone && savedId) { closeNow(); pnav.openUnits(savedId); }
+              }}
+              onAddFloorPlan={phone ? (projectId) => { closeNow(); pnav.addFloorPlan(projectId); } : undefined}
             />
           </div>
         ) : (
           <div className="pc-body">
-            {/* ── main column ── (left out in the Book This drawer) */}
+            {/* ── main column ── (left out when embedded) */}
             {!dealOnly && <div className="pc-main">
               {/* hero — photo split when a cover exists, else green blueprint */}
               {img0 ? (
@@ -515,7 +519,7 @@ export default function ProjectConsole() {
                       </div>
                       <div className="pdo-grid">
                         <div><span>Deal total</span><b>{crShort(calc.dealTotal)}</b></div>
-                        <div><span>Rate</span><b>{fmtBDT(calc.offerRate)}<small>/sqft</small></b></div>
+                        <div><span>Rate</span><b>{fmtBDT(Math.round(calc.offerRate))}<small>/sqft</small></b></div>
                         <div><span>Size</span><b>{pv.size.toLocaleString('en-IN')} sft</b></div>
                       </div>
                       <div className="pdo-cust">
@@ -690,13 +694,13 @@ export default function ProjectConsole() {
                     <div className="pc-cart-empty">
                       <span className="pc-cart-empty-ic"><Mi>grid_view</Mi></span>
                       {dealOnly
-                        ? <div>This unit is no longer available.<br />Go back and pick another one.</div>
+                        ? <div>This unit is no longer available.<br />Pick another one.</div>
                         : <div>Pick a unit from the grid to start.<br />Then add the <b>client's name</b> to send the offer.</div>}
                     </div>
                   ) : (
                     <>
                       <div className="pcl-rows">
-                        <div className="pcl-row"><span>Offer rate</span><b>{fmtBDT(calc.offerRate)}/sqft</b></div>
+                        <div className="pcl-row"><span>Offer rate</span><b>{fmtBDT(Math.round(calc.offerRate))}/sqft</b></div>
                         <div className="pcl-row"><span>Offer value · {pv.size} sqft</span><b>{fmtBDT(calc.offerValue)}</b></div>
                         {calc.discountPct > 0 && <div className="pcl-row"><span>Fast-close −{calc.discountPct}%</span><b className="pcl-neg">−{fmtBDT(calc.offerValue - calc.discountedOffer)}</b></div>}
                         {(p.addons || []).filter(a => deal.addons[a.id]).map(a => <div key={a.id} className="pcl-row"><span>{a.name}</span><b>+{fmtBDT(a.amount)}</b></div>)}
@@ -729,7 +733,7 @@ export default function ProjectConsole() {
                         )}
                       </div>
                       {deal.client.id && <div className="pcc-chosen"><Mi>person</Mi>{deal.client.name}{deal.client.phone ? ` · ${deal.client.phone}` : ''}</div>}
-                      <button className="btn btn-p btn-full" disabled={!deal.client.id} onClick={addToCart}><Mi>send</Mi>Reserve Now</button>
+                      <button className="btn btn-p btn-full pcc-reserve" disabled={!deal.client.id} onClick={addToCart}><Mi>send</Mi>Reserve</button>
                       {!deal.client.id && <div className="pcc-hint">{clientTab === 'search' ? 'Select an existing customer to continue' : 'Add the lead, then send the offer'}</div>}
                     </>
                   ))}

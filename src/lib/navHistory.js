@@ -18,7 +18,7 @@ export const VIEW_TITLES = {
   reports: 'Reports',
   agentperf: 'Performance',
   perfreports: 'Reports',
-  campaign: 'Campaign',
+  fbleads: 'Facebook Leads',
   bookings: 'Sales Activity',
   team: 'My Team',
   accounts: 'Users',
