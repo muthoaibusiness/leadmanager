@@ -35,6 +35,9 @@ dist-ssr
 # graft's local graph cache — regenerable, not committed (run `graft build`).
 /graft/
 
+# GitNexus structural index — per machine, regenerated on demand.
+/.gitnexus/
+
 # Local Claude Code / graft tooling; per machine, not shared.
 .claude/
 .ignore
@@ -54,6 +57,30 @@ Citizen-Avenue-customer-questions-BN.pdf
 transfer-barna.sql
 Untouched-new-leads-Citizen-Avenue-campaign.pdf
 CRM-Upgrade-Plan.pdf
+.context-markers/
+.agent/.nav-temp/
+.agent/.nav-runtime-state.json
+.agent/.nav-runtime-state.lock
+.agent/.nav-config.local.json
+.agent/onboarding/
+
+# Docs / learnings — not needed to run the CRM (Vite config and package.json do not reference them).
+# Already-tracked files stay tracked; this stops new untracked files here from being staged.
+/.trail/
+/.refarence/
+/.agent/
+/docs/mockups/
+/docs/research/
+
+# Local activity — do not stage.
+Clickable-floor-plan.md
+wecon-ai-agent-audit.md
+playwright-ui-test-e2e.m
+/docs/plans/
+/docs/phases/
+/docs/reports/
+/docs/decisions/
+/docs/audits/
 
 # Google OAuth client secret (never commit)
 Google Cloude Credential.json

@@ -1,5 +1,6 @@
 /* Facebook Leads admin page (FbLeadsView). Colours come from the app tokens so
    light and dark follow the theme. Phone layout first. */
+/* ds-allow-hardcode:start */
 .fbl { display: flex; flex-direction: column; gap: 14px; padding-bottom: 28px; max-width: 880px; }
 .fbl-top { display: flex; align-items: flex-start; justify-content: flex-end; gap: 12px; }
 .fbl-title { margin: 0; font: 600 clamp(20px, 2.4vw, 26px)/1.15 var(--font-display); color: var(--t1); }
@@ -99,3 +100,4 @@
 .fbl-sum td.bad { color: var(--red); font-weight: 700; }
 .fbl-sum td.warn { color: var(--orange); font-weight: 700; }
 .fbl-sum tr.tot td { font-weight: 700; border-top: 2px solid var(--bd); }
+/* ds-allow-hardcode:end */

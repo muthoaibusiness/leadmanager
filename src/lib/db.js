@@ -148,7 +148,14 @@ export function mergeDB(remote, local) {
       };
     }),
     bookings: mergeArr(r.bookings, l.bookings),
-    holdRequests: mergeArr(r.holdRequests, l.holdRequests),
+    // Hold requests: cloud-authoritative, like leads. createHoldRequest inserts
+    // and decideHoldRequest updates the cloud row directly, so a request the
+    // cloud no longer has was deleted there and must not be kept (or pushed
+    // back up) from this cache. Only one created in the last 15 minutes and not
+    // yet on the cloud (its insert still in flight) is kept.
+    holdRequests: r.holdRequests === undefined
+      ? (l.holdRequests || [])
+      : mergeCloudFirst(r.holdRequests, (l.holdRequests || []).filter(x => nowMs - new Date(x?.createdAt || 0).getTime() < 15 * 60 * 1000)),
     activities: mergeActs(r.activities, l.activities),
     notifications: mergeNotifs(r.notifications, l.notifications),
   };

@@ -19,6 +19,120 @@
 .hero-manage-chev { margin-right: -4px; }
 .hero-manage[data-state="open"] .hero-manage-chev { transform: rotate(180deg); }
 
+/* Phones: Manage is an outline button, so the solid green marks only the
+   active tab. */
+@media (max-width: 767px) {
+  /* Both Projects tabs bring their own compact header (.fpv-ph: Back, the
+     page name, the units / list switch). The header bar, hero and bottom bar
+     do not mount on phones there (App.jsx PageHeader / PageHero, BottomNav),
+     so --bnav keeps only clearance for the Reserve dock and the iOS home
+     indicator. #app.is-projects comes from App.jsx (the view state). */
+  :root:has(#app.is-units) { --bnav: calc(12px + env(safe-area-inset-bottom, 0px)); }
+  .hero-acts .hero-manage { flex: none; background: transparent; border-color: var(--bd2); color: var(--t1); }
+
+  /* ds-allow-hardcode:start  phone header: px sizes match the phone blocks in index.css and FloorPlan.css (no spacing tokens exist) */
+  /* The header, shared by the Projects list (PropertiesView) and Available
+     Units (AvailableUnitsView): Back is the round .hd-back (index.css), here
+     going to the previous page (BackButton); the title is centred on the row; the switch at the
+     end. Below it each page puts its own row (search + Manage, the project). */
+  .fpv-ph { display: flex; flex-direction: column; gap: 14px; margin: 0 0 18px; }
+  .fpv-ph-top { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 12px; min-height: 44px; }
+  .fpv-ph-top h1 { min-width: 0; margin: 0; font: 600 18px/1.2 var(--font-display); color: var(--t1); text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  /* No Back on the account's home page (BackButton renders nothing): the title keeps the middle column */
+  .fpv-ph-top > h1:first-child { grid-column: 2; }
+  /* A little smaller than the shared 44px round Back (index.css); the extra class outranks it */
+  .fpv-ph .fpv-ph-top .hd-back { width: 40px; height: 40px; }
+  .fpv-ph .fpv-ph-top .hd-back .mi.hd-back-chev { font-size: 22px; }
+  .fpv-vt { flex: none; justify-self: end; display: flex; gap: 2px; padding: 4px; border-radius: 14px; background: var(--surf2); }
+  .fpv-vt button { display: grid; place-items: center; width: 40px; height: 32px; padding: 0; border: 0; border-radius: 10px; background: transparent; color: var(--t2); cursor: pointer; }
+  .fpv-vt button[aria-pressed="true"] { background: color-mix(in srgb, var(--accent) 16%, transparent); color: var(--accent); }
+  .fpv-vt button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .fpv-vt .mi { font-size: 20px; }
+  /* Manage as a round icon (the menu keeps its full items) */
+  .fpv-ph .fpv-manage, .fpv-ph .fpv-manage:hover {
+    flex: none; display: grid; place-items: center; width: 40px; height: 40px; min-height: 0; padding: 0; gap: 0;
+    border: 0; border-radius: 50%; background: transparent; color: var(--t2); font-size: 0; cursor: pointer; box-shadow: none;
+  }
+  .fpv-ph .fpv-manage .mi:last-child { display: none; }
+  .fpv-ph .fpv-manage .mi { font-size: 22px; }
+  .fpv-ph .fpv-manage:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  /* Both Projects pages: Back and the end slot (+, or the grid / list switch)
+     sit a little lower than the title; the title itself stays put */
+  .fpv-ph-top :is(.hd-back, .ppl-add, .fpv-vt) { transform: translateY(6px); }
+  /* .fpv-ph and button: has to outrank index.css's pressed rule (scale only), or a press drops the 6px and Back jumps up */
+  .fpv-ph .fpv-ph-top button.hd-back:active { transform: translateY(6px) scale(.96); }
+  .fpv-ph-top .ppl-add:active { transform: translateY(6px) scale(.97); }
+  /* Prospects and Meta CAPI: the same 14px above the header as the Projects pages */
+  .pg-body:has(.lv-ph) { padding-top: 14px; }
+  /* Every other phone sub-page: the shell renders the same block above
+     .pg-body (App.jsx PageHeader), so it carries the 14px and the gutter itself */
+  .page > .lv-ph { flex: none; margin: 14px var(--gutter) 0; }
+  /* Every phone page with a Back button: the first row under it starts 20px
+     below the button (it sits 4px below its header box, translateY(6px)).
+     Pages the shell gives a header: the page body's top padding, through
+     --body-top, so full-height views (.wa-wrap) keep their sums right.
+     Pages with their own header (Prospects, Meta CAPI): the header's margin.
+     Projects and Available Units: the row inside the header (.fpv-ph-row
+     here, .fpv-ph-pj in FloorPlan.css), 14px header gap + 10px. */
+  .page:has(> .lv-ph) { --body-top: 24px; }
+  .pg-body .fpv-ph.lv-ph { margin-bottom: 24px; }
+  /* its action slot sits where Prospects' Refresh ring sits; a Refresh ring in
+     it keeps 40px outside (the 2px light pad inside) */
+  .lv-ph .hd-acts .rf-ring { width: 40px; height: 40px; padding: 2px; box-sizing: border-box; transform: none; }
+  .lv-ph .hd-acts .rf-btn { width: 36px; height: 36px; }
+  /* Prospects: the hero's Refresh ring takes the title row's end slot, the same
+     40px round as Back; its own phone rule (index.css) already drops the word */
+  .lv-ph .rf-ring { justify-self: end; transform: translateY(6px); }
+  .lv-ph .rf-btn { width: 40px; height: 40px; padding: 0; justify-content: center; }
+  /* Prospects: the hero has nothing left on phones (title in the header, the
+     actions in the tab row), so it takes no room */
+  .hero.hero-acts-only { display: none; }
+  /* The tab row: My Leads, Forwarded, Import, Add Customer on one line, each
+     pill the same height as the ActionSwap tabs (.asw-md); it scrolls
+     sideways when the four do not fit (360px phones). */
+  .lv-tabs { flex-wrap: nowrap; gap: 6px; overflow-x: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
+  .lv-tabs::-webkit-scrollbar { display: none; }
+  .lv-tabs > * { flex: none; }
+  /* compact pills so all four fit a 412px screen without scrolling */
+  .lv-tabs .asw-btn { height: 36px; padding: 0 12px; font-size: 13px; }
+  .lv-act {
+    display: inline-flex; align-items: center; gap: 4px; height: 36px; padding: 0 12px 0 10px; border-radius: 999px;
+    border: 1px solid var(--bd); background: var(--surf); color: var(--t1); font: 500 13px/1 var(--font-display); white-space: nowrap; cursor: pointer;
+  }
+  .lv-act .mi { font-size: 17px; }
+  .lv-act-p { border-color: var(--accent); background: var(--accent); color: var(--on-accent); }
+  .lv-act:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  /* Projects list: New property, a round black glass + in the title row's end slot */
+  .ppl-add {
+    justify-self: end; display: grid; place-items: center; width: 40px; height: 40px; padding: 0;
+    border: 1px solid rgba(255, 255, 255, .16); border-radius: 50%;
+    background: rgba(11, 11, 12, .72); -webkit-backdrop-filter: blur(12px) saturate(1.2); backdrop-filter: blur(12px) saturate(1.2);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, .10), 0 6px 16px rgba(0, 0, 0, .18);
+    color: #F5F5F7; font: 600 13px/1 Inter, sans-serif; white-space: nowrap; cursor: pointer; -webkit-tap-highlight-color: transparent;
+    transition: transform .16s ease;
+  }
+  .ppl-add .mi { font-size: 20px; }
+  .ppl-add:active { transform: scale(.97); }
+  .ppl-add:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  /* Projects list: the search takes the row, Manage at its end */
+  .fpv-ph-row { display: flex; align-items: center; gap: 8px; margin-top: 10px; }
+  .fpv-ph-row .ppl-search { flex: 1; min-width: 0; margin: 0 16px; }
+
+  /* Both Projects pages on phones, after the reference: the page is one column
+     the height of the screen; the header sits down from the top with air
+     under each row, and only the list (.ppl-wrap) or the units grid
+     (.fpv-grid.is-phone, FloorPlan.css) scrolls, under the header, never past
+     it. .pg-body itself never scrolls here. */
+  #app.is-projects .pg-body:is(:has(.ppl-wrap), :has(.fpv-grid.is-phone)) { display: flex; flex-direction: column; overflow: hidden; padding-top: 14px; padding-bottom: 0; }
+  #app.is-projects .pg-body:is(:has(.ppl-wrap), :has(.fpv-grid.is-phone)) .pg-inner { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+  .fpv-ph { flex: none; }
+  /* more air between the search row and the first card; 4px top padding keeps the first card's shadow unclipped */
+  .pg-inner:has(.ppl-wrap) .fpv-ph { margin-bottom: 16px; }
+  .ppl-wrap { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 4px 2px calc(var(--gutter-y) + var(--bnav)); margin: 0 -2px; scrollbar-width: none; }
+  .ppl-wrap::-webkit-scrollbar { display: none; }
+  /* ds-allow-hardcode:end */
+}
+
 /* Phones: "Units", and the tabs share the row evenly. */
 @media (max-width: 600px) {
   .hero-units-tx { display: none; }

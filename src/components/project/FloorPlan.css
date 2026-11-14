@@ -99,6 +99,8 @@
 
 /* ── Viewer ─────────────────────────────────────────────────────────────── */
 .fpv { min-width: 0; }
+/* First load: the CRM loader in the space the page will take (as Meta CAPI's .fin-loader). */
+.fpv-loader { min-height: min(60vh, 520px); }
 .fpv-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; margin-bottom: 14px; }
 .fpv-proj { max-width: min(100%, 340px); min-width: 0; text-overflow: ellipsis; }
 .fpv-manage { margin-left: auto; }
@@ -228,19 +230,11 @@
 .fps-top span { font-size: 15px; font-weight: 700; color: var(--t1); }
 .fps-top em { font-style: normal; font-size: 12.5px; font-weight: 700; color: var(--orange); white-space: nowrap; }
 
-/* Floor dropdown (ui/select.jsx) in the toolbar row, a pill like the project picker (.fsel) */
-.fpv-floorsel { flex: 0 1 220px; }
-.fpv-floorsel .sel-trigger { width: 100%; min-height: 40px; height: 40px; padding: 0 14px 0 18px; border-color: var(--bd); border-radius: 999px; font: 600 13px/1.2 var(--font-display); }
 /* the plan's optional landmarks, above / below the units */
 .fps-mark {
   padding: 7px 10px; border-radius: 8px; background: var(--surf2); color: var(--t2);
   font-size: 11.5px; font-weight: 600; letter-spacing: .04em; text-align: center; overflow-wrap: anywhere;
 }
-
-/* Phones: Continue rides along the bottom of the screen, like a checkout bar,
-   until the unit card (with its own Continue) scrolls up to it; then the bar
-   empties (AvailableUnitsView). Wider screens use the button in the unit card. */
-.fpv-cta { display: none; }
 
 /* Laptops: 5 seats a row (272px + 26px + 6px), so the drawing keeps its room */
 @media (max-width: 1599px) {
@@ -257,7 +251,6 @@
   .fpv-stage { max-height: 56vh; }
   .fpv-search { margin-left: 0; flex: 1 1 100%; }
   .fpv-proj { max-width: 100%; flex: 1 1 100%; }
-  .fpv-floorsel { flex: 1 1 140px; }   /* fills the line beside Manage */
   .fpv-manage { margin-left: 0; }
   .fps-tiles { grid-template-columns: repeat(auto-fill, minmax(60px, 1fr)); }
   .is-seats .fps-tiles { grid-template-columns: repeat(auto-fill, 44px); gap: 9px 7px; max-width: 350px; }   /* 6 a row on a phone, 7 at most */
@@ -265,24 +258,380 @@
   .is-seats .fps-sz { font-size: 8.5px; }
   .fps-tile { min-height: 42px; padding: 4px 2px; font-size: 10.5px; }
   .fpv-seats { padding: 10px; }
-  .fpv-cta {
-    /* Sticky offsets count from inside the scroller's padding. .pg-body's
-       padding-bottom is --gutter-y, plus --bnav on phones, so pulling the
-       bar back down by --gutter-y lands it right above the phone bottom bar
-       (or on the screen's edge when there is no bar). bottom: --bnav on top
-       of that padding doubled it and left the bar floating mid-screen. */
-    display: block; position: sticky; bottom: calc(-1 * var(--gutter-y)); z-index: 5; margin: 0 -4px;
-    padding: 10px 4px calc(10px + env(safe-area-inset-bottom, 0px));
-    background: linear-gradient(to top, var(--bg) 70%, transparent);
-  }
-  .fpv-cta .btn { width: 100%; justify-content: center; min-height: 48px; border-radius: 999px; }
-  /* no bar: the empty box only marks the bar's line, so it takes no room */
-  .fpv-cta:empty { padding: 0; background: none; }
-}
-@media (max-width: 767px) {
-  /* the bottom bar's --bnav already clears the home indicator */
-  .fpv-cta { padding-bottom: 10px; }
 }
 @media (prefers-reduced-motion: reduce) {
   .fp-box .fp-fill { transition: none; }
+}
+
+/* ── Available Units: floor rail · floor map · details (is-rail) ──────────
+   One calm surface per column, theme tokens only. The map is the boxes
+   drawn as vectors (FloorPlanCanvas bare) on the card itself, so it follows
+   the CRM theme; status reads from a soft tint plus a thin edge, and sold is
+   also hatched so colour is never the only signal. */
+.fpv-grid.is-rail {
+  grid-template-columns: 184px minmax(0, 1fr) 390px; grid-template-areas: "rail plan side"; gap: 16px;
+}
+.fpv-grid.is-rail > .fpv-seats { grid-area: plan; }
+
+/* floor rail: every floor by name with its unit count; the picked floor in
+   the selection blue (the same blue as a picked unit, --fp-sel). */
+.fpr {
+  --fpr-sel: #1F6FEB;
+  grid-area: rail; display: flex; flex-direction: column; align-items: stretch; gap: 4px; padding: 8px;
+  background: var(--surf); border: 1px solid var(--bd); border-radius: var(--r-lg, 14px); min-width: 0;
+}
+.fpr-btn {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 10px;
+  min-height: 44px; padding: 10px 12px; border: 1px solid transparent; border-radius: var(--r); background: transparent;
+  color: var(--t1); text-align: left; cursor: pointer; font: 600 13.5px/1.25 var(--font-display);
+}
+.fpr-btn b { font-weight: 600; min-width: 0; overflow-wrap: anywhere; }
+.fpr-btn span { flex: none; font: 500 12px/1.25 var(--font-display); color: var(--t3); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.fpr-btn:hover { background: var(--surf2); }
+.fpr-btn.on { background: var(--fpr-sel); border-color: var(--fpr-sel); color: #FFFFFF; }
+.fpr-btn.on span { color: rgba(255, 255, 255, .82); }
+.fpr-btn:focus-visible { outline: 2px solid var(--fpr-sel); outline-offset: 2px; }
+
+/* floor map card */
+.fpm { background: var(--surf); border: 1px solid var(--bd); border-radius: var(--r-lg, 14px); padding: 16px; gap: 12px; }
+.fpm-hd { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.fpm-hd h3 { margin: 0; font: 700 17px/1.25 var(--font-display); color: var(--t1); }
+.fpm-hd h3 span { font-weight: 500; color: var(--t2); }
+.fpm-hd em { font-style: normal; font-size: 13px; color: var(--t2); font-variant-numeric: tabular-nums; }
+.fpm-legend { padding-top: 10px; border-top: 1px solid var(--bd); }
+
+/* The clean floor plan (a light drawing in either theme), so the boxes keep
+   fixed colours picked for contrast on it: a soft status tint, a thin edge,
+   dark labels. Sold and landowner units are grey and hatched. */
+.fp-stage.is-bare {
+  --fp-av: #2E7D27; --fp-hold: #B7791F; --fp-sold: #8C929A; --fp-unl: #8C929A; --fp-sel: #1F2A24;
+  background: #FAFAF8; border-color: var(--bd);
+}
+.is-bare .fp-box .fp-fill { fill-opacity: .16; rx: 9px; }
+.is-bare .fp-box .fp-edge { stroke-width: 1.25; stroke-opacity: .75; rx: 9px; }
+.is-bare .fp-box.st-hold .fp-fill { fill-opacity: .3; }
+.is-bare .fp-box.st-sold .fp-fill, .is-bare .fp-box.has-c .fp-fill { fill: var(--fp-sold); fill-opacity: .14; }
+.is-bare .fp-box.st-sold .fp-edge, .is-bare .fp-box.has-c .fp-edge { stroke: var(--fp-sold); stroke-opacity: .6; }
+.is-bare .fp-box:hover .fp-fill, .is-bare .fp-box.hl .fp-fill { fill-opacity: .32; }
+.is-bare .fp-box.on .fp-fill { fill-opacity: .36; }
+.is-bare .fp-box.on .fp-edge, .is-bare .fp-box:focus-visible .fp-edge { stroke: var(--fp-sel); stroke-width: 2.5; stroke-opacity: 1; }
+.is-bare .fp-hatch { opacity: .3; }
+.is-bare .fp-lbl { fill: #1F2A24; stroke: none; font-weight: 700; font-family: var(--font-display); }
+.is-bare .fp-lbl-sub { fill: #4B544E; font-weight: 500; }
+.is-bare .fp-lbl-note { fill: #2E7D27; font-weight: 600; }
+.is-bare .st-hold .fp-lbl-note { fill: #8A5A0B; }
+.is-bare .st-sold .fp-lbl-note, .is-bare .has-c .fp-lbl-note { fill: #6B7178; }
+/* A finished artwork plan (image.source 'artwork') already shows each shop's
+   name and colour, so its boxes are invisible hit areas: only hover and the
+   picked shop get an outline. The plan colour system replaces this later. */
+.fp-stage.is-art { --fp-sel: #FFFFFF; background: #0E1116; border-color: var(--bd); }
+.is-art .fp-box .fp-fill { fill: transparent; }
+.is-art .fp-box .fp-edge { stroke: transparent; }
+.is-art .fp-hatch, .is-art .fp-lbl { display: none; }
+.is-art .fp-box.on .fp-fill { fill: #FFFFFF; fill-opacity: .12; }
+.is-art .fp-box.on .fp-edge, .is-art .fp-box:focus-visible .fp-edge { stroke: var(--fp-sel); stroke-width: 3; }
+.is-art .fp-box.dim { opacity: 1; }
+.is-art .fp-box.dim .fp-fill { fill: #0E1116; fill-opacity: .6; }
+.is-art .fp-zoom { background: rgba(14, 17, 22, .9); border-color: rgba(255, 255, 255, .14); }
+.is-art .fp-zoom button { color: #E8EAED; }
+/* The neutral 1st Floor artwork paints every shop in the Available look
+   (#30343B fill, #9298A3 edge). The picked shop is drawn over it in the
+   selected green: #163B29 fill, #22C55E edge. */
+.is-art { --unit-av: #30343B; --unit-av-edge: #9298A3; --unit-sel: #163B29; --unit-sel-edge: #22C55E; }
+.is-art .fp-box.on .fp-fill { fill: var(--unit-sel); fill-opacity: 1; }
+.is-art .fp-box.on .fp-edge, .is-art .fp-box:focus-visible .fp-edge { stroke: var(--unit-sel-edge); stroke-width: 2.5; }
+.is-art .fp-box.on .fp-lbl { display: block; fill: #FFFFFF; stroke: none; font-weight: 600; font-family: var(--font-display); }
+.is-art .fp-box.on .fp-lbl-sub, .is-art .fp-box.on .fp-lbl-note { fill: #BFEFD0; }
+.is-art .fp-box:hover:not(.on) .fp-edge, .is-art .fp-box.hl:not(.on) .fp-edge { stroke: var(--unit-sel-edge); stroke-opacity: .6; stroke-width: 2; }
+/* legend swatches match the map's soft tint */
+.fpm-legend .fp-sw { border-width: 1px; border-radius: 4px; }
+.fpm-legend .fp-sw.st-sold { border-color: #8C929A; background: color-mix(in srgb, #8C929A 18%, transparent); }
+
+/* details: tabs + panel */
+.fpt { display: flex; gap: 2px; padding: 3px; border: 1px solid var(--bd); border-radius: 999px; background: var(--surf); }
+.fpt button {
+  flex: 1 1 0; min-width: 0; display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 36px; padding: 0 10px;
+  border: 0; border-radius: 999px; background: transparent; color: var(--t2); font: 600 13px/1 var(--font-display); cursor: pointer;
+}
+.fpt button .mi { font-size: 17px; }
+.fpt button:hover { color: var(--t1); }
+.fpt button.on { background: var(--t1); color: var(--surf-solid); }
+.fpt button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.is-rail .fpv-card { border-top: 1px solid var(--bd); }
+/* Customers tab: three counts, number over label, square tiles in one column. */
+.fpq { margin: 0 0 12px; display: grid; gap: 8px; }
+.fpq div { display: flex; flex-direction: column-reverse; gap: 2px; padding: 12px 14px; border: 1px solid var(--bd); background: var(--surf2); }
+.fpq dt { font-size: 12px; color: var(--t2); overflow-wrap: anywhere; }
+.fpq dd { margin: 0; font: 700 24px/1.1 var(--font-display); color: var(--t1); font-variant-numeric: tabular-nums; }
+/* Under the Reservation requests tile, attached to it: one row per request. */
+.fpq-list { list-style: none; margin: -12px 0 12px; padding: 0; }
+.fpq-list li { border: 1px solid var(--bd); border-top: 0; }
+/* The whole row toggles its details; no chevron, the hover tint says it is clickable. */
+.fpq-list button {
+  width: 100%; min-height: 44px; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 14px;
+  border: 0; border-radius: 0; background: transparent; color: var(--t1); font: inherit; text-align: left; cursor: pointer;
+}
+.fpq-list button:hover, .fpq-list button[aria-expanded="true"] { background: var(--surf2); }
+.fpq-list button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.fpq-list b { min-width: 0; font-size: 13px; font-weight: 600; overflow-wrap: anywhere; }
+.fpq-list em { flex: none; font-style: normal; font-size: 12px; color: var(--t2); }
+.fpq-list .fpk { margin: 0; padding: 4px 14px 10px; background: var(--surf2); }
+/* the light rule between customer info and the request details */
+.fpq-list .fpk div.sep { border-top-color: var(--bd2); }
+.fpq-list li.is-empty { padding: 10px 14px; font-size: 12.5px; color: var(--t3); }
+.fpq ~ .btn { border-radius: 0; justify-content: center; }
+.fpb { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--bd); display: grid; gap: 8px; }
+.fpb h3 { margin: 0; font-size: 13px; font-weight: 700; color: var(--t1); }
+.is-rail .fpv-none { padding: 4px 0; }
+
+.fpv-grid.is-rail.is-fit > .fpr { min-height: 0; overflow-y: auto; }
+/* Fitted to the screen: tighter floor buttons so every floor shows without scrolling the rail. */
+.fpv-grid.is-rail.is-fit > .fpr .fpr-btn { min-height: 36px; padding: 6px 12px; }
+.fpv-grid.is-rail.is-fit > .fpm { min-height: 0; }
+
+@media (max-width: 1279px) {
+  .fpv-grid.is-rail { grid-template-columns: 184px minmax(0, 1fr); grid-template-areas: "rail plan" "rail side"; }
+}
+/* Phones: floors become one scrolling row above the map. */
+@media (max-width: 860px) {
+  .fpv-grid.is-rail { grid-template-columns: minmax(0, 1fr); grid-template-areas: "rail" "plan" "side"; }
+  .fpr { flex-direction: row; overflow-x: auto; padding: 6px; scrollbar-width: none; }
+  .fpr-btn { flex: 0 0 auto; flex-direction: column; align-items: flex-start; gap: 2px; padding: 8px 14px; }
+  .fpm { padding: 12px; }
+}
+
+/* Details tab. One column, no row rules: a label on the left, its value on
+   the right, groups split by a single line. The package price is the one
+   large number, because it is what gets quoted. */
+.fpu-hd { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.fpu-hd h2 { margin: 0; font: 700 22px/1.15 var(--font-display); overflow-wrap: anywhere; }
+.fpu-st { display: inline-flex; align-items: center; gap: 6px; flex: none; font-size: 13px; font-weight: 600; color: var(--t2); }
+.fpu-sub { margin: 3px 0 0; font-size: 13px; color: var(--t2); }
+.fpk { display: grid; margin: 4px 0 0; }
+.fpk div { display: flex; justify-content: space-between; align-items: baseline; gap: 14px; padding: 5px 0; font-size: 13px; }
+.fpk div.sep { margin-top: 6px; padding-top: 11px; border-top: 1px solid var(--bd); }
+.fpk dt { color: var(--t2); }
+.fpk dd { margin: 0; color: var(--t1); font-weight: 500; text-align: right; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.fpu-none { display: flex; align-items: center; gap: 8px; margin: 0; color: var(--t3); font-size: 13px; }
+.fpu-none .mi { font-size: 20px; }
+
+/* Details / Customers tabs: a quiet toggle, so the blue floor rail stays the
+   one strong selection on the page. */
+.is-rail .fpt button.on { background: var(--surf2); color: var(--t1); box-shadow: inset 0 0 0 1px var(--bd2); }
+/* Square, not pill: the unit panel uses straight edges throughout. */
+.is-rail .fpt, .is-rail .fpt button { border-radius: 0; }
+.is-rail .fpt { padding: 2px; }
+.is-rail .fpt button { height: 30px; font-size: 12px; gap: 5px; }
+.is-rail .fpt button .mi { font-size: 15px; }
+.is-rail .fpv-side { gap: 10px; }
+.is-rail .fpv-card:has(.pc-embed) { padding: 14px 18px; }
+
+/* Artwork plan, units by status (AvailableUnitsView ART): a solid fill in the
+   status's dark unit tone, a thin edge in the status colour, and the label
+   drawn again on top. Available keeps the artwork's own grey. */
+.is-art .art-hold { --art-edge: #E5A83B; --art-fill: #49351B; }
+.is-art .art-landowner { --art-edge: #A78BFA; --art-fill: #33264F; }
+.is-art .art-available { --art-edge: #36A15C; --art-fill: #284531; }
+.is-art .art-reserved { --art-edge: #38BDF8; --art-fill: #17384A; }
+.is-art .fp-box.has-art .fp-fill { fill: var(--art-fill, #30343B); fill-opacity: 1; }
+.is-art .fp-box.has-art .fp-edge { stroke: var(--art-edge); stroke-width: 1.5; }
+.is-art .fp-box.has-art .fp-lbl { display: block; fill: #ECEEF1; stroke: none; font-weight: 600; letter-spacing: 0; font-family: 'Inter', system-ui, sans-serif; }
+.is-art .fp-box.has-art .fp-lbl-sub { fill: #C3C8D0; }
+.is-art .fp-box.has-art .fp-lbl-note { fill: var(--art-edge); }
+.is-art .fp-box.has-art .fp-hatch { display: none; }
+/* Artwork with tint layers: the colour is in the image, so a box is only a
+   hit area plus the hover light; no fill, edge or redrawn label on top. */
+.has-tints .fp-tint { pointer-events: none; }
+.is-art .has-tints .fp-box .fp-fill, .is-art .has-tints .fp-box.has-art .fp-fill, .is-art .has-tints .fp-box.on .fp-fill { fill: transparent; }
+/* Every unit: a hairline border in a lighter shade of its own status colour,
+   crisp at any zoom. The picked unit gets the same shade, full strength. */
+.is-art .has-tints .art-available { --unit-line: #6FA582; }
+.is-art .has-tints .art-hold { --unit-line: #C4A57A; }
+.is-art .has-tints .art-landowner { --unit-line: #9A93B5; }
+.is-art .has-tints .art-reserved { --unit-line: #7FAEC4; }
+.is-art .has-tints .fp-box .fp-edge, .is-art .has-tints .fp-box.has-art .fp-edge { stroke: var(--unit-line, #8C929A); stroke-opacity: .5; stroke-width: 1; }
+.is-art .has-tints .fp-box.on .fp-edge { stroke: var(--unit-line, #8C929A); stroke-opacity: 1; stroke-width: 2; }
+/* The plan's own names are erased from a tinted plan; each code is drawn
+   here instead: crisp at any zoom, a light weight, a soft off-white. */
+.is-art .has-tints .fp-box .fp-lbl, .is-art .has-tints .fp-box.has-art .fp-lbl, .is-art .has-tints .fp-box.on .fp-lbl {
+  display: block; fill: rgba(236, 239, 242, .86); stroke: none;
+  font-family: 'Inter', system-ui, sans-serif; font-weight: 500; letter-spacing: .02em;
+  text-rendering: geometricPrecision;
+}
+.is-art .has-tints .fp-box.on .fp-lbl { fill: #FFFFFF; }
+/* The picked unit on a tinted plan: a cool liquid-glass pane over its status
+   tint, with a bright rim. Hover keeps the warm light; the pick never uses it.
+   ds-allow-hardcode: plan artwork palette, same as the tint lines above. */
+.is-art .has-tints .fp-box.on .fp-fill { fill: var(--fp-glass); }
+.is-art .has-tints .fp-box.on .fp-edge { stroke: #E6F7FF; stroke-opacity: .95; stroke-width: 2; filter: drop-shadow(0 0 3px rgba(143, 211, 236, .6)); }
+.is-art .has-tints .fp-box.on .fp-run { stroke-opacity: 0; animation: none; }
+/* Hover a unit on the map: a warm liquid light (the canvas's amber-to-coral
+   gradient) flows around its outline, like the Prospects Refresh ring.
+   Only while hovered. */
+.fp-run { fill: none; stroke-opacity: 0; pointer-events: none; }
+.is-bare .fp-run { rx: 9px; }
+.fp-box:hover .fp-run, .fp-box.hl .fp-run {
+  stroke-opacity: 1; stroke-linecap: round; stroke-dasharray: 38 62;
+  filter: drop-shadow(0 0 4px rgba(245, 160, 74, .55));
+  animation: fp-run 2.2s cubic-bezier(.45, .05, .55, .95) infinite;
+}
+@keyframes fp-run { to { stroke-dashoffset: -100; } }
+@media (prefers-reduced-motion: reduce) {
+  .fp-box:hover .fp-run, .fp-box.hl .fp-run { animation: none; stroke-dasharray: none; }
+}
+
+/* Desktop fit: the tabs stay put and the details card scrolls inside its column. */
+.fpv-grid.is-rail.is-fit .fpv-side { overflow: hidden; }
+.fpv-grid.is-rail.is-fit .fpv-side > .fpv-card { flex: 1 1 0; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+
+/* Calmer frame: one surface per column without a second border inside it,
+   and more air between the columns. */
+.fpv-grid.is-rail { gap: 20px; }
+.fpm { padding: 18px; gap: 14px; }
+.fpm-hd h3 { font-size: 18px; }
+.fpm-hd em { color: var(--t3); }
+.fpm .fp-stage.is-art { border: 0; }
+.is-rail .fpv-card { padding: 18px; }
+.fpr { padding: 10px; gap: 2px; }
+
+/* One toolbar row: project picker, status chips, search, Manage. On narrow
+   screens the chips and search drop to their own lines under the picker. */
+.fpv-bar .fpv-filters { flex: 1 1 auto; min-width: 0; margin: 0; flex-wrap: nowrap; }
+.fpv-bar .fpv-chips { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; min-width: 0; }
+.fpv-bar .fpv-chip { flex: none; }
+.fpv-bar .fpv-search { flex: 0 1 200px; }
+.fpv-bar .fpv-manage { margin-left: 0; }
+@media (max-width: 1279px) {
+  .fpv-bar .fpv-filters { flex-basis: 100%; order: 3; }
+}
+@media (max-width: 860px) {
+  .fpv-bar .fpv-filters { flex-wrap: wrap; }
+  .fpv-bar .fpv-chips, .fpv-bar .fpv-search { flex: 1 1 100%; }
+}
+
+/* Available Units on desktop is one page: when the columns are fitted to the
+   screen (.is-fit) the page itself never scrolls, and no scroll bar shows.
+   A column taller than the screen still scrolls with the wheel or touch. */
+.pg-body:has(.fpv-grid.is-fit) { overflow: hidden; }
+.fpv-grid.is-fit .fpr, .fpv-grid.is-fit .fpv-side > .fpv-card, .fpv-grid.is-fit > .fpv-seats, .fpv-bar .fpv-chips { scrollbar-width: none; }
+.fpv-grid.is-fit .fpr::-webkit-scrollbar, .fpv-grid.is-fit .fpv-side > .fpv-card::-webkit-scrollbar,
+.fpv-grid.is-fit > .fpv-seats::-webkit-scrollbar, .fpv-bar .fpv-chips::-webkit-scrollbar { display: none; }
+
+/* ── Phones (AvailableUnitsView `is-phone`), after the user's calendar
+   reference: Back, title and a grid / list switch; the project with Manage;
+   the status chips; the floor as a month row (name, free count, arrows that
+   step a floor); the units 7 a row like days; the picked unit docked at the
+   bottom with Reserve now, which opens the Deal sheet (index.css .fps-sheet).
+   Customers is a sheet from Manage. ── */
+@media (max-width: 767px) {
+  .fpv-grid.is-rail.is-phone { grid-template-columns: minmax(0, 1fr); grid-template-areas: "plan" "side"; gap: 14px; align-items: start; }
+  /* The page is a column the height of the screen (AvailableUnitsTab.css):
+     header, project, chips and the floor row stay put; only the grid scrolls. */
+  .fpv:has(> .fpv-grid.is-phone) { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+  .fpv:has(> .fpv-grid.is-phone) > :not(.fpv-grid) { flex: none; }
+  .fpv-grid.is-phone { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding-bottom: calc(var(--gutter-y) + env(safe-area-inset-bottom, 0px)); scrollbar-width: none; }
+  .fpv-grid.is-phone::-webkit-scrollbar { display: none; }
+  .is-phone > .fpv-seats { grid-area: plan; padding: 0; background: transparent; border: 0; border-radius: 0; }
+  .is-phone .fps-top, .is-phone .fpv-ghd { display: none; }
+  /* ds-allow-hardcode:start  phone layout: px sizes match the rest of this file (no spacing tokens exist); #fff is text on the fixed --fp-sel blue */
+
+  /* The header itself (.fpv-ph: Back | title | switch, and the Manage icon) is
+     in AvailableUnitsTab.css, shared with the Projects list. */
+  /* The project (uppercase, as the reference) with its dropdown chevron, Manage (tune) at the end;
+     a little lower under the title row */
+  .fpv-ph-pj { display: flex; align-items: center; justify-content: space-between; gap: 4px; min-height: 40px; margin-top: 10px; }
+  /* the trigger is only as wide as the name (the row's spare width stays empty),
+     so its list opens as a compact glass card under the name, not across the screen */
+  .fpv-projsel { flex: 0 1 auto; min-width: 0; max-width: calc(100% - 52px); }
+  .fpv-projsel .sel-trigger { justify-content: flex-start; gap: 4px; width: auto; max-width: 100%; min-height: 32px; padding: 0; border: 0; border-radius: 0; background: transparent; }
+  .fpv-projsel .sel-trigger:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+  .fpv-projsel .sel-chev { color: var(--t1); }
+  .fpv-projsel-tx { font: 700 17px/1.2 var(--font-display); color: var(--t1); text-transform: uppercase; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .sel-content.fpv-projsel-list {
+    min-width: 0; width: max-content; max-width: calc(100vw - 32px); padding: 6px; border-radius: 16px;
+    border: 1px solid color-mix(in srgb, var(--t1) 12%, transparent); background: color-mix(in srgb, var(--surf-solid) 72%, transparent);
+    -webkit-backdrop-filter: blur(16px) saturate(1.2); backdrop-filter: blur(16px) saturate(1.2);
+    box-shadow: 0 12px 32px rgba(0, 0, 0, .18);
+  }
+  .fpv-projsel-list .sel-item { min-height: 44px; padding: 0 12px; border-radius: 10px; font-size: 14px; }
+  .fpv-projsel-list .sel-item[data-highlighted] { background: color-mix(in srgb, var(--t1) 8%, transparent); }
+
+  /* Floor row, the calendar's month row: the floor and its free count, then
+     round arrows that step one floor down or up */
+  .fpv-fh { display: flex; align-items: center; gap: 6px; min-height: 44px; margin: 4px 0 18px; }
+  .fpv-fh > div { flex: 1; min-width: 0; }
+  .fpv-fh h2 { margin: 0; font: 600 18px/1.2 var(--font-display); color: var(--t1); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .fpv-fh small { font: 500 12.5px/1.3 Inter, sans-serif; color: var(--t2); }
+  .fpv-fh-btn { flex: none; display: grid; place-items: center; width: 40px; height: 40px; padding: 0; border: 1px solid var(--bd); border-radius: 50%; background: transparent; color: var(--t1); cursor: pointer; }
+  .fpv-fh-btn:disabled { color: var(--t3); border-color: transparent; cursor: default; }
+  .fpv-fh-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .fpv-fh-btn .mi { font-size: 20px; }
+
+  /* Seat map, as in the user's calendar reference: 6 a row (7 was too tight),
+     the code over its size, no status label. Only a free unit is green with an
+     outline. A taken one has no outline: its code in a soft tone of its status
+     colour and a dot in that colour (the chips' legend). The picked unit gets a ring. */
+  .is-phone .fps-tiles { grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 6px; }
+  .is-phone .fps-tile {
+    --st-tx: var(--t1); position: relative; aspect-ratio: 1; min-width: 0; min-height: 0; padding: 2px; gap: 3px;
+    border: 1px solid transparent; border-radius: var(--r-sm); box-shadow: none;
+    background: color-mix(in srgb, var(--t1) 5%, transparent); color: var(--st-tx); font-size: 11.5px; overflow-wrap: normal;
+  }
+  .is-phone .fps-tile:disabled { opacity: 1; }
+  /* a picked tile scrolls just clear of the scroller's edge (the dock sits below that edge) */
+  .is-phone .fps-tile { scroll-margin-bottom: 8px; }
+  .is-phone .fps-tile.st-available { background: color-mix(in srgb, var(--accent) 12%, transparent); border-color: color-mix(in srgb, var(--accent) 40%, transparent); }
+  .is-phone .fps-tile.st-hold { --st-tx: color-mix(in srgb, var(--st-hold) 55%, var(--t1)); --st-dot: var(--st-hold); }
+  .is-phone .fps-tile.st-sold { --st-tx: color-mix(in srgb, var(--st-sold) 55%, var(--t1)); --st-dot: var(--st-sold); }
+  .is-phone .fps-tile.has-c { --st-tx: color-mix(in srgb, var(--st-c) 55%, var(--t1)); --st-dot: var(--st-c); }
+  .is-phone .fps-tile.st-hold::after, .is-phone .fps-tile.st-sold::after, .is-phone .fps-tile.has-c::after {
+    content: ''; position: absolute; top: 5px; right: 5px; width: 6px; height: 6px; border-radius: 50%; background: var(--st-dot);
+  }
+  .is-phone .fps-tile.st-unlinked { border: 1px dashed var(--bd2); --st-tx: var(--t3); }
+  .is-phone .fps-tile.on { box-shadow: inset 0 0 0 2px var(--t1); }
+  .is-phone .fps-tile:hover:not(:disabled) { transform: none; }
+  .is-phone .fps-code { white-space: nowrap; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+  .is-phone .fps-tile .fps-sz { font-size: 9px; font-weight: 500; color: var(--t2); opacity: 1; }
+
+  /* The picked unit, docked at the bottom like the calendar's total bar: code
+     and size on the left, Reserve now on the right when it is free. */
+  .fpv-rsv {
+    position: fixed; left: 12px; right: 12px; bottom: var(--bnav, 0px); z-index: 60;
+    display: flex; align-items: center; gap: 10px; min-height: 64px; padding: 8px 8px 8px 16px;
+    border-radius: 20px; background: var(--surf2); box-shadow: 0 8px 24px rgba(0, 0, 0, .18);
+  }
+  .fpv-rsv > div { flex: 1; min-width: 0; }
+  .fpv-rsv b { display: block; font: 600 16px/1.2 var(--font-display); color: var(--t1); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .fpv-rsv > div span { font: 500 12.5px/1.3 Inter, sans-serif; color: var(--t2); }
+  .fpv-rsv .btn { flex: none; height: 48px; padding: 0 18px; justify-content: center; gap: 8px; border-radius: 999px; font: 700 13px/1 var(--font-display); letter-spacing: .1em; text-transform: uppercase; }
+  .fpv-rsv .btn .mi { letter-spacing: 0; }
+  /* A taken unit's button reads its status: plain black, the status dot in
+     its own colour. Tapping it opens the details sheet. */
+  .fpv-rsv-st { gap: 8px; border: 1px solid rgba(255, 255, 255, .14); background: #0B0B0C; color: #F5F5F7; }
+  .fpv-rsv-st .fp-dot { width: 8px; height: 8px; border-radius: 50%; box-shadow: 0 0 0 2px rgba(255, 255, 255, .16); }
+  .fpv-rsv-st .fp-dot.has-c, .fpv-rsv-st[style*="--st-c"] .fp-dot { background: var(--st-c); }
+  .fpv-rsv-st:active { transform: scale(.98); }
+  .fpv-rsv-st:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  /* the sheet's taken-unit card, in the sheet's own ink */
+  .fps-panel .fpu { color: var(--rs-ink); }
+  .fps-panel .fpu-hd h2 { font-size: 26px; }
+  /* the sheet's card: floor · type on the left, the status at the row's end */
+  .fps-panel .fpu-sub { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 0; font-size: 14px; }
+  .fps-panel .fpu-sub .fpu-st { font-size: 14px; color: var(--rs-ink); }
+  .fps-panel :is(.fpu-st, .fpu-sub, .fpk dt, .fpv-none) { color: var(--rs-mute); }
+  .fps-panel .fpk dd, .fps-panel .fpb h3 { color: var(--rs-ink); }
+  .fps-panel .fpb { border-top-color: var(--rs-line); }
+  /* The page scroller ends above the dock (64px tall, lifted by --bnav), so
+     no unit is ever under it: the grid scrolls within the room above. */
+  .page:has(.fpv-rsv) .pg-body { margin-bottom: calc(64px + var(--bnav, 0px)); padding-bottom: var(--gutter-y); }
+
+  /* Status chips scroll sideways and fade at the right edge. The project
+     picker and Manage live in the header above, so the bar holds only them. */
+  .fpv-bar { margin-bottom: 0; }
+  .fpv-bar .fpv-filters { order: 3; flex: 1 1 100%; flex-wrap: wrap; margin-bottom: 16px; }
+  .fpv-bar .fpv-chips { flex: 1 1 100%; flex-wrap: nowrap; overflow-x: auto;
+    mask-image: linear-gradient(90deg, #000 85%, transparent); -webkit-mask-image: linear-gradient(90deg, #000 85%, transparent); }
+  /* 16px: iOS Safari zooms the page into any smaller input on focus */
+  .fpv-search input { font-size: 16px; }
+  /* ds-allow-hardcode:end */
 }
