@@ -135,9 +135,7 @@ html {
   font-size: 14px;
   /* no iOS text inflation on rotation: sizes stay as set in every orientation */
   -webkit-text-size-adjust: 100%;
-  text-size-adjust: 100%;
-  /* no browser tap flash on any control (inherited); pressed and keyboard-focus styles are each control's own */
-  -webkit-tap-highlight-color: transparent
+  text-size-adjust: 100%
 }
 
 body {
@@ -207,17 +205,6 @@ a {
    most: the subset font (icon_names= in index.html) only knows lower-case
    names, so an icon inside an uppercase label (the sidebar) would render as
    its name. The full font happened to accept any case and hid this. */
-/* The icon subset, served from here so icons draw offline and before Google's
-   CSS answers (index.html #icon-font is the same subset; scripts/icon-font.mjs
-   refreshes this file after icon_names changes). Google's full font, added by
-   lib/iconFont.js for a name outside the subset, comes later and still wins. */
-@font-face {
-  font-family: 'Material Symbols Rounded';
-  font-style: normal;
-  font-weight: 200 700;
-  font-display: block;
-  src: url('/fonts/material-symbols-rounded.woff2') format('woff2');
-}
 .mi {
   font-family: 'Material Symbols Rounded';
   font-size: 20px;
@@ -793,6 +780,10 @@ a {
 .msi-input::placeholder { color: rgba(255, 255, 255, 0.45) }
 .msi-input:focus { outline: none; background: rgba(255, 255, 255, 0.14); box-shadow: 0 0 0 2px rgba(94, 197, 100, 0.5) }
 .msi-err { font-size: 13px; color: #f87171; text-align: left }
+.msi-ok { font-size: 13px; color: #5EC564; text-align: left }
+.msi-forgot { text-align: right; margin-top: -2px }
+.msi-forgot a { font-size: 13px; color: rgba(255, 255, 255, 0.75); cursor: pointer; text-decoration: none }
+.msi-forgot a:hover { color: #5EC564; text-decoration: underline }
 .msi-hr { width: 100%; border: none; border-top: 1px solid rgba(255, 255, 255, 0.10) }
 .msi-btn {
   width: 100%;
@@ -2228,26 +2219,7 @@ html, body { overscroll-behavior: none }
 }
 .um-me { display: flex; align-items: center; gap: 10px; padding: 8px 10px }
 @media (max-width: 767px) {
-  /* ds-allow-hardcode:start  phone popups: px sizes match the Home period menu (.mh-period-menu); no spacing tokens exist */
-  /* Account menu: a compact card under the face, the Home period menu's
-     look (soft card, 40px rows, warm highlight), not a full-width sheet. */
-  .hd-um .umenu {
-    position: fixed; top: calc(var(--hh) + 6px); left: auto; right: 12px; width: 232px; max-height: 70vh;
-    padding: 4px; gap: 1px; border-radius: 14px; border: 1px solid var(--mh-line); background: var(--mh-card); color: var(--mh-ink);
-    box-shadow: 0 12px 32px rgba(0, 0, 0, .28); font-family: Inter, system-ui, sans-serif
-  }
-  .hd-um .um-me { padding: 8px 8px 6px }
-  .hd-um .umenu-item { min-height: 40px; padding: 0 10px; border-radius: 10px; font-size: 13.5px; font-weight: 500; color: var(--mh-ink) }
-  .hd-um .umenu-item:hover, .hd-um .umenu-item:active { background: color-mix(in srgb, var(--mh-warm) 14%, transparent) }
-  .hd-um .umenu-item .mi { font-size: 20px; color: var(--mh-mute2) }
-  .hd-um .umenu-in { font-size: 13.5px; color: var(--mh-ink) }
-  .hd-um .umenu-ir { font-size: 10px; color: var(--mh-mute) }
-  .hd-um .umenu-sec { padding: 8px 10px 2px; font-size: 10px; color: var(--mh-mute) }
-  .hd-um .umenu-div { margin: 4px 6px; background: var(--mh-line) }
-  .hd-um .umenu-search { margin: 2px 4px 4px; height: 36px; border-radius: 10px; background: var(--mh-well); border-color: transparent }
-  .hd-um .umenu-list { max-height: 220px; overflow-y: auto }
-  .hd-um .umenu-danger { color: var(--red) }
-  /* ds-allow-hardcode:end */
+  .hd-um .umenu { position: fixed; top: calc(var(--hh) + 8px); left: 8px; right: 8px; width: auto }
 }
 
 /* ── PROFILE PAGE ────────────────────────────── */
@@ -2651,21 +2623,15 @@ html, body { overscroll-behavior: none }
 .umenu-theme { display: none }
 
 @media (max-width: 767px) {
-  /* Home header, after the reference: the menu tile at the left, then the
-     room, then search + AI + date, the bell, and the account face last. The
-     DOM keeps the wide-screen order; the tile's auto margin pushes the rest
-     right and the face's order puts it after the bell. */
-  .pg-head .ham { order: -2; margin-right: auto }
-  /* One rounded-square box at the row's end: AI, bell, face. Search and the
-     date filter stay hidden on phones. */
-  .hd-grp .hd-srch, .hd-grp .drp-wrap { display: none }
-  .pg-head .hd-grp .notif-btn, .pg-head .hd-grp .notif-btn:hover { width: 34px; height: 34px; border: 0; border-radius: 10px; background: transparent }
-  .pg-head .hd-grp .hd-um, .pg-head .hd-grp .hd-um:hover { width: 34px; height: 34px; margin: 0; padding: 0; border: 0; border-radius: 10px; background: transparent; justify-content: center }
-  .pg-head .hd-grp .hd-um .ag-av { width: 30px; height: 30px }
+  .pg-head .ham { order: -2 }
+  .pg-head .hd-um { order: -1 }
   .pg-head .thtog { display: none }
   .umenu-theme { display: flex }
-  /* No Back and no breadcrumb on phones: the page hero names the page. */
+  /* No Back and no breadcrumb on phones: the page hero names the page. The
+     face's auto margin takes the trail's room, so the face stays at the left
+     edge and the controls at the right on every page. */
   .pg-head .hd-back, .pg-head .hd-crumb { display: none }
+  .pg-head .hd-um { margin-right: auto }
 }
 
 /* The account face never gives up width to the trail, so it keeps its size
@@ -2712,7 +2678,7 @@ html, body { overscroll-behavior: none }
     flex-shrink: 0;
     height: 44px;
     padding: 3px;
-    border-radius: 12px;   /* a box, as the menu tile, not a pill */
+    border-radius: 999px;
     background: var(--surf2);
     border: 1px solid var(--bd)
   }
@@ -2892,7 +2858,6 @@ html, body { overscroll-behavior: none }
   background: var(--surf2);
   color: var(--t1)
 }
-.ham-bars { display: none }   /* phones only (below) */
 
 @media not all and (max-width: 1023px) {
   #app.sb-collapsed .ham {
@@ -3015,15 +2980,7 @@ html, body { overscroll-behavior: none }
 @media (max-width: 767px) {
   /* 58px pill + 16px off the bottom + 12px clearance above it */
   :root { --bnav: calc(58px + 16px + 12px + env(safe-area-inset-bottom, 0px)) }
-  /* The menu tile (the reference's rounded square at the top left) opens the
-     drawer, as the bar's More does. */
-  .pg-head .ham, .pg-head .ham:hover {
-    display: flex; width: 40px; height: 40px; min-width: 40px; min-height: 40px; margin-left: 0; border-radius: 12px;
-    border: 1px solid var(--bd); background: var(--surf2); color: var(--t1)
-  }
-  .pg-head .ham:focus-visible { outline-offset: 2px }
-  .pg-head .ham > svg:first-child { display: none }
-  .pg-head .ham .ham-bars { display: block }
+  .pg-head .ham { display: none }   /* More in the bar opens the drawer */
   .page .pg-body { padding-bottom: calc(var(--gutter-y) + var(--bnav)) }
 
   .bnav {
@@ -11375,31 +11332,9 @@ textarea.fi {
   .pg-acts { gap: 6px }
 }
 
-/* Notification panel on phones: a compact card under the bell, the Home
-   period menu's look, not a full-width sheet. */
+/* Notification panel — full-width sheet on phones (was fixed 360px → overflow) */
 @media (max-width: 767px) {
-  /* ds-allow-hardcode:start  phone popup: px sizes match .mh-period-menu; no spacing tokens exist */
-  .notif-panel {
-    top: calc(var(--hh) + 6px); left: auto; right: 12px; width: min(312px, calc(100vw - 24px)); max-height: 60vh;
-    border-radius: 14px; border: 1px solid var(--mh-line); background: var(--mh-card); color: var(--mh-ink);
-    box-shadow: 0 12px 32px rgba(0, 0, 0, .28); font-family: Inter, system-ui, sans-serif
-  }
-  .notif-panel .np-hd { padding: 10px 12px 8px; gap: 8px }
-  .notif-panel .np-ttl { font-size: 14px; font-weight: 600; color: var(--mh-ink) }
-  .notif-panel .np-sub { font-size: 11.5px; color: var(--mh-mute) }
-  .notif-panel .np-hd .btn { height: 30px; min-height: 30px; padding: 0 10px; font-size: 11px; border-radius: 999px }
-  .notif-panel .np-body { padding: 0 4px 4px }
-  .notif-panel .ni { min-height: 48px; padding: 8px 8px; border-radius: 10px; gap: 10px; background: transparent; border: 0 }
-  /* unread: the period menu's warm tint, not the desktop green wash */
-  .notif-panel .ni.unread { background: color-mix(in srgb, var(--mh-warm) 8%, transparent) }
-  .notif-panel .ni:hover, .notif-panel .ni:active { background: color-mix(in srgb, var(--mh-warm) 14%, transparent) }
-  .notif-panel .ni-ico { width: 28px; height: 28px; border-radius: 8px }
-  .notif-panel .ni-ico .mi { font-size: 16px }
-  .notif-panel .ni-msg { font-size: 13px; color: var(--mh-ink) }
-  .notif-panel .ni-sub { font-size: 11px; color: var(--mh-mute) }
-  .notif-panel .ni-dot { background: var(--mh-warm) }
-  .notif-panel .np-empty { padding: 20px 12px; font-size: 13px; color: var(--mh-mute) }
-  /* ds-allow-hardcode:end */
+  .notif-panel { width: auto; left: 8px; right: 8px; max-height: 70vh }
 }
 
 /* ───────────────────────────────────────────────────────────────────────────
@@ -11410,6 +11345,11 @@ textarea.fi {
 /* dashboard layout — primary call list + side rail (target · meetings) */
 .iad-layout { display:grid; grid-template-columns:1fr 340px; gap:16px; margin-top:18px; align-items:start }
 .iad-main { min-width:0 }
+/* Agent home: the rail (follow-up to-do first) runs from the top of the page. */
+.iad-layout.iad-top { margin-top:0 }
+.iad-calls { margin-top:18px }
+/* The KPI cards share the width with the rail; on smaller desktops, two per row. */
+@media (min-width:901px) and (max-width:1250px){ .iad-top .iad-main .grid-4 { grid-template-columns:repeat(2, minmax(0, 1fr)) } }
 .iad-rail { display:flex; flex-direction:column; gap:16px }
 @media (max-width:900px){ .iad-layout { grid-template-columns:1fr } }
 
@@ -12004,121 +11944,56 @@ textarea.fi {
   .phs-photo { min-height: 170px; }
 }
 
-/* ═══ Breadcrumb picker: Project > Floor > Type > Unit ═══════════════════
-   Each step is the house Select (ui/select.jsx) drawn as a small bordered
-   pill: icon, value, up-down chevron. Muted chevrons between steps, no box
-   around the row. One line always: on a narrow screen the row scrolls sideways. */
-.pcb ol { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: nowrap; align-items: center; gap: 8px;
-  overflow-x: auto; scrollbar-width: none; }
-.pcb li { display: flex; align-items: center; gap: 8px; flex: none; white-space: nowrap; }
-.pcb-sep { flex: none; color: var(--t3); }
-.pcb-crumb .sel-trigger {
-  gap: 8px; padding: 0 10px; border: 1px solid var(--bd2); border-radius: 8px;
-  background: var(--surf); color: var(--t1); font: 500 14px/1.2 var(--font-display);
+/* ═══ Unit-type (variant) picker — product-variant cards ═════════════════ */
+.pc-sec-note { font-weight: 600; color: var(--t3); text-transform: none; letter-spacing: 0; }
+.pcv-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 12px; }
+.pcv {
+  text-align: left; background: var(--surf2); border: 1.5px solid var(--bd); border-radius: 14px;
+  padding: 16px 18px; cursor: pointer; transition: border-color var(--tr), background var(--tr), transform var(--tr);
 }
-.pcb-crumb .sel-trigger:hover, .pcb-crumb .sel-trigger[data-state="open"] { border-color: var(--t3); background: var(--surf2); }
-.pcb-crumb .sel-trigger svg { flex: none; color: var(--t2); }
-.pcb-crumb .sel-chev { display: none; }
-/* Steps before the unit read as plain muted text (still dropdowns); only the
-   unit, the current step, is the bordered pill with its icon. */
-.pcb-crumb:not(.is-current) .sel-trigger { padding: 0 4px; border-color: transparent; background: transparent; color: var(--t2); }
-.pcb-crumb:not(.is-current) .sel-trigger:hover, .pcb-crumb:not(.is-current) .sel-trigger[data-state="open"] { color: var(--t1); background: transparent; border-color: transparent; }
-.pcb-crumb:not(.is-current) .sel-trigger { gap: 4px; }
-.pcb-crumb:not(.is-current) .sel-trigger svg:not(.pcb-ud) { display: none; }
-/* every step keeps its up-down chevron, so each one reads as a dropdown */
-.pcb-crumb .pcb-ud { color: var(--t3); }
-.pcb-crumb .sel-trigger:hover .pcb-ud, .pcb-crumb .sel-trigger[data-state="open"] .pcb-ud { color: var(--t1); }
-@media (min-width: 1024px) { .pcb-crumb .sel-trigger { min-height: 32px; } }
-/* The unit pill, softened to sit with the grid: off-white text, fainter rim. */
-.pcb-crumb.is-current .sel-trigger { color: color-mix(in srgb, var(--t1) 80%, transparent); border-color: color-mix(in srgb, var(--t1) 16%, transparent); }
-.pcb-crumb.is-current .sel-trigger svg { color: var(--t3); }
-.pcb-crumb.is-current .sel-trigger:hover, .pcb-crumb.is-current .sel-trigger[data-state="open"] { color: var(--t1); border-color: color-mix(in srgb, var(--t1) 30%, transparent); }
+.pcv:hover { transform: translateY(-2px); border-color: var(--bd2); }
+.pcv.on { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, var(--surf2)); box-shadow: 0 0 0 1px var(--accent); }
+.pcv-top { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.pcv-name { font-size: 19px; font-weight: 800; color: var(--t1); letter-spacing: -.3px; }
+.pcv-avail { font-size: 13px; font-weight: 700; color: var(--t2); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.pcv.on .pcv-avail { color: var(--accent); }
+.pcv-meta { font-size: 13.5px; color: var(--t3); margin: 9px 0 11px; }
+.pcv-price { font-size: 15.5px; font-weight: 800; color: var(--t1); font-variant-numeric: tabular-nums; letter-spacing: -.2px; }
 
-/* ═══ Pick-a-unit grid: the 1st Floor plan's look, as tiles ═══════════════
-   Same tones as Available Units on the artwork (FloorPlan.css .is-art .art-*):
-   a dark fill in the status's unit tone with a thin edge in the status colour.
-   Hover runs the plan's warm liquid light round the edge; the picked unit gets
-   the plan's cool glass fill and pale rim. Layout is the console's own: 7 a row.
-   ds-allow-hardcode: the plan's artwork palette, copied by value (FloorPlan.css). */
-.pcu-legend { display: flex; flex-wrap: wrap; gap: 6px 18px; margin-bottom: 12px; font-size: 13px; color: var(--t2); }
-/* Scoped to the console grid and legend: the floor plan (.fp-box) uses the
-   same art-* class names and must keep FloorPlan.css's own colours. */
-:is(.pcu-grid, .pcu-legend) .art-available { --art-edge: color-mix(in srgb, var(--t1) 34%, transparent); --art-fill: var(--surf); }
-:is(.pcu-grid, .pcu-legend) .art-hold { --art-edge: #E5A83B; }
-:is(.pcu-grid, .pcu-legend) .art-landowner { --art-edge: #A78BFA; }
-:is(.pcu-grid, .pcu-legend) .art-reserved { --art-edge: #38BDF8; }
-:is(.pcu-grid, .pcu-legend) .art-sold { --art-edge: #D23C3C; }
-/* Taken units, quiet: each keeps its hue as a faint tint on one dark base and a
-   softened edge, so the grid reads calm and only the picked unit stands out. */
-:is(.pcu-grid, .pcu-legend) :is(.art-hold, .art-landowner, .art-reserved, .art-sold, .art-custom) {
-  --art-fill: color-mix(in srgb, var(--art-edge) 14%, #15181D);
-}
-.pcu-t:is(.art-hold, .art-landowner, .art-reserved, .art-sold, .art-custom):not(.on) { border-color: color-mix(in srgb, var(--art-edge) 55%, transparent); }
-:is(.pcu-grid, .pcu-legend) .art-available .pcu-code { color: color-mix(in srgb, var(--t1) 82%, transparent); }
-:is(.pcu-grid, .pcu-legend) .art-available .pcu-sz { color: var(--t2); }
+/* ═══ Pick-a-unit grid — large status cards ══════════════════════════════ */
+.pcu-legend { display: flex; flex-wrap: wrap; gap: 18px; margin-bottom: 14px; font-size: 13px; color: var(--t2); }
+.pcu-legend span { display: inline-flex; align-items: center; gap: 7px; }
+.pcu-sw { width: 16px; height: 16px; border-radius: 5px; border: 1.5px solid var(--bd2); background: var(--surf); }
+.pcu-sw-hold { background: color-mix(in srgb, var(--gold) 30%, var(--surf)); border-color: color-mix(in srgb, var(--gold) 50%, var(--bd2)); }
+.pcu-sw-sold { background: color-mix(in srgb, var(--red) 24%, var(--surf)); border-color: color-mix(in srgb, var(--red) 45%, var(--bd2)); }
+.pcu-sw-sel { background: transparent; border-color: var(--accent); }
 
-.pcu-sw { width: 11px; height: 11px; border-radius: 3px; flex: none; background: var(--art-fill); border: 1.5px solid var(--art-edge); }
-
-.pcu-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 8px; }
-/* The unit card and the price card below hug a 7-wide grid of ~74px tiles
-   (7 × 74 + 6 × 8 gaps + 18px padding each side), so their borders line up. */
-.pc-sec-units { width: 100%; max-width: 602px; }
-.pcu-t {
-  position: relative; isolation: isolate;
-  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px;
-  min-height: 54px; padding: 5px 3px; border-radius: 6px; cursor: pointer;
-  background: var(--art-fill); border: 1.5px solid var(--art-edge);
-  font-family: 'Inter', system-ui, sans-serif; transition: box-shadow .15s, border-color .15s;
+.pcu-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(112px, 1fr)); gap: 12px; }
+.pcu {
+  aspect-ratio: 1.18; border-radius: 14px; border: 1.5px solid var(--bd2); background: var(--surf);
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px;
+  cursor: pointer; transition: border-color var(--tr), transform var(--tr), box-shadow var(--tr);
 }
-/* Soft off-white text (no pure white), easier on the eye over a whole grid. */
-.pcu-code { font-size: 11px; font-weight: 600; color: #C9CED6; line-height: 1.2; }
-.pcu-sz { font-size: 9.5px; font-weight: 500; color: #9AA1AC; line-height: 1.2; white-space: nowrap; }
-
-/* Hover: the warm liquid light (amber to coral, the plan's .fp-run) flowing
-   round the edge. Only while hovered; still under reduced motion. */
-@property --pcu-a { syntax: '<angle>'; inherits: false; initial-value: 0deg; }
-.pcu-t::after {
-  content: ''; position: absolute; inset: -1.5px; z-index: -1; border-radius: inherit; padding: 2px; pointer-events: none;
-  background: conic-gradient(from var(--pcu-a), transparent 0 55%, #FFD08A 70%, #F5A04A 82%, #E8785A 92%, transparent 100%);
-  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor;
-  mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
-  opacity: 0; transition: opacity .15s;
-}
-.pcu-t:not(.blocked):hover .pcu-code { font-weight: 800; }
-.pcu-t:not(.blocked):hover .pcu-sz { font-weight: 700; }
-.pcu-t:not(.on):not(.blocked):hover::after { opacity: 1; z-index: 1; animation: pcu-run 2.2s cubic-bezier(.45, .05, .55, .95) infinite; filter: drop-shadow(0 0 4px rgba(245, 160, 74, .55)); }
-@keyframes pcu-run { to { --pcu-a: 360deg; } }
-@media (prefers-reduced-motion: reduce) { .pcu-t:hover::after, .pcu-t.on::before, .pcu-t.on .pcu-code { animation: none; } }
-
-/* Picked: the plan's cool glass pane over the status tone, pale rim and glow. */
-.pcu-t.on {
-  background: linear-gradient(160deg, rgba(242, 251, 255, .16), rgba(191, 230, 245, .08) 45%, rgba(143, 211, 236, .04)), var(--art-fill);
-  border-color: #A9C7D6; box-shadow: 0 0 0 1px rgba(169, 199, 214, .25), 0 0 8px rgba(143, 211, 236, .22);
-}
-/* Picked: only the shop number changes, bold, its letters carrying the hover
-   light (amber to coral) flowing through them at the same pace. */
-.pcu-t.on .pcu-code {
-  font-weight: 900; color: #F5A04A;
-  background: linear-gradient(90deg, #FFD08A, #F5A04A 25%, #E8785A 50%, #F5A04A 75%, #FFD08A) 0 0 / 200% 100%;
-  -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
-  animation: pcu-text-run 2.2s cubic-bezier(.45, .05, .55, .95) infinite;
-}
-@keyframes pcu-text-run { to { background-position: -200% 0; } }
-.pcu-t.on .pcu-sz { color: #B4C2CC; }
-/* A check in the corner: selected reads at a glance and never as a hover. */
-.pcu-t.on::before {
-  content: ''; position: absolute; top: -6px; right: -6px; z-index: 2; width: 16px; height: 16px; border-radius: 50%;
-  /* the hover light itself: amber to coral flowing round, same speed and glow */
-  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M4 8.5l2.5 2.5L12 5.5' fill='none' stroke='%2314110d' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / 12px no-repeat,
-    conic-gradient(from var(--pcu-a), #FFD08A, #F5A04A 33%, #E8785A 55%, #F5A04A 78%, #FFD08A);
-  box-shadow: 0 0 0 2px var(--surf), 0 0 6px rgba(245, 160, 74, .55);
-  animation: pcu-run 2.2s cubic-bezier(.45, .05, .55, .95) infinite;
-}
-.pcu-t:focus-visible { outline: 2px solid #A9C7D6; outline-offset: 2px; }
-.pcu-t.blocked { cursor: not-allowed; }
-/* 7 per row: SHOP-102 still fits a tile on a 1024px laptop; a phone drops to 5 so each tile stays a 44px+ tap target. */
-@media (max-width: 1023px) { .pcu-t { min-height: 56px; } }
-@media (max-width: 480px) { .pcu-grid { grid-template-columns: repeat(5, minmax(0, 1fr)); } }
+.pcu-no { font-size: 23px; font-weight: 800; color: var(--t1); letter-spacing: -.5px; line-height: 1; }
+.pcu-st { font-size: 11px; font-weight: 800; letter-spacing: .09em; }
+/* available */
+.pcu-available .pcu-st { color: var(--green); }
+.pcu-available:hover { border-color: var(--accent); transform: translateY(-2px); box-shadow: var(--sh); }
+/* on hold */
+.pcu-hold { background: color-mix(in srgb, var(--gold) 16%, var(--surf)); border-color: color-mix(in srgb, var(--gold) 38%, var(--bd2)); }
+.pcu-hold .pcu-no, .pcu-hold .pcu-st { color: var(--gold); }
+/* sold */
+.pcu-sold { background: color-mix(in srgb, var(--red) 13%, var(--surf)); border-color: color-mix(in srgb, var(--red) 32%, var(--bd2)); }
+.pcu-sold .pcu-no, .pcu-sold .pcu-st { color: var(--red); }
+/* selected */
+/* custom unit status (project unitStatuses): its colour arrives as --st-c */
+.pcu.has-c { background: color-mix(in srgb, var(--st-c) 14%, var(--surf)); border-color: color-mix(in srgb, var(--st-c) 40%, var(--bd2)); }
+.pcu.has-c .pcu-no, .pcu.has-c .pcu-st { color: var(--st-c); }
+.pcu.sel { border-color: var(--accent); box-shadow: 0 0 0 1.5px var(--accent); background: color-mix(in srgb, var(--accent) 10%, var(--surf)); }
+.pcu.sel .pcu-st { color: var(--accent); }
+/* blocked (hold/sold) — not pickable */
+.pcu.blocked { cursor: not-allowed; }
+.pcu.blocked:hover { transform: none; }
 
 /* ═══ Price & offer — reference layout ═══════════════════════════════════ */
 .pco-prices { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 16px; }
@@ -13612,11 +13487,11 @@ input[type="time"]::-webkit-calendar-picker-indicator { opacity: .9; cursor: poi
    order over the earlier phone passes. Desktop and tablet are untouched.
    ════════════════════════════════════════════════════════════════════════ */
 @media (max-width: 767px) {
-  /* Header pills: 44 → 40px tall. The account is its face only (the
-     reference), a 40px round at the row's end; the menu lists the name. */
-  .pg-head .hd-um { height: 40px; width: 40px; padding: 0; gap: 0; justify-content: center; border-radius: 50% }
+  /* Header pills: 44 → 40px tall. The face shrinks to 34px inside its pill. */
+  .pg-head .hd-um { height: 40px; padding: 2px 10px 2px 2px; gap: 7px }
   .pg-head .hd-um .ag-av { width: 34px; height: 34px }
-  .hd-um-txt, .hd-um-chev.mi { display: none }
+  .hd-um-nm { font-size: 13px }
+  .hd-um-rl { font-size: 11px }
   .hd-grp { height: 40px; padding: 2px }
   .hd-grp .hd-ic { width: 34px; height: 34px }
   .hd-grp .hd-ic .mi { font-size: 18px }
@@ -14013,64 +13888,6 @@ input[type="time"]::-webkit-calendar-picker-indicator { opacity: .9; cursor: poi
   .mh .mh-rs.iad-rs-new { background: var(--mh-well); color: var(--t2) }
 }
 
-/* ds-allow-hardcode:start  pill tabs: the warm black glass has no token; px sizes as in the pages that use it */
-/* Pill tabs: a page's section tabs as separate pills (Inventory, Users &
-   Accounts, Facebook Leads, Performance). The selected pill is warm black
-   glass; the others are a faint glass of the page. */
-.pill-tabs {
-  --pill: rgba(255, 255, 255, .06); --pill-edge: rgba(255, 255, 255, .10); --pill-ink: var(--t2);
-  --pill-on: rgba(38, 31, 26, .78); --pill-on-edge: rgba(255, 236, 220, .24); --pill-on-ink: #F7F3EF;
-  display: flex; flex-wrap: wrap; gap: 8px;
-}
-:root[data-theme="light"] .pill-tabs {
-  --pill: rgba(255, 255, 255, .72); --pill-edge: rgba(23, 22, 21, .08); --pill-ink: var(--t1);
-  --pill-on: rgba(28, 23, 20, .86); --pill-on-edge: rgba(255, 255, 255, .14);
-}
-.pill-tabs button {
-  flex: none; display: inline-flex; align-items: center; gap: 6px; height: 34px; padding: 0 16px;
-  border: 1px solid var(--pill-edge); border-radius: 999px; background: var(--pill); color: var(--pill-ink);
-  font: 700 12.5px/1 var(--font-display); letter-spacing: .04em; text-transform: uppercase; white-space: nowrap; cursor: pointer;
-  -webkit-backdrop-filter: blur(12px) saturate(1.2); backdrop-filter: blur(12px) saturate(1.2);
-  transition: background var(--tr), color var(--tr);
-}
-.pill-tabs button .mi { font-size: 17px; }
-.pill-tabs button:hover { color: var(--t1); }
-.pill-tabs button.on, .pill-tabs button.on:hover {
-  background: var(--pill-on); border-color: var(--pill-on-edge); color: var(--pill-on-ink);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .10), 0 6px 16px rgba(0, 0, 0, .18);
-}
-.pill-tabs button:focus-visible { outline: 2px solid var(--t1); outline-offset: 2px; }
-/* Performance: the two role pills and the search share one line; the search
-   gives up width first (down to 96px on a 360px phone), never the line. */
-.mip-bar .pill-tabs { flex: none; flex-wrap: nowrap; }
-@media (max-width: 767px) { .mip > .mip-bar { flex-wrap: nowrap; } .mip > .mip-bar .mip-fld { flex: 1 1 0; min-width: 0; } }
-@media (max-width: 767px) {
-  .pill-tabs button { height: 36px; } .pill-tabs button .mi { display: none; }
-  /* Phones: one line always. The pills shrink their padding and letter
-     spacing with the screen, so three uppercase tabs (and Facebook Leads'
-     switch after them) fit a 360px phone without wrapping. */
-  .pill-tabs { flex-wrap: nowrap; gap: clamp(4px, 1.6vw, 8px); min-width: 0; }
-  .pill-tabs button { flex: 0 1 auto; min-width: 0; padding: 0 clamp(9px, 3.2vw, 16px); letter-spacing: clamp(0px, .4vw - 1px, .04em); }
-}
-/* Phones, the pages with a Back button and pill tabs (Inventory, Users &
-   Accounts, Facebook Leads, Performance): the tab row and the search / filter
-   rows sit 16px in from the content edges, as the Projects search does
-   (AvailableUnitsTab.css .fpv-ph-row .ppl-search); and the header stays put
-   while the content under it scrolls, as on Inventory > Statements.
-   shortcut: Back and reload restore .pg-body's scroll only (useNavHistory.js restoreScroll), so the content reopens at its top; teach restoreScroll this scroller if that is missed. */
-@media (max-width: 767px) {
-  :is(.fin, .acc, .fbl, .mip):has(> .pill-tabs, > .fin-bar, > .fbl-tabrow, > .mip-bar) { --tab-inset: 16px; }
-  .fin > .fin-bar, .acc > .pill-tabs, .fbl > .fbl-tabrow, .mip > .mip-bar,
-  .fin > .fin-tools, .acc > .uct-bar { margin-inline: var(--tab-inset); }
-  .page .pg-body:has(> .pg-inner > :is(.fin, .acc, .fbl, .mip)) { display: flex; flex-direction: column; overflow: hidden; padding-bottom: 0; }
-  .pg-body:has(> .pg-inner > :is(.fin, .acc, .fbl, .mip)) > .pg-inner { flex: 1; min-height: 0; display: flex; flex-direction: column; }
-  .pg-inner > :is(.fin, .acc, .fbl, .mip) { flex: 1; min-height: 0; display: flex; flex-direction: column; }
-  .pg-inner > :is(.fin, .acc, .fbl, .mip) > :is(.pill-tabs, .fin-bar, .fbl-tabrow, .mip-bar, .fin-tools, .uct-bar, .fin-bulk) { flex: none; }
-  /* the one scroller: everything after the header rows */
-  .pg-inner > :is(.fin, .acc, .fbl, .mip) > .tab-scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 4px 2px calc(var(--gutter-y) + var(--bnav)); margin: 0 -2px; display: flex; flex-direction: column; gap: inherit; }
-}
-/* ds-allow-hardcode:end */
-
 /* BackButton: the chevron is for the phone round button only (below). */
 .hd-back-chev { display: none }
 
@@ -14081,21 +13898,14 @@ input[type="time"]::-webkit-calendar-picker-indicator { opacity: .9; cursor: poi
    ════════════════════════════════════════════════════════════════════════ */
 @media (max-width: 767px) {
   .pg-head.pg-head-sub :is(.hd-um, .hd-grp, .notif-btn, .thtog, .ham) { display: none }
-  /* Phone sub-pages render the Prospects header block instead of this bar
-     (App.jsx PageHeader); its action slot holds the hero's buttons as round
-     icons, in the Refresh ring's place (AvailableUnitsTab.css .lv-ph). */
-  .hd-acts { justify-self: end; display: flex; align-items: center; gap: 6px; transform: translateY(6px) }
-  .hd-acts:empty { display: none }
-  .hd-acts .btn { width: 40px; height: 40px; min-height: 40px; padding: 0; gap: 0; justify-content: center; border-radius: 50%; font-size: 0 }
-  .hd-acts .btn .mi { font-size: 20px }
-  .pg-head.pg-head-sub .hd-back, .fpv-ph-top .hd-back {
+  .pg-head.pg-head-sub .hd-back {
     display: grid; place-items: center; width: 44px; height: 44px; margin: 0;
     border-radius: 50%; border: 1px solid var(--bd); background: var(--surf-solid); color: var(--t1);
     box-shadow: 0 4px 14px rgba(0, 0, 0, .12)
   }
-  :is(.pg-head.pg-head-sub, .fpv-ph-top) .hd-back:active { transform: scale(.96) }
-  :is(.pg-head.pg-head-sub, .fpv-ph-top) .hd-back .hd-back-arrow { display: none }
-  :is(.pg-head.pg-head-sub, .fpv-ph-top) .hd-back .hd-back-chev { display: inline-block; font-size: 26px }
+  .pg-head.pg-head-sub .hd-back:active { transform: scale(.96) }
+  .pg-head.pg-head-sub .hd-back .hd-back-arrow { display: none }
+  .pg-head.pg-head-sub .hd-back .hd-back-chev { display: inline-block; font-size: 26px }
 
   /* ── Lead sources page (dashboards/LeadSourcesPage.jsx), over the app ── */
   /* One screen, no page scroll: a fixed-height column. The list shows up to
@@ -14175,349 +13985,244 @@ input[type="time"]::-webkit-calendar-picker-indicator { opacity: .9; cursor: poi
   .lsp-name { min-width: 0; font-size: 14px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
   .lsp-val { justify-self: end; font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace; font-size: 14px; font-weight: 600; font-variant-numeric: tabular-nums }
   .lsp-pct { justify-self: end; min-width: 28px; text-align: right; font-size: 11.5px; color: var(--mh-mute); font-variant-numeric: tabular-nums }
-
-  /* ── All projects (views/PropertiesView.jsx phone branch), the Lead sources
-     page's palette: a search field, a counted title, then one row per project
-     (photo left; name, availability, status and from-rate right). ── */
-  .ppl-search {
-    display: flex; align-items: center; gap: 8px; height: 44px; padding: 0 14px; margin-bottom: 14px;
-    border-radius: 999px; background: var(--mh-card); color: var(--mh-mute); box-shadow: var(--mh-shadow)
-  }
-  .ppl-search .mi { font-size: 20px }
-  .ppl-search input { flex: 1; min-width: 0; height: 100%; border: 0; background: none; outline: none; color: var(--mh-ink); font: inherit; font-size: 15px }
-  .ppl-search:focus-within { box-shadow: 0 0 0 2px var(--mh-ink) }
-  .ppl-ttl { margin: 0 0 10px 2px; font-size: 20px; font-weight: 600; letter-spacing: -.01em; color: var(--mh-ink) }
-  .ppl-ttl span { font-size: 13px; font-weight: 500; color: var(--mh-mute) }
-  .ppl-none { padding: 32px 4px; text-align: center; font-size: 13.5px; color: var(--mh-mute) }
-  .ppl { list-style: none; margin: 0 auto; padding: 0; display: grid; gap: 10px; width: calc(100% - 12px) }
-  /* ds-allow-hardcode:start  project cards: glass alphas over the page have no token; px sizes match this phone block */
-  /* each project is a horizontal card: the photo at the left edge, the text,
-     a chevron at the end; the whole card is the tap target (unchanged button) */
-  .ppl button {
-    width: 100%; display: grid; grid-template-columns: 96px minmax(0, 1fr) auto; gap: 14px; align-items: center; padding: 10px 14px 10px 10px;
-    border: 1px solid var(--ppl-edge); border-radius: 18px; background: var(--ppl-glass);
-    -webkit-backdrop-filter: blur(14px) saturate(1.2); backdrop-filter: blur(14px) saturate(1.2);
-    box-shadow: inset 0 1px 0 var(--ppl-sheen), 0 8px 24px rgba(0, 0, 0, .08);
-    color: var(--mh-ink); font: inherit; text-align: left; cursor: pointer; -webkit-tap-highlight-color: transparent;
-    transition: transform .16s ease, box-shadow .16s ease;
-    animation: ppl-in .36s cubic-bezier(.2, .8, .2, 1) both;
-  }
-  /* the glass: a faint tint of the card over the page, a hairline edge, a top sheen */
-  .ppl button { --ppl-glass: rgba(255, 255, 255, .06); --ppl-edge: rgba(255, 255, 255, .14); --ppl-sheen: rgba(255, 255, 255, .12) }
-  :root[data-theme="light"] .ppl button { --ppl-glass: rgba(255, 255, 255, .34); --ppl-edge: rgba(255, 255, 255, .75); --ppl-sheen: rgba(255, 255, 255, .9) }
-  /* the cards settle in one after another, once; never looped */
-  @keyframes ppl-in { from { opacity: 0; transform: translateY(8px) } to { opacity: 1; transform: none } }
-  .ppl li:nth-child(1) button { animation-delay: 0ms } .ppl li:nth-child(2) button { animation-delay: 40ms } .ppl li:nth-child(3) button { animation-delay: 80ms }
-  .ppl li:nth-child(4) button { animation-delay: 120ms } .ppl li:nth-child(5) button { animation-delay: 160ms } .ppl li:nth-child(n+6) button { animation-delay: 200ms }
-  @media (prefers-reduced-motion: reduce) { .ppl button { animation: none; transition: none } }
-  .ppl button::after { content: 'chevron_right'; font-family: 'Material Symbols Rounded'; font-size: 22px; line-height: 1; color: var(--mh-mute); transition: transform .16s ease }
-  .ppl button:active { transform: scale(.985); box-shadow: inset 0 1px 0 var(--ppl-sheen), 0 3px 10px rgba(0, 0, 0, .08) }
-  .ppl button:active::after { transform: translateX(2px) }
-  .ppl button:focus-visible { outline: 2px solid var(--mh-ink); outline-offset: 2px }
-  .ppl-img {
-    position: relative; overflow: hidden; width: 96px; aspect-ratio: 1.3; border-radius: 12px; background: var(--mh-well);
-    display: grid; place-items: center; color: var(--mh-mute)
-  }
-  .ppl-img .mi { font-size: 30px }
-  .ppl-img img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover }
-  /* ds-allow-hardcode:end */
-  .ppl-tx { min-width: 0; display: flex; flex-direction: column; gap: 3px }
-  .ppl-tx b { font-size: 16px; font-weight: 600; letter-spacing: -.01em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
-  .ppl-tx > span { font-size: 12.5px; color: var(--mh-mute); font-variant-numeric: tabular-nums }
-  .ppl-ft { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 8px; margin-top: 3px }
-  .ppl-ft .bdg { padding: 2px 7px; border-radius: 6px; font-size: 10px; font-style: normal }
-
-  /* ── Reserve bottom sheet (AvailableUnitsView phone): the unit's Deal cart
-     on a sheet over the page, above the bottom bar; the scrim or Close shuts it. ── */
-  .fps-sheet { position: fixed; inset: 0; z-index: 400; display: flex; flex-direction: column; justify-content: flex-end }
-  .fps-scrim { position: absolute; inset: 0; border: 0; padding: 0; background: rgba(0, 0, 0, .45); cursor: default; animation: gsin .18s ease }
-  .fps-panel {
-    position: relative; max-height: 88dvh; overflow-y: auto; overscroll-behavior: contain;
-    padding: 10px 18px calc(18px + env(safe-area-inset-bottom, 0px));
-    border-radius: 24px 24px 0 0; background: var(--mh-card); color: var(--mh-ink);
-    animation: fps-up .26s cubic-bezier(.2, .8, .2, 1)
-  }
-  /* the grab handle */
-  .fps-panel::before { content: ''; display: block; width: 36px; height: 4px; margin: 0 auto 12px; border-radius: 2px; background: var(--mh-track) }
-  @keyframes fps-up { from { transform: translateY(100%) } to { transform: none } }
-  @media (prefers-reduced-motion: reduce) { .fps-panel, .fps-scrim { animation: none } }
-  .fps-hd { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 16px }
-  .fps-hd h2 { margin: 0; font-family: var(--font-display); font-size: 26px; font-weight: 600; letter-spacing: -.02em; line-height: 1.1 }
-  .fps-hd h2 i { font-style: italic; font-weight: 700 }
-  .fps-hd p { margin: 4px 0 0; font-size: 13px; color: var(--mh-mute) }
-  .fps-x { flex: none; width: 40px; height: 40px; display: grid; place-items: center; border: 0; border-radius: 50%; background: var(--mh-well); color: var(--mh-ink); cursor: pointer }
-  .fps-x:focus-visible { outline: 2px solid var(--mh-ink); outline-offset: 2px }
-  /* inside the sheet: the big deal total like Image 1, pill controls, one full-width primary */
-  .fps-panel .pc-embed .pdo-unit { display: none }
-  .fps-panel .pc-embed .pdo-grid div:first-child b { font-family: var(--font-display); font-size: 40px; letter-spacing: -.03em; line-height: 1 }
-  .fps-panel .pc-embed :is(.pco-input, .pcc-search, .pc-more-btn, .pcc-tabs button) { border-radius: 999px }
-  .fps-panel .pc-embed .btn { min-height: 52px; border-radius: 999px; font-size: 15px }
-  .fps-panel .pc-embed .btn-sm { min-height: 44px }
-
-  /* ds-allow-hardcode:start  Reserve sheet: the rose palette is the reference image's; px sizes match the phone sheet above (no spacing tokens exist) */
-  /* Reserve sheet (the reference image): sentence-case labels, plain offer
-     columns, tinted pill fields and buttons, a hairline after the deal total.
-     The layout is shared; each theme sets only the --rs-* colours. Light uses
-     a warm rose palette and a deep-rose Reserve Now with a check; dark keeps
-     the app's green Reserve Now as it was. */
-  .fps-panel { --rs-sheet: var(--mh-card); --rs-well: var(--mh-well); --rs-line: rgba(255, 255, 255, .10); --rs-ink: var(--mh-ink); --rs-mute: var(--mh-mute) }
-  :root[data-theme="light"] .fps-panel {
-    --rs-sheet: #FCF6F7; --rs-well: #F6E9EC; --rs-line: #EED9DE; --rs-ink: #2A0F16; --rs-mute: #6E5A5F;
-    --rs-cta: #C4264D; --rs-cta-d: #A81F41;
-  }
-  .fps-panel { background: var(--rs-sheet); color: var(--rs-ink) }
-  :root[data-theme="light"] .fps-panel::before { background: #E2C7CE }
-  .fps-hd h2 { color: var(--rs-ink) }
-  .fps-hd p { color: var(--rs-mute); font-size: 14px }
-  .fps-x { background: var(--rs-well); color: var(--rs-ink) }
-  /* deal total | rate | size, a hairline between the total and the rest */
-  .fps-panel .pc-embed .pdo { background: transparent; border: 0; box-shadow: none; padding: 0 }
-  .fps-panel .pc-embed .pdo-grid { grid-template-columns: auto 1fr auto; align-items: start; gap: 16px }
-  .fps-panel .pc-embed .pdo-grid div:first-child { padding-right: 16px; border-right: 1px solid var(--rs-line) }
-  .fps-panel .pc-embed .pdo-grid div:nth-child(2) { align-items: flex-start; text-align: left }
-  .fps-panel .pc-embed .pdo-grid span { font-size: 14px; color: var(--rs-ink) }
-  .fps-panel .pc-embed .pdo-grid b { color: var(--rs-ink); font-size: 16px }
-  .fps-panel .pc-embed .pdo-grid b small { color: var(--rs-mute); font-weight: 500 }
-  .fps-panel .pc-embed .pdo-grid div:first-child b { font-size: 44px; font-weight: 700; color: var(--rs-total, var(--rs-ink)) }
-  /* As the reference: Deal total left, the hairline, then Rate starting right
-     after it, Size at the right edge; every label and value left-aligned in
-     its own column, the labels on one baseline. */
-  .fps-panel .pc-embed .pdo-grid { grid-template-columns: auto 1fr auto; column-gap: 24px }
-  .fps-panel .pc-embed .pdo-grid div:nth-child(2) { align-items: flex-start; text-align: left }
-  .fps-panel .pc-embed .pdo-grid div:nth-child(3) { align-items: flex-start; text-align: left; justify-self: end }
-  .fps-panel .pc-embed .pdo-grid div { gap: 6px }
-  .fps-panel .pc-embed .pdo-grid div:first-child { gap: 2px }
-  .fps-panel .pc-embed .pdo-grid span { color: var(--rs-mute) }
-  /* offers: plain columns, sentence-case labels, tinted pill fields */
-  .fps-panel .pco-duo { margin: 20px 0 0; gap: 12px }
-  .fps-panel .pco-duo .pco-side { padding: 0; border: 0; background: transparent; gap: 8px }
-  .fps-panel .pco-duo .pco-lbl { font-size: 14px; font-weight: 600; letter-spacing: 0; text-transform: none; color: var(--rs-ink) }
-  .fps-panel .pco-duo .pco-input { height: 46px; padding: 0 16px; gap: 8px; border-radius: 999px; border-color: var(--rs-line); background: var(--rs-well) }
-  .fps-panel .pco-duo .pco-input input { font-size: 16px; font-weight: 500; color: var(--rs-ink) }
-  .fps-panel .pco-duo .pco-cur { font-size: 15px; color: var(--rs-ink) }
-  .fps-panel .pco-duo .pco-suf { font-size: 14px; color: var(--rs-mute) }
-  .fps-panel .pco-duo .pco-total { font-size: 16px; font-weight: 700; color: var(--rs-total, var(--rs-ink)) }
-  .fps-panel .pco-duo .pco-total.is-none { font-size: 14px; font-weight: 500; color: var(--rs-mute) }
-  /* More details, client tabs and search: tinted, borderless */
-  .fps-panel .pc-more-btn { height: 46px; border: 0; background: var(--rs-well); color: var(--rs-ink); font-size: 15px; font-weight: 600 }
-  .fps-panel .pcc-f > span { font-size: 17px; font-weight: 600; letter-spacing: 0; text-transform: none; color: var(--rs-ink) }
-  .fps-panel .pcc-tabs { gap: 10px; padding: 0; border: 0; background: transparent }
-  .fps-panel .pcc-tabs button { min-height: 50px; border: 1px solid var(--rs-line); border-radius: 999px; background: transparent; color: var(--rs-ink); font: 600 16px/1 Inter, sans-serif; box-shadow: none }
-  .fps-panel .pcc-tabs button.on { background: var(--rs-well); box-shadow: none }
-  /* the tab's tracking and uppercase would break the icon ligature into its name */
-  .fps-panel .pcc-tabs button .mi, .fps-panel .pcc-search > .mi { font-size: 20px; letter-spacing: 0; text-transform: none; font-weight: 400 }
-  .fps-panel .pcc-search { height: 50px; border-radius: 999px; border-color: var(--rs-line); background: var(--rs-sheet) }
-  .fps-panel .pcc-search input { font-size: 16px; color: var(--rs-ink) }
-  .fps-panel .pcc-search input::placeholder { color: var(--rs-mute) }
-  /* focus: the theme's accent, rose on light */
-  .fps-panel :is(.pco-input, .pcc-search):focus-within { border-color: var(--rs-cta, var(--accent)) }
-  .fps-x:focus-visible { outline-color: var(--rs-cta, var(--mh-ink)) }
-  /* Reserve (the reference): one bright pill, sentence case, no icon. Dark is
-     the app's green with the total in the same green; light keeps its rose. */
-  .fps-panel { --rs-total: var(--accent); --rs-cta: var(--accent); --rs-cta-d: var(--accent-d); --rs-on-cta: var(--on-accent) }
-  :root[data-theme="light"] .fps-panel { --rs-total: var(--rs-ink); --rs-cta: #C4264D; --rs-cta-d: #A81F41; --rs-on-cta: #fff }
-  .fps-panel .pc-embed .pcc-reserve {
-    min-height: 56px; margin-top: 8px; gap: 0; background: var(--rs-cta); border-color: var(--rs-cta); color: var(--rs-on-cta);
-    font: 600 18px/1 Inter, sans-serif; letter-spacing: 0; text-transform: none;
-  }
-  .fps-panel .pc-embed .pcc-reserve .mi { display: none }
-  .fps-panel .pc-embed .pcc-reserve:hover:not(:disabled) { background: var(--rs-cta-d); border-color: var(--rs-cta-d) }
-  .fps-panel .pc-embed .pcc-reserve:disabled { opacity: .55 }
-  .fps-panel .pc-embed .pcc-reserve:focus-visible { outline: 2px solid var(--rs-cta); outline-offset: 2px }
-  /* ds-allow-hardcode:end */
 }
 
-/* ═══ Price & offer — compact, same width and border as the unit grid card ═══
-   Later in the file so it wins over the earlier price/offer passes. */
-.pc-offer { display: flex; flex-direction: column; gap: 10px; }
-.pc-offer .pco-prices { gap: 8px; margin: 0; }
-.pc-offer .pco-box { padding: 10px 12px; border-radius: 10px; }
-.pc-offer .pco-box-l, .pc-offer .pco-lbl { font-size: 10.5px; margin: 0 0 4px; }
-.pc-offer .pco-box-v { font-size: 16px; margin: 0 0 2px; letter-spacing: -.2px; }
-.pc-offer .pco-box-s { font-size: 11.5px; }
-.pc-offer .pco-panel { padding: 10px 12px; margin: 0; border-radius: 10px; }
-.pc-offer .pco-row { gap: 12px; align-items: center; }
-.pc-offer .pco-div { margin: 10px 0; }
-.pc-offer .pco-input { height: 38px; padding: 0 10px; border-radius: 8px; }
-.pc-offer .pco-input input { font-size: 14px; }
-.pc-offer .pco-total { font-size: 17px; letter-spacing: -.2px; }
-.pc-offer .pco-total-s { font-size: 11px; }
-.pc-offer .pc-fast { margin: 0; padding: 8px 12px; border-radius: 10px; font-size: 12.5px; }
-.pc-offer .pca-sec { margin: 0; }
-.pc-offer .pca-hd { margin-bottom: 6px; }
-.pc-offer .pca-grid { gap: 6px; }
-.pc-offer .pca { min-height: 44px; padding: 6px 8px; gap: 8px; border-radius: 10px; }
-.pc-offer .pca-ic { width: 28px; height: 28px; border-radius: 7px; }
-.pc-offer .pca-ic .mi { font-size: 16px; }
-.pc-offer .pca-nm { font-size: 13px; font-weight: 700; }
-.pc-offer .pca-amt { font-size: 11.5px; white-space: nowrap; }
-.pc-offer .pca-plus { width: 26px; height: 26px; border-radius: 7px; }
-.pc-offer .pca-plus .mi { font-size: 15px; }
-.pc-offer .pc-total { padding: 10px 12px; border-radius: 10px; }
-.pc-offer .pc-total-v { font-size: 18px; }
+/* ── Setup next follow-up (FollowUpModal) ──
+   ds-allow-hardcode: no spacing/type tokens exist in this stylesheet yet. */
+.modal.fu2 { max-width: 520px; overflow: hidden; border: 1px solid var(--bd); font-family: var(--font-display); }
+.fu2-hd { position: relative; display: flex; align-items: center; gap: 14px; padding: 20px 22px 18px; border-bottom: 1px solid var(--bd);
+  background: radial-gradient(120% 140% at 0% 0%, color-mix(in srgb, var(--accent) 18%, transparent) 0%, transparent 60%); }
+.fu2-badge { flex: none; width: 44px; height: 44px; border-radius: 14px; display: grid; place-items: center; color: #fff;
+  background: linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--accent) 55%, #0b3d0b));
+  box-shadow: 0 8px 22px color-mix(in srgb, var(--accent) 40%, transparent); }
+.fu2-badge .mi { font-size: 24px; }
+.fu2-hd-txt { flex: 1; min-width: 0; }
+.fu2-ttl { font-size: 18px; font-weight: 700; letter-spacing: -.01em; color: var(--t1); }
+.fu2-sub { margin-top: 2px; font-size: 13px; color: var(--t2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fu2-hd .m-x { flex: none; }
 
-/* Client: Search customer | Create lead tabs (Project console rail). */
-.pcc-tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 2px; padding: 3px; border: 1px solid var(--bd); border-radius: 10px; background: var(--surf); }
-.pcc-tabs button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 36px; padding: 0 8px;
-  border: 0; border-radius: 7px; background: transparent; color: var(--t2); font: 600 12.5px/1 var(--font-display); cursor: pointer; }
-.pcc-tabs button .mi { font-size: 16px; }
-.pcc-tabs button:hover { color: var(--t1); }
-.pcc-tabs button.on { background: var(--surf2); color: var(--t1); box-shadow: inset 0 0 0 1px var(--bd2); }
-.pcc-tabs button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
-/* the lead form opens over the console (.mov is 500 for both) */
-.pc-modal ~ .mov.on, .mov.on + .mov.on { z-index: 510; }
+.fu2-body { padding: 18px 22px 6px; overflow-y: auto; display: grid; gap: 16px; }
+.fu2-lbl { display: block; margin-bottom: 7px; font-size: 11px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: var(--t3); }
 
-/* Console status counts: "● Landowner 17" inline, one row, wraps on narrow. */
-.pcu-legend { gap: 6px 18px; }
-.pcu-stat { display: inline-flex; align-items: center; gap: 6px; }
-.pcu-stat-l { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--t2); }
-.pcu-stat b { font-size: 13px; font-weight: 800; color: var(--t1); font-variant-numeric: tabular-nums; }
+/* Type: icon tiles */
+.fu2-types { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; }
+.fu2-type { display: grid; justify-items: center; gap: 7px; padding: 12px 4px 10px; border: 1px solid var(--bd2); border-radius: 14px;
+  background: var(--surf2); color: var(--t2); font: inherit; cursor: pointer;
+  transition: border-color .18s, background .18s, color .18s, transform .18s, box-shadow .18s; }
+.fu2-type:hover { border-color: color-mix(in srgb, var(--accent) 60%, var(--bd2)); color: var(--t1); transform: translateY(-1px); }
+.fu2-type:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.fu2-type-ico { width: 36px; height: 36px; border-radius: 11px; display: grid; place-items: center; background: var(--surf); transition: background .18s, color .18s; }
+.fu2-type-ico .mi { font-size: 20px; }
+.fu2-type-lbl { font-size: 11.5px; font-weight: 700; line-height: 1.15; text-align: center; }
+.fu2-type.on { border-color: var(--accent); color: var(--t1); background: color-mix(in srgb, var(--accent) 12%, var(--surf2));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent); }
+.fu2-type.on .fu2-type-ico { background: var(--accent); color: #fff; }
 
-/* Offer pair in the Deal cart: your offer | customer offer, one compact row. */
-.pco-duo { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 14px 18px 0; }
-.pco-duo .pco-side { display: flex; flex-direction: column; gap: 4px; min-width: 0; padding: 8px; border: 1px solid var(--bd); border-radius: 10px; background: var(--surf2); }
-.pco-duo .pco-lbl { margin: 0; font-size: 10.5px; letter-spacing: .04em; }
-.pco-duo .pco-input { height: 34px; padding: 0 8px; gap: 4px; border-radius: 8px; }
-.pco-duo .pco-input input { font-size: 13px; font-weight: 700; }
-.pco-duo .pco-cur, .pco-duo .pco-suf { font-size: 11px; }
-.pco-duo .pco-total { font-size: 14px; letter-spacing: -.2px; line-height: 1.2; }
-.pco-duo .pco-total small { display: block; font-size: 10.5px; font-weight: 600; letter-spacing: 0; }
-.pco-duo .pco-total.is-none { font-size: 12px; font-weight: 600; color: var(--t3); }
+/* Date / time / dropdowns */
+.fu2-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 12px; }
+.fu2-field { display: block; min-width: 0; }
+.fu2-box { display: flex; align-items: center; gap: 10px; height: 44px; padding: 0 12px; border: 1px solid var(--bd2); border-radius: 12px;
+  background: var(--surf2); transition: border-color .18s, box-shadow .18s; }
+.fu2-box:hover { border-color: color-mix(in srgb, var(--accent) 60%, var(--bd2)); }
+.fu2-box:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent); }
+.fu2-box > .mi { font-size: 19px; color: var(--accent); }
+.fu2-box input { flex: 1; min-width: 0; height: 100%; border: 0; outline: 0; background: transparent; color: var(--t1); font: 700 14px/1 var(--font-display); color-scheme: dark; }
+:root[data-theme="light"] .fu2-box input { color-scheme: light; }
+.fu2-box input::-webkit-calendar-picker-indicator { opacity: .55; cursor: pointer; }
+.fu2-sel { display: flex; width: 100%; }
+.fu2-sel .sel-trigger { width: 100%; height: 44px; border-radius: 12px; font-size: 14px; }
+.fu2-sel .sel-trigger:focus-visible { outline: 0; border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent); }
+.fu2-opt { display: inline-flex; align-items: center; gap: 9px; min-width: 0; }
+.fu2-opt .mi { font-size: 18px; color: var(--accent); }
 
-/* Desktop: the main column is only as wide as its unit card (602px) and the
-   Deal cart takes the rest, so no blank band sits between them. */
-@media (min-width: 821px) {
-  .pc-body { grid-template-columns: minmax(0, 642px) minmax(348px, 1fr); }
+.fu2-input { width: 100%; height: 44px; padding: 0 14px; border: 1px solid var(--bd2); border-radius: 12px; background: var(--surf2);
+  color: var(--t1); font: 600 14px/1 var(--font-display); outline: 0; transition: border-color .18s, box-shadow .18s; }
+.fu2-input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent); }
+
+/* Summary of what will be saved */
+.fu2-sum { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-radius: 14px;
+  background: color-mix(in srgb, var(--accent) 10%, var(--surf2)); border: 1px dashed color-mix(in srgb, var(--accent) 45%, transparent); }
+.fu2-sum-ico { flex: none; width: 34px; height: 34px; border-radius: 10px; display: grid; place-items: center; background: var(--accent); color: #fff; }
+.fu2-sum-ico .mi { font-size: 19px; }
+.fu2-sum-txt { display: grid; gap: 2px; min-width: 0; }
+.fu2-sum-txt b { font-size: 14px; color: var(--t1); }
+.fu2-sum-txt span { font-size: 12.5px; color: var(--t2); }
+
+.fu2-check { display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--t2); cursor: pointer; }
+.fu2-check input { width: 17px; height: 17px; accent-color: var(--accent); cursor: pointer; }
+
+/* The follow-up already pending */
+.fu2-pend { display: grid; gap: 12px; padding: 14px; border-radius: 14px; border: 1px solid color-mix(in srgb, var(--orange) 40%, transparent);
+  background: color-mix(in srgb, var(--orange) 9%, var(--surf2)); }
+.fu2-pend-top { display: flex; gap: 12px; align-items: flex-start; }
+.fu2-pend-top > .mi { font-size: 22px; color: var(--orange); }
+.fu2-pend-info { display: grid; gap: 3px; min-width: 0; }
+.fu2-pend-info b { font-size: 14px; color: var(--t1); display: flex; align-items: center; gap: 8px; }
+.fu2-pend-info span { font-size: 12.5px; color: var(--t2); }
+.fu2-late { padding: 2px 8px; border-radius: 99px; background: var(--red-l); color: var(--red); font-size: 10.5px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; }
+.fu2-pend-act { display: flex; gap: 8px; flex-wrap: wrap; }
+.fu2-pill { display: inline-flex; align-items: center; gap: 6px; height: 34px; padding: 0 14px; border-radius: 99px; border: 1px solid var(--bd2);
+  background: var(--surf); color: var(--t1); font: 700 13px/1 var(--font-display); cursor: pointer; transition: background .18s, border-color .18s; }
+.fu2-pill .mi { font-size: 17px; }
+.fu2-pill:hover { border-color: var(--t3); }
+.fu2-pill.ok { background: var(--accent); border-color: var(--accent); color: #fff; }
+.fu2-pill.ok:hover { filter: brightness(1.08); }
+.fu2-done { display: grid; gap: 10px; }
+.fu2-link { justify-self: start; display: inline-flex; align-items: center; gap: 4px; border: 0; background: none; padding: 0; color: var(--t2); font: 700 12.5px/1 var(--font-display); cursor: pointer; }
+.fu2-link .mi { font-size: 16px; }
+
+/* Footer */
+.fu2-ft { display: flex; justify-content: flex-end; gap: 10px; padding: 16px 22px 20px; }
+.fu2-btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 44px; padding: 0 20px; border-radius: 12px;
+  font: 700 14px/1 var(--font-display); cursor: pointer; border: 1px solid transparent; transition: filter .18s, transform .18s, box-shadow .18s; }
+.fu2-btn .mi { font-size: 19px; }
+.fu2-btn.ghost { background: var(--surf2); border-color: var(--bd2); color: var(--t1); }
+.fu2-btn.ghost:hover { border-color: var(--t3); }
+.fu2-btn.primary { min-width: 140px; color: #fff; background: linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--accent) 70%, #0b3d0b));
+  box-shadow: 0 8px 20px color-mix(in srgb, var(--accent) 35%, transparent); }
+.fu2-btn.primary:hover:not(:disabled) { filter: brightness(1.07); transform: translateY(-1px); }
+.fu2-btn:disabled { opacity: .5; cursor: not-allowed; box-shadow: none; }
+
+@media (max-width: 767px) {
+  .fu2-hd { padding: 16px 16px 14px; }
+  .fu2-body { padding: 16px 16px 4px; }
+  .fu2-ft { padding: 14px 16px 16px; }
+  .fu2-types { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .fu2-grid > .fu2-field:nth-child(n+3) { grid-column: 1 / -1; }
+  .fu2-box { padding: 0 10px; gap: 6px; }
+  .fu2-box > .mi { display: none; }
+  .fu2-btn { flex: 1; }
 }
 
-/* Deal overview in the Deal cart: the dashboard Overview card (KpiRow) layout,
-   with its Ring / Meter (MobileBits) styled here because their own CSS is
-   phone-only. Warm accent as the dashboard: #FB8849 / #FFB07A. */
-.pdo { --mh-track: var(--surf2); --mh-warm: #FB8849; --mh-warm-hi: #FFB07A;
-  display: flex; flex-direction: column; gap: 10px; padding: 14px; border: 1px solid var(--bd); border-radius: 14px; background: var(--surf); }
-.pdo-hd { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 13px; font-weight: 700; color: var(--t1); }
-.pdo-chip { padding: 3px 10px; border-radius: 999px; background: var(--surf2); color: var(--t2); font-size: 12px; font-weight: 600; }
-.pdo-lbl { font-size: 12px; color: var(--t2); }
-.pdo-unit { margin-top: -6px; font-size: 26px; font-weight: 800; letter-spacing: -.5px; color: var(--t1); line-height: 1.1; }
-/* Rate gets the middle and the room it needs; total left, size right. */
-.pdo-grid { display: grid; grid-template-columns: auto 1fr auto; gap: 12px; }
-.pdo-grid div:nth-child(2) { align-items: center; text-align: center; }
-.pdo-grid div:nth-child(3) { align-items: flex-end; text-align: right; }
-.pdo-grid div { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-.pdo-grid span { font-size: 11.5px; color: var(--t2); }
-.pdo-grid b { font-size: 14px; font-weight: 700; color: var(--t1); white-space: nowrap; font-variant-numeric: tabular-nums; }
-.pdo-grid small { font-size: 11px; font-weight: 500; color: var(--t3); }
-.pdo-cust { display: flex; flex-direction: column; gap: 2px; padding: 10px 0; border-top: 1px solid var(--bd); border-bottom: 1px solid var(--bd); }
-.pdo-cust b { font-size: 14px; font-weight: 700; color: var(--t1); }
-.pdo-cust span { font-size: 12px; color: var(--t2); }
-.pdo-cust .pdo-none { color: var(--t3); }
-.pdo-foot { display: flex; align-items: center; gap: 14px; }
-.pdo-meters { flex: 1; min-width: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
-.pdo .mh-ring { position: relative; width: 58px; height: 58px; flex-shrink: 0; }
-.pdo .mh-ring > svg { display: block; }
-.pdo .mh-ring > span { position: absolute; inset: 0; display: grid; place-items: center; font-size: 13px; font-weight: 600; color: var(--t1); }
-.pdo .mh-ring-track { fill: none; stroke: var(--mh-track); stroke-width: 6; }
-.pdo .mh-ring-fill { fill: none; stroke: var(--mh-warm); stroke-width: 6; stroke-linecap: round; }
-.pdo .mh-meter { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
-.pdo .mh-meter-hd { display: flex; flex-direction: column; gap: 1px; font-size: 12px; }
-.pdo .mh-meter-hd span { color: var(--t2); }
-.pdo .mh-meter-hd b { font-weight: 600; color: var(--t1); white-space: nowrap; }
-.pdo .mh-track { height: 5px; border-radius: 999px; background: var(--mh-track); overflow: hidden; }
-.pdo .mh-fill { height: 100%; border-radius: 999px; background: linear-gradient(90deg, var(--mh-warm-hi), var(--mh-warm)); }
-/* The card takes the old title and tracker spot at the top of the rail. */
-.pc-rail > .pdo { margin: 18px 18px 0; }
+/* ── Profile: email verification (EmailVerifyCard) ── ds-allow-hardcode: no spacing tokens. */
+.ev-card { margin: 4px 0 14px; padding: 14px; border: 1px solid var(--bd); border-radius: 14px; background: var(--surf2); display: grid; gap: 12px; }
+.ev-hd { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.ev-ico { width: 38px; height: 38px; border-radius: 11px; display: grid; place-items: center; background: color-mix(in srgb, var(--orange) 14%, transparent); color: var(--orange); }
+.ev-ico.ok { background: color-mix(in srgb, var(--accent) 16%, transparent); color: var(--accent); }
+.ev-txt { flex: 1; min-width: 180px; display: grid; gap: 2px; }
+.ev-txt b { font-size: 14px; color: var(--t1); }
+.ev-txt span { font-size: 12.5px; color: var(--t2); overflow-wrap: anywhere; }
+.ev-row { display: flex; gap: 8px; }
+.ev-code { flex: 1; min-width: 0; max-width: 220px; height: 38px; padding: 0 12px; border: 1px solid var(--bd2); border-radius: 10px; background: var(--surf); color: var(--t1); font: 700 16px/1 var(--font-display); letter-spacing: 4px; outline: 0; }
+.ev-code:focus { border-color: var(--accent); }
 
-/* Eye comfort in the Deal cart: no pure white. The inline offer sheet becomes
-   a soft warm paper on screen (print keeps true white), and the rail's bright
-   text steps down to an off-white. ds-allow-hardcode: paper tones for the sheet. */
-@media screen {
-  .inv-inline .inv-sheet { background: #F6F4F0; color: #2A2D33; }
-  .inv-inline .inv-tbl th, .inv-inline .inv-sum-tot { border-color: #E2DFD8; }
-  .inv-inline .inv-tbl td, .inv-inline .inv-foot { border-color: #EAE7E1; }
-  .inv-inline { box-shadow: none; }
-  /* greys and the logo green darkened a step so they stay AA on the paper tone */
-  .inv-inline :is(.inv-keys span, .inv-lede, .inv-tbl th, .inv-d2, .inv-foot) { color: #5B6270; }
-  .inv-inline .inv-logo { color: #186640; }
+/* ── Agent Smart To-Do + Follow-up Activity (dashboards/SmartTodo.jsx) ──
+   ds-allow-hardcode: no spacing/type tokens exist in this stylesheet yet. */
+.st { --st-green: var(--accent); --st-red: #F87171; --st-purple: #A78BFA; --st-yellow: #FACC15; --st-blue: #60A5FA;
+  display: grid; grid-template-columns: minmax(0, 1.45fr) minmax(0, 1fr); gap: 16px; margin: 16px 0; align-items: start; font-family: var(--font-display); }
+.st-card { background: var(--surf); border: 1px solid var(--bd); border-radius: 16px; padding: 18px; display: grid; gap: 16px; min-width: 0; }
+.st-hd { display: flex; align-items: center; gap: 10px; min-height: 34px; }
+.st-ttl { font-size: 16px; font-weight: 700; color: var(--t1); letter-spacing: -.01em; }
+.st-sp { flex: 1; }
+.st-ico { width: 32px; height: 32px; border-radius: 10px; display: grid; place-items: center; }
+.st-ico .mi { font-size: 19px; }
+.st-ico.yellow { background: color-mix(in srgb, var(--st-yellow) 14%, transparent); color: var(--st-yellow); }
+.st-info { display: inline-flex; color: var(--t3); cursor: help; }
+.st-info .mi { font-size: 16px; }
+.st-iconbtn { width: 34px; height: 34px; border-radius: 10px; display: grid; place-items: center; border: 1px solid var(--bd); background: var(--surf2);
+  color: var(--t2); cursor: pointer; transition: color .18s, border-color .18s, background .18s; }
+.st-iconbtn:hover, .st-iconbtn[data-state="open"] { color: var(--t1); border-color: var(--bd2); }
+.st-iconbtn .mi { font-size: 19px; }
+
+/* Numbers */
+.st-num { display: block; font-size: 30px; line-height: 1; font-weight: 800; letter-spacing: -.02em; color: var(--t1); font-variant-numeric: tabular-nums; }
+.st-num.xl { font-size: 40px; }
+.st-lbl { display: block; font-size: 12.5px; font-weight: 600; color: var(--t2); }
+
+/* To-Do tiles */
+.st-tiles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.st-tile { --tint: var(--st-green); position: relative; display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 16px; border-radius: 16px; text-align: left; font: inherit; cursor: pointer;
+  border: 1px solid color-mix(in srgb, var(--tint) 22%, transparent); background: color-mix(in srgb, var(--tint) 8%, var(--surf));
+  transition: transform .18s ease, border-color .18s, box-shadow .18s, background .18s; }
+.st-tile.red { --tint: var(--st-red); }
+.st-tile.purple { --tint: var(--st-purple); }
+.st-tile.red .st-num { color: var(--st-red); }
+.st-tile:hover { transform: translateY(-2px); border-color: color-mix(in srgb, var(--tint) 45%, transparent);
+  box-shadow: 0 10px 24px color-mix(in srgb, var(--tint) 12%, transparent); }
+.st-tile:focus-visible { outline: 2px solid var(--tint); outline-offset: 2px; }
+.st-tile.on { border-color: color-mix(in srgb, var(--tint) 70%, transparent); background: color-mix(in srgb, var(--tint) 13%, var(--surf));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--tint) 14%, transparent); }
+.st-tile-txt { display: grid; gap: 8px; min-width: 0; }
+.st-arrow { flex: none; width: 32px; height: 32px; border-radius: 99px; display: grid; place-items: center;
+  background: color-mix(in srgb, var(--tint) 16%, transparent); color: var(--tint); transition: transform .18s, background .18s; }
+.st-arrow .mi { font-size: 18px; }
+.st-tile:hover .st-arrow, .st-tile.on .st-arrow { transform: translateX(2px); background: var(--tint); color: #0b0b0c; }
+
+/* The chosen tile's list */
+.st-list { display: grid; gap: 6px; }
+.st-empty { display: flex; align-items: center; gap: 8px; padding: 14px 4px; font-size: 13px; color: var(--t3); }
+.st-empty .mi { font-size: 18px; color: var(--st-green); }
+.st-more { padding: 6px 4px 0; font-size: 12.5px; color: var(--t3); }
+.st-row { display: grid; grid-template-columns: 78px 34px minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 10px 12px;
+  border-radius: 12px; background: var(--surf2); border: 1px solid transparent; cursor: pointer; transition: border-color .18s, transform .18s; }
+.st-row:hover { border-color: var(--bd2); transform: translateY(-1px); }
+.st-when { font-size: 12.5px; font-weight: 700; color: var(--t1); font-variant-numeric: tabular-nums; }
+.st-when.over { color: var(--st-red); }
+.st-row-ico { width: 34px; height: 34px; border-radius: 10px; display: grid; place-items: center; background: var(--surf); color: var(--t2); }
+.st-row-ico .mi { font-size: 18px; }
+.st-row-info { display: grid; gap: 2px; min-width: 0; }
+.st-row-name { font-size: 13.5px; font-weight: 700; color: var(--t1); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.st-row-meta { font-size: 12px; color: var(--t2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.st-row-act { display: flex; gap: 6px; }
+.st-mini { width: 32px; height: 32px; border-radius: 10px; display: grid; place-items: center; border: 1px solid var(--bd); background: var(--surf);
+  color: var(--t1); cursor: pointer; transition: border-color .18s, color .18s; }
+.st-mini:hover { border-color: var(--bd2); }
+.st-mini.ok { color: var(--st-green); }
+.st-mini .mi { font-size: 17px; }
+
+/* Follow-up activity */
+.st-big { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; padding: 18px; border-radius: 16px;
+  background: color-mix(in srgb, var(--st-green) 8%, var(--surf)); border: 1px solid color-mix(in srgb, var(--st-green) 22%, transparent); }
+.st-big-txt { display: grid; gap: 10px; min-width: 0; }
+.st-chg { display: inline-flex; align-items: center; gap: 4px; padding: 6px 10px; border-radius: 99px; font-size: 12.5px; font-weight: 800; white-space: nowrap; }
+.st-chg .mi { font-size: 16px; }
+.st-chg.up { background: color-mix(in srgb, var(--st-green) 18%, transparent); color: var(--st-green); }
+.st-chg.down { background: color-mix(in srgb, var(--st-red) 16%, transparent); color: var(--st-red); }
+.st-hint { display: flex; align-items: center; gap: 8px; padding: 10px 12px; border-radius: 12px; font-size: 12.5px; font-weight: 600;
+  background: color-mix(in srgb, var(--st-blue) 10%, transparent); color: color-mix(in srgb, var(--st-blue) 80%, var(--t1)); }
+.st-hint .mi { font-size: 17px; color: var(--st-blue); }
+.st-types { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+.st-type { display: flex; align-items: center; gap: 12px; padding: 10px 8px; border-radius: 12px; transition: background .18s, transform .18s; }
+.st-type:hover { background: var(--surf2); transform: translateX(2px); }
+.st-type-ico { flex: none; width: 36px; height: 36px; border-radius: 11px; display: grid; place-items: center;
+  background: color-mix(in srgb, var(--st-green) 12%, transparent); color: var(--st-green); }
+.st-type-ico .mi { font-size: 19px; }
+.st-type-txt { flex: 1; display: grid; gap: 2px; min-width: 0; }
+.st-type-ttl { font-size: 13.5px; font-weight: 700; color: var(--t1); }
+.st-type-sub { font-size: 12px; color: var(--t3); }
+.st-type-n { font-size: 18px; font-weight: 800; color: var(--t1); font-variant-numeric: tabular-nums; }
+
+@media (max-width: 1100px) {
+  .st { grid-template-columns: 1fr; }
 }
-.pc-rail { --t1: rgba(255, 255, 255, .78); }
-:root[data-theme="light"] .pc-rail { --t1: #0A0A0A; }
-.pc-rail .pc-total-v { color: rgba(255, 255, 255, .78); }
-:root[data-theme="light"] .pc-rail .pc-total-v { color: #0A0A0A; }
-/* Rest of the Deal cart (overview to Send offer), dark theme: the last pure
-   white label and the bright green values step down like the text above. */
-:root:not([data-theme="light"]) .pc-rail .pc-total-l { color: rgba(255, 255, 255, .78); }
-:root:not([data-theme="light"]) .pc-rail :is(.pco-total, .pcc-chosen, .pc-gap-hi, .pcl-no) { color: color-mix(in srgb, var(--accent) 74%, var(--surf)); }
-:root:not([data-theme="light"]) .pc-rail .pcc-chosen { background: color-mix(in srgb, var(--accent) 6%, var(--surf)); }
-:root:not([data-theme="light"]) .pc-rail .pcc-chosen { color: color-mix(in srgb, var(--accent) 80%, var(--surf)); }
-:root:not([data-theme="light"]) .pc-rail .btn-p { background: color-mix(in srgb, var(--accent) 76%, var(--surf)); }
-/* Unit type sits after the unit number, quiet, on the same baseline. */
-/* Header right: the unit and its floor, quiet, beside the bold title. */
-.pdo-hd { align-items: flex-start; }
-.pdo-where { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; min-width: 0; text-align: right; }
-.pdo-where .pdo-lbl { font-size: 12px; font-weight: 500; color: var(--t2); }
-.pdo-where .pdo-unit { margin: 0; }
-
-/* Deal cart: More details toggle, and the moved price / add-ons / attachments
-   sections sitting flush in the rail. */
-.pc-more { margin: 12px 18px 0; display: flex; flex-direction: column; gap: 10px; }
-.pc-more-btn {
-  display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 40px; width: 100%;
-  border: 1px solid var(--bd); border-radius: 10px; background: var(--surf2); color: var(--t2);
-  font: 600 13px/1 var(--font-display); cursor: pointer; transition: color var(--tr), border-color var(--tr);
+/* In the dashboard's right-hand column: cards and tiles top to bottom, compact rows. */
+.st.rail { grid-template-columns: 1fr; margin: 0; }
+.st.rail .st-card { padding: 16px; gap: 14px; }
+.st.rail .st-tiles { grid-template-columns: 1fr; gap: 8px; }
+.st.rail .st-tile { padding: 14px; }
+.st.rail .st-tile-txt { grid-auto-flow: column; justify-content: start; align-items: baseline; gap: 10px; }
+.st.rail .st-num { font-size: 26px; }
+.st.rail .st-num.xl { font-size: 34px; }
+.st.rail .st-row { grid-template-columns: 58px minmax(0, 1fr) auto; gap: 8px; padding: 10px; }
+.st.rail .st-row-ico, .st.rail .st-mini.edit { display: none; }
+.st.rail .st-list { max-height: 360px; overflow-y: auto; }
+@media (max-width: 767px) {
+  .st { gap: 12px; margin: 12px 0; }
+  .st-card { padding: 14px; gap: 14px; }
+  .st-tiles { grid-template-columns: 1fr; gap: 8px; }
+  .st-tile { padding: 14px; }
+  .st-tile-txt { grid-auto-flow: column; justify-content: start; align-items: baseline; gap: 10px; }
+  .st-num { font-size: 26px; }
+  .st-num.xl { font-size: 34px; }
+  .st-row { grid-template-columns: 64px minmax(0, 1fr) auto; padding: 10px; }
+  .st-row-ico { display: none; }
 }
-.pc-more-btn .mi { font-size: 18px; }
-.pc-more-btn:hover { color: var(--t1); border-color: var(--bd2); }
-.pc-more-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-.pc-more-body { display: flex; flex-direction: column; gap: 10px; }
-.pc-more-body .pc-sec { padding: 12px; }
-.pc-more-body .pca-grid { grid-template-columns: 1fr; }
-
-/* Deal overview (Available Units): the console's Deal cart rendered in the
-   unit panel, not a modal. The panel card is the only frame: no box, rule or
-   repeated fact inside it, and no meter, gradient or pill. Left out: the
-   title (the tab names it), the mall and floor (the page shows them), the
-   customer line and chip (the search field holds the picked name), the
-   progress ring and meters, the offer rows (the overview shows rate and
-   total; More details keeps the breakdown), and the helper hint. */
-.pc-embed .pc-body { display: block; overflow: visible; }
-.pc-embed .pc-rail { border: 0; padding: 0; overflow: visible; background: transparent; gap: 20px; }
-.pc-embed .pc-rail > .pdo { margin: 0; padding: 0; gap: 14px; border: 0; background: transparent; }
-.pc-embed :is(.pdo-hd .pc-rail-ttl, .pdo-lbl, .pdo-cust, .pdo-foot, .pcc-chosen, .pcc-hint) { display: none; }
-.pc-embed .pcl-rows { display: none; }
-.pc-embed .pc-body { padding: 0; }
-.pc-embed .pc-rail, .pc-embed .pc-cart { gap: 12px; }
-/* Offer step: the sheet scales down (ProjectConsole fit) so Download, Hold unit
-   and Remove from cart stay in view with no scroll. */
-.pc-embed .pc-cart > .pc-sheet-fit:first-child > .inv-inline { margin-top: 0; }
-.pc-embed .pdo-where { align-items: flex-start; text-align: left; }
-.pc-embed .pdo-unit { font-size: 24px; }
-.pc-embed .pco-duo, .pc-embed .pc-more { margin: 0; }
-.pc-embed .pco-duo { gap: 16px; }
-.pc-embed .pco-duo .pco-side { padding: 0; border: 0; background: transparent; }
-.pc-embed .pc-cart-wrap { padding: 0; }
-.pc-embed :is(.btn, .pco-input, .pcc-search, .pcc-drop, .pcc-tabs, .pcc-tabs button, .pc-more-btn, .pc-sec, .pco-box, .pc-fast, .pca, .pc-total) { border-radius: 0; }
-
-/* Deal cart spacing: Deal overview starts at the top of the rail, and the
-   gaps below it and before the offer sheet are tight. */
-.pc-rail > .pdo { margin-top: 10px; }
-.pc-rail:has(.inv-inline) .pc-cart-wrap { padding-top: 0; }
-.pc-rail:has(.inv-inline) .pc-cart { padding-top: 0; gap: 8px; }
-.pc-rail .pc-cart > .inv-inline:first-child { margin-top: 10px; }
-/* The offer sheet, a step smaller than before; same layout and colours. */
-.pc-rail .inv-inline .inv-sheet { padding: 14px 14px; }
-.pc-rail .inv-inline .inv-title { font-size: 17px; }
-.pc-rail .inv-inline .inv-logo { font-size: 13px; }
-.pc-rail .inv-inline .inv-top, .pc-rail .inv-inline .inv-keys { margin-bottom: 10px; }
-.pc-rail .inv-inline .inv-cols { margin-bottom: 12px; font-size: 10.5px; }
-.pc-rail .inv-inline .inv-big { font-size: 14.5px; }
-.pc-rail .inv-inline .inv-lede { margin-bottom: 10px; }
-.pc-rail .inv-inline .inv-tbl td { padding: 6px 0; font-size: 11px; }
-.pc-rail .inv-inline .inv-foot { margin-top: 12px; }
-/* Fit to the column: the sheet is scaled by --k (set from the rail's overflow)
-   and its box takes the scaled height, so nothing below jumps or overlaps. */
-.pc-sheet-fit { --k: 1; }
-.pc-sheet-fit > .inv-inline { zoom: var(--k); }
-/* Download | Hold unit side by side, Remove from cart below. */
-.pc-offer-acts { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-.pc-offer-acts .btn { justify-content: center; }
-
+@media (max-width: 480px) {
+  .st-row { grid-template-columns: 58px minmax(0, 1fr) auto; gap: 8px; }
+  .st-mini.edit { display: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .st-tile, .st-row, .st-type, .st-arrow { transition: none; }
+  .st-tile:hover, .st-row:hover, .st-type:hover { transform: none; }
+}

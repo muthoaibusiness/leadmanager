@@ -17,7 +17,7 @@ for (const k of ['document', 'navigator', 'HTMLElement', 'Element', 'Node', 'Eve
   'KeyboardEvent', 'MouseEvent', 'PointerEvent', 'FocusEvent', 'getComputedStyle',
   'requestAnimationFrame', 'cancelAnimationFrame', 'ResizeObserver', 'IntersectionObserver',
   'MutationObserver', 'matchMedia', 'DOMRect', 'HTMLButtonElement', 'HTMLInputElement',
-  'HTMLSelectElement', 'HTMLTextAreaElement', 'SVGElement', 'Text', 'localStorage']) {
+  'HTMLSelectElement', 'HTMLTextAreaElement', 'SVGElement', 'Text', 'DocumentFragment', 'localStorage']) {
   if (w[k]) Object.defineProperty(globalThis, k, { value: w[k], configurable: true, writable: true });
 }
 Object.defineProperty(globalThis, 'window', { value: w, configurable: true, writable: true });
@@ -39,6 +39,10 @@ const { act } = React;
 const { GooeyToaster } = await import('goey-toast');
 const db = await import('../src/lib/db.js');
 const { Ctx } = await import('../.gate-harness/appContextStub.jsx');
+// Loaded up front: vite-node stops transforming once this file's top level has
+// run, so a module first imported inside a test (the modal and its dropdowns)
+// would fail to load.
+await import('../src/components/modals/FollowUpModal.jsx');
 
 const AGENT = { id: 'u1', name: 'Agent', role: 'AGENT', companyId: 'c1' };
 const d = db.getDB();
@@ -83,15 +87,28 @@ const t = (name, fn) => test(name, async () => {
   catch (e) { failed++; throw e; }
 });
 
-t('FollowUpModal: clean Cancel closes without asking', async () => {
+// The purpose is a radix dropdown (ui/select.jsx): open it, choose Other, and
+// return the text box Other opens, so a test can type unsaved text into it.
+const pickPurpose = async (root, label) => {
+  const trig = root.querySelector('.sel-trigger[aria-label="Purpose"]');
+  await act(async () => { trig.dispatchEvent(new w.PointerEvent('pointerdown', { bubbles: true, button: 0, pointerType: 'mouse' })); });
+  await act(async () => { await new Promise((r) => setTimeout(r, 30)); });
+  const opt = Array.from(w.document.querySelectorAll('[role="option"]')).find((o) => o.textContent.includes(label));
+  await act(async () => { opt.dispatchEvent(new w.MouseEvent('click', { bubbles: true })); });
+  await act(async () => { await new Promise((r) => setTimeout(r, 20)); });
+  return root.querySelector('input[placeholder="Write the purpose"]');
+};
+const otherNote = () => pickPurpose(container, 'Other');
+
+t('FollowUpModal: clean Close closes without asking', async () => {
   seed();
   const FollowUpModal = (await import('../src/components/modals/FollowUpModal.jsx')).default;
   const render = mountModal(FollowUpModal, 'follow-up');
   await render(); await flush();
   closed.length = 0;
-  await act(async () => { btn('Cancel').dispatchEvent(new w.MouseEvent('click', { bubbles: true })); });
+  await act(async () => { btn('Close').dispatchEvent(new w.MouseEvent('click', { bubbles: true })); });
   await flush();
-  assert.deepEqual(closed, ['closed'], 'clean Cancel closes immediately');
+  assert.deepEqual(closed, ['closed'], 'clean Close closes immediately');
 });
 
 // Escape interception is asserted by the protective property (a dirty form
@@ -102,11 +119,11 @@ t('FollowUpModal: dirty Escape does not close', async () => {
   const FollowUpModal = (await import('../src/components/modals/FollowUpModal.jsx')).default;
   const render = mountModal(FollowUpModal, 'follow-up');
   await render(); await flush();
-  const ta = container.querySelector('textarea');
-  assert.ok(ta, 'note textarea renders');
+  const ta = await otherNote();
+  assert.ok(ta, 'Other opens the note box');
   closed.length = 0;
   await act(async () => {
-    Object.getOwnPropertyDescriptor(w.HTMLTextAreaElement.prototype, 'value').set.call(ta, 'unsaved note');
+    Object.getOwnPropertyDescriptor(w.HTMLInputElement.prototype, 'value').set.call(ta, 'unsaved note');
     ta.dispatchEvent(new w.Event('input', { bubbles: true }));
   });
   await act(async () => { esc(); });
@@ -119,10 +136,10 @@ t('FollowUpModal: dirty backdrop is intercepted (asks, does not close)', async (
   const FollowUpModal = (await import('../src/components/modals/FollowUpModal.jsx')).default;
   const render = mountModal(FollowUpModal, 'follow-up');
   await render(); await flush();
-  const ta = container.querySelector('textarea');
+  const ta = await otherNote();
   closed.length = 0;
   await act(async () => {
-    Object.getOwnPropertyDescriptor(w.HTMLTextAreaElement.prototype, 'value').set.call(ta, 'draft');
+    Object.getOwnPropertyDescriptor(w.HTMLInputElement.prototype, 'value').set.call(ta, 'draft');
     ta.dispatchEvent(new w.Event('input', { bubbles: true }));
   });
   await act(async () => { mov().dispatchEvent(new w.MouseEvent('click', { bubbles: true })); });
@@ -136,7 +153,7 @@ t('FollowUpModal: past-time save fails and keeps the modal open and the draft', 
   const FollowUpModal = (await import('../src/components/modals/FollowUpModal.jsx')).default;
   const render = mountModal(FollowUpModal, 'follow-up');
   await render(); await flush();
-  const ta = container.querySelector('textarea');
+  const ta = await otherNote();
   const day = container.querySelector('input[type="date"]');
   const time = container.querySelector('input[type="time"]');
   closed.length = 0;
@@ -145,7 +162,7 @@ t('FollowUpModal: past-time save fails and keeps the modal open and the draft', 
     day.dispatchEvent(new w.Event('input', { bubbles: true }));
     Object.getOwnPropertyDescriptor(w.HTMLInputElement.prototype, 'value').set.call(time, '01:00');
     time.dispatchEvent(new w.Event('input', { bubbles: true }));
-    Object.getOwnPropertyDescriptor(w.HTMLTextAreaElement.prototype, 'value').set.call(ta, 'keep me');
+    Object.getOwnPropertyDescriptor(w.HTMLInputElement.prototype, 'value').set.call(ta, 'keep me');
     ta.dispatchEvent(new w.Event('input', { bubbles: true }));
   });
   await act(async () => { btn('Save').dispatchEvent(new w.MouseEvent('click', { bubbles: true })); });

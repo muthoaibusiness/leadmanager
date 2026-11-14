@@ -45,7 +45,7 @@ const followUps = (db, uid = 'u1') => (db.notifications[uid] || []).filter((n) =
 test('a refresh does not create the reminder again', async () => {
   reset();
   const l = lead();
-  for (let i = 0; i < 3; i++) { checkFollowUpReminders(freshDB([l])); await flush(); }
+  for (let i = 0; i < 3; i++) { checkFollowUpReminders(freshDB([l]), AGENT); await flush(); }
   assert.equal(server.size, 1);
   assert.equal(l.nextFollowup, past, 'the due date is not cleared in the cache');
 });
@@ -53,8 +53,8 @@ test('a refresh does not create the reminder again', async () => {
 test('two calls on one cache keep one local reminder, with the cloud id', async () => {
   reset();
   const db = freshDB([lead()]);
-  checkFollowUpReminders(db);
-  checkFollowUpReminders(db);
+  checkFollowUpReminders(db, AGENT);
+  checkFollowUpReminders(db, AGENT);
   await flush();
   assert.equal(followUps(db).length, 1);
   assert.equal(server.size, 1);
@@ -63,11 +63,11 @@ test('two calls on one cache keep one local reminder, with the cloud id', async 
 
 test('a reminder already read stays read after a refresh', async () => {
   reset();
-  checkFollowUpReminders(freshDB([lead()]));
+  checkFollowUpReminders(freshDB([lead()]), AGENT);
   await flush();
   const [id] = server.keys();
   server.get(id).is_read = true;
-  checkFollowUpReminders(freshDB([lead()]));
+  checkFollowUpReminders(freshDB([lead()]), AGENT);
   await flush();
   assert.equal(server.get(id).is_read, true);
   assert.ok(posts.every((p) => p.prefer.includes('ignore-duplicates')));
@@ -75,9 +75,9 @@ test('a reminder already read stays read after a refresh', async () => {
 
 test('a rescheduled follow-up gets its own reminder', async () => {
   reset();
-  checkFollowUpReminders(freshDB([lead()]));
+  checkFollowUpReminders(freshDB([lead()]), AGENT);
   const later = new Date(Date.now() - 60 * 1000).toISOString();
-  checkFollowUpReminders(freshDB([lead({ nextFollowup: later })]));
+  checkFollowUpReminders(freshDB([lead({ nextFollowup: later })]), AGENT);
   await flush();
   assert.equal(server.size, 2);
 });
@@ -86,8 +86,12 @@ test('one instant written in different ISO forms makes one reminder', async () =
   reset();
   // The browser writes toISOString() ("Z"); PostgREST returns "+00:00" and up
   // to six fractional digits; another client may send its own offset.
-  for (const at of ['2026-01-15T10:00:00.000Z', '2026-01-15T10:00:00+00:00', '2026-01-15T10:00:00.000000+00:00', '2026-01-15T16:00:00+06:00']) {
-    checkFollowUpReminders(freshDB([lead({ nextFollowup: at })]));
+  // A recent instant: anything older than a week is no longer reminded (FU_CLIENT_WINDOW_MS).
+  const t = new Date(Date.now() - 2 * 60 * 60 * 1000); t.setUTCMilliseconds(0);
+  const z = t.toISOString();
+  const plus6 = new Date(t.getTime() + 6 * 3600e3).toISOString().replace('.000Z', '+06:00');
+  for (const at of [z, z.replace('.000Z', '+00:00'), z.replace('.000Z', '.000000+00:00'), plus6]) {
+    checkFollowUpReminders(freshDB([lead({ nextFollowup: at })]), AGENT);
   }
   await flush();
   assert.equal(server.size, 1);
@@ -97,8 +101,8 @@ test('two tabs at once, each with its own cache, make one reminder', async () =>
   reset();
   const tabA = freshDB([lead()]);
   const tabB = freshDB([lead()]);
-  checkFollowUpReminders(tabA);
-  checkFollowUpReminders(tabB);
+  checkFollowUpReminders(tabA, AGENT);
+  checkFollowUpReminders(tabB, AGENT);
   await flush();
   assert.equal(server.size, 1);
   assert.equal(followUps(tabA)[0].id, followUps(tabB)[0].id);
@@ -109,21 +113,21 @@ test('closed leads get no reminder', async () => {
   checkFollowUpReminders(freshDB([
     lead({ id: 'W', status: 'DEAL_CLOSED_WON' }),
     lead({ id: 'X', status: 'DEAL_CLOSED_LOST' }),
-  ]));
+  ]), AGENT);
   await flush();
   assert.equal(server.size, 0);
 });
 
 test('suppressed leads get no reminder', async () => {
   reset();
-  checkFollowUpReminders(freshDB([lead({ followupSuppressedAt: past })]));
+  checkFollowUpReminders(freshDB([lead({ followupSuppressedAt: past })]), AGENT);
   await flush();
   assert.equal(server.size, 0);
 });
 
 test('not yet due, or no follow-up set: no reminder', async () => {
   reset();
-  checkFollowUpReminders(freshDB([lead({ id: 'F', nextFollowup: future }), lead({ id: 'N', nextFollowup: null })]));
+  checkFollowUpReminders(freshDB([lead({ id: 'F', nextFollowup: future }), lead({ id: 'N', nextFollowup: null })]), AGENT);
   await flush();
   assert.equal(server.size, 0);
 });
@@ -131,7 +135,7 @@ test('not yet due, or no follow-up set: no reminder', async () => {
 test('the cloud row matches the local one, and only the assignee gets it', async () => {
   reset();
   const db = freshDB([lead(), lead({ id: 'Z', assignedTo: 'gone' })]);
-  checkFollowUpReminders(db);
+  checkFollowUpReminders(db, AGENT);
   await flush();
   const rows = [...server.values()];
   assert.equal(rows.length, 1);
@@ -144,4 +148,31 @@ test('the cloud row matches the local one, and only the assignee gets it', async
   assert.equal(rows[0].is_read, false);
   assert.equal(rows[0].created_at, local.timestamp);
   assert.ok(!Number.isNaN(Date.parse(rows[0].created_at)));
+});
+
+test('only the browser of the agent who holds the lead makes the reminder', async () => {
+  reset();
+  const MGR = { id: 'm1', name: 'Manager', role: 'MANAGEMENT', companyId: 'c1' };
+  const db = { users: [AGENT, MGR], leads: [lead()], notifications: {} };
+  checkFollowUpReminders(db, MGR);
+  await flush();
+  assert.equal(server.size, 0, 'a manager caching the lead makes nothing for the agent');
+  checkFollowUpReminders(db, AGENT);
+  await flush();
+  assert.equal(server.size, 1);
+});
+
+test('a follow-up due more than a week ago is not reminded again', async () => {
+  reset();
+  const old = new Date(Date.now() - 8 * 24 * 3600e3).toISOString();
+  checkFollowUpReminders(freshDB([lead({ nextFollowup: old })]), AGENT);
+  await flush();
+  assert.equal(server.size, 0);
+});
+
+test('no signed-in user, no reminders', async () => {
+  reset();
+  checkFollowUpReminders(freshDB([lead()]));
+  await flush();
+  assert.equal(server.size, 0);
 });

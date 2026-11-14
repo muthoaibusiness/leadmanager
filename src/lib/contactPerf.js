@@ -8,7 +8,8 @@
 //   STATUS_CHANGE  changeStatus, setMeeting, schedVisit, doneVisit
 //   DEAL           closeDealFn, markLostFn (won / lost)
 //   FOLLOW_UP      setFollowUpFn, setFollowUpAt, clearFollowup,
-//                  rescheduleMeeting, logNoAnswer (its scheduled retry)
+//                  rescheduleMeeting, logNoAnswer (one row per attempt; since
+//                  0068 it books no follow-up, but the row still counts)
 // Only rows written by a person count, never the system's.
 //
 // "No Answer" is not a status: logNoAnswer leaves the lead in New, so a New

@@ -154,6 +154,20 @@ test('before 0049 is applied, the old local path still works (cap 5, no lock)', 
   assert.equal(patches().length, 0);
 });
 
+test('the local path books no follow-up either (0068): a booked one stays, none is added', async () => {
+  reset(); seed({ noAnswerCount: 1, nextFollowup: '2026-12-01T10:00:00.000Z' });
+  const res = await logNoAnswer('L1', AGENT);
+  assert.equal(res.attempts, 2);
+  assert.equal(res.nextFollowup, '2026-12-01T10:00:00.000Z');
+  assert.equal(getDB().leads[0].nextFollowup, '2026-12-01T10:00:00.000Z');
+  const fu = (getDB().activities.L1 || []).filter((x) => x.type === 'FOLLOW_UP');
+  assert.equal(fu.length, 1);
+  assert.equal(fu[0].description, 'No answer (2/5) — no follow-up booked');
+  reset(); seed({ noAnswerCount: 0, nextFollowup: null });
+  await logNoAnswer('L1', AGENT);
+  assert.equal(getDB().leads[0].nextFollowup, null, 'nothing booked for tomorrow');
+});
+
 test('No Longer Responding stops follow-ups, keeps the lead and its status', async () => {
   reset(); seed({ nextFollowup: '2026-11-02T10:00:00.000Z', status: 'INTERESTED' });
   setNoLongerResponding('L1', AGENT);

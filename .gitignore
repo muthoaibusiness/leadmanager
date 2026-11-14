@@ -81,3 +81,7 @@ playwright-ui-test-e2e.m
 /docs/reports/
 /docs/decisions/
 /docs/audits/
+
+# Google OAuth client secret (never commit)
+Google Cloude Credential.json
+*client_secret*.json

@@ -591,8 +591,14 @@ const RT_TABLES = ['users', 'teams', 'leads', 'activities', 'notifications', 'ta
 //
 // Rows with a null company_id do not stream on the company clause. The initial
 // load still tolerates them (see coFilter); migration 0009 backfills them away.
-function rtConfig(user) {
-  if (isUnscoped(user)) return RT_TABLES.map(table => ({ event: '*', schema: 'public', table }));
+// notifications get no DELETE spec, for any role: the nightly purge (migration 0065)
+// deletes many thousands of old rows, and an unfiltered DELETE subscription would
+// stream every one to every open browser. The cache drops old rows by the same rule
+// itself (notifRetention.js), so the event is not needed.
+export function rtConfig(user) {
+  if (isUnscoped(user)) return RT_TABLES.flatMap(table => (table === 'notifications'
+    ? [{ event: 'INSERT', schema: 'public', table }, { event: 'UPDATE', schema: 'public', table }]
+    : [{ event: '*', schema: 'public', table }]));
   const cid = user.companyId;
   const isMgmt = user.role === 'MANAGEMENT';
   const isTL = user.role === 'TEAM_LEAD';
@@ -621,7 +627,7 @@ function rtConfig(user) {
     return [
       { event: 'INSERT', schema: 'public', table, filter },
       { event: 'UPDATE', schema: 'public', table, filter },
-      { event: 'DELETE', schema: 'public', table },
+      ...(table === 'notifications' ? [] : [{ event: 'DELETE', schema: 'public', table }]),
     ];
   });
 }

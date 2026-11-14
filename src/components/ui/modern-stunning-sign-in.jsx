@@ -12,6 +12,8 @@ export function SignIn1({
   onSignIn,
   onKeyDown,
   onBack,
+  onForgot,
+  notice,
   footer,
 }) {
   return (
@@ -40,6 +42,10 @@ export function SignIn1({
             onChange={(e) => setPassword(e.target.value)}
             onKeyDown={onKeyDown}
           />
+          {onForgot && (
+            <div className="msi-forgot"><a role="button" tabIndex={0} onClick={onForgot} onKeyDown={(e) => { if (e.key === 'Enter') onForgot(); }}>Forgot password?</a></div>
+          )}
+          {notice && <div className="msi-ok">{notice}</div>}
           {error && <div className="msi-err">{error}</div>}
         </div>
 

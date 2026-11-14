@@ -6,6 +6,7 @@ import { signIn as authSignIn, restoreSession, consumeAuthRedirect, mustSetPassw
 import SetPasswordCard from './components/SetPasswordCard.jsx';
 import { seedDB, SEED_PROPERTIES, DEMO_PROPERTIES } from './lib/seed.js';
 import { sbLoad, sbSubscribeAll } from './lib/supabase.js';
+import { hasFollowupTable } from './lib/followups.js';
 import { waLoadSettings } from './lib/wa.js';
 import { pushUnreadSummary, requestNotifyPermission } from './lib/pushNotify.js';
 import { kbd } from './lib/helpers.js';
@@ -106,6 +107,7 @@ const LandingPage = lazyChunk(() => import('./components/LandingPage.jsx'));
 const PublicProjectView = lazyChunk(() => import('./components/project/PublicProjectView.jsx'));
 const PublicPortfolio = lazyChunk(() => import('./components/project/PublicPortfolio.jsx'));
 const SignIn1 = lazyChunk(() => import('./components/ui/modern-stunning-sign-in.jsx').then(m => ({ default: m.SignIn1 })));
+const ForgotPassword = lazyChunk(() => import('./components/ForgotPassword.jsx'));
 // goey-toast brings framer-motion and sonner.
 const ProjectsToaster = lazyChunk(() => import('./components/project/ProjectsToaster.jsx'));
 
@@ -132,7 +134,10 @@ function Overlays() {
       if (idleId && typeof cancelIdleCallback === 'function') cancelIdleCallback(idleId);
     };
   }, [mounted, user]);
-  if (!mounted) return null;
+  // Every overlay works on a signed-in account (they read user.role, user.id).
+  // Once mounted they stay mounted, so on sign-out they must go: a modal left
+  // open, or one mid-render, would otherwise crash on the null user.
+  if (!mounted || !user) return null;
   return OVERLAY_COMPONENTS.map(([name, C]) => <Suspense key={name} fallback={null}><C /></Suspense>);
 }
 
@@ -160,6 +165,8 @@ function LoginPage({ onLogin, onBack, initialError = '' }) {
   const [pw, setPw] = useState('');
   const [err, setErr] = useState(initialError);
   const [loading, setLoading] = useState(false);
+  const [forgot, setForgot] = useState(false);
+  const [notice, setNotice] = useState('');
 
   const doLogin = async () => {
     if (!email || !pw) { setErr('Enter email and password.'); return; }
@@ -192,12 +199,21 @@ function LoginPage({ onLogin, onBack, initialError = '' }) {
         </div>
       </div>
       <div className="ln-right">
-        <Suspense fallback={null}><SignIn1
-          email={email} setEmail={setEmail}
-          password={pw} setPassword={setPw}
-          error={err} loading={loading}
-          onSignIn={doLogin} onKeyDown={handleKey} onBack={onBack}
-        /></Suspense>
+        <Suspense fallback={null}>{forgot ? (
+          <ForgotPassword
+            initialEmail={email}
+            onCancel={() => setForgot(false)}
+            onDone={(e) => { setForgot(false); setEmail(e); setPw(''); setErr(''); setNotice('Password changed. Sign in with the new one.'); }}
+          />
+        ) : (
+          <SignIn1
+            email={email} setEmail={setEmail}
+            password={pw} setPassword={setPw}
+            error={err} loading={loading} notice={notice}
+            onSignIn={doLogin} onKeyDown={handleKey} onBack={onBack}
+            onForgot={() => { setErr(''); setNotice(''); setForgot(true); }}
+          />
+        )}</Suspense>
       </div>
     </div>
   );
@@ -599,7 +615,9 @@ export default function App() {
     // out of a snapshot that only ever contained one company — see migrateTenancy.
     migrateTenancy(freshDB, forUser);
     migrateProjects(freshDB); // backfill storefront fields (variants/media/fastClose)
-    checkFollowUpReminders(freshDB);
+    // With migration 0067 the server sends follow-up reminders, before the time;
+    // the browser only makes its own while the follow-up table is missing.
+    hasFollowupTable().then(ok => { if (!ok) checkFollowUpReminders(freshDB, forUser); });
     saveDBDeferred(freshDB); // in-memory now, localStorage write on an idle frame
     expireHolds(); // auto-release expired holds (saves internally if any)
     refreshDB();

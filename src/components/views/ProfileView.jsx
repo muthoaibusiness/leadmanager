@@ -7,6 +7,7 @@ import { ROLES } from '../../lib/constants.js';
 import Mi from '../Mi.jsx';
 import useActWindow from '../../hooks/useActWindow.js';
 import useLeadBook from '../../hooks/useLeadBook.js';
+import EmailVerifyCard from '../EmailVerifyCard.jsx';
 
 // Downscale + compress an uploaded photo to a small square JPEG data URL so it
 // stays under the storage quota (full-res phone photos would blow it).
@@ -214,6 +215,7 @@ export default function ProfileView() {
             <input className="finp" value={rlabel(fresh.role)} disabled />
           </div>
         </div>
+        <EmailVerifyCard showToast={showToast} />
         <div className="pf-row">
           <div className="fl">
             <label>New Password <span className="pf-hint">(leave empty to keep current)</span></label>
