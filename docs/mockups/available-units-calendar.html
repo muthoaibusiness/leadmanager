@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<title>Available Units: phone demo after the calendar, one floor on one screen</title>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,400,0..1,0" rel="stylesheet">
+<style>
+/* ds-allow-hardcode:start  throwaway mockup; values mirror src/index.css theme tokens */
+.dark{--bg:#000;--surf2:#1d1d1d;--t1:#fff;--t2:rgba(255,255,255,.62);--t3:rgba(255,255,255,.42);--bd:rgba(255,255,255,.14);--accent:#54B848;--on-acc:#0a0a0a}
+.light{--bg:#FAFAFA;--surf2:#EFEFEF;--t1:#0A0A0A;--t2:rgba(10,10,10,.64);--t3:rgba(10,10,10,.44);--bd:rgba(10,10,10,.14);--accent:#2E7D27;--on-acc:#fff}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#2a2a2a;font:400 14px/1.35 Inter,sans-serif;padding:24px;display:flex;gap:28px;align-items:flex-start;width:max-content}
+.mi{font-family:'Material Symbols Rounded';font-size:20px;line-height:1;font-style:normal;display:inline-block}
+.lab{font:600 13px/1.4 'Space Grotesk',Inter,sans-serif;color:#ddd;margin-bottom:10px}
+.lab span{display:block;font:500 12px/1.4 Inter;color:#9a9a9a}
+.phone{border-radius:28px;background:var(--bg);color:var(--t1);overflow:hidden;position:relative;padding:12px 16px 0;display:flex;flex-direction:column;gap:12px}
+.hd{display:flex;align-items:center;gap:12px;height:48px;flex:none}
+.back{width:40px;height:40px;border-radius:50%;border:1px solid var(--bd);display:grid;place-items:center}
+.hd h1{flex:1;font:600 20px/1.2 'Space Grotesk',Inter,sans-serif}
+.vt{display:flex;gap:2px;padding:4px;border-radius:14px;background:var(--surf2)}
+.vt span{width:40px;height:32px;border-radius:10px;display:grid;place-items:center;color:var(--t2)}
+.vt span.on{background:color-mix(in srgb,var(--accent) 16%,transparent);color:var(--accent)}
+.pj{display:flex;align-items:center;gap:4px;height:40px}
+.pj b{flex:1;display:flex;align-items:center;gap:4px;font:700 17px 'Space Grotesk',Inter,sans-serif}
+.ib{flex:none;width:40px;height:40px;border-radius:50%;display:grid;place-items:center;color:var(--t2)}
+.ib.bd{border:1px solid var(--bd);color:var(--t1)}
+.ib.off{color:var(--t3)}
+.chips{display:flex;gap:6px;overflow:hidden;-webkit-mask-image:linear-gradient(90deg,#000 85%,transparent)}
+.chip{flex:none;height:32px;padding:0 11px;border:1px solid var(--bd);border-radius:999px;display:flex;align-items:center;gap:6px;font:500 12.5px Inter;color:var(--t2)}
+.chip b{color:var(--t1)}.chip.on{border-color:var(--accent);color:var(--t1)}
+.dot{width:7px;height:7px;border-radius:50%}
+/* the calendar's "January, 2026  < >" row: the floor and its free count, arrows step one floor. No dropdown. */
+.fh{display:flex;align-items:center;gap:6px;height:44px}
+.fh div{flex:1;min-width:0}
+.fh b{display:block;font:600 18px/1.2 'Space Grotesk',Inter,sans-serif}
+.fh small{font:500 12.5px Inter;color:var(--t2)}
+/* units 7 a row, like a month: 47 units = 7 rows */
+.tiles{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:5px}
+.t{position:relative;aspect-ratio:1;min-width:0;border-radius:6px;border:1px solid transparent;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;padding:1px;
+  background:color-mix(in srgb,var(--t1) 5%,transparent);color:var(--tx,var(--t1))}
+.t b{font:600 11.5px/1 'Space Grotesk',Inter,sans-serif;white-space:nowrap}
+.t small{font:500 9px/1 Inter;color:var(--t2);white-space:nowrap}
+.t.av{background:color-mix(in srgb,var(--accent) 12%,transparent);border-color:color-mix(in srgb,var(--accent) 40%,transparent)}
+.t.tk{--tx:color-mix(in srgb,var(--c) 55%,var(--t1))}
+.t.tk::after{content:'';position:absolute;top:4px;right:4px;width:5px;height:5px;border-radius:50%;background:var(--c)}
+.t.on{box-shadow:inset 0 0 0 2px var(--t1)}
+/* the calendar's footer bar: picked unit on the left, Reserve now on the right */
+.dock{position:absolute;left:12px;right:12px;bottom:12px;height:64px;border-radius:20px;background:var(--surf2);display:flex;align-items:center;gap:10px;padding:8px 8px 8px 16px}
+.dock div{flex:1;min-width:0}
+.dock b{display:block;font:600 16px/1.2 'Space Grotesk',Inter,sans-serif}
+.dock div span{font:500 12.5px Inter;color:var(--t2)}
+.rsv{flex:none;height:48px;padding:0 18px;border-radius:999px;background:var(--accent);color:var(--on-acc);display:flex;align-items:center;gap:8px;font:700 13px 'Space Grotesk',Inter,sans-serif;letter-spacing:.1em}
+.rsv .mi{letter-spacing:0} /* letter-spacing turns off the icon ligature */
+/* ds-allow-hardcode:end */
+</style></head>
+<body><!-- ds-allow-hardcode:start -->
+<script>
+// ds-allow-hardcode:start
+// Real data: Citizen Avenue Mall, 1st floor, from the app's seed. S-113 picked.
+const U = [["S-101","land",1221],["S-102","land",715],["S-103","av",387],["S-104","av",251],["S-105","av",162],["S-106","av",1113],["S-107","av",202],["S-108","av",245],["S-109","av",336],["S-110","av",264],["S-111","av",245],["S-112","av",208],["S-113","av",202],["S-114","av",231],["S-115","av",225],["S-116","hold",204],["S-117","hold",206],["S-118","land",134],["S-119","land",202],["S-120","land",156],["S-121","land",170],["S-122","land",175],["S-123","land",175],["S-124","land",285],["S-125","land",120],["S-126","land",156],["S-127","av",205],["S-128","av",200],["S-129","av",210],["S-130","av",286],["S-131","av",181],["S-132","av",125],["S-133","av",122],["S-134","av",160],["S-135","av",204],["S-136","hold",171],["S-137","hold",190],["S-138","land",181],["S-139","land",286],["S-140","land",325],["S-141","land",131],["S-142","land",169],["S-143","av",216],["S-144","hold",236],["S-145","av",165],["S-146","av",215],["S-147","land",236]];
+const C = { hold: '#E3A322', sold: '#D23C3C', land: '#A78BFA' };
+function phone(theme, w, h, label, note) {
+  const tiles = U.map(([c, k, sz]) => `<span class="t ${k === 'av' ? 'av' : 'tk'}${c === 'S-113' ? ' on' : ''}"${C[k] ? ` style="--c:${C[k]}"` : ''}><b>${c}</b><small>${sz.toLocaleString('en-IN')} sft</small></span>`).join('');
+  document.body.insertAdjacentHTML('beforeend', `<div><div class="lab">${label}<span>${note}</span><span class="fit"></span></div><div class="phone ${theme}" style="width:${w}px;height:${h}px">
+    <div class="hd"><span class="back"><span class="mi">chevron_left</span></span><h1>Available Units</h1><div class="vt"><span class="on"><span class="mi">grid_on</span></span><span><span class="mi">format_list_bulleted</span></span></div></div>
+    <div class="pj"><b>CITIZEN AVENUE MALL<span class="mi">expand_more</span></b><span class="ib"><span class="mi">tune</span></span></div>
+    <div class="chips"><span class="chip on">All <b>47</b></span><span class="chip"><i class="dot" style="background:var(--accent)"></i>Available <b>25</b></span><span class="chip"><i class="dot" style="background:${C.hold}"></i>On hold <b>5</b></span><span class="chip"><i class="dot" style="background:${C.sold}"></i>Sold <b>0</b></span><span class="chip"><i class="dot" style="background:${C.land}"></i>Landowner <b>17</b></span></div>
+    <div class="fh"><div><b>1st Floor</b><small>25 of 47 free · floor 4 of 8</small></div><span class="ib bd"><span class="mi">arrow_downward</span></span><span class="ib bd"><span class="mi">arrow_upward</span></span></div>
+    <div class="tiles">${tiles}</div>
+    <div class="dock"><div><b>S-113</b><span>202 sft · Available</span></div><span class="rsv"><span class="mi">send</span>RESERVE NOW</span></div></div></div>`);
+}
+phone('light', 412, 820, 'Light · 412 x 820', 'Pixel 7 screen minus Chrome bars');
+phone('dark', 412, 820, 'Dark · 412 x 820', 'Same screen, dark theme');
+phone('light', 360, 680, 'Small phone · 360 x 680', 'Galaxy S23 screen minus Chrome bars');
+// Measured, not assumed: room left between the last row and the Reserve bar.
+document.fonts.ready.then(() => document.querySelectorAll('.phone').forEach(p => {
+  const spare = Math.round(p.querySelector('.dock').getBoundingClientRect().top - p.querySelector('.tiles').getBoundingClientRect().bottom);
+  p.previousElementSibling.querySelector('.fit').textContent = spare >= 0 ? `Fits, no scroll: ${spare} px spare above the bar` : `Cut off by ${-spare} px`;
+}));
+// ds-allow-hardcode:end
+</script>
+<!-- ds-allow-hardcode:end -->
+</body></html>

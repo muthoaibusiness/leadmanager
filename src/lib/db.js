@@ -1568,19 +1568,6 @@ export function cartAdd(leadId, property, unitNo, user) {
   addAct(leadId, { type: 'CART', description: 'Added to cart: ' + property.name + (unitNo ? ' · Unit ' + unitNo.replace('U-', '') : ''), userId: user.id, userName: user.name, durationSeconds: 0 });
 }
 
-// Prospects breadcrumb "Save project details": the project, floor and unit a
-// lead is interested in, kept on the lead's cart (stage CART). Never touches
-// the unit's status: that only changes through Reserve / Hold.
-export function saveLeadPick(leadId, { project, variant, floor, unitNo, size, value }, user) {
-  const cart = {
-    propertyId: project.id, propertyName: project.name, variantId: variant?.id || null, floor: floor || '',
-    unitNo, size: size || 0, stage: 'CART', value: value || 0,
-    addedBy: user.id, addedByName: user.name, addedAt: now_(), updatedAt: now_(),
-  };
-  updLead(leadId, { cart, propertyInterest: project.name });
-  addAct(leadId, { type: 'CART', description: `Interest saved: ${project.name}${floor ? ' · ' + floor : ''} · ${unitNo}`, userId: user.id, userName: user.name, durationSeconds: 0 });
-}
-
 export function cartRemove(leadId, user) {
   updLead(leadId, { cart: null });
   addAct(leadId, { type: 'CART', description: 'Removed project from cart', userId: user.id, userName: user.name, durationSeconds: 0 });
@@ -1753,13 +1740,9 @@ export function changeStatus(leadId, status, user) {
   updLead(leadId, { status, noAnswerCount: 0, noAnswerLockUntil: null });
   addAct(leadId, { type: 'STATUS_CHANGE', description: 'Status → ' + (STATUS_LABELS[status] || status), userId: user.id, userName: user.name, durationSeconds: 0 });
   if (status === 'NOT_INTERESTED') autoTransferNotInterested(leadId, user);
-  // Citizen Avenue leads get the Mela invitation the moment they are Contacted. The
-  // chat module imports this one, so it is loaded on demand.
+  // The chat module imports this one, so it is loaded on demand.
   // Any lead that turns Interested is reported to Meta as QualifiedLead.
   if (status === 'INTERESTED') import('./wa.js').then(m => m.waCapiQualified(leadId)).catch(() => {});
-  if (status === 'CONTACTED' && /citizen/i.test(getLead(leadId)?.propertyInterest || '')) {
-    import('./wa.js').then(m => m.waMelaInvite(leadId)).catch(() => {});
-  }
 }
 
 // A lead that turns Not Interested moves to the company's Not Interested handler

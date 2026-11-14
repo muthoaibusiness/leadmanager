@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import Loader from '../ui/loader.jsx';
 import Mi from '../Mi.jsx';
 import useNavState from '../../hooks/useNavState.js';
 import { useApp } from '../../context/AppContext.jsx';
@@ -75,6 +76,7 @@ export default function FbLeadsView() {
   const [settings, setSettings] = useState(null);
   const [forms, setForms] = useState([]);
   const [events, setEvents] = useState([]);
+  const [shown, setShown] = useState(10);   // Received rows on screen: the latest few, more on request
   const [score, setScore] = useState({ rows: [], total: null });
   const [projects, setProjects] = useState([]);
   const [missing, setMissing] = useState(false);
@@ -150,37 +152,35 @@ export default function FbLeadsView() {
   const setS = (patch) => setSettings((s) => ({ ...s, ...patch }));
   const setF = (patch) => setEditing((f) => ({ ...f, ...patch }));
 
-  if (loading && !settings && !missing) return <div className="fbl"><div className="fbl-empty">Loading…</div></div>;
+  if (loading && !settings && !missing) return <div className="fbl"><Loader className="ldr-page" title="Loading Facebook Leads…" subtitle="Fetching forms and settings" /></div>;
 
   return (
     <div className="fbl">
-      <header className="fbl-top">
-        <div>
-          <h2 className="fbl-title">Facebook Leads</h2>
-          <p className="fbl-sub">Lead Ads forms → CRM leads, no extra tool in between.</p>
-        </div>
-        {settings && !missing && (
-          <label className="fbl-onoff">
-            <span>{settings.enabled ? 'Receiving' : 'Off'}</span>
-            <Switch on={!!settings.enabled} onChange={(v) => setS({ enabled: v })} label="Receive Facebook leads" />
-          </label>
-        )}
-      </header>
-
       {missing && (
         <div className="fbl-warn"><Mi>database</Mi><span>The Facebook Leads tables are not in the database yet. Run <b>supabase/migrations/0059_fb_lead_forms.sql</b> in the Supabase SQL editor, then reload.</span><button className="fbl-btn" onClick={load}>Reload</button></div>
       )}
 
       {!missing && (
         <>
-          <div className="fbl-tabs" role="tablist">
-            {TABS.map((t) => (
-              <button key={t.key} role="tab" aria-selected={tab === t.key} className={tab === t.key ? 'on' : ''} onClick={() => { setTab(t.key); setErrors([]); }}>
-                {t.label}{t.key === 'forms' && forms.length ? ` (${forms.length})` : ''}
-              </button>
-            ))}
+          {/* The tabs, and the receive switch at the end of their line. */}
+          <div className="fbl-tabrow">
+            <div className="pill-tabs" role="tablist">
+              {TABS.map((t) => (
+                <button key={t.key} role="tab" aria-selected={tab === t.key} className={tab === t.key ? 'on' : ''} onClick={() => { setTab(t.key); setErrors([]); }}>
+                  {t.label}{t.key === 'forms' && forms.length ? ` (${forms.length})` : ''}
+                </button>
+              ))}
+            </div>
+            {settings && (
+            <label className="fbl-onoff">
+              <span>{settings.enabled ? 'Receiving' : 'Off'}</span>
+              <Switch on={!!settings.enabled} onChange={(v) => setS({ enabled: v })} label="Receive Facebook leads" />
+            </label>
+            )}
           </div>
 
+          {/* Phones: the tab row stays put and this scrolls (index.css .tab-scroll). */}
+          <div className="tab-scroll">
           {errors.length > 0 && <ul className="fbl-errs">{errors.map((e) => <li key={e}>{e}</li>)}</ul>}
 
           {tab === 'setup' && settings && (
@@ -379,7 +379,7 @@ export default function FbLeadsView() {
               )}
               {events.length === 0 ? <div className="fbl-empty"><Mi>inbox</Mi>Nothing received yet. Leads from your forms will be listed here with what happened to each.</div> : (
                 <ul className="fbl-log">
-                  {events.map((e) => (
+                  {events.slice(0, shown).map((e) => (
                     <li key={e.leadgen_id}>
                       <span className={`fbl-tag ${EVENT_TONE[e.status] || 'mut'}`}>{e.status}</span>
                       <span className="fbl-log-main"><b>{forms.find((f) => f.form_id === e.form_id)?.label || `Form ${e.form_id || '—'}`}</b><small>{e.error || e.leadgen_id}</small>
@@ -396,8 +396,14 @@ export default function FbLeadsView() {
                   ))}
                 </ul>
               )}
+              {events.length > shown && (
+                <div className="fbl-actions" style={{ marginTop: 12 }}>
+                  <button className="fbl-btn ghost" onClick={() => setShown((n) => n + 20)}><Mi>expand_more</Mi>Show more ({events.length - shown} more)</button>
+                </div>
+              )}
             </section>
           )}
+          </div>
         </>
       )}
     </div>

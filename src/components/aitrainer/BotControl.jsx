@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import Loader from '../ui/loader.jsx';
 import Mi from '../Mi.jsx';
 import { sbGet } from '../../lib/supabase.js';
 import { BOTS } from '../wa/relayBots.js';
@@ -117,7 +118,7 @@ export default function BotControl({ api, showToast }) {
   useEffect(() => { load(); }, [load]);
 
   if (err) return <div className="ait-err" role="alert">Could not load the bots: {err} <button className="btn btn-g btn-sm" onClick={load}><Mi>refresh</Mi>Retry</button></div>;
-  if (!data) return <div className="ea-count">Loading…</div>;
+  if (!data) return <Loader className="ldr-page" title="Loading Bots…" subtitle="Fetching bot status and versions" />;
 
   const viewOf = (bot) => botControlView({
     bot, settings: data.settings.find((s) => s.bot === bot) || null,

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import Loader from '../ui/loader.jsx';
 import Mi from '../Mi.jsx';
 import EmbeddingModel from './EmbeddingModel.jsx';
 
@@ -39,7 +40,14 @@ export default function ModelTab({ api, showToast }) {
   useEffect(() => { api('modelconfig.get').then(apply, (e) => setLoadErr(e.message)); }, [api]);
 
   if (loadErr) return <div className="ait-err" role="alert">Could not load model settings: {loadErr}</div>;
-  if (!data || !form) return <div className="ea-count">Loading…</div>;
+  // EmbeddingModel sits in the same slot here and in the page below, so it mounts
+  // once: its request goes out beside this one instead of after it.
+  if (!data || !form) return (
+    <div className="ait">
+      <Loader className="ldr-page" title="Loading Model & API…" subtitle="Fetching model and embedding settings" />
+      <div hidden><EmbeddingModel api={api} showToast={showToast} /></div>
+    </div>
+  );
   const cfg = data.config;
   const def = data.providers[form.provider];
   const set = (k) => (e) => { setForm((f) => ({ ...f, [k]: e.target.value })); setErrors((x) => ({ ...x, [k]: undefined })); };
@@ -119,7 +127,7 @@ export default function ModelTab({ api, showToast }) {
         ) : <div className="ait-trace">Not tested since the last change.</div>}
       </div>
     </div>
-    <EmbeddingModel api={api} showToast={showToast} />
+    <div><EmbeddingModel api={api} showToast={showToast} /></div>
     </div>
   );
 }

@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import Mi from './Mi.jsx';
-import { LoadingBlock, LoadingBar } from './Spinner.jsx';
+import { LoadingBar } from './Spinner.jsx';
+import Loader from './ui/loader.jsx';
 import Pagination from './Pagination.jsx';
 import { fmtDateTimeAP, leadDisplayStatus } from '../lib/helpers.js';
 import { SRC_LABELS, ROLES } from '../lib/constants.js';
@@ -44,7 +45,7 @@ function FollowUpCell({ leadId, fromServer, pending }) {
 //                      and slicing here would reorder 15 rows out of thousands
 //                      and produce a wrong page, so both are skipped and the
 //                      pager reports up to the caller.
-export default function LeadTable({ leads, total = null, page: pageProp, onPage, loading = false, lastFu = {}, fuPending = false }) {
+export default function LeadTable({ leads, total = null, page: pageProp, onPage, pageSize = PAGE_SIZE, loading = false, lastFu = {}, fuPending = false }) {
   const { setPanLead, setChatTarget, chatOk, user, refreshDB, showToast, sortBy } = useApp();
   const server = total != null;
   const [ownPage, setOwnPage] = useState(0);
@@ -75,7 +76,7 @@ export default function LeadTable({ leads, total = null, page: pageProp, onPage,
     setSelected(new Set());
   }
 
-  const slice = server ? sorted : sorted.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
+  const slice = server ? sorted : sorted.slice(page * pageSize, (page + 1) * pageSize);
 
   // select-all applies to the CURRENT page only
   const allSelected = slice.length > 0 && slice.every(l => selected.has(l.id));
@@ -114,7 +115,7 @@ export default function LeadTable({ leads, total = null, page: pageProp, onPage,
             {canSelect && <div className="lt-cb-col" />}
             {COLS.map(c => <div key={c}>{c}</div>)}
           </div>
-          <LoadingBlock label="Loading customers…" pad={40} />
+          <Loader size="sm" title="Loading customers…" subtitle="Fetching the list" />
         </div>
       );
     }
@@ -209,7 +210,7 @@ export default function LeadTable({ leads, total = null, page: pageProp, onPage,
           </div>
         ))}
       </div>
-      <Pagination page={page} total={server ? total : leads.length} pageSize={PAGE_SIZE} onChange={setPage} />
+      <Pagination page={page} total={server ? total : leads.length} pageSize={pageSize} onChange={setPage} />
     </div>
   );
 }

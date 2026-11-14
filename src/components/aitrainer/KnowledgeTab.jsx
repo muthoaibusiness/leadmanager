@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { createPortal } from 'react-dom';
 import Mi from '../Mi.jsx';
 import ItemEditor from './ItemEditor.jsx';
 import ItemList from './ItemList.jsx';
@@ -9,7 +10,7 @@ import DocumentsPanel from './DocumentsPanel.jsx';
 // Quality & Publish. The legacy import copies wa_projects, wa_knowledge and
 // wa_message_corrections into drafts, one reviewed row at a time; the legacy
 // tables are never changed.
-function ImportWizard({ api, showToast, onDone }) {
+function ImportWizard({ api, showToast, onDone, actsSlot }) {
   const [rows, setRows] = useState(null);
   const [decide, setDecide] = useState({});
   const [report, setReport] = useState(null);
@@ -33,7 +34,10 @@ function ImportWizard({ api, showToast, onDone }) {
       <ul>{report.filter(r => r.result !== 'imported').map((r, n) => <li key={n}>{r.source} {r.source_id}: {r.result} — {r.reason}</li>)}</ul>
     </div>
   );
-  if (!rows) return <button className="btn btn-g" onClick={load}><Mi>upload</Mi>Import from WA Relay</button>;
+  // The trigger is a round icon at the end of the section tabs' row (AiTrainerView's slot).
+  if (!rows) return actsSlot ? createPortal(
+    <button type="button" className="ait-imp" onClick={load} aria-label="Import from WA Relay" title="Import from WA Relay"><Mi aria-hidden="true">upload</Mi></button>,
+    actsSlot) : null;
   return (
     <div className="analytics-card">
       <b>Review each legacy row before importing</b>
@@ -67,11 +71,14 @@ function ImportWizard({ api, showToast, onDone }) {
   );
 }
 
-export default function KnowledgeTab({ api, showToast }) {
+export default function KnowledgeTab({ api, showToast, actsSlot }) {
   const { items, reload, retire } = useItems(api, showToast);
   const [edit, setEdit] = useState(null);
-  if (!items) return <div className="ea-count">Loading…</div>;
-  const projects = items.filter(i => i.kind === 'project' && i.status === 'active');
+  // The documents card sits above the sections and loads on its own. Both
+  // requests go out together, and the sections wait for the card to settle
+  // (loaded or failed), so they never show first and then move down under it.
+  const [docsSettled, setDocsSettled] = useState(false);
+  const projects = (items || []).filter(i => i.kind === 'project' && i.status === 'active');
   const section = (kind, title) => (
     <section>
       <div className="ea-row" style={{ justifyContent: 'space-between' }}>
@@ -83,11 +90,13 @@ export default function KnowledgeTab({ api, showToast }) {
   );
   return (
     <div className="ait">
-      <ImportWizard api={api} showToast={showToast} onDone={reload} />
-      <DocumentsPanel api={api} showToast={showToast} />
-      {section('project', 'Projects')}
-      {section('fact', 'Facts')}
-      {section('rule', 'Business rules')}
+      <ImportWizard api={api} showToast={showToast} onDone={reload} actsSlot={actsSlot} />
+      <DocumentsPanel api={api} showToast={showToast} onSettled={setDocsSettled} />
+      {items && docsSettled ? <>
+        {section('project', 'Projects')}
+        {section('fact', 'Facts')}
+        {section('rule', 'Business rules')}
+      </> : docsSettled && <div className="ea-count">Loading…</div>}
       {edit && <ItemEditor kind={edit.kind} initial={edit.item} projects={projects} api={api} showToast={showToast} onClose={() => setEdit(null)} onSaved={reload} />}
     </div>
   );

@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, Suspense } from 'react';
+import { createPortal } from 'react-dom';
 import { useApp } from './context/AppContext.jsx';
 import { getDB, getUnreadCount, getSession, hasSessionId, saveDBDeferred, checkFollowUpReminders, getProperties, expireHolds, migrateTenancy, mergeDB, purgeDemoSeed, dedupeLeads, reconcileDeletions, applyRealtimeEvent, clearLocalDB, cacheBelongsTo } from './lib/db.js';
 import { signIn as authSignIn, restoreSession, consumeAuthRedirect, mustSetPassword, openedFromAuthLink } from './lib/auth.js';
@@ -12,6 +13,7 @@ import { ROLES, canSee, effectiveRole, DRAWER_MQ } from './lib/constants.js';
 import { VIEW_TITLES, homeView } from './lib/navHistory.js';
 import { matchPublicRoute, isPortfolioRoute } from './lib/publicProjects.js';
 import useMediaQuery from './hooks/useMediaQuery.js';
+import useIsPhone from './hooks/useIsPhone.js';
 import lazyChunk from './lib/lazyChunk.js';
 
 import Mi from './components/Mi.jsx';
@@ -62,8 +64,6 @@ const PAGES = {
   ReportsView: () => import('./components/views/ReportsView.jsx'),
   AgentPerformanceView: () => import('./components/views/AgentPerformanceView.jsx'),
   PerfReportsView: () => import('./components/views/PerfReportsView.jsx'),
-  CampaignView: () => import('./components/views/CampaignView.jsx'),
-  MelaView: () => import('./components/views/MelaView.jsx'),
   FbLeadsView: () => import('./components/views/FbLeadsView.jsx'),
   InventoryView: () => import('./components/views/InventoryView.jsx'),
   ConversationsView: () => import('./components/views/ConversationsView.jsx'),
@@ -100,7 +100,7 @@ const OVERLAYS = {
 
 const lazyAll = (loaders) => Object.fromEntries(Object.entries(loaders).map(([k, f]) => [k, lazyChunk(f)]));
 
-const { AgentDash, TeamLeadDash, ManagementDash, MasterDash, LeadsView, CalendarView, TeamView, AccountsView, AiTrainerView, MetaCapiView, RequestsView, ProfileView, PropertiesView, AvailableUnitsView, BookingsView, PipelineView, ClientsView, ReportsView, AgentPerformanceView, PerfReportsView, CampaignView, MelaView, FbLeadsView, InventoryView, ConversationsView, PublicProjectAdmin } = lazyAll(PAGES);
+const { AgentDash, TeamLeadDash, ManagementDash, MasterDash, LeadsView, CalendarView, TeamView, AccountsView, AiTrainerView, MetaCapiView, RequestsView, ProfileView, PropertiesView, AvailableUnitsView, BookingsView, PipelineView, ClientsView, ReportsView, AgentPerformanceView, PerfReportsView, FbLeadsView, InventoryView, ConversationsView, PublicProjectAdmin } = lazyAll(PAGES);
 const OVERLAY_COMPONENTS = Object.entries(lazyAll(OVERLAYS));
 const LandingPage = lazyChunk(() => import('./components/LandingPage.jsx'));
 const PublicProjectView = lazyChunk(() => import('./components/project/PublicProjectView.jsx'));
@@ -203,14 +203,35 @@ function LoginPage({ onLogin, onBack, initialError = '' }) {
   );
 }
 
+// Pages that bring their own phone header (Back, title, an action) in place of
+// the header bar: both Projects tabs (which also drop the hero and bottom bar)
+// and Prospects (which keeps its hero actions and the bottom bar).
+const OWN_PHONE_HEADER = new Set(['properties', 'leads', 'metacapi']);
+
 // ── Thin chrome bar ─────────────────────────────────────────────────────────
 // `shown`: the sidebar is on screen. `showBtnRef`: the show button, which the
 // shell moves focus onto when the sidebar hides with focus inside it.
 function PageHeader({ shown, showBtnRef }) {
   const { setSidebarShown, navTrail, view, user } = useApp();
-  // Any page but the account's home: phones (CSS) hide the account, tools and
-  // bell there and show only a round Back button.
+  const phone = useIsPhone();
+  // Any page but the account's home: phones (CSS) hide the account, tools and bell.
   const sub = view !== homeView(user);
+  // Phones: Projects, Prospects and Meta CAPI carry their own header (.fpv-ph), so this one never mounts there.
+  if (phone && OWN_PHONE_HEADER.has(view)) return null;
+  // Phones, every other page: the Prospects header, as is (LeadsView): Back,
+  // the page name, the hero's action at the end (PageHero portals it
+  // into the slot). Same markup and classes, so the same positions.
+  if (phone && sub) {
+    return (
+      <div className="fpv-ph lv-ph">
+        <div className="fpv-ph-top">
+          <BackButton />
+          <h1>{VIEW_TITLES[view] || view}</h1>
+          <div className="hd-acts" id="hd-acts" />
+        </div>
+      </div>
+    );
+  }
   return (
     <header className={`pg-head${sub ? ' pg-head-sub' : ''}`}>
       {/* Show-sidebar button, same glyph as the sidebar's hide button: always
@@ -220,6 +241,10 @@ function PageHeader({ shown, showBtnRef }) {
         aria-label="Show sidebar" aria-controls="app-sidebar" aria-expanded={shown}
         title={`Show sidebar (${kbd('\\')})`}>
         <SidebarGlyph />
+        {/* Phones (CSS): three bars, the top right-aligned, the middle full, the bottom left-aligned */}
+        <svg className="ham-bars" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true" focusable="false">
+          <path d="M10 7h10M4 12h16M4 17h10" />
+        </svg>
       </button>
       {/* Back (the previous page; none on home), then where this page sits:
           the breadcrumb takes all the room the controls leave. */}
@@ -230,13 +255,16 @@ function PageHeader({ shown, showBtnRef }) {
           There, search → AI → date filter share one pill (.hd-grp); on wider
           screens the group is display: contents and search/AI are hidden. */}
       <ThemeToggle />
+      {/* Phones (CSS): one rounded-square box holding AI, the bell and the
+          account face; search and the date filter stay hidden there. Wider
+          screens: display: contents, so each keeps its own place. */}
       <div className="hd-grp">
         <HeaderSearch />
         <AiMenu />
         <DateRangePicker />
+        <NotifBell />
+        <UserMenu />
       </div>
-      <NotifBell />
-      <UserMenu />
     </header>
   );
 }
@@ -245,6 +273,15 @@ function PageHeader({ shown, showBtnRef }) {
 function PageHero() {
   const { user, view, agentFilter, teamFilter, openModal, setCreateUserRoles, leadCounts, projTab, setProjTab, planSel, pageRefresh } = useApp();
   const pnav = useProjectNav();
+  const phone = useIsPhone();
+  const phoneLeads = phone && (view === 'leads' || view === 'metacapi'); // pages with the Prospects header of their own
+  // Phone sub-pages: the header bar names the page and holds the actions, so
+  // the hero's own title and subtitle give way; the actions render into the
+  // header's slot (same elements and handlers, moved).
+  const phoneSub = !!user && phone && !phoneLeads && view !== homeView(user);
+  // The slot is a sibling rendered before this hero, so it is in the DOM by
+  // the time this renders (read, not stored: no effect, no extra render).
+  const actsSlot = phoneSub ? document.getElementById('hd-acts') : null;
 
   // The Customers count is NOT computed here. It has to agree with the table
   // underneath it, and the table's query is built from filters this component
@@ -255,6 +292,10 @@ function PageHero() {
   // Every dashboard now has its own greeting header — skip the generic hero.
   if (view === 'dashboard') return null;
   if (view === 'conversations') return null; // chat ships its own compact bar
+  // Phones: the Projects pages' own header replaces the hero. Prospects keeps
+  // its hero actions (Add Customer, Import) under its own header; the title
+  // and subtitle give way to that header.
+  if (phone && view === 'properties') return null;
   if (user.role === ROLES.MASTER && view === 'companies') return null;
   const db = getDB();
 
@@ -280,8 +321,6 @@ function PageHero() {
     reports: { sub: 'Live sales analytics' },
     agentperf: { sub: 'Per-role scorecards & funnels' },
     perfreports: { sub: '' },
-    campaign: { sub: 'Citizen Avenue · Eyad + Dubai' },
-    mela: { sub: 'Citizen Avenue sales festival' },
     fbleads: { sub: 'Lead Ads forms → CRM' },
     bookings: { sub: 'Payments, instalments & dues' },
     team: { sub: `${teamAgents} agents` },
@@ -312,10 +351,10 @@ function PageHero() {
   // actions
   let actions = [];
   // Customers: re-fetch the list, for every role that can open the view.
-  if (view === 'leads') actions.push(<RefreshButton key="refresh" />);
+  if (view === 'leads' && !phoneLeads) actions.push(<RefreshButton key="refresh" />); // phones: in the page's own header
   // Meta CAPI: the same button, reloading that page's own data (pageRefresh).
-  if (view === 'metacapi' && pageRefresh) actions.push(<RefreshButton key="refresh" onClick={pageRefresh.run} busy={pageRefresh.busy} label="Refresh Meta CAPI" />);
-  if (view === 'leads' && canSee(user, 'add_customer')) {
+  if (view === 'metacapi' && pageRefresh && !phoneLeads) actions.push(<RefreshButton key="refresh" onClick={pageRefresh.run} busy={pageRefresh.busy} label="Refresh Meta CAPI" />); // phones: in the page's own header
+  if (view === 'leads' && canSee(user, 'add_customer') && !phoneLeads) { // phones: in the page's tab row
     actions.push(<button key="add-lead" className="btn btn-p" onClick={() => openModal('add-lead')}><Mi>add</Mi>Add Customer</button>);
     actions.push(<button key="import" className="btn btn-g" onClick={() => openModal('import')}><Mi>upload</Mi>Import</button>);
   }
@@ -348,12 +387,12 @@ function PageHero() {
   }
 
   return (
-    <div className={`hero${view === 'pipeline' ? ' hero-compact' : ''}`}>
-      <div className="hero-main">
+    <div className={`hero${view === 'pipeline' ? ' hero-compact' : ''}${phoneLeads || phoneSub ? ' hero-acts-only' : ''}`}>
+      {!phoneLeads && !phoneSub && <div className="hero-main">
         <h1 className="hero-title">{title}</h1>
         {sub && <div className="hero-sub">{sub}</div>}
-      </div>
-      {actions.length > 0 && <div className="hero-acts">{actions}</div>}
+      </div>}
+      {actions.length > 0 && (phoneSub ? (actsSlot && createPortal(<>{actions}</>, actsSlot)) : <div className="hero-acts">{actions}</div>)}
     </div>
   );
 }
@@ -382,8 +421,6 @@ function PageBody() {
   if (view === 'reports') return <ReportsView />;
   if (view === 'agentperf') return <AgentPerformanceView />;
   if (view === 'perfreports') return <PerfReportsView />;
-  if (view === 'campaign') return <CampaignView />;
-  if (view === 'mela') return <MelaView />;
   if (view === 'fbleads') return <FbLeadsView />;
   if (view === 'team') return <TeamView />;
   if (view === 'accounts') return <AccountsView />;
@@ -398,7 +435,7 @@ function PageBody() {
 
 // ── App shell ───────────────────────────────────────────────────────────────
 function AppShell() {
-  const { view, sidebarOpen, sidebarCollapsed, pageId } = useApp();
+  const { view, projTab, sidebarOpen, sidebarCollapsed, pageId } = useApp();
   const wide = view === 'pipeline' || view === 'conversations'; // kanban + chat need the full canvas
   // Below 1024px the sidebar is a drawer over the page; from 1024px it is docked
   // and may be collapsed. `shown` is "on screen" in whichever layout applies.
@@ -449,14 +486,14 @@ function AppShell() {
       if (drawer || a === showBtnRef.current) hideBtnRef.current?.focus({ preventScroll: true });
     } else if (document.getElementById('app-sidebar')?.contains(a)
       || (a === document.body && lastFocus.current && !lastFocus.current.isConnected)) {
-      // Phones hide the show button; the bottom bar's More tab opens the drawer there.
-      const back = showBtnRef.current?.getClientRects().length ? showBtnRef.current : document.querySelector('.bnav-more');
+      // The header's show button (the phone menu tile too) is the drawer's opener everywhere now.
+      const back = showBtnRef.current?.getClientRects().length ? showBtnRef.current : null;
       back?.focus({ preventScroll: true });
     }
   }, [shown, drawer]);
 
   return (
-    <div id="app" className={sidebarCollapsed ? 'sb-collapsed' : undefined}>
+    <div id="app" className={[sidebarCollapsed && 'sb-collapsed', view === 'properties' && 'is-projects', view === 'properties' && projTab === 'units' && 'is-units'].filter(Boolean).join(' ') || undefined}>
       <Sidebar hideBtnRef={hideBtnRef} />
       <div className="page" inert={drawerOpen}>
         <PageHeader shown={shown} showBtnRef={showBtnRef} />

@@ -7,6 +7,15 @@ for (const k of ["document", "navigator", "HTMLElement", "Element", "Node", "Eve
   if (w[k]) Object.defineProperty(globalThis, k, { value: w[k], configurable: true, writable: true });
 }
 Object.defineProperty(globalThis, "window", { value: w, configurable: true, writable: true }); globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+
+// happy-dom's WAAPI is a stub whose Animation.cancel rejects on every stop,
+// which motion trips over when the ring loader (ui/loader.jsx) unmounts. The
+// assertions here are not about animation, so hand motion a benign handle
+// (as pillnav.flow.test.mjs and metacapi-ui.flow.test.mjs do).
+w.Element.prototype.animate = function () {
+  const finished = new Promise(() => {});
+  return { cancel() {}, finish() {}, play() {}, pause() {}, reverse() {}, addEventListener() {}, removeEventListener() {}, finished, ready: finished, currentTime: 0, playState: "idle", effect: null };
+};
 const R = new URL("../..", import.meta.url).pathname.replace(/\/$/, "");
 const React = await import(`${R}/node_modules/react/index.js`);
 const { createRoot } = await import(`${R}/node_modules/react-dom/client.js`);

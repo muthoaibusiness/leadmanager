@@ -3,12 +3,8 @@ import Mi from './Mi.jsx';
 import { LoadingBlock } from './Spinner.jsx';
 import { useApp } from '../context/AppContext.jsx';
 import LogCall from './LogCall.jsx';
-import { getLead, getActs, ensureLead, ensureLeadActs, hasFullActs, changeStatus, doneVisit, deleteLead, logNoAnswer, noAnswerLock, attendMeeting, userNameById, MAX_ATTEMPTS, followUpBlock, setNoLongerResponding, clearFollowupSuppression, saveLeadPick } from '../lib/db.js';
+import { getLead, getActs, ensureLead, ensureLeadActs, hasFullActs, changeStatus, doneVisit, deleteLead, logNoAnswer, noAnswerLock, attendMeeting, userNameById, MAX_ATTEMPTS, followUpBlock, setNoLongerResponding, clearFollowupSuppression } from '../lib/db.js';
 import { hasColumn } from '../lib/supabase.js';
-import { leadUnits, planProjects, projectFloors, unitPrice, unitSize } from '../lib/projects.js';
-import { statusLook } from '../lib/floorPlan.js';
-import { Building2, ChevronRight, DoorOpen, Layers, Store } from 'lucide-react';
-import { Crumb } from './project/ProjectConsole.jsx';
 import { fmtD, fmtDT, fmtBDT, rlabel, scoreLead, scoreLabel, leadDisplayStatus, fmtDateTimeAP } from '../lib/helpers.js';
 import ActivityTimeline from './ActivityTimeline.jsx';
 import { ROLES, SRC_LABELS, effectiveRole, isNiHandler, canSelfForward, DRAWER_MQ, canSee, PAST_QUALIFY } from '../lib/constants.js';
@@ -43,36 +39,13 @@ function LeadInfo({ l }) {
     : { color: '#EF4444', label: 'Incomplete' };
 
   // Eyebrow = source • company (the small kicker line above the big name).
-  // Eyebrow = source · status (the kicker line above the name). Company has
-  // its own heading in the right column.
-  const source = SRC_LABELS[l.source] || l.source || 'Lead';
-  const ds = leadDisplayStatus(l);
+  const eyebrow = [SRC_LABELS[l.source] || l.source || 'Lead',
+    (l.company && l.company !== '—') ? l.company : null].filter(Boolean).join('  •  ');
 
-  // Right column: what the customer wants, each row only when it has a value.
-  // Interest floor/unit come from the units this lead holds or bought
-  // (leadUnits), re-read on every refreshDB, so a hold, approval or release
-  // elsewhere shows here at once.
-  const units = leadUnits(l.id);
-  const company = l.company && l.company !== '—' ? l.company : '';
-  const facts = [];
-  if (company) facts.push(['business', 'Company', company]);
-  if (l.propertyInterest) facts.push(['layers', 'Property', l.propertyInterest]);
-  // A pick saved from the breadcrumb below (lead.cart) counts as interest too.
-  const pick = l.cart?.unitNo && !units.some(u => u.code === l.cart.unitNo) ? l.cart : null;
-  const floorsOf = [...new Set([pick?.floor, ...units.map(u => u.floor)].filter(Boolean))];
-  if (pick || units.length) facts.push(['stacks', 'Interest floor', floorsOf.join(', ') || 'Not on a floor plan']);
-  if (pick) facts.push(['storefront', 'Interest unit', <>
-    <span>{pick.unitNo}</span>
-    <span className="ld-fact-s">{[pick.propertyName !== l.propertyInterest ? pick.propertyName : '', pick.size ? `${pick.size.toLocaleString('en-IN')} sft` : '', pick.value ? fmtBDT(pick.value) : ''].filter(Boolean).join(' · ')}</span>
-  </>]);
-  units.forEach((u, i) => facts.push(['storefront', i || pick ? `Interest unit ${i + (pick ? 2 : 1)}` : 'Interest unit', <>
-    <span>{u.code} · {u.status === 'sold' ? 'Sold' : 'Reserved'}</span>
-    <span className="ld-fact-s">{[units.length > 1 || u.project !== l.propertyInterest ? u.project : '', u.size ? `${u.size.toLocaleString('en-IN')} sft` : '', u.price ? fmtBDT(u.price) : ''].filter(Boolean).join(' · ')}</span>
-  </>]));
-  facts.push(['tag', 'Lead ID', leadCode(l) + (l.materialSent ? ' · Material: ' + l.materialSent : '')]);
-
-  // Below the two columns: deal and meeting details, only when set.
+  // Spec sheet — label/value rows, shown only when there's a value.
   const specs = [];
+  if (l.company && l.company !== '—') specs.push(['Company', l.company]);
+  if (l.propertyInterest) specs.push(['Property', l.propertyInterest]);
   if (l.dealValue > 0) specs.push(['Deal value', fmtBDT(l.dealValue)]);
   // Client meeting the agent booked (Set Meeting).
   if (l.meetingAt) specs.push(['Meeting', (l.meetingType === 'OFFLINE' ? 'Offline' : 'Online') + ' · ' + fmtDateTimeAP(l.meetingAt)]);
@@ -80,67 +53,63 @@ function LeadInfo({ l }) {
   if (l.meetingShared?.length) specs.push(['Already shared', l.meetingShared.map(k => SHARED_LABEL[k] || k).join(', ')]);
   if (l.meetingDate) specs.push(['Site visit', fmtDT(l.meetingDate) + (l.meetingLocation ? ' · ' + l.meetingLocation : '')]);
   if (l.visitProjects?.length) specs.push(['Visit projects', l.visitProjects.map(p => p.name).join(', ')]);
+  if (l.city || l.profession) specs.push(['Location', [l.city, l.profession].filter(Boolean).join(' · ')]);
   if (l.priority) specs.push(['Priority', l.priority + (l.preferredTime ? ' · ' + l.preferredTime : '')]);
   if (l.nextFollowup) specs.push(['Follow-up', fmtD(l.nextFollowup)]);
+  specs.push(['Lead ID', leadCode(l) + (l.materialSent ? ' · Material: ' + l.materialSent : '')]);
+  if (l.createdAt) specs.push(['Created', fmtDT(l.createdAt)]);
 
-  const stats = [['call', 'Calls', l.callCount], ['sms', 'SMS', l.smsCount], ['chat', 'WhatsApp', l.whatsappCount], ['event_available', 'Visits', l.visitCount]];
-  const assignee = [userNameById(l.assignedTo, l.assignedToName) || 'Unassigned', l.assignedRole ? rlabel(l.assignedRole) : ''].filter(Boolean).join(' · ');
+  const stats = [['Calls', l.callCount], ['SMS', l.smsCount], ['WhatsApp', l.whatsappCount], ['Visits', l.visitCount]];
 
   return (
     <div className="ld-card">
-      <div className="ld-top">
-        <div className="ld-hero">
-          <div className="ld-tags">
-            <span className="ld-eyebrow">{source}</span>
-            <span className="ld-eyebrow" aria-hidden="true">·</span>
-            <span className={`bdg ${ds.cls}`}>{ds.label}</span>
-            {l.nextFollowup && ['NEW', 'CONTACTED', 'INTERESTED'].includes(l.status) &&
-              <span className="bdg s-follow_up"><Mi>alarm</Mi>{fmtDT(l.nextFollowup)}</span>}
-            {effectiveRole(user) === ROLES.AGENT &&
-              <span className="ld-prof-tag" style={{ color: prof.color, marginLeft: 'auto' }}>{prof.label}</span>}
-          </div>
-          <h2 className="ld-name">{l.name || 'Unnamed customer'}</h2>
-          {phones.length > 0 && (
-            <div className="ld-contacts">
-              {phones.map((p, i) => (
-                <div key={'p' + i} className="ld-crow">
-                  <Mi>call</Mi>
-                  <a href={`tel:${p}`}>{p}{i === 0 && phones.length > 1 ? ' · primary' : ''}</a>
-                  {chatOk && (
-                    <button
-                      type="button"
-                      className="ld-wa"
-                      title="Chat on WhatsApp"
-                      aria-label={`Chat on WhatsApp with ${p}`}
-                      onClick={(e) => {
-                        e.preventDefault();
-                        setChatTarget({ ...l, phone: p });
-                      }}
-                    >
-                      <Mi>chat</Mi>
-                    </button>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
-          <ul className="ld-meta">
-            {emails.map((e, i) => <li key={'e' + i}><Mi>mail</Mi><a href={`mailto:${e}`}>{e}</a></li>)}
-            {(l.city || l.profession) && <li><Mi>location_on</Mi>{[l.city, l.profession].filter(Boolean).join(' · ')}</li>}
-            {l.createdAt && <li><Mi>calendar_today</Mi>Created: {fmtDT(l.createdAt)}</li>}
-            <li><Mi>person</Mi>{assignee}</li>
-          </ul>
+      <div className="ld-hero">
+        <div className="ld-eyebrow">{eyebrow}</div>
+        <h2 className="ld-name">{l.name || 'Unnamed customer'}</h2>
+        <div className="ld-tags">
+          {(() => { const ds = leadDisplayStatus(l); return <span className={`bdg ${ds.cls}`}>{ds.label}</span>; })()}
+          {l.nextFollowup && ['NEW', 'CONTACTED', 'INTERESTED'].includes(l.status) &&
+            <span className="bdg s-follow_up"><Mi>alarm</Mi>{fmtDT(l.nextFollowup)}</span>}
+          {effectiveRole(user) === ROLES.AGENT &&
+            <span className="ld-prof-tag" style={{ color: prof.color, marginLeft: 'auto' }}>{prof.label}</span>}
         </div>
+      </div>
 
-        <div className="ld-side">
-          {/* Same height as the left column's source · status row, so the rows line up. */}
-          <div className="ld-tags"><span className="ld-eyebrow">Project details</span></div>
-          <dl className="ld-facts">
-            {facts.map(([ic, k, v]) => (
-              // Icon only; the label stays as the hover title and the screen-reader name.
-              <div key={k} className="ld-fact" title={k}><dt aria-label={k}><Mi>{ic}</Mi></dt><dd>{v}</dd></div>
-            ))}
-          </dl>
+      {(phones.length || emails.length) > 0 && (
+        <div className="ld-contacts">
+          {phones.map((p, i) => (
+            <div key={'p' + i} className="ld-crow">
+              <Mi>call</Mi>
+              <a href={`tel:${p}`}>{p}{i === 0 && phones.length > 1 ? ' · primary' : ''}</a>
+              {chatOk && (
+                <button
+                  type="button"
+                  className="ld-wa"
+                  title="Chat on WhatsApp"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    setChatTarget({ ...l, phone: p });
+                  }}
+                >
+                  <Mi>chat</Mi>
+                </button>
+              )}
+            </div>
+          ))}
+          {emails.map((e, i) => (
+            <div key={'e' + i} className="ld-crow"><Mi>mail</Mi><a href={`mailto:${e}`}>{e}</a></div>
+          ))}
+        </div>
+      )}
+
+      <div className="ld-agent">
+        <div className="ld-ag-cell">
+          <Mi>person</Mi>
+          <div className="ld-ag-tx"><div className="ld-ag-l">Assigned</div><div className="ld-ag-v">{userNameById(l.assignedTo, l.assignedToName) || 'Unassigned'}</div></div>
+        </div>
+        <div className="ld-ag-cell">
+          <Mi>badge</Mi>
+          <div className="ld-ag-tx"><div className="ld-ag-l">Role</div><div className="ld-ag-v">{l.assignedRole ? rlabel(l.assignedRole) : '—'}</div></div>
         </div>
       </div>
 
@@ -156,92 +125,13 @@ function LeadInfo({ l }) {
       )}
 
       <div className="ld-stats">
-        {stats.map(([ic, lbl, n]) => (
+        {stats.map(([lbl, n]) => (
           <div key={lbl} className="ld-stat">
-            <div className="ld-stat-v"><Mi>{ic}</Mi>{n || 0}</div>
+            <div className="ld-stat-v">{n || 0}</div>
             <div className="ld-stat-l">{lbl}</div>
           </div>
         ))}
       </div>
-    </div>
-  );
-}
-
-// The project console's breadcrumb (Project > Floor > Unit type > Unit),
-// without the grid, Prospects only. Opens on the lead's saved pick (lead.cart),
-// else its project. Picking a unit only stages it:
-//   Save project details: stores the pick on the lead (cart); the unit's own
-//     status is not touched, so Available Units does not change.
-//   Reserve now: opens the Reserve drawer with the unit and this lead filled in.
-function UnitPick({ l }) {
-  const { user, refreshDB, setPropSel, setConsoleAdmin, setConsoleUnit, openModal } = useApp();
-  const toast = useProjectToast({ always: true });
-  const projects = planProjects();
-  const saved = l.cart?.propertyId ? l.cart : null;
-  const want = String(l.propertyInterest || '').trim().toLowerCase();
-  const [pid, setPid] = useState(() => saved?.propertyId || projects.find(p => String(p.name || '').trim().toLowerCase() === want)?.id || null);
-  const [floorSel, setFloorSel] = useState(saved?.floor || null);
-  const [vid, setVid] = useState(saved?.variantId || null);
-  const [unit, setUnit] = useState(saved?.unitNo || null);
-  const p = projects.find(x => x.id === pid) || null;
-  const floors = p ? projectFloors(p) : [];
-  const floor = floors.find(f => f.name === floorSel) || floors[0] || null;
-  const onFloor = (u) => !floor || floor.ids.has(u.id);
-  const variants = (p?.variants || []).filter(v => (v.units || []).some(onFloor));
-  const variant = variants.find(v => v.id === vid) || variants[0] || null;
-  const units = (variant?.units || []).filter(onFloor);
-  const picked = units.find(u => u.id === unit) || null;
-  const openN = (v) => v.units.filter(u => onFloor(u) && u.status === 'available').length;
-  const isSaved = !!picked && saved?.propertyId === p?.id && saved?.unitNo === picked.id;
-
-  const save = () => {
-    saveLeadPick(l.id, { project: p, variant, floor: floor?.name || '', unitNo: picked.id, size: unitSize(picked, variant), value: picked.sheet?.package || unitPrice(picked, variant) }, user);
-    refreshDB();
-    toast.success('Project details saved', `${picked.id} · ${p.name}`);
-  };
-  const reserve = () => {
-    setConsoleAdmin(false);
-    setConsoleUnit({ projectId: p.id, variantId: variant.id, unitId: picked.id, client: { id: l.id, name: l.name, phone: l.phone } });
-    setPropSel(p.id);
-    openModal('project-console');
-  };
-  return (
-    <div className="ld-pick">
-      <nav className="pcb" aria-label="Project details">
-        <ol>
-          <li>
-            <Crumb label="Project" icon={Building2} value={p?.id} placeholder="Project" onChange={id => { setPid(id); setFloorSel(null); setVid(null); setUnit(null); }}
-              items={projects.map(x => ({ value: x.id, label: x.name || 'Untitled project' }))} />
-          </li>
-          {floors.length > 1 && (
-            <li>
-              <ChevronRight className="pcb-sep" size={16} aria-hidden="true" />
-              <Crumb label="Floor" icon={Layers} value={floor?.name} onChange={n => { setFloorSel(n); setVid(null); setUnit(null); }}
-                items={floors.map(f => ({ value: f.name, label: f.name }))} />
-            </li>
-          )}
-          {p && (
-            <li>
-              <ChevronRight className="pcb-sep" size={16} aria-hidden="true" />
-              <Crumb label="Unit type" icon={Store} value={variant?.id} onChange={id => { setVid(id); setUnit(null); }}
-                items={variants.map(v => ({ value: v.id, label: v.name, description: `${openN(v)} open` }))} />
-            </li>
-          )}
-          {p && (
-            <li>
-              <ChevronRight className="pcb-sep" size={16} aria-hidden="true" />
-              <Crumb label="Unit" icon={DoorOpen} value={picked?.id} placeholder="Pick a unit" current onChange={setUnit}
-                items={units.map(u => ({ value: u.id, label: u.id, description: statusLook(p.unitStatuses, u).label, disabled: u.status !== 'available' }))} />
-            </li>
-          )}
-        </ol>
-      </nav>
-      {picked && (
-        <div className="ld-pick-acts">
-          <button type="button" className="btn btn-g btn-sm" onClick={save} disabled={isSaved}><Mi>save</Mi>{isSaved ? 'Saved' : 'Save project details'}</button>
-          <button type="button" className="btn btn-p btn-sm" onClick={reserve} disabled={picked.status !== 'available'}><Mi>send</Mi>Reserve now</button>
-        </div>
-      )}
     </div>
   );
 }
@@ -696,7 +586,6 @@ export default function LeadPanel() {
           {l && (
             <>
               <LeadInfo l={l} />
-              <UnitPick key={l.id} l={l} />
               <ScoreCard l={l} acts={acts} />
               <Actions l={l} />
               <OfferCard acts={acts} />

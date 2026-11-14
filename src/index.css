@@ -135,7 +135,9 @@ html {
   font-size: 14px;
   /* no iOS text inflation on rotation: sizes stay as set in every orientation */
   -webkit-text-size-adjust: 100%;
-  text-size-adjust: 100%
+  text-size-adjust: 100%;
+  /* no browser tap flash on any control (inherited); pressed and keyboard-focus styles are each control's own */
+  -webkit-tap-highlight-color: transparent
 }
 
 body {
@@ -205,6 +207,17 @@ a {
    most: the subset font (icon_names= in index.html) only knows lower-case
    names, so an icon inside an uppercase label (the sidebar) would render as
    its name. The full font happened to accept any case and hid this. */
+/* The icon subset, served from here so icons draw offline and before Google's
+   CSS answers (index.html #icon-font is the same subset; scripts/icon-font.mjs
+   refreshes this file after icon_names changes). Google's full font, added by
+   lib/iconFont.js for a name outside the subset, comes later and still wins. */
+@font-face {
+  font-family: 'Material Symbols Rounded';
+  font-style: normal;
+  font-weight: 200 700;
+  font-display: block;
+  src: url('/fonts/material-symbols-rounded.woff2') format('woff2');
+}
 .mi {
   font-family: 'Material Symbols Rounded';
   font-size: 20px;
@@ -2215,7 +2228,26 @@ html, body { overscroll-behavior: none }
 }
 .um-me { display: flex; align-items: center; gap: 10px; padding: 8px 10px }
 @media (max-width: 767px) {
-  .hd-um .umenu { position: fixed; top: calc(var(--hh) + 8px); left: 8px; right: 8px; width: auto }
+  /* ds-allow-hardcode:start  phone popups: px sizes match the Home period menu (.mh-period-menu); no spacing tokens exist */
+  /* Account menu: a compact card under the face, the Home period menu's
+     look (soft card, 40px rows, warm highlight), not a full-width sheet. */
+  .hd-um .umenu {
+    position: fixed; top: calc(var(--hh) + 6px); left: auto; right: 12px; width: 232px; max-height: 70vh;
+    padding: 4px; gap: 1px; border-radius: 14px; border: 1px solid var(--mh-line); background: var(--mh-card); color: var(--mh-ink);
+    box-shadow: 0 12px 32px rgba(0, 0, 0, .28); font-family: Inter, system-ui, sans-serif
+  }
+  .hd-um .um-me { padding: 8px 8px 6px }
+  .hd-um .umenu-item { min-height: 40px; padding: 0 10px; border-radius: 10px; font-size: 13.5px; font-weight: 500; color: var(--mh-ink) }
+  .hd-um .umenu-item:hover, .hd-um .umenu-item:active { background: color-mix(in srgb, var(--mh-warm) 14%, transparent) }
+  .hd-um .umenu-item .mi { font-size: 20px; color: var(--mh-mute2) }
+  .hd-um .umenu-in { font-size: 13.5px; color: var(--mh-ink) }
+  .hd-um .umenu-ir { font-size: 10px; color: var(--mh-mute) }
+  .hd-um .umenu-sec { padding: 8px 10px 2px; font-size: 10px; color: var(--mh-mute) }
+  .hd-um .umenu-div { margin: 4px 6px; background: var(--mh-line) }
+  .hd-um .umenu-search { margin: 2px 4px 4px; height: 36px; border-radius: 10px; background: var(--mh-well); border-color: transparent }
+  .hd-um .umenu-list { max-height: 220px; overflow-y: auto }
+  .hd-um .umenu-danger { color: var(--red) }
+  /* ds-allow-hardcode:end */
 }
 
 /* ── PROFILE PAGE ────────────────────────────── */
@@ -2619,15 +2651,21 @@ html, body { overscroll-behavior: none }
 .umenu-theme { display: none }
 
 @media (max-width: 767px) {
-  .pg-head .ham { order: -2 }
-  .pg-head .hd-um { order: -1 }
+  /* Home header, after the reference: the menu tile at the left, then the
+     room, then search + AI + date, the bell, and the account face last. The
+     DOM keeps the wide-screen order; the tile's auto margin pushes the rest
+     right and the face's order puts it after the bell. */
+  .pg-head .ham { order: -2; margin-right: auto }
+  /* One rounded-square box at the row's end: AI, bell, face. Search and the
+     date filter stay hidden on phones. */
+  .hd-grp .hd-srch, .hd-grp .drp-wrap { display: none }
+  .pg-head .hd-grp .notif-btn, .pg-head .hd-grp .notif-btn:hover { width: 34px; height: 34px; border: 0; border-radius: 10px; background: transparent }
+  .pg-head .hd-grp .hd-um, .pg-head .hd-grp .hd-um:hover { width: 34px; height: 34px; margin: 0; padding: 0; border: 0; border-radius: 10px; background: transparent; justify-content: center }
+  .pg-head .hd-grp .hd-um .ag-av { width: 30px; height: 30px }
   .pg-head .thtog { display: none }
   .umenu-theme { display: flex }
-  /* No Back and no breadcrumb on phones: the page hero names the page. The
-     face's auto margin takes the trail's room, so the face stays at the left
-     edge and the controls at the right on every page. */
+  /* No Back and no breadcrumb on phones: the page hero names the page. */
   .pg-head .hd-back, .pg-head .hd-crumb { display: none }
-  .pg-head .hd-um { margin-right: auto }
 }
 
 /* The account face never gives up width to the trail, so it keeps its size
@@ -2674,7 +2712,7 @@ html, body { overscroll-behavior: none }
     flex-shrink: 0;
     height: 44px;
     padding: 3px;
-    border-radius: 999px;
+    border-radius: 12px;   /* a box, as the menu tile, not a pill */
     background: var(--surf2);
     border: 1px solid var(--bd)
   }
@@ -2854,6 +2892,7 @@ html, body { overscroll-behavior: none }
   background: var(--surf2);
   color: var(--t1)
 }
+.ham-bars { display: none }   /* phones only (below) */
 
 @media not all and (max-width: 1023px) {
   #app.sb-collapsed .ham {
@@ -2976,7 +3015,15 @@ html, body { overscroll-behavior: none }
 @media (max-width: 767px) {
   /* 58px pill + 16px off the bottom + 12px clearance above it */
   :root { --bnav: calc(58px + 16px + 12px + env(safe-area-inset-bottom, 0px)) }
-  .pg-head .ham { display: none }   /* More in the bar opens the drawer */
+  /* The menu tile (the reference's rounded square at the top left) opens the
+     drawer, as the bar's More does. */
+  .pg-head .ham, .pg-head .ham:hover {
+    display: flex; width: 40px; height: 40px; min-width: 40px; min-height: 40px; margin-left: 0; border-radius: 12px;
+    border: 1px solid var(--bd); background: var(--surf2); color: var(--t1)
+  }
+  .pg-head .ham:focus-visible { outline-offset: 2px }
+  .pg-head .ham > svg:first-child { display: none }
+  .pg-head .ham .ham-bars { display: block }
   .page .pg-body { padding-bottom: calc(var(--gutter-y) + var(--bnav)) }
 
   .bnav {
@@ -11328,9 +11375,31 @@ textarea.fi {
   .pg-acts { gap: 6px }
 }
 
-/* Notification panel — full-width sheet on phones (was fixed 360px → overflow) */
+/* Notification panel on phones: a compact card under the bell, the Home
+   period menu's look, not a full-width sheet. */
 @media (max-width: 767px) {
-  .notif-panel { width: auto; left: 8px; right: 8px; max-height: 70vh }
+  /* ds-allow-hardcode:start  phone popup: px sizes match .mh-period-menu; no spacing tokens exist */
+  .notif-panel {
+    top: calc(var(--hh) + 6px); left: auto; right: 12px; width: min(312px, calc(100vw - 24px)); max-height: 60vh;
+    border-radius: 14px; border: 1px solid var(--mh-line); background: var(--mh-card); color: var(--mh-ink);
+    box-shadow: 0 12px 32px rgba(0, 0, 0, .28); font-family: Inter, system-ui, sans-serif
+  }
+  .notif-panel .np-hd { padding: 10px 12px 8px; gap: 8px }
+  .notif-panel .np-ttl { font-size: 14px; font-weight: 600; color: var(--mh-ink) }
+  .notif-panel .np-sub { font-size: 11.5px; color: var(--mh-mute) }
+  .notif-panel .np-hd .btn { height: 30px; min-height: 30px; padding: 0 10px; font-size: 11px; border-radius: 999px }
+  .notif-panel .np-body { padding: 0 4px 4px }
+  .notif-panel .ni { min-height: 48px; padding: 8px 8px; border-radius: 10px; gap: 10px; background: transparent; border: 0 }
+  /* unread: the period menu's warm tint, not the desktop green wash */
+  .notif-panel .ni.unread { background: color-mix(in srgb, var(--mh-warm) 8%, transparent) }
+  .notif-panel .ni:hover, .notif-panel .ni:active { background: color-mix(in srgb, var(--mh-warm) 14%, transparent) }
+  .notif-panel .ni-ico { width: 28px; height: 28px; border-radius: 8px }
+  .notif-panel .ni-ico .mi { font-size: 16px }
+  .notif-panel .ni-msg { font-size: 13px; color: var(--mh-ink) }
+  .notif-panel .ni-sub { font-size: 11px; color: var(--mh-mute) }
+  .notif-panel .ni-dot { background: var(--mh-warm) }
+  .notif-panel .np-empty { padding: 20px 12px; font-size: 13px; color: var(--mh-mute) }
+  /* ds-allow-hardcode:end */
 }
 
 /* ───────────────────────────────────────────────────────────────────────────
@@ -11534,34 +11603,16 @@ textarea.fi {
 @keyframes lr-radar { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
 
 /* Lead detail — Assigned | Role two-cell row (above stats / AI score) */
-/* Lead card top: customer on the left, company and interest on the right;
-   one column when the panel is narrow (phone drawer). */
-.ld-card { container-type: inline-size; }
-.ld-top { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 14px 16px; padding: 16px 14px 14px; border-bottom: 1px solid var(--bd); }
-.ld-top .ld-hero { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; padding: 0; border: 0; overflow: visible; }
-.ld-top .ld-hero::before { content: none; }
-.ld-top .ld-eyebrow { letter-spacing: .08em; }
-.ld-top .ld-name { margin: 0; font-size: clamp(18px, 5cqi, 22px); line-height: 1.15; letter-spacing: 0; text-transform: none; font-weight: 800; }
-.ld-top .ld-contacts { align-self: stretch; padding: 0; border: 0; gap: 6px; }
-.ld-top .ld-tags { gap: 6px; align-items: center; min-height: 24px; }
-.ld-top .ld-crow .ld-wa { margin-left: 4px; }
-.ld-meta { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; font-size: 13px; color: var(--t2); }
-.ld-meta li { display: flex; align-items: center; gap: 8px; min-width: 0; overflow-wrap: anywhere; }
-.ld-meta .mi { font-size: 16px; color: var(--t3); flex: none; }
-.ld-meta a { color: var(--t1); }
-.ld-side { min-width: 0; display: flex; flex-direction: column; gap: 8px; }
-.ld-facts { margin: 0; display: grid; gap: 7px; }
-.ld-fact { display: grid; grid-template-columns: 18px minmax(0, 1fr); gap: 8px; align-items: baseline; }
-.ld-fact dt { display: flex; color: var(--t3); }
-.ld-fact dt .mi { font-size: 17px; transform: translateY(3px); }
-.ld-fact dd { margin: 0; display: grid; font-size: 13px; font-weight: 600; color: var(--t1); overflow-wrap: anywhere; }
-.ld-fact-s { font-size: 12px; font-weight: 500; color: var(--t3); }
-.ld-stat-v { display: inline-flex; align-items: center; gap: 8px; }
-.ld-stat-v .mi { font-size: 18px; color: var(--accent); }
-@container (max-width: 460px) {
-  .ld-top { grid-template-columns: 1fr; }
-  .ld-side { padding-top: 14px; border-top: 1px solid var(--bd); }
+.ld-agent {
+  display: grid; grid-template-columns: 1fr 1fr;
+  border: 1px solid var(--bd); border-radius: 12px; overflow: hidden; margin-bottom: 13px;
 }
+.ld-ag-cell { display: flex; align-items: center; gap: 10px; padding: 12px 14px; min-width: 0; }
+.ld-ag-cell:first-child { border-right: 1px solid var(--bd); }
+.ld-ag-cell .mi { font-size: 19px; color: var(--accent); flex: none; }
+.ld-ag-tx { min-width: 0; }
+.ld-ag-l { font-size: 10px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--t3); }
+.ld-ag-v { font-size: 13px; font-weight: 700; color: var(--t1); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 /* ── Admin account switcher (top bar) ──────────────────────────────────── */
 .acsw { position: relative; }
@@ -11961,18 +12012,6 @@ textarea.fi {
   overflow-x: auto; scrollbar-width: none; }
 .pcb li { display: flex; align-items: center; gap: 8px; flex: none; white-space: nowrap; }
 .pcb-sep { flex: none; color: var(--t3); }
-/* Lead panel copy of the breadcrumb: plain text steps (no pill, no accent
-   rim), wrapping onto a second line instead of scrolling. Console untouched. */
-.ld-pick { margin: 0 0 12px; }
-.ld-pick-acts { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 6px; }
-.ld-pick ol { flex-wrap: wrap; overflow: visible; gap: 2px 4px; }
-.ld-pick li { gap: 4px; flex: 0 1 auto; min-width: 0; }
-.ld-pick .pcb-sep { width: 14px; height: 14px; }
-.ld-pick .pcb-crumb .sel-trigger, .ld-pick .pcb-crumb .sel-trigger:hover, .ld-pick .pcb-crumb .sel-trigger[data-state="open"] {
-  min-height: 28px; padding: 0 4px; gap: 4px; border-color: transparent; background: transparent; font-size: 13px; }
-.ld-pick .pcb-crumb .sel-trigger:focus-visible { outline: 1px solid var(--t3); outline-offset: 0; }
-.ld-pick .pcb-crumb .sel-trigger svg:not(.pcb-ud) { display: none; }
-@media (max-width: 1023px) { .ld-pick .pcb-crumb .sel-trigger { min-height: 44px; } } /* touch targets */
 .pcb-crumb .sel-trigger {
   gap: 8px; padding: 0 10px; border: 1px solid var(--bd2); border-radius: 8px;
   background: var(--surf); color: var(--t1); font: 500 14px/1.2 var(--font-display);
@@ -13573,11 +13612,11 @@ input[type="time"]::-webkit-calendar-picker-indicator { opacity: .9; cursor: poi
    order over the earlier phone passes. Desktop and tablet are untouched.
    ════════════════════════════════════════════════════════════════════════ */
 @media (max-width: 767px) {
-  /* Header pills: 44 → 40px tall. The face shrinks to 34px inside its pill. */
-  .pg-head .hd-um { height: 40px; padding: 2px 10px 2px 2px; gap: 7px }
+  /* Header pills: 44 → 40px tall. The account is its face only (the
+     reference), a 40px round at the row's end; the menu lists the name. */
+  .pg-head .hd-um { height: 40px; width: 40px; padding: 0; gap: 0; justify-content: center; border-radius: 50% }
   .pg-head .hd-um .ag-av { width: 34px; height: 34px }
-  .hd-um-nm { font-size: 13px }
-  .hd-um-rl { font-size: 11px }
+  .hd-um-txt, .hd-um-chev.mi { display: none }
   .hd-grp { height: 40px; padding: 2px }
   .hd-grp .hd-ic { width: 34px; height: 34px }
   .hd-grp .hd-ic .mi { font-size: 18px }
@@ -13974,6 +14013,64 @@ input[type="time"]::-webkit-calendar-picker-indicator { opacity: .9; cursor: poi
   .mh .mh-rs.iad-rs-new { background: var(--mh-well); color: var(--t2) }
 }
 
+/* ds-allow-hardcode:start  pill tabs: the warm black glass has no token; px sizes as in the pages that use it */
+/* Pill tabs: a page's section tabs as separate pills (Inventory, Users &
+   Accounts, Facebook Leads, Performance). The selected pill is warm black
+   glass; the others are a faint glass of the page. */
+.pill-tabs {
+  --pill: rgba(255, 255, 255, .06); --pill-edge: rgba(255, 255, 255, .10); --pill-ink: var(--t2);
+  --pill-on: rgba(38, 31, 26, .78); --pill-on-edge: rgba(255, 236, 220, .24); --pill-on-ink: #F7F3EF;
+  display: flex; flex-wrap: wrap; gap: 8px;
+}
+:root[data-theme="light"] .pill-tabs {
+  --pill: rgba(255, 255, 255, .72); --pill-edge: rgba(23, 22, 21, .08); --pill-ink: var(--t1);
+  --pill-on: rgba(28, 23, 20, .86); --pill-on-edge: rgba(255, 255, 255, .14);
+}
+.pill-tabs button {
+  flex: none; display: inline-flex; align-items: center; gap: 6px; height: 34px; padding: 0 16px;
+  border: 1px solid var(--pill-edge); border-radius: 999px; background: var(--pill); color: var(--pill-ink);
+  font: 700 12.5px/1 var(--font-display); letter-spacing: .04em; text-transform: uppercase; white-space: nowrap; cursor: pointer;
+  -webkit-backdrop-filter: blur(12px) saturate(1.2); backdrop-filter: blur(12px) saturate(1.2);
+  transition: background var(--tr), color var(--tr);
+}
+.pill-tabs button .mi { font-size: 17px; }
+.pill-tabs button:hover { color: var(--t1); }
+.pill-tabs button.on, .pill-tabs button.on:hover {
+  background: var(--pill-on); border-color: var(--pill-on-edge); color: var(--pill-on-ink);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .10), 0 6px 16px rgba(0, 0, 0, .18);
+}
+.pill-tabs button:focus-visible { outline: 2px solid var(--t1); outline-offset: 2px; }
+/* Performance: the two role pills and the search share one line; the search
+   gives up width first (down to 96px on a 360px phone), never the line. */
+.mip-bar .pill-tabs { flex: none; flex-wrap: nowrap; }
+@media (max-width: 767px) { .mip > .mip-bar { flex-wrap: nowrap; } .mip > .mip-bar .mip-fld { flex: 1 1 0; min-width: 0; } }
+@media (max-width: 767px) {
+  .pill-tabs button { height: 36px; } .pill-tabs button .mi { display: none; }
+  /* Phones: one line always. The pills shrink their padding and letter
+     spacing with the screen, so three uppercase tabs (and Facebook Leads'
+     switch after them) fit a 360px phone without wrapping. */
+  .pill-tabs { flex-wrap: nowrap; gap: clamp(4px, 1.6vw, 8px); min-width: 0; }
+  .pill-tabs button { flex: 0 1 auto; min-width: 0; padding: 0 clamp(9px, 3.2vw, 16px); letter-spacing: clamp(0px, .4vw - 1px, .04em); }
+}
+/* Phones, the pages with a Back button and pill tabs (Inventory, Users &
+   Accounts, Facebook Leads, Performance): the tab row and the search / filter
+   rows sit 16px in from the content edges, as the Projects search does
+   (AvailableUnitsTab.css .fpv-ph-row .ppl-search); and the header stays put
+   while the content under it scrolls, as on Inventory > Statements.
+   shortcut: Back and reload restore .pg-body's scroll only (useNavHistory.js restoreScroll), so the content reopens at its top; teach restoreScroll this scroller if that is missed. */
+@media (max-width: 767px) {
+  :is(.fin, .acc, .fbl, .mip):has(> .pill-tabs, > .fin-bar, > .fbl-tabrow, > .mip-bar) { --tab-inset: 16px; }
+  .fin > .fin-bar, .acc > .pill-tabs, .fbl > .fbl-tabrow, .mip > .mip-bar,
+  .fin > .fin-tools, .acc > .uct-bar { margin-inline: var(--tab-inset); }
+  .page .pg-body:has(> .pg-inner > :is(.fin, .acc, .fbl, .mip)) { display: flex; flex-direction: column; overflow: hidden; padding-bottom: 0; }
+  .pg-body:has(> .pg-inner > :is(.fin, .acc, .fbl, .mip)) > .pg-inner { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+  .pg-inner > :is(.fin, .acc, .fbl, .mip) { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+  .pg-inner > :is(.fin, .acc, .fbl, .mip) > :is(.pill-tabs, .fin-bar, .fbl-tabrow, .mip-bar, .fin-tools, .uct-bar, .fin-bulk) { flex: none; }
+  /* the one scroller: everything after the header rows */
+  .pg-inner > :is(.fin, .acc, .fbl, .mip) > .tab-scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 4px 2px calc(var(--gutter-y) + var(--bnav)); margin: 0 -2px; display: flex; flex-direction: column; gap: inherit; }
+}
+/* ds-allow-hardcode:end */
+
 /* BackButton: the chevron is for the phone round button only (below). */
 .hd-back-chev { display: none }
 
@@ -13984,14 +14081,21 @@ input[type="time"]::-webkit-calendar-picker-indicator { opacity: .9; cursor: poi
    ════════════════════════════════════════════════════════════════════════ */
 @media (max-width: 767px) {
   .pg-head.pg-head-sub :is(.hd-um, .hd-grp, .notif-btn, .thtog, .ham) { display: none }
-  .pg-head.pg-head-sub .hd-back {
+  /* Phone sub-pages render the Prospects header block instead of this bar
+     (App.jsx PageHeader); its action slot holds the hero's buttons as round
+     icons, in the Refresh ring's place (AvailableUnitsTab.css .lv-ph). */
+  .hd-acts { justify-self: end; display: flex; align-items: center; gap: 6px; transform: translateY(6px) }
+  .hd-acts:empty { display: none }
+  .hd-acts .btn { width: 40px; height: 40px; min-height: 40px; padding: 0; gap: 0; justify-content: center; border-radius: 50%; font-size: 0 }
+  .hd-acts .btn .mi { font-size: 20px }
+  .pg-head.pg-head-sub .hd-back, .fpv-ph-top .hd-back {
     display: grid; place-items: center; width: 44px; height: 44px; margin: 0;
     border-radius: 50%; border: 1px solid var(--bd); background: var(--surf-solid); color: var(--t1);
     box-shadow: 0 4px 14px rgba(0, 0, 0, .12)
   }
-  .pg-head.pg-head-sub .hd-back:active { transform: scale(.96) }
-  .pg-head.pg-head-sub .hd-back .hd-back-arrow { display: none }
-  .pg-head.pg-head-sub .hd-back .hd-back-chev { display: inline-block; font-size: 26px }
+  :is(.pg-head.pg-head-sub, .fpv-ph-top) .hd-back:active { transform: scale(.96) }
+  :is(.pg-head.pg-head-sub, .fpv-ph-top) .hd-back .hd-back-arrow { display: none }
+  :is(.pg-head.pg-head-sub, .fpv-ph-top) .hd-back .hd-back-chev { display: inline-block; font-size: 26px }
 
   /* ── Lead sources page (dashboards/LeadSourcesPage.jsx), over the app ── */
   /* One screen, no page scroll: a fixed-height column. The list shows up to
@@ -14071,6 +14175,156 @@ input[type="time"]::-webkit-calendar-picker-indicator { opacity: .9; cursor: poi
   .lsp-name { min-width: 0; font-size: 14px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
   .lsp-val { justify-self: end; font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace; font-size: 14px; font-weight: 600; font-variant-numeric: tabular-nums }
   .lsp-pct { justify-self: end; min-width: 28px; text-align: right; font-size: 11.5px; color: var(--mh-mute); font-variant-numeric: tabular-nums }
+
+  /* ── All projects (views/PropertiesView.jsx phone branch), the Lead sources
+     page's palette: a search field, a counted title, then one row per project
+     (photo left; name, availability, status and from-rate right). ── */
+  .ppl-search {
+    display: flex; align-items: center; gap: 8px; height: 44px; padding: 0 14px; margin-bottom: 14px;
+    border-radius: 999px; background: var(--mh-card); color: var(--mh-mute); box-shadow: var(--mh-shadow)
+  }
+  .ppl-search .mi { font-size: 20px }
+  .ppl-search input { flex: 1; min-width: 0; height: 100%; border: 0; background: none; outline: none; color: var(--mh-ink); font: inherit; font-size: 15px }
+  .ppl-search:focus-within { box-shadow: 0 0 0 2px var(--mh-ink) }
+  .ppl-ttl { margin: 0 0 10px 2px; font-size: 20px; font-weight: 600; letter-spacing: -.01em; color: var(--mh-ink) }
+  .ppl-ttl span { font-size: 13px; font-weight: 500; color: var(--mh-mute) }
+  .ppl-none { padding: 32px 4px; text-align: center; font-size: 13.5px; color: var(--mh-mute) }
+  .ppl { list-style: none; margin: 0 auto; padding: 0; display: grid; gap: 10px; width: calc(100% - 12px) }
+  /* ds-allow-hardcode:start  project cards: glass alphas over the page have no token; px sizes match this phone block */
+  /* each project is a horizontal card: the photo at the left edge, the text,
+     a chevron at the end; the whole card is the tap target (unchanged button) */
+  .ppl button {
+    width: 100%; display: grid; grid-template-columns: 96px minmax(0, 1fr) auto; gap: 14px; align-items: center; padding: 10px 14px 10px 10px;
+    border: 1px solid var(--ppl-edge); border-radius: 18px; background: var(--ppl-glass);
+    -webkit-backdrop-filter: blur(14px) saturate(1.2); backdrop-filter: blur(14px) saturate(1.2);
+    box-shadow: inset 0 1px 0 var(--ppl-sheen), 0 8px 24px rgba(0, 0, 0, .08);
+    color: var(--mh-ink); font: inherit; text-align: left; cursor: pointer; -webkit-tap-highlight-color: transparent;
+    transition: transform .16s ease, box-shadow .16s ease;
+    animation: ppl-in .36s cubic-bezier(.2, .8, .2, 1) both;
+  }
+  /* the glass: a faint tint of the card over the page, a hairline edge, a top sheen */
+  .ppl button { --ppl-glass: rgba(255, 255, 255, .06); --ppl-edge: rgba(255, 255, 255, .14); --ppl-sheen: rgba(255, 255, 255, .12) }
+  :root[data-theme="light"] .ppl button { --ppl-glass: rgba(255, 255, 255, .34); --ppl-edge: rgba(255, 255, 255, .75); --ppl-sheen: rgba(255, 255, 255, .9) }
+  /* the cards settle in one after another, once; never looped */
+  @keyframes ppl-in { from { opacity: 0; transform: translateY(8px) } to { opacity: 1; transform: none } }
+  .ppl li:nth-child(1) button { animation-delay: 0ms } .ppl li:nth-child(2) button { animation-delay: 40ms } .ppl li:nth-child(3) button { animation-delay: 80ms }
+  .ppl li:nth-child(4) button { animation-delay: 120ms } .ppl li:nth-child(5) button { animation-delay: 160ms } .ppl li:nth-child(n+6) button { animation-delay: 200ms }
+  @media (prefers-reduced-motion: reduce) { .ppl button { animation: none; transition: none } }
+  .ppl button::after { content: 'chevron_right'; font-family: 'Material Symbols Rounded'; font-size: 22px; line-height: 1; color: var(--mh-mute); transition: transform .16s ease }
+  .ppl button:active { transform: scale(.985); box-shadow: inset 0 1px 0 var(--ppl-sheen), 0 3px 10px rgba(0, 0, 0, .08) }
+  .ppl button:active::after { transform: translateX(2px) }
+  .ppl button:focus-visible { outline: 2px solid var(--mh-ink); outline-offset: 2px }
+  .ppl-img {
+    position: relative; overflow: hidden; width: 96px; aspect-ratio: 1.3; border-radius: 12px; background: var(--mh-well);
+    display: grid; place-items: center; color: var(--mh-mute)
+  }
+  .ppl-img .mi { font-size: 30px }
+  .ppl-img img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover }
+  /* ds-allow-hardcode:end */
+  .ppl-tx { min-width: 0; display: flex; flex-direction: column; gap: 3px }
+  .ppl-tx b { font-size: 16px; font-weight: 600; letter-spacing: -.01em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+  .ppl-tx > span { font-size: 12.5px; color: var(--mh-mute); font-variant-numeric: tabular-nums }
+  .ppl-ft { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 8px; margin-top: 3px }
+  .ppl-ft .bdg { padding: 2px 7px; border-radius: 6px; font-size: 10px; font-style: normal }
+
+  /* ── Reserve bottom sheet (AvailableUnitsView phone): the unit's Deal cart
+     on a sheet over the page, above the bottom bar; the scrim or Close shuts it. ── */
+  .fps-sheet { position: fixed; inset: 0; z-index: 400; display: flex; flex-direction: column; justify-content: flex-end }
+  .fps-scrim { position: absolute; inset: 0; border: 0; padding: 0; background: rgba(0, 0, 0, .45); cursor: default; animation: gsin .18s ease }
+  .fps-panel {
+    position: relative; max-height: 88dvh; overflow-y: auto; overscroll-behavior: contain;
+    padding: 10px 18px calc(18px + env(safe-area-inset-bottom, 0px));
+    border-radius: 24px 24px 0 0; background: var(--mh-card); color: var(--mh-ink);
+    animation: fps-up .26s cubic-bezier(.2, .8, .2, 1)
+  }
+  /* the grab handle */
+  .fps-panel::before { content: ''; display: block; width: 36px; height: 4px; margin: 0 auto 12px; border-radius: 2px; background: var(--mh-track) }
+  @keyframes fps-up { from { transform: translateY(100%) } to { transform: none } }
+  @media (prefers-reduced-motion: reduce) { .fps-panel, .fps-scrim { animation: none } }
+  .fps-hd { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 16px }
+  .fps-hd h2 { margin: 0; font-family: var(--font-display); font-size: 26px; font-weight: 600; letter-spacing: -.02em; line-height: 1.1 }
+  .fps-hd h2 i { font-style: italic; font-weight: 700 }
+  .fps-hd p { margin: 4px 0 0; font-size: 13px; color: var(--mh-mute) }
+  .fps-x { flex: none; width: 40px; height: 40px; display: grid; place-items: center; border: 0; border-radius: 50%; background: var(--mh-well); color: var(--mh-ink); cursor: pointer }
+  .fps-x:focus-visible { outline: 2px solid var(--mh-ink); outline-offset: 2px }
+  /* inside the sheet: the big deal total like Image 1, pill controls, one full-width primary */
+  .fps-panel .pc-embed .pdo-unit { display: none }
+  .fps-panel .pc-embed .pdo-grid div:first-child b { font-family: var(--font-display); font-size: 40px; letter-spacing: -.03em; line-height: 1 }
+  .fps-panel .pc-embed :is(.pco-input, .pcc-search, .pc-more-btn, .pcc-tabs button) { border-radius: 999px }
+  .fps-panel .pc-embed .btn { min-height: 52px; border-radius: 999px; font-size: 15px }
+  .fps-panel .pc-embed .btn-sm { min-height: 44px }
+
+  /* ds-allow-hardcode:start  Reserve sheet: the rose palette is the reference image's; px sizes match the phone sheet above (no spacing tokens exist) */
+  /* Reserve sheet (the reference image): sentence-case labels, plain offer
+     columns, tinted pill fields and buttons, a hairline after the deal total.
+     The layout is shared; each theme sets only the --rs-* colours. Light uses
+     a warm rose palette and a deep-rose Reserve Now with a check; dark keeps
+     the app's green Reserve Now as it was. */
+  .fps-panel { --rs-sheet: var(--mh-card); --rs-well: var(--mh-well); --rs-line: rgba(255, 255, 255, .10); --rs-ink: var(--mh-ink); --rs-mute: var(--mh-mute) }
+  :root[data-theme="light"] .fps-panel {
+    --rs-sheet: #FCF6F7; --rs-well: #F6E9EC; --rs-line: #EED9DE; --rs-ink: #2A0F16; --rs-mute: #6E5A5F;
+    --rs-cta: #C4264D; --rs-cta-d: #A81F41;
+  }
+  .fps-panel { background: var(--rs-sheet); color: var(--rs-ink) }
+  :root[data-theme="light"] .fps-panel::before { background: #E2C7CE }
+  .fps-hd h2 { color: var(--rs-ink) }
+  .fps-hd p { color: var(--rs-mute); font-size: 14px }
+  .fps-x { background: var(--rs-well); color: var(--rs-ink) }
+  /* deal total | rate | size, a hairline between the total and the rest */
+  .fps-panel .pc-embed .pdo { background: transparent; border: 0; box-shadow: none; padding: 0 }
+  .fps-panel .pc-embed .pdo-grid { grid-template-columns: auto 1fr auto; align-items: start; gap: 16px }
+  .fps-panel .pc-embed .pdo-grid div:first-child { padding-right: 16px; border-right: 1px solid var(--rs-line) }
+  .fps-panel .pc-embed .pdo-grid div:nth-child(2) { align-items: flex-start; text-align: left }
+  .fps-panel .pc-embed .pdo-grid span { font-size: 14px; color: var(--rs-ink) }
+  .fps-panel .pc-embed .pdo-grid b { color: var(--rs-ink); font-size: 16px }
+  .fps-panel .pc-embed .pdo-grid b small { color: var(--rs-mute); font-weight: 500 }
+  .fps-panel .pc-embed .pdo-grid div:first-child b { font-size: 44px; font-weight: 700; color: var(--rs-total, var(--rs-ink)) }
+  /* As the reference: Deal total left, the hairline, then Rate starting right
+     after it, Size at the right edge; every label and value left-aligned in
+     its own column, the labels on one baseline. */
+  .fps-panel .pc-embed .pdo-grid { grid-template-columns: auto 1fr auto; column-gap: 24px }
+  .fps-panel .pc-embed .pdo-grid div:nth-child(2) { align-items: flex-start; text-align: left }
+  .fps-panel .pc-embed .pdo-grid div:nth-child(3) { align-items: flex-start; text-align: left; justify-self: end }
+  .fps-panel .pc-embed .pdo-grid div { gap: 6px }
+  .fps-panel .pc-embed .pdo-grid div:first-child { gap: 2px }
+  .fps-panel .pc-embed .pdo-grid span { color: var(--rs-mute) }
+  /* offers: plain columns, sentence-case labels, tinted pill fields */
+  .fps-panel .pco-duo { margin: 20px 0 0; gap: 12px }
+  .fps-panel .pco-duo .pco-side { padding: 0; border: 0; background: transparent; gap: 8px }
+  .fps-panel .pco-duo .pco-lbl { font-size: 14px; font-weight: 600; letter-spacing: 0; text-transform: none; color: var(--rs-ink) }
+  .fps-panel .pco-duo .pco-input { height: 46px; padding: 0 16px; gap: 8px; border-radius: 999px; border-color: var(--rs-line); background: var(--rs-well) }
+  .fps-panel .pco-duo .pco-input input { font-size: 16px; font-weight: 500; color: var(--rs-ink) }
+  .fps-panel .pco-duo .pco-cur { font-size: 15px; color: var(--rs-ink) }
+  .fps-panel .pco-duo .pco-suf { font-size: 14px; color: var(--rs-mute) }
+  .fps-panel .pco-duo .pco-total { font-size: 16px; font-weight: 700; color: var(--rs-total, var(--rs-ink)) }
+  .fps-panel .pco-duo .pco-total.is-none { font-size: 14px; font-weight: 500; color: var(--rs-mute) }
+  /* More details, client tabs and search: tinted, borderless */
+  .fps-panel .pc-more-btn { height: 46px; border: 0; background: var(--rs-well); color: var(--rs-ink); font-size: 15px; font-weight: 600 }
+  .fps-panel .pcc-f > span { font-size: 17px; font-weight: 600; letter-spacing: 0; text-transform: none; color: var(--rs-ink) }
+  .fps-panel .pcc-tabs { gap: 10px; padding: 0; border: 0; background: transparent }
+  .fps-panel .pcc-tabs button { min-height: 50px; border: 1px solid var(--rs-line); border-radius: 999px; background: transparent; color: var(--rs-ink); font: 600 16px/1 Inter, sans-serif; box-shadow: none }
+  .fps-panel .pcc-tabs button.on { background: var(--rs-well); box-shadow: none }
+  /* the tab's tracking and uppercase would break the icon ligature into its name */
+  .fps-panel .pcc-tabs button .mi, .fps-panel .pcc-search > .mi { font-size: 20px; letter-spacing: 0; text-transform: none; font-weight: 400 }
+  .fps-panel .pcc-search { height: 50px; border-radius: 999px; border-color: var(--rs-line); background: var(--rs-sheet) }
+  .fps-panel .pcc-search input { font-size: 16px; color: var(--rs-ink) }
+  .fps-panel .pcc-search input::placeholder { color: var(--rs-mute) }
+  /* focus: the theme's accent, rose on light */
+  .fps-panel :is(.pco-input, .pcc-search):focus-within { border-color: var(--rs-cta, var(--accent)) }
+  .fps-x:focus-visible { outline-color: var(--rs-cta, var(--mh-ink)) }
+  /* Reserve (the reference): one bright pill, sentence case, no icon. Dark is
+     the app's green with the total in the same green; light keeps its rose. */
+  .fps-panel { --rs-total: var(--accent); --rs-cta: var(--accent); --rs-cta-d: var(--accent-d); --rs-on-cta: var(--on-accent) }
+  :root[data-theme="light"] .fps-panel { --rs-total: var(--rs-ink); --rs-cta: #C4264D; --rs-cta-d: #A81F41; --rs-on-cta: #fff }
+  .fps-panel .pc-embed .pcc-reserve {
+    min-height: 56px; margin-top: 8px; gap: 0; background: var(--rs-cta); border-color: var(--rs-cta); color: var(--rs-on-cta);
+    font: 600 18px/1 Inter, sans-serif; letter-spacing: 0; text-transform: none;
+  }
+  .fps-panel .pc-embed .pcc-reserve .mi { display: none }
+  .fps-panel .pc-embed .pcc-reserve:hover:not(:disabled) { background: var(--rs-cta-d); border-color: var(--rs-cta-d) }
+  .fps-panel .pc-embed .pcc-reserve:disabled { opacity: .55 }
+  .fps-panel .pc-embed .pcc-reserve:focus-visible { outline: 2px solid var(--rs-cta); outline-offset: 2px }
+  /* ds-allow-hardcode:end */
 }
 
 /* ═══ Price & offer — compact, same width and border as the unit grid card ═══
@@ -14218,34 +14472,34 @@ input[type="time"]::-webkit-calendar-picker-indicator { opacity: .9; cursor: poi
 .pc-more-body .pc-sec { padding: 12px; }
 .pc-more-body .pca-grid { grid-template-columns: 1fr; }
 
-/* Book This (Available Units): a slim right-hand drawer holding only the Deal
-   cart, the Prospects lead panel's shape. Non-blocking: no dim, the page behind
-   stays clickable (floors, plan, grid); only its ✕ (or Esc) closes it. */
-.mov.pc-drawer { justify-content: flex-end; align-items: stretch; padding: 0; background: transparent; pointer-events: none; }
-.mov.pc-drawer > .pc-modal { pointer-events: auto; }
-.pc-modal.is-deal {
-  width: min(400px, 100vw); max-width: min(400px, 100vw); height: 100vh; max-height: 100vh;
-  border-radius: 0; border: 0; border-left: 1px solid var(--bd); background: var(--surf);
-  box-shadow: -8px 0 24px rgba(0, 0, 0, .18); transform: translateX(100%); transition: transform .32s cubic-bezier(.4, 0, .2, 1);
-}
-.mov.on .pc-modal.is-deal { transform: translateX(0); }
-.pc-modal.is-deal .pc-top { padding: 10px 14px; gap: 8px; }
-.pc-modal.is-deal .pc-top-l { font-size: 13.5px; min-width: 0; }
-.pc-modal.is-deal .pc-top-l b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.pc-modal.is-deal .pc-body { grid-template-columns: minmax(0, 1fr); }
-.pc-modal.is-deal .pc-rail { border-left: 0; }
-/* compact spacing inside the drawer */
-.pc-modal.is-deal .pc-rail > .pdo { margin: 12px 12px 0; padding: 12px; gap: 8px; }
-.pc-modal.is-deal .pco-duo { margin: 10px 12px 0; gap: 6px; }
-.pc-modal.is-deal .pc-more { margin: 10px 12px 0; }
-.pc-modal.is-deal .pc-cart-wrap { padding: 0 12px 12px; }
-.pc-modal.is-deal .pdo-unit { font-size: 22px; }
-@media (prefers-reduced-motion: reduce) { .pc-modal.is-deal { transition: none; } }
+/* Deal overview (Available Units): the console's Deal cart rendered in the
+   unit panel, not a modal. The panel card is the only frame: no box, rule or
+   repeated fact inside it, and no meter, gradient or pill. Left out: the
+   title (the tab names it), the mall and floor (the page shows them), the
+   customer line and chip (the search field holds the picked name), the
+   progress ring and meters, the offer rows (the overview shows rate and
+   total; More details keeps the breakdown), and the helper hint. */
+.pc-embed .pc-body { display: block; overflow: visible; }
+.pc-embed .pc-rail { border: 0; padding: 0; overflow: visible; background: transparent; gap: 20px; }
+.pc-embed .pc-rail > .pdo { margin: 0; padding: 0; gap: 14px; border: 0; background: transparent; }
+.pc-embed :is(.pdo-hd .pc-rail-ttl, .pdo-lbl, .pdo-cust, .pdo-foot, .pcc-chosen, .pcc-hint) { display: none; }
+.pc-embed .pcl-rows { display: none; }
+.pc-embed .pc-body { padding: 0; }
+.pc-embed .pc-rail, .pc-embed .pc-cart { gap: 12px; }
+/* Offer step: the sheet scales down (ProjectConsole fit) so Download, Hold unit
+   and Remove from cart stay in view with no scroll. */
+.pc-embed .pc-cart > .pc-sheet-fit:first-child > .inv-inline { margin-top: 0; }
+.pc-embed .pdo-where { align-items: flex-start; text-align: left; }
+.pc-embed .pdo-unit { font-size: 24px; }
+.pc-embed .pco-duo, .pc-embed .pc-more { margin: 0; }
+.pc-embed .pco-duo { gap: 16px; }
+.pc-embed .pco-duo .pco-side { padding: 0; border: 0; background: transparent; }
+.pc-embed .pc-cart-wrap { padding: 0; }
+.pc-embed :is(.btn, .pco-input, .pcc-search, .pcc-drop, .pcc-tabs, .pcc-tabs button, .pc-more-btn, .pc-sec, .pco-box, .pc-fast, .pca, .pc-total) { border-radius: 0; }
 
 /* Deal cart spacing: Deal overview starts at the top of the rail, and the
    gaps below it and before the offer sheet are tight. */
 .pc-rail > .pdo { margin-top: 10px; }
-.pc-modal.is-deal .pc-rail > .pdo { margin-top: 10px; }
 .pc-rail:has(.inv-inline) .pc-cart-wrap { padding-top: 0; }
 .pc-rail:has(.inv-inline) .pc-cart { padding-top: 0; gap: 8px; }
 .pc-rail .pc-cart > .inv-inline:first-child { margin-top: 10px; }

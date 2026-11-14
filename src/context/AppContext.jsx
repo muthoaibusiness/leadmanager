@@ -6,6 +6,7 @@ import { readBoot } from '../lib/navHistory.js';
 import useNavHistory, { replaceNextPage } from '../hooks/useNavHistory.js';
 import { waCanChat } from '../lib/wa.js';
 import { claimLead, isQuotaLimited } from '../lib/leadQuota.js';
+import { PHONE_MQ } from '../hooks/useIsPhone.js';
 
 const AppContext = createContext(null);
 
@@ -69,7 +70,6 @@ export function AppProvider({ children }) {
   const [dateRange, setDateRange] = useState({ preset: 'allTime', range: null });
   const [impersonator, setImpersonator] = useState(null); // the real admin while viewing as another account
   const [consoleAdmin, setConsoleAdmin] = useState(false); // open the project console straight into Admin catalog
-  const [consoleUnit, setConsoleUnit] = useState(null); // { projectId, variantId, unitId } the console opens with already picked (Available Units → Continue)
   // WhatsApp chat config (wa_settings row) — loaded once on login. Null until then.
   const [waSettings, setWaSettings] = useState(null);
   const [waUnread, setWaUnread] = useState(0); // total unread across chat threads
@@ -159,7 +159,9 @@ export function AppProvider({ children }) {
 
   const nav = useCallback((v) => {
     setView(v);
-    setProjTab(v === 'properties' ? 'units' : 'list'); // the sidebar's Projects opens Available Units
+    // Projects from the nav opens Available Units on desktop, the project list
+    // on phones (a project's row or card opens its units: useProjectNav.openUnits).
+    setProjTab(v === 'properties' && !window.matchMedia(PHONE_MQ).matches ? 'units' : 'list');
     setTab(0);
     setStatusFilter('ALL');
     setSearch('');
@@ -191,10 +193,18 @@ export function AppProvider({ children }) {
     setSidebarOpen(false);
   }, []);
   const closeNotif = useCallback(() => setNotifOpen(false), []);
+  // Back on a page opened from the drawer puts the drawer back over that page
+  // (useNavHistory); only where the drawer is the layout, so the docked sidebar
+  // is never touched. Returns whether it opened.
+  const openMenu = useCallback(() => {
+    const drawer = window.matchMedia(DRAWER_MQ).matches;
+    if (drawer) setSidebarOpen(true);
+    return drawer;
+  }, []);
 
   const db = getDB();
   const { pageId, back: navBack, trail: navTrail } = useNavHistory({
-    boot, user, db, apply: applySnap, closeAll, closeNotif,
+    boot, user, db, apply: applySnap, closeAll, closeNotif, openMenu,
     snap: { view, projTab, agentFilter, teamFilter, tab, statusFilter, sortBy, search },
     overlays: { modal, panLead, notifOpen, sidebarOpen },
   });
@@ -237,7 +247,6 @@ export function AppProvider({ children }) {
     dateRange, setDateRange,
     impersonator, impersonate, stopImpersonate,
     consoleAdmin, setConsoleAdmin,
-    consoleUnit, setConsoleUnit,
     waSettings, setWaSettings, chatOk,
     waUnread, setWaUnread,
     chatTarget, setChatTarget,
