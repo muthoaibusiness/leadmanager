@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import Loader from '../ui/loader.jsx';
 import Mi from '../Mi.jsx';
 import ItemEditor from './ItemEditor.jsx';
 import ItemList from './ItemList.jsx';
@@ -11,8 +12,7 @@ import { TrainingManager } from '../wa/RelayParts.jsx';
 export default function BehaviourTab({ api, showToast }) {
   const { items, reload, retire } = useItems(api, showToast);
   const [edit, setEdit] = useState(null);
-  if (!items) return <div className="ea-count">Loading…</div>;
-  const projects = items.filter(i => i.kind === 'project' && i.status === 'active');
+  const projects = (items || []).filter(i => i.kind === 'project' && i.status === 'active');
   const section = (kind, title) => (
     <section>
       <div className="ea-row" style={{ justifyContent: 'space-between' }}>
@@ -38,9 +38,12 @@ export default function BehaviourTab({ api, showToast }) {
   };
   return (
     <div className="ait">
-      {section('behaviour', 'Behaviour instructions')}
-      {section('example', 'Conversation examples')}
-      <TrainingManager showToast={showToast} onSaved={saveExample} />
+      {items ? <>
+        {section('behaviour', 'Behaviour instructions')}
+        {section('example', 'Conversation examples')}
+      </> : <Loader className="ldr-page" title="Loading Behaviour…" subtitle="Fetching instructions and examples" />}
+      {/* Mounted from the start, so its requests go out beside items.list; shown once the sections are. */}
+      <div hidden={!items}><TrainingManager showToast={showToast} onSaved={saveExample} /></div>
       {edit && <ItemEditor kind={edit.kind} initial={edit.item} projects={projects} api={api} showToast={showToast} onClose={() => setEdit(null)} onSaved={reload} />}
     </div>
   );

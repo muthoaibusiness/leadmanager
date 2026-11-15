@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import Loader from '../ui/loader.jsx';
 import Mi from '../Mi.jsx';
 import useNavState from '../../hooks/useNavState.js';
 import { useApp } from '../../context/AppContext.jsx';
@@ -151,34 +152,35 @@ export default function FbLeadsView() {
   const setS = (patch) => setSettings((s) => ({ ...s, ...patch }));
   const setF = (patch) => setEditing((f) => ({ ...f, ...patch }));
 
-  if (loading && !settings && !missing) return <div className="fbl"><div className="fbl-empty">Loading…</div></div>;
+  if (loading && !settings && !missing) return <div className="fbl"><Loader className="ldr-page" title="Loading Facebook Leads…" subtitle="Fetching forms and settings" /></div>;
 
   return (
     <div className="fbl">
-      {/* The page title is the app's own page header; only the receive switch lives here. */}
-      {settings && !missing && (
-        <header className="fbl-top">
-          <label className="fbl-onoff">
-            <span>{settings.enabled ? 'Receiving' : 'Off'}</span>
-            <Switch on={!!settings.enabled} onChange={(v) => setS({ enabled: v })} label="Receive Facebook leads" />
-          </label>
-        </header>
-      )}
-
       {missing && (
         <div className="fbl-warn"><Mi>database</Mi><span>The Facebook Leads tables are not in the database yet. Run <b>supabase/migrations/0059_fb_lead_forms.sql</b> in the Supabase SQL editor, then reload.</span><button className="fbl-btn" onClick={load}>Reload</button></div>
       )}
 
       {!missing && (
         <>
-          <div className="fbl-tabs" role="tablist">
-            {TABS.map((t) => (
-              <button key={t.key} role="tab" aria-selected={tab === t.key} className={tab === t.key ? 'on' : ''} onClick={() => { setTab(t.key); setErrors([]); }}>
-                {t.label}{t.key === 'forms' && forms.length ? ` (${forms.length})` : ''}
-              </button>
-            ))}
+          {/* The tabs, and the receive switch at the end of their line. */}
+          <div className="fbl-tabrow">
+            <div className="pill-tabs" role="tablist">
+              {TABS.map((t) => (
+                <button key={t.key} role="tab" aria-selected={tab === t.key} className={tab === t.key ? 'on' : ''} onClick={() => { setTab(t.key); setErrors([]); }}>
+                  {t.label}{t.key === 'forms' && forms.length ? ` (${forms.length})` : ''}
+                </button>
+              ))}
+            </div>
+            {settings && (
+            <label className="fbl-onoff">
+              <span>{settings.enabled ? 'Receiving' : 'Off'}</span>
+              <Switch on={!!settings.enabled} onChange={(v) => setS({ enabled: v })} label="Receive Facebook leads" />
+            </label>
+            )}
           </div>
 
+          {/* Phones: the tab row stays put and this scrolls (index.css .tab-scroll). */}
+          <div className="tab-scroll">
           {errors.length > 0 && <ul className="fbl-errs">{errors.map((e) => <li key={e}>{e}</li>)}</ul>}
 
           {tab === 'setup' && settings && (
@@ -401,6 +403,7 @@ export default function FbLeadsView() {
               )}
             </section>
           )}
+          </div>
         </>
       )}
     </div>

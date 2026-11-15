@@ -2,12 +2,12 @@
    and the finance modals; reuses the app's buttons, fields and modal shell. */
 .fin { display: flex; flex-direction: column; gap: 16px; }
 .fin-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-.fin-tabs { display: inline-flex; gap: 2px; padding: 3px; background: var(--surf); border: 1px solid var(--bd); border-radius: 10px; }
-.fin-tabs button { display: inline-flex; align-items: center; gap: 6px; padding: 7px 13px; border: 0; border-radius: 7px; background: transparent; color: var(--t2); font: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer; transition: background var(--tr), color var(--tr); }
-.fin-tabs button .mi { font-size: 17px; }
-.fin-tabs button.on { background: var(--accent); color: var(--on-accent); }
 .fin-tab-n { min-width: 18px; height: 18px; padding: 0 5px; border-radius: 999px; background: var(--orange); color: #1a1205; font-size: 11px; font-weight: 800; display: inline-flex; align-items: center; justify-content: center; }
-.fin-tabs button.on .fin-tab-n { background: var(--on-accent); color: var(--accent); }
+/* ds-allow-hardcode:start  px sizes match this file (no spacing tokens exist) */
+/* The tabs are the app's pill tabs (.pill-tabs, index.css). */
+/* Phones: the 20px under the Back row is the shell's (AvailableUnitsTab.css --body-top). */
+/* Phones: the rows' 16px inset is the shared one (index.css, after .pill-tabs). */
+/* ds-allow-hardcode:end */
 .fin-bar-err { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--orange); }
 .fin-refresh { margin-left: auto; width: 34px; height: 34px; display: inline-flex; align-items: center; justify-content: center; border: 1px solid var(--bd); border-radius: 50%; background: var(--surf); color: var(--t2); cursor: pointer; }
 .fin-refresh:disabled { opacity: .5; cursor: default; }
@@ -60,14 +60,14 @@
 .fin-chips { display: flex; gap: 6px; flex-wrap: wrap; }
 .fin-chip { padding: 6px 11px; border: 1px solid var(--bd); border-radius: 999px; background: var(--surf); color: var(--t2); font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; }
 .fin-chip.on { border-color: var(--accent); color: var(--accent); }
-/* Statements: status chips, payment filter, New statement. Wide screens: plain
-   members of .fin-tools (the wrapper adds no box). Phones: one line, in that
-   order, compact and sized to the screen; it scrolls sideways only when even
-   that cannot fit (the narrowest phones). */
+/* Statements: status chips, payment filter, then the category (phones) or New
+   statement (wide screens). Wide screens: plain members of .fin-tools (the
+   wrapper adds no box). Phones: one line, compact and sized to the screen; the
+   two boxes give up width before the row would have to scroll sideways. */
 .fin-tools-row { display: contents; }
 @media (max-width: 767px) {
   .fin-tools-row {
-    --row-h: 36px;
+    --row-h: 40px;
     --row-fs: clamp(10px, 2.7vw, 12px);
     --row-px: clamp(6px, 1.85vw, 10px);
     display: flex; align-items: center; gap: 4px; flex: 1 1 100%; min-width: 0;
@@ -76,14 +76,24 @@
   }
   .fin-tools-row::-webkit-scrollbar { display: none; }
   .fin-tools-row > * { flex-shrink: 0; }
-  .fin-tools-row .sp { display: none; }   /* the button's auto margin does its job, without a second gap */
-  .fin-tools-row .fin-chips { flex-wrap: nowrap; gap: 3px; }
-  .fin-tools-row .fin-chip { height: var(--row-h); padding: 0 var(--row-px); font-size: var(--row-fs); white-space: nowrap; }
-  .fin-tools-row .fin-filter { min-width: 0; height: var(--row-h); min-height: var(--row-h); padding: 0 calc(var(--row-px) + 14px) 0 var(--row-px); background-position: right var(--row-px) center; font-size: var(--row-fs); }
-  .fin-tools-row .btn { margin-left: auto; min-height: var(--row-h); height: var(--row-h); padding: 0 var(--row-px); gap: 2px; font-size: var(--row-fs); letter-spacing: .02em; white-space: nowrap; }
-  .fin-tools-row .btn .mi { font-size: 14px; }
+  /* The status chips and the two boxes share the row: they grow into spare room,
+     and the boxes shrink when there is none, so the row fits every phone;
+     the caps (three 74px chips, a 150px box) keep them from stretching on wide phones.
+     ds-allow-hardcode: the two caps on the next lines; this file has no size tokens. */
+  .fin-tools-row .fin-chips { flex: 3 0 auto; max-width: 228px; flex-wrap: nowrap; gap: 3px; }
+  .fin-tools-row .fin-chip { flex: 1 0 auto; height: var(--row-h); padding: 0 var(--row-px); font-size: var(--row-fs); white-space: nowrap; }
+  .fin-tools-row .fin-filter { flex: 1 1 auto; max-width: 150px; min-width: 0; height: var(--row-h); min-height: var(--row-h); padding: 0 calc(var(--row-px) + 14px) 0 var(--row-px); background-position: right var(--row-px) center; font-size: var(--row-fs); }
 }
 .fin-scroll { overflow-x: auto; }
+/* Statements tab: the tabs, the search and filters and the selection bar stay
+   put, and only the statements card scrolls under them, as the AI Trainer
+   panel does under its tabs (aitrainer.css). .pg-body itself never scrolls here.
+   The margin clears the phone bottom bar, so the card's rounded end stays in view.
+   shortcut: Back and reload restore .pg-body's scroll only (useNavHistory.js restoreScroll), so this card reopens at its top; teach restoreScroll this scroller if that is missed. */
+.page .pg-body:has(.fin-stmt) { display: flex; flex-direction: column; overflow: hidden; padding-bottom: 0; }
+.pg-body:has(.fin-stmt) .pg-inner, .fin:has(> .fin-stmt) { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.fin > .fin-stmt { flex: 0 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; margin-bottom: calc(var(--gutter-y) + var(--bnav, 0px)); }
+.fin > :is(.fin-bar, .fin-tools, .fin-bulk) { flex: none; }
 .fin-tbl { width: 100%; border-collapse: collapse; font-size: 13px; }
 .fin-tbl .fin-chk { width: 36px; padding-right: 0; }
 .fin-tbl .fin-chk input { width: 16px; height: 16px; cursor: pointer; accent-color: var(--volt, currentColor); }
@@ -368,9 +378,6 @@
   .fin-kpis { grid-template-columns: repeat(2, 1fr); }
   .fin-grid2 { grid-template-columns: 1fr; }
   .fin-form { grid-template-columns: 1fr; }
-  .fin-tabs { width: 100%; }
-  .fin-tabs button { flex: 1; justify-content: center; padding: 8px 6px; }
-  .fin-tabs button .mi { display: none; }
   .fin-refresh { display: none; }   /* every action reloads; the button only took a line of its own here */
   .fin-line, .fin-line-hd { grid-template-columns: minmax(0, 1fr) 56px 100px 36px; }
   .fin-line.ad, .fin-line-hd.ad { grid-template-columns: 1fr 1fr 36px; }

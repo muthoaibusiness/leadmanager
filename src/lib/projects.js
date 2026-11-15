@@ -10,6 +10,9 @@
 //           size (sqft) and price (৳ total) are optional per-unit overrides —
 //           shops on one floor share a type but not a size. Without them the
 //           unit takes its type's size and list rate × size (unitSize/unitPrice).
+//           sheet?: the unit's row from an imported inventory sheet, kept as-is:
+//           { floor, category, areaRange, area, ownership, bottomRate, value,
+//             utilityRate, utility, commonFund, total, package, status }
 //   AddOn   { id, name, amount, icon }
 //   Media   { name?, label?, url }
 //   FloorPlan { id, name, order, image: { url, width, height, mime, fileName,
@@ -102,11 +105,42 @@ export function pricedVariant(variant, unitId) {
   return { ...variant, size, listRate };
 }
 
+// The project's own "Reserved" unit status (Projects > Unit statuses), so a
+// hold placed from the console or approved in Requests paints in its colour.
+// undefined when the project has none: the unit shows the plain On hold look.
+export const reservedTag = (project) => (project?.unitStatuses || []).find(s => /^reserved$/i.test(String(s.name || '').trim()))?.id;
+
 // Codes of units that have a box on any of the project's floor plans.
 export function placedUnitIds(project) {
   const ids = new Set();
   (project?.floorPlans || []).forEach(fp => (fp.boxes || []).forEach(b => { if (b.unitId) ids.add(b.unitId); }));
   return ids;
+}
+
+// Floors of a project, top floor first, each with the codes of its units:
+// the floor plan a unit's box is on, else its imported sheet's floor (matched
+// to a plan name case-blind), else "Other units" (last). One floor only and
+// it is "Other units": named "All units".
+export function projectFloors(project) {
+  const plans = [...(project?.floorPlans || [])].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+  const floors = new Map(plans.map(fp => [fp.name || 'Floor plan', new Set()]));
+  const onPlan = new Map();
+  plans.forEach(fp => (fp.boxes || []).forEach(b => { if (b.unitId && !onPlan.has(b.unitId)) onPlan.set(b.unitId, fp.name || 'Floor plan'); }));
+  const byLower = new Map([...floors.keys()].map(n => [n.toLowerCase(), n]));
+  const other = new Set();
+  (project?.variants || []).forEach(v => (v.units || []).forEach(u => {
+    const sheet = String(u.sheet?.floor || '').trim();
+    const name = onPlan.get(u.id) || byLower.get(sheet.toLowerCase()) || sheet;
+    if (!name) { other.add(u.id); return; }
+    if (!floors.has(name)) floors.set(name, new Set());
+    floors.get(name).add(u.id);
+  }));
+  // Top floor first, like a building (5th, 4th, ... 1st), whatever order the plans were saved in.
+  // shortcut: names sort numerically, so "Ground"/"Basement" land above the numbered floors; rank them if a project needs it.
+  const out = [...floors].filter(([, ids]) => ids.size).map(([name, ids]) => ({ name, ids }))
+    .sort((a, b) => nameOrder.compare(b.name, a.name));
+  if (other.size) out.push({ name: out.length ? 'Other units' : 'All units', ids: other });
+  return out;
 }
 
 // Sensible starter add-ons (admin can edit/delete in the catalog). BDT amounts.
@@ -247,8 +281,9 @@ export function setUnitStatus(id, vid, unitId, status, { user, client, holdUntil
       ...v,
       units: v.units.map(u => {
         if (u.id !== unitId) return u;
-        // A unit's own size and price (set on the floor plan) outlive its status.
-        const own = { ...(u.size > 0 ? { size: u.size } : {}), ...(u.price > 0 ? { price: u.price } : {}) };
+        // A unit's own size and price (set on the floor plan), and its imported
+        // inventory sheet row (`sheet`), outlive its status.
+        const own = { ...(u.size > 0 ? { size: u.size } : {}), ...(u.price > 0 ? { price: u.price } : {}), ...(u.sheet ? { sheet: u.sheet } : {}) };
         if (tag) own.tag = tag;
         if (status === 'available') return { id: u.id, status: 'available', ...own };
         return { id: u.id, status, ...own, heldBy: user?.id || null, heldByName: user?.name || '', clientId: client?.id || null, clientName: client?.name || '', holdUntil: holdUntil || null, note: note || '', at: nowISO() };

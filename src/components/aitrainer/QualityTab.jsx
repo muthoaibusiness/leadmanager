@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import Loader from '../ui/loader.jsx';
 import Mi from '../Mi.jsx';
 import { Select as SelectRoot, SelectTrigger, SelectValue, SelectPopover, SelectListBox, SelectItem } from '../ui/select.jsx';
 import { botReadsPointer } from '../../lib/botControl.js';
@@ -77,7 +78,7 @@ export default function QualityTab({ api, showToast }) {
     catch (e) { showToast(e.message, 'err'); }
   };
 
-  if (!status) return <div className="ea-count">Loading…</div>;
+  if (!status) return <Loader className="ldr-page" title="Loading Quality & Publish…" subtitle="Fetching tests and versions" />;
   const snapById = Object.fromEntries(snaps.map(s => [s.id, s]));
   const budget = status.budget?.[0];
   const botTests = tests.filter(t => t.status === 'active' && t.bots.includes(bot)).length;

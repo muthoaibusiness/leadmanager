@@ -11,13 +11,15 @@ import { NAV_META } from '../lib/navMeta.js';
 // a round "+" that opens a quick-actions menu. It replaces the header's
 // show-sidebar button there.
 
-// Candidate tabs in priority order; the first three the user may see are shown.
-const PRIORITY = ['dashboard', 'companies', 'leads', 'properties', 'reports', 'conversations',
+// Candidate tabs in priority order; the first three the user may see are
+// shown, then Home last (where More used to be; the header's menu tile opens
+// the drawer). Meta CAPI takes Home's old first slot.
+const PRIORITY = ['metacapi', 'companies', 'leads', 'properties', 'reports', 'conversations',
   'calendar', 'pipeline', 'agentperf', 'team', 'requests', 'inventory', 'accounts'];
 
 // `inert`: set while the drawer is open, so Tab stays in the drawer.
 export default function BottomNav({ inert }) {
-  const { user, view, nav, sidebarOpen, setSidebarOpen, chatOk, waUnread, openModal, setCreateUserRoles } = useApp();
+  const { user, view, projTab, nav, sidebarOpen, chatOk, waUnread, openModal, setCreateUserRoles } = useApp();
   const [addOpen, setAddOpen] = useState(false);
   const addRef = useRef(null);
 
@@ -29,6 +31,9 @@ export default function BottomNav({ inert }) {
   }, [addOpen]);
 
   if (!user) return null;
+  // Available Units carries its own phone header and Reserve dock, so no bar there;
+  // the Projects list keeps the bar.
+  if (view === 'properties' && projTab === 'units') return null;
 
   // Same gates as the sidebar: chat by the allow-list, the rest by canSee.
   const visible = (k) => (k === 'conversations' ? chatOk : canSee(user, k));
@@ -36,10 +41,6 @@ export default function BottomNav({ inert }) {
 
   const pendingHolds = user.role === 'MANAGEMENT' ? getHoldRequests().filter(r => r.status === 'pending').length : 0;
   const badgeOf = (k) => (k === 'requests' ? pendingHolds : k === 'conversations' ? waUnread : 0);
-  // More is the current tab for any page without a tab of its own, and carries
-  // a dot when a page behind it has a count.
-  const moreOn = sidebarOpen || !tabs.includes(view);
-  const moreDot = ['requests', 'conversations'].some(k => !tabs.includes(k) && visible(k) && badgeOf(k) > 0);
 
   // Quick actions, each under the same gate as the button it mirrors elsewhere
   // (the page hero's Add Customer / Import / Add Agent, the chat and profile pages).
@@ -76,11 +77,7 @@ export default function BottomNav({ inert }) {
     <nav className="bnav" aria-label="Quick navigation" inert={inert}>
       <div className="bnav-pill">
         {tabs.map(tab)}
-        <button type="button" className={`bnav-it bnav-more${moreOn ? ' on' : ''}`} onClick={() => setSidebarOpen(true)}
-          aria-label="More" title="More" aria-controls="app-sidebar" aria-expanded={sidebarOpen}>
-          <Mi aria-hidden="true">menu</Mi>
-          {moreDot && <span className="bnav-dot" aria-hidden="true" />}
-        </button>
+        {tab('dashboard')}
       </div>
       {actions.length > 0 && (
         <div className="bnav-addwrap" ref={addRef} onKeyDown={onEsc}>

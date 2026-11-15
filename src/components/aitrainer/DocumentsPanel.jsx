@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import Loader from '../ui/loader.jsx';
 import Mi from '../Mi.jsx';
 import { readDocument } from '../../lib/ingest.js';
 
@@ -83,14 +84,15 @@ function Editor({ api, showToast, doc, projects, projErr, onDone }) {
   );
 }
 
-export default function DocumentsPanel({ api, showToast }) {
+// onSettled(true): the first load has answered, with documents or an error (KnowledgeTab waits for it).
+export default function DocumentsPanel({ api, showToast, onSettled }) {
   const [data, setData] = useState(null);
   const [err, setErr] = useState(null);
   const [editing, setEditing] = useState(null); // null | 'new' | doc
   const [busy, setBusy] = useState('');
 
   const [projects, setProjects] = useState([]);
-  const load = useCallback(() => api('docs.list').then((d) => { setErr(null); setData(d); }, (e) => setErr(e.message)), [api]);
+  const load = useCallback(() => api('docs.list').then((d) => { setErr(null); setData(d); onSettled?.(true); }, (e) => { setErr(e.message); onSettled?.(true); }), [api, onSettled]);
   const [projErr, setProjErr] = useState(null);
   useEffect(() => { api('items.list').then((xs) => { setProjErr(null); setProjects((xs || []).filter((i) => i.kind === 'project' && i.status === 'active')); }, (e) => setProjErr(e.message)); }, [api]);
   const nameOf = (id) => projects.find((p) => p.id === id)?.body?.name;
@@ -112,7 +114,7 @@ export default function DocumentsPanel({ api, showToast }) {
   };
 
   if (err) return <div className="ait-err" role="alert">Could not load documents: {err} <button className="btn btn-g btn-sm" onClick={load}><Mi>refresh</Mi>Retry</button></div>;
-  if (!data) return <div className="ea-count">Loading documents…</div>;
+  if (!data) return <Loader className="ldr-page" title="Loading documents…" subtitle="Fetching knowledge documents" />;
   if (editing) return <Editor api={api} showToast={showToast} projects={projects} projErr={projErr} doc={editing === 'new' ? null : editing} onDone={() => { setEditing(null); load(); }} />;
 
   return (

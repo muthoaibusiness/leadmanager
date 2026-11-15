@@ -20,6 +20,7 @@ const newId = () => `${Date.now().toString(36)}.${(seq++).toString(36)}`;
 const nav = {
   entry: null,        // the page on screen: { id, idx, key, snap, local, scroll, prev, pending, from }
   replaceNext: false, // the next page change replaces this entry instead of pushing one
+  seedNext: null,     // useNavState values the next page entry starts with (seedNextPage)
   guard: false,       // the browser sits on the overlay guard entry above the page
   expectPop: 0,       // popstates our own history.back() is about to fire
   expectAt: 0,
@@ -64,11 +65,14 @@ function pageEntry(snap, db, boot) {
   const cur = nav.entry;
   const key = pageKey(snap);
   if (key !== cur.key) {
-    const fresh = { id: newId(), key, snap, local: {}, scroll: 0 };
+    const fresh = { id: newId(), key, snap, local: { ...nav.seedNext }, scroll: 0 };
+    nav.seedNext = null;
     // An entry not yet written to the browser is simply superseded.
     if (cur.pending) nav.entry = { ...cur, ...fresh };
     else if (nav.replaceNext) nav.entry = { ...fresh, idx: cur.idx, prev: cur.prev, pending: 'replace' };
-    else nav.entry = { ...fresh, idx: cur.idx + 1, prev: { label: pageLabel(cur.snap, db) }, pending: 'push', from: cur };
+    // prev.menu: the page was opened from the menu drawer (open in the last
+    // committed render), so the header's Back reopens the drawer over this page.
+    else nav.entry = { ...fresh, idx: cur.idx + 1, prev: { label: pageLabel(cur.snap, db), menu: !!nav.live?.overlays.sidebarOpen }, pending: 'push', from: cur };
     nav.replaceNext = false;
   }
   nav.entry.snap = snap;
@@ -256,6 +260,9 @@ function sync() {
 // The next page change replaces the current entry instead of adding one: a
 // redirect away from a page the account may not see, or Up from a direct entry.
 export function replaceNextPage() { nav.replaceNext = true; }
+// The next page opens with these useNavState values already set, as if picked
+// there: Available Units' See more opens Prospects on its project ('leads.project').
+export function seedNextPage(local) { nav.seedNext = local; }
 
 // Per-entry storage for useNavState.
 export const navLocal = {
@@ -268,7 +275,7 @@ export const navLocal = {
   },
 };
 
-export default function useNavHistory({ boot, user, snap, apply, overlays, closeAll, closeNotif, db }) {
+export default function useNavHistory({ boot, user, snap, apply, overlays, closeAll, closeNotif, openMenu, db }) {
   const entry = pageEntry(snap, db, boot);
   const overlayOpen = !!(overlays.modal || overlays.panLead || overlays.notifOpen || overlays.sidebarOpen);
   const live = { uid: user?.id || null, apply, closeAll, closeNotif, overlays, overlayOpen, db };
@@ -294,11 +301,15 @@ export default function useNavHistory({ boot, user, snap, apply, overlays, close
     };
   }, []);
 
-  // The page header's Back: the previous entry when this tab has one, else the
-  // page above this one. None on the account's home page.
+  // The page header's Back. A page opened from the menu drawer: the drawer
+  // again, over this same page (the page does not change); where the drawer is
+  // not the layout (openMenu returns false), the previous entry. Otherwise the
+  // previous entry when this tab has one, else the page above this one. None
+  // on the account's home page.
   let back = null;
   if (user) {
-    if (entry.idx > 0 && entry.prev) back = { label: entry.prev.label, go: () => window.history.back() };
+    if (entry.idx > 0 && entry.prev?.menu) back = { label: 'menu', go: () => { if (!openMenu()) window.history.back(); } };
+    else if (entry.idx > 0 && entry.prev) back = { label: entry.prev.label, go: () => window.history.back() };
     else {
       const up = parentOf(snap, user);
       if (up) back = { label: pageLabel(up, db), go: () => { replaceNextPage(); apply(up); } };

@@ -51,7 +51,9 @@ const TYPE_OPTIONS = PROJECT_TYPES.map(t => ({ value: t, label: t, ...TYPE_LOOK[
 // `isNew`: the project is an unsaved Add Property draft, so saving creates it.
 // `actionsEl`: the console header's slot; Discard and Save render there.
 // `ref` exposes isDirty() / isSaving() for the console's close guard.
-export default function ProjectCatalog({ project, isNew = false, actionsEl, onDone, onSaved, ref }) {
+// `onAddFloorPlan`: phones put an "Add floor plan" button beside the project
+// type; it needs a saved project, so a draft shows it disabled.
+export default function ProjectCatalog({ project, isNew = false, actionsEl, onDone, onSaved, onAddFloorPlan, ref }) {
   const { refreshDB } = useApp();
   const toast = useProjectToast();
 
@@ -219,6 +221,11 @@ export default function ProjectCatalog({ project, isNew = false, actionsEl, onDo
               the select reads "Default", which is a placeholder, not an option. */}
           <ColorEmotionSelect className="pcat-ptype" options={TYPE_OPTIONS} label="PROJECT TYPE" placeholder="Default"
             value={ptype ?? ''} onChange={(t) => up({ purpose: t })} invalid={err === TYPE_REQUIRED} />
+          {onAddFloorPlan && (
+            <button type="button" className="btn btn-g btn-sm pcat-addplan" disabled={isNew} title={isNew ? 'Save the property first' : undefined} onClick={() => onAddFloorPlan(id)}>
+              <Mi>add_location_alt</Mi>Add floor plan
+            </button>
+          )}
         </div>
         <div className="pcat-grid">
           <label className="pcat-f pcat-f-full"><span>Property name</span><input value={p.name || ''} onChange={e => up({ name: e.target.value })} placeholder="e.g. Meadowcrest Residences" /></label>

@@ -95,6 +95,27 @@ test('a refused grant leaves the cached row and says why', async () => {
   assert.deepEqual(db.getDB().users.find((u) => u.id === 'ag').allowedFeatures, ['leads']);
 });
 
+test('temporary: access-admin not deployed (gateway 404) falls back to a direct PATCH, keeping ni_only', async () => {
+  seed(); calls.length = 0;
+  db.getDB().users.find((u) => u.id === 'ag').allowedFeatures = ['leads', 'ni_only'];
+  fnAnswer = { status: 404, body: { code: 'NOT_FOUND', message: 'Requested function was not found' } };
+  patchRows = [{ id: 'ag', name: 'Old', role: 'AGENT', company_id: 'c1', is_active: true, allowed_features: ['reports', 'ni_only'] }];
+  const r = await AA.setFeatures('ag', ['reports']);
+  assert.equal(r.ok, true);
+  const p = calls.find((x) => x.url.includes('/rest/v1/users') && x.method === 'PATCH');
+  assert.deepEqual(p.body, { allowed_features: ['reports', 'ni_only'] });
+  assert.match(p.url, /id=eq\.ag/);
+  assert.deepEqual(db.getDB().users.find((u) => u.id === 'ag').allowedFeatures, ['reports', 'ni_only']);
+});
+
+test('a function 404 that is not the gateway (No such account) does not fall back', async () => {
+  seed(); calls.length = 0;
+  fnAnswer = { status: 404, body: { ok: false, error: 'No such account' } };
+  const r = await AA.setFeatures('ag', ['reports']);
+  assert.equal(r.error, 'No such account');
+  assert.ok(!calls.some((x) => x.method === 'PATCH'));
+});
+
 test('revoke to role defaults sends null, and the cache drops the list', async () => {
   seed();
   fnAnswer = { status: 200, body: { ok: true, user: { id: 'ag', name: 'Old', role: 'AGENT', company_id: 'c1', is_active: true, allowed_features: null } } };

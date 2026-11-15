@@ -110,6 +110,45 @@ button.ait-row:focus-visible { outline: 2px solid var(--green); outline-offset: 
   -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px);
 }
 .ait-pills::-webkit-scrollbar { display: none; }
+/* The tabs' row: the bar, then an end slot for the active tab's round action
+   (Knowledge: Import). The bar gives up width to it and scrolls as before. */
+/* No browser tap flash on this row (inherited by the tabs and the action); the
+   keyboard focus rings below stay. */
+.ait-bar { display: flex; align-items: center; justify-content: center; gap: 12px; margin-bottom: 8px; -webkit-tap-highlight-color: transparent; }
+/* The tabs' row stays put and only the panel under it scrolls, as on the
+   Projects pages (AvailableUnitsTab.css): .pg-body itself never scrolls here.
+   The panel's bottom padding clears the phone bottom bar; 4px on top and 2px
+   at the sides keep the cards' shadows unclipped.
+   shortcut: Back and reload restore .pg-body's scroll only (useNavHistory.js restoreScroll), so this panel reopens at its top; teach restoreScroll this scroller if that is missed. */
+.page .pg-body:has(.ait-bar) { display: flex; flex-direction: column; overflow: hidden; padding-bottom: 0; }
+.pg-body:has(.ait-bar) .pg-inner, .ait:has(> .ait-bar) { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.ait-panel { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 4px 2px calc(var(--gutter-y) + var(--bnav, 0px)); margin: 0 -2px; }
+/* A tab's cards settle in one after another, once, as the Projects list's do
+   (index.css ppl-in). backwards, not both: a transform that keeps filling would
+   make a card the containing block of a fixed modal opened inside it. */
+@keyframes ait-in { from { opacity: 0; transform: translateY(8px); } }
+.ait-panel > :is(.ait, .ait-grid) > :not(.mov) { animation: ait-in .36s cubic-bezier(.2, .8, .2, 1) backwards; }
+.ait-panel > :is(.ait, .ait-grid) > :nth-child(2) { animation-delay: 40ms; }
+.ait-panel > :is(.ait, .ait-grid) > :nth-child(3) { animation-delay: 80ms; }
+.ait-panel > :is(.ait, .ait-grid) > :nth-child(4) { animation-delay: 120ms; }
+.ait-panel > :is(.ait, .ait-grid) > :nth-child(n+5) { animation-delay: 160ms; }
+@media (prefers-reduced-motion: reduce) { .ait-panel > :is(.ait, .ait-grid) > :not(.mov) { animation: none; } }
+.ait-bar .ait-pills { flex: 0 1 auto; min-width: 0; }
+.ait-acts { flex: none; display: flex; }
+.ait-acts:empty { display: none; }
+/* The Projects list's round black glass + (AvailableUnitsTab.css .ppl-add), copied. */
+.ait-imp {
+  display: grid; place-items: center; width: 40px; height: 40px; padding: 0;
+  border: 1px solid rgba(255, 255, 255, .16); border-radius: 50%;
+  background: rgba(11, 11, 12, .72); -webkit-backdrop-filter: blur(12px) saturate(1.2); backdrop-filter: blur(12px) saturate(1.2);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .10), 0 6px 16px rgba(0, 0, 0, .18);
+  color: #F5F5F7; cursor: pointer; -webkit-tap-highlight-color: transparent;
+  transition: transform .16s ease;
+}
+.ait-imp .mi { font-size: 20px; }
+.ait-imp:active { transform: scale(.97); }
+.ait-imp:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+/* Phones: the 20px under the Back row is the shell's (AvailableUnitsTab.css --body-top). */
 .ait-pill {
   position: relative; flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: center;
   min-width: 34px; height: 34px; padding: 0 10px; border: 0; border-radius: 999px;
@@ -148,7 +187,8 @@ button.ait-row:focus-visible { outline: 2px solid var(--green); outline-offset: 
 .em-form .btn { min-height: 44px; }
 
 /* Knowledge documents (DocumentsPanel.jsx). */
-.dp, .dp-edit { display: flex; flex-direction: column; gap: 12px; padding: 20px; }
+/* A little narrower than the page, centred under the tabs' row. */
+.dp, .dp-edit { display: flex; flex-direction: column; gap: 12px; padding: 20px; margin-inline: 3%; }
 .dp-row { align-items: flex-start; }
 .dp-acts { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
 .dp-acts .btn { min-height: 36px; }

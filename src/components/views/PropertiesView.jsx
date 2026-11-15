@@ -5,8 +5,10 @@ import { getProperties, deletePropertyFn } from '../../lib/db.js';
 import { ROLES, PROPERTY_TYPES, PROPERTY_STATUS } from '../../lib/constants.js';
 import { projectInventory } from '../../lib/projects.js';
 import Mi from '../Mi.jsx';
+import BackButton from '../BackButton.jsx';
 import { Menu, MenuItem } from '../ui/menu.jsx';
 import useProjectNav from '../../hooks/useProjectNav.js';
+import useIsPhone from '../../hooks/useIsPhone.js';
 import ProjectsToaster from '../project/ProjectsToaster.jsx';
 import { useProjectToast } from '../project/projectToast.js';
 
@@ -26,6 +28,7 @@ export default function PropertiesView() {
   const deleteAskRef = useRef(null); // the open delete confirmation, if any
   const isAdmin = user?.role === ROLES.MGMT;
   const pnav = useProjectNav();
+  const phone = useIsPhone();
   const [q, setQ] = useNavState('properties.q', '');
   const [city, setCity] = useNavState('properties.city', 'ALL');
   const [type, setType] = useNavState('properties.type', 'ALL');
@@ -92,6 +95,67 @@ export default function PropertiesView() {
   ];
 
   const open = (id) => { setConsoleAdmin(false); setPropSel(id); openModal('project-console'); };
+
+  // Phones: one row per project (photo, name, what is free and from what
+  // rate, status); a tap opens that project's Available Units.
+  if (phone) {
+    return (
+      <>
+        <ProjectsToaster />
+        {/* The Available Units header (AvailableUnitsTab.css): Back, the page
+            name, the units / list switch; then the search beside Manage. */}
+        <div className="fpv-ph">
+          <div className="fpv-ph-top">
+            <BackButton />
+            <h1>Projects</h1>
+            {/* No grid / list switch here: a project's card opens its units, which
+                has the switch. Management gets a round + (New Property) in that slot. */}
+            {isAdmin
+              ? <button type="button" className="ppl-add" onClick={pnav.addProperty} aria-label="New property"><Mi aria-hidden="true">add</Mi></button>
+              : <span aria-hidden="true" />}
+          </div>
+          <div className="fpv-ph-row">
+            <label className="ppl-search">
+              <Mi>search</Mi>
+              <input name="project-search" placeholder={`Search ${all.length} project${all.length === 1 ? '' : 's'}`} value={q} onChange={filterBy(setQ)} aria-label="Search projects" />
+            </label>
+          </div>
+        </div>
+        {/* Only the list scrolls; the header above stays put (index.css .ppl-wrap). */}
+        <div className="ppl-wrap">
+        {/* The header names the page; a filtered count shows only while searching. */}
+        {q && <h2 className="ppl-ttl">{props.length} match{props.length === 1 ? '' : 'es'}</h2>}
+        {props.length === 0 ? <p className="ppl-none">No projects match.</p> : (
+          <ul className="ppl">
+            {props.map(p => {
+              const iv = inv.get(p.id);
+              const img = p.media?.images?.[0]?.url || p.images?.[0] || '';
+              return (
+                <li key={p.id}>
+                  <button type="button" onClick={() => pnav.openUnits(p.id)}>
+                    {/* The icon sits under the photo, so a photo that fails to load shows it. */}
+                    <span className="ppl-img" aria-hidden="true">
+                      <Mi>apartment</Mi>
+                      {img && <img src={img} alt="" loading="lazy" onError={e => { e.currentTarget.style.display = 'none'; }} />}
+                    </span>
+                    <span className="ppl-tx">
+                      <b>{p.name || 'Untitled project'}</b>
+                      <span>{[p.area || p.district, iv.total ? `${iv.available} of ${iv.total} available` : 'No units yet'].filter(Boolean).join(' · ')}</span>
+                      <span className="ppl-ft">
+                        {iv.status && <em className={`bdg ${PS_CLASS[iv.status] || ''}`}>{PROPERTY_STATUS[iv.status]}</em>}
+                        {iv.rateMin != null && <span>From ৳{iv.rateMin.toLocaleString()}/sft</span>}
+                      </span>
+                    </span>
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+        </div>
+      </>
+    );
+  }
 
   return (
     <>

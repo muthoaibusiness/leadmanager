@@ -103,7 +103,7 @@ export default function AgentPerformanceView() {
     <div className="mip">
       {/* toolbar: role switch + search (date range comes from the global top-bar filter) */}
       <div className="mip-bar">
-        <div className="mip-seg">
+        <div className="pill-tabs">
           {ROLE_TABS.map(rk => (
             <button key={rk} className={role === rk ? 'on' : ''} onClick={() => { setRole(rk); setOpen(null); }}>{ROLE_VIEWS[rk].label}</button>
           ))}
@@ -115,6 +115,8 @@ export default function AgentPerformanceView() {
         </div>
       </div>
 
+      {/* Phones: the role tabs and search stay put and this scrolls (index.css .tab-scroll). */}
+      <div className="tab-scroll">
       <div className="mip-grid">
         {/* LEFT: KPI strip + agent list */}
         <div className="mip-col">
@@ -213,6 +215,7 @@ export default function AgentPerformanceView() {
             </div>
           </div>
         </div>
+      </div>
       </div>
     </div>
   );

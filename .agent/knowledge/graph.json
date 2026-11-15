@@ -1,0 +1,23 @@
+{
+  "version": "1.0.0",
+  "last_updated": "2026-11-10T10:24:33.146764+00:00",
+  "stats": {
+    "total_nodes": 0,
+    "total_edges": 0,
+    "memory_count": 0,
+    "task_count": 0,
+    "sop_count": 0,
+    "concept_count": 0
+  },
+  "nodes": {
+    "tasks": {},
+    "system": {},
+    "sops": {},
+    "markers": {},
+    "concepts": {},
+    "memories": {},
+    "files": {}
+  },
+  "edges": [],
+  "concept_index": {}
+}

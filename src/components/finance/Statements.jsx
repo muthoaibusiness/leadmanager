@@ -2,11 +2,13 @@ import { useEffect, useRef, useState } from 'react';
 import Mi from '../Mi.jsx';
 import useNavState from '../../hooks/useNavState.js';
 import { usePageOverlay } from '../../hooks/useNavHistory.js';
+import useIsPhone from '../../hooks/useIsPhone.js';
+import Pagination from '../ui/pagination.jsx';
 import { fmtBDT, fmtAgo } from '../../lib/helpers.js';
 import { useProjectToast } from '../project/projectToast.js';
 import {
   byId, linesOf, statementTotalText, expensesOf, shareLinks, statementDoc, renderStatement, isArchived,
-  paymentOf, staleLinesOf, categoryOf, CATEGORIES, OTHERS, PAYMENT_LABEL, EXPENSE_KIND,
+  paymentOf, staleLinesOf, categoryOf, CATEGORIES, OTHERS, PAYMENT_LABEL, EXPENSE_KIND, pageOf,
 } from '../../lib/finance.js';
 import { StatementForm, Modal, SelectAll, SelectRow, BulkBar } from './forms.jsx';
 import useSelection from './useSelection.js';
@@ -18,6 +20,9 @@ import DocPreview from './DocPreview.jsx';
 // renderer (finance-doc.js) in a DocPreview frame, the same page the share
 // link serves, and Print / PDF prints that frame.
 //
+// Phones show the list a page at a time; desktop shows it whole.
+const PHONE_PAGE = 10;
+
 // Two separate states, never mixed: the document is Draft or Final; payment
 // (Paid / Partially paid / Committed / Not linked) comes from the expenses the
 // lines link to.
@@ -79,6 +84,11 @@ function StatementList({ api, user, onOpen, onOpenBudget }) {
     return !term || [i.number, i.title, c.label, byId(fin.budgets, i.budgetId)?.title].some(s => (s || '').toLowerCase().includes(term));
   });
   const filtered = catKey !== 'ALL' || status !== 'ALL' || pay !== 'ALL' || !!term;
+  // Phones: 10 statements a page. The page is kept in the history entry like the
+  // filters; a filter that shortens the list is clamped by pageOf, not reset here.
+  const phone = useIsPhone();
+  const [pageNo, setPageNo] = useNavState('inventory.stmt.page', 0);
+  const { page, rows: shown } = pageOf(rows, pageNo, phone ? PHONE_PAGE : 0);
   const sel = useSelection(rows);
   const [busy, setBusy] = useState(false);
   const toast = useProjectToast({ always: true });
@@ -95,23 +105,30 @@ function StatementList({ api, user, onOpen, onOpenBudget }) {
       onConfirm: () => { setBusy(true); return api.act('invoice.deleteMany', { invoiceIds: ids }).then(r => { sel.clear(); toast.success(`${r.deleted} draft${r.deleted === 1 ? '' : 's'} deleted`); }).catch(e => toast.error('Not deleted', e.message)).finally(() => setBusy(false)); },
     });
   };
+  // Phones: New statement sits by the search, where the Budgets tab has New
+  // budget, and the category joins the filter row (a custom name goes under it).
+  // Wide screens keep one line: search, category, status, payment, New statement.
+  const catSel = (
+    <select className="fsel fin-filter" value={catKey} onChange={e => { setCatKey(e.target.value); setCatName(''); }} aria-label="Category">
+      <option value="ALL">All categories</option>
+      <option value="">Uncategorised</option>
+      {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+      <option value={OTHERS}>{OTHERS}</option>
+    </select>
+  );
+  const custom = catKey === OTHERS && (
+    <select className="fsel fin-filter" value={catName} onChange={e => setCatName(e.target.value)} aria-label="Custom category">
+      <option value="">Every custom name</option>
+      {customNames.map(n => <option key={n} value={n}>{n}</option>)}
+    </select>
+  );
+  const add = <button type="button" className="btn btn-p" onClick={() => setPicking(true)}><Mi>add</Mi>New statement</button>;
   return (
     <>
       <div className="fin-tools">
         <div className="acc-search fin-search"><Mi>search</Mi><input value={q} onChange={e => setQ(e.target.value)} placeholder="Search statements" aria-label="Search statements" /></div>
-        <select className="fsel fin-filter" value={catKey} onChange={e => { setCatKey(e.target.value); setCatName(''); }} aria-label="Category">
-          <option value="ALL">All categories</option>
-          <option value="">Uncategorised</option>
-          {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
-          <option value={OTHERS}>{OTHERS}</option>
-        </select>
-        {catKey === OTHERS && (
-          <select className="fsel fin-filter" value={catName} onChange={e => setCatName(e.target.value)} aria-label="Custom category">
-            <option value="">Every custom name</option>
-            {customNames.map(n => <option key={n} value={n}>{n}</option>)}
-          </select>
-        )}
-        {/* Status, payment and New statement: one line on phones (finance.css). */}
+        {phone ? <><span className="sp" />{add}</> : <>{catSel}{custom}</>}
+        {/* Status and payment, then the category (phones) or New statement (wide screens): one line on phones (finance.css). */}
         <div className="fin-tools-row">
           <div className="fin-chips" role="group" aria-label="Status">
             {[['ALL', 'All'], ['DRAFT', 'Draft'], ['FINAL', 'Final']].map(([k, l]) => <button key={k} type="button" className={`fin-chip${status === k ? ' on' : ''}`} onClick={() => setStatus(k)}>{l}</button>)}
@@ -120,16 +137,17 @@ function StatementList({ api, user, onOpen, onOpenBudget }) {
             <option value="ALL">Any payment</option>
             {Object.entries(PAYMENT_LABEL).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
           </select>
-          <span className="sp" />
-          <button type="button" className="btn btn-p" onClick={() => setPicking(true)}><Mi>add</Mi>New statement</button>
+          {phone ? catSel : <><span className="sp" />{add}</>}
         </div>
+        {phone && custom}
       </div>
       <BulkBar sel={sel} noun="statement" onAction={removeDrafts} busy={busy} actionLabel="Delete drafts" actionIcon="delete" />
-      <div className="fin-card">
+      {/* .fin-stmt: the one part of this tab that scrolls (finance.css); keyed by the page, so a new page opens at its top. */}
+      <div key={page} className="fin-card fin-stmt">
         {rows.length === 0 ? <div className="fin-empty">{filtered ? 'No statements match.' : 'No statements yet. Choose “New statement” to write one against a budget.'}</div> : (
           <div className="fin-scroll"><table className="fin-tbl">
             <thead><tr><SelectAll sel={sel} label="Select all statements" /><th>Number</th><th>Title</th><th>Category</th><th>Budget</th><th>Date</th><th>Status</th><th>Payment</th><th className="r">Total</th><th>By</th></tr></thead>
-            <tbody>{rows.map(i => { const b = byId(fin.budgets, i.budgetId); return (
+            <tbody>{shown.map(i => { const b = byId(fin.budgets, i.budgetId); return (
               <tr key={i.id} className={`click${sel.has(i.id) ? ' on' : ''}`} onClick={() => onOpen(i.id)}>
                 <SelectRow sel={sel} id={i.id} label={`Select ${i.number}`} />
                 <td className="w"><span className="fin-ttl">{i.number}</span></td><td>{i.title}</td>
@@ -143,6 +161,7 @@ function StatementList({ api, user, onOpen, onOpenBudget }) {
               </tr>); })}</tbody>
           </table></div>
         )}
+        {phone && <Pagination page={page} total={rows.length} pageSize={PHONE_PAGE} onChange={setPageNo} />}
       </div>
       {picking && <BudgetPicker fin={fin} onClose={() => setPicking(false)} onPick={(b) => { setPicking(false); setNewFor(b); }} />}
       {newFor && <StatementEditor api={api} user={user} budget={newFor} onClose={() => setNewFor(null)} onSaved={(r) => onOpen(r.id)} />}

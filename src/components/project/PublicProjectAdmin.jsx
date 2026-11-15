@@ -15,7 +15,9 @@ export default function PublicProjectAdmin() {
   void dbVersion; // re-read the store when a publish toggle saves
   const [busy, setBusy] = useState(null); // project id being saved
   const [copied, setCopied] = useState(null);
-  const [preview, setPreview] = useState(null); // project id being previewed
+  // The project being previewed, frozen when Preview opens, so a re-render of
+  // this tab never reloads the preview underneath the admin.
+  const [preview, setPreview] = useState(null);
 
   const projects = getProperties().map(toProject);
 
@@ -53,7 +55,7 @@ export default function PublicProjectAdmin() {
                 </div>
               </div>
               <div className="ppa-acts">
-                <button type="button" className="btn btn-g btn-sm" onClick={() => setPreview(p.id)}>Preview</button>
+                <button type="button" className="btn btn-g btn-sm" onClick={() => setPreview(p)}>Preview</button>
                 <button type="button" className="btn btn-g btn-sm" onClick={() => copy(p)} disabled={!on}>{copied === p.id ? 'Copied' : 'Copy link'}</button>
                 <label className="ppa-sw">
                   <input type="checkbox" checked={on} disabled={busy === p.id} onChange={e => toggle(p, e.target.checked)} />
@@ -67,14 +69,14 @@ export default function PublicProjectAdmin() {
       </div>
 
       {preview && (
-        <div className="ppa-preview" role="dialog" aria-modal="true" aria-label={`Preview ${projects.find(p => p.id === preview)?.name || 'project'}`}>
+        <div className="ppa-preview" role="dialog" aria-modal="true" aria-label={`Preview ${preview.name || 'project'}`}>
           <div className="ppa-preview-top">
             <strong>Public preview</strong>
-            <span className="ppa-preview-note">What a customer sees at {publicUrl(preview)}</span>
+            <span className="ppa-preview-note">What a customer sees at {publicUrl(preview.id)}</span>
             <button type="button" className="btn btn-g btn-sm" onClick={() => setPreview(null)}>Close</button>
           </div>
           <div className="ppa-preview-body">
-            <PublicProjectView projectId={preview} preview />
+            <PublicProjectView projectId={preview.id} preview source={preview} />
           </div>
         </div>
       )}
