@@ -55,7 +55,7 @@ export const isNiHandler = (user) => !!user && Array.isArray(user.allowedFeature
 export const initialFeatures = (u) =>
   new Set(Array.isArray(u?.allowedFeatures) ? u.allowedFeatures : (u?.role === ROLES.EXEC ? [] : defaultFeatures(u?.role)));
 export const FEATURE_LABELS = {
-  dashboard: 'Home', leads: 'Leads', add_customer: 'Add Customer', conversations: 'Conversations', calendar: 'Calendar', meeting: 'Meeting', pipeline: 'Pipeline', properties: 'Projects',
+  dashboard: 'Home', leads: 'Leads', add_customer: 'Add Customer', conversations: 'Conversations', calendar: 'Calendar', meeting: 'Meeting', pipeline: 'Pipeline', properties: 'Projects', booking: 'Booking',
   reports: 'Reports', agentperf: 'Performance', perfreports: 'Performance Reports', fbleads: 'Facebook Leads', requests: 'Requests', inventory: 'Inventory', finance_approve: 'Manage all budgets', team: 'Team',
   accounts: 'Users & Accounts', relay: 'WhatsApp Relay', aitrainer: 'AI Trainer', metacapi: 'Meta CAPI', publicproject: 'Public Project', self_forward: 'Self-forward leads',
 };

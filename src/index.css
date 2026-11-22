@@ -2968,6 +2968,12 @@ html, body { overscroll-behavior: none }
 
 .pg-body:has(> .pg-wide) { display: flex; flex-direction: column }
 
+/* A page that fits the screen instead of scrolling (Booking): the scroller is
+   locked and the page column takes exactly what is left under the header, so
+   the view inside can size itself to it (flex: 1, min-height: 0). */
+.pg-body:has(> .pg-fit) { display: flex; flex-direction: column; overflow: hidden }
+.pg-inner.pg-fit { flex: 1 1 0; min-height: 0; display: flex; flex-direction: column }
+
 /* ── Phone bottom bar (components/BottomNav.jsx) ──────────────────────────
    Below 768px only: a floating pill of round icon buttons, centred and held
    off the screen's bottom edge (and the iOS home indicator); the middle "+"

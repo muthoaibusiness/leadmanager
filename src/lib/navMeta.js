@@ -14,6 +14,7 @@ export const NAV_META = {
   fbleads: { ico: 'dynamic_form', lbl: 'Facebook Leads' },
   requests: { ico: 'inbox', lbl: 'Requests' },
   properties: { ico: 'folder', lbl: 'Projects' },
+  booking: { ico: 'event_seat', lbl: 'Booking' },
   inventory: { ico: 'inventory_2', lbl: 'Inventory' },
   team: { ico: 'groups', lbl: 'Team' },
   accounts: { ico: 'manage_accounts', lbl: 'Users' },
