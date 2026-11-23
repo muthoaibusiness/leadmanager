@@ -15,6 +15,8 @@ export const NAV_SCOPES = {
   meeting: ['AGENT', 'MEETING_AGENT', 'TEAM_LEAD'],
   pipeline: ALL_ROLES,
   properties: ALL_ROLES,
+  // Booking: pick a floor, then a shop, on a text floor plan (prototype).
+  booking: ALL_ROLES,
   // Management's Reports charts now live on their Home dashboard — the
   // standalone page is Team Lead only.
   reports: ['TEAM_LEAD'],
@@ -49,7 +51,7 @@ export const NAV_SCOPES = {
 // people created (without it, only their own) and add corrections to finance
 // history. Checked again server-side by the finance Edge Function, which reads
 // the same allowed_features column.
-export const FEATURE_KEYS = ['dashboard', 'leads', 'add_customer', 'conversations', 'calendar', 'meeting', 'pipeline', 'properties', 'reports', 'agentperf', 'perfreports', 'fbleads', 'requests', 'inventory', 'finance_approve', 'team', 'accounts', 'relay', 'aitrainer', 'metacapi', 'publicproject', 'self_forward'];
+export const FEATURE_KEYS = ['dashboard', 'leads', 'add_customer', 'conversations', 'calendar', 'meeting', 'pipeline', 'properties', 'booking', 'reports', 'agentperf', 'perfreports', 'fbleads', 'requests', 'inventory', 'finance_approve', 'team', 'accounts', 'relay', 'aitrainer', 'metacapi', 'publicproject', 'self_forward'];
 
 // Default features for a standard role (from NAV_SCOPES). Executive resolves to none.
 export const defaultFeatures = (role) => FEATURE_KEYS.filter(k => (NAV_SCOPES[k] || []).includes(role));

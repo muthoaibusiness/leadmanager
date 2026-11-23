@@ -69,6 +69,7 @@ const PAGES = {
   InventoryView: () => import('./components/views/InventoryView.jsx'),
   ConversationsView: () => import('./components/views/ConversationsView.jsx'),
   PublicProjectAdmin: () => import('./components/project/PublicProjectAdmin.jsx'),
+  ShopBookingView: () => import('./components/booking/ShopBookingView.jsx'),
 };
 const OVERLAYS = {
   LeadPanel: () => import('./components/LeadPanel.jsx'),
@@ -92,6 +93,7 @@ const OVERLAYS = {
   ProjectConsole: () => import('./components/project/ProjectConsole.jsx'),
   FloorPlanEditor: () => import('./components/project/FloorPlanEditor.jsx'),
   PropertyFormModal: () => import('./components/modals/PropertyFormModal.jsx'),
+  AddPropertyWizard: () => import('./components/project/AddPropertyWizard.jsx'),
   UnitBookingModal: () => import('./components/modals/UnitBookingModal.jsx'),
   BookingModal: () => import('./components/modals/BookingModal.jsx'),
   TransferLeadModal: () => import('./components/modals/TransferLeadModal.jsx'),
@@ -101,7 +103,7 @@ const OVERLAYS = {
 
 const lazyAll = (loaders) => Object.fromEntries(Object.entries(loaders).map(([k, f]) => [k, lazyChunk(f)]));
 
-const { AgentDash, TeamLeadDash, ManagementDash, MasterDash, LeadsView, CalendarView, TeamView, AccountsView, AiTrainerView, MetaCapiView, RequestsView, ProfileView, PropertiesView, AvailableUnitsView, BookingsView, PipelineView, ClientsView, ReportsView, AgentPerformanceView, PerfReportsView, FbLeadsView, InventoryView, ConversationsView, PublicProjectAdmin } = lazyAll(PAGES);
+const { AgentDash, TeamLeadDash, ManagementDash, MasterDash, LeadsView, CalendarView, TeamView, AccountsView, AiTrainerView, MetaCapiView, RequestsView, ProfileView, PropertiesView, AvailableUnitsView, BookingsView, PipelineView, ClientsView, ReportsView, AgentPerformanceView, PerfReportsView, FbLeadsView, InventoryView, ConversationsView, PublicProjectAdmin, ShopBookingView } = lazyAll(PAGES);
 const OVERLAY_COMPONENTS = Object.entries(lazyAll(OVERLAYS));
 const LandingPage = lazyChunk(() => import('./components/LandingPage.jsx'));
 const PublicProjectView = lazyChunk(() => import('./components/project/PublicProjectView.jsx'));
@@ -433,6 +435,7 @@ function PageBody() {
   if (view === 'pipeline') return <PipelineView />;
   if (view === 'clients') return <ClientsView />;
   if (view === 'properties') return projTab === 'units' ? <AvailableUnitsView /> : <PropertiesView />;
+  if (view === 'booking') return <ShopBookingView />;
   if (view === 'bookings') return <BookingsView />;
   if (view === 'reports') return <ReportsView />;
   if (view === 'agentperf') return <AgentPerformanceView />;
@@ -453,6 +456,7 @@ function PageBody() {
 function AppShell() {
   const { view, projTab, sidebarOpen, sidebarCollapsed, pageId } = useApp();
   const wide = view === 'pipeline' || view === 'conversations'; // kanban + chat need the full canvas
+  const fit = view === 'booking' || view === 'requests'; // the floor plan is sized to the screen: the page itself never scrolls
   // Below 1024px the sidebar is a drawer over the page; from 1024px it is docked
   // and may be collapsed. `shown` is "on screen" in whichever layout applies.
   const drawer = useMediaQuery(DRAWER_MQ);
@@ -513,7 +517,7 @@ function AppShell() {
       <Sidebar hideBtnRef={hideBtnRef} />
       <div className="page" inert={drawerOpen}>
         <PageHeader shown={shown} showBtnRef={showBtnRef} />
-        <main className="pg-body"><div className={`pg-inner${wide ? ' pg-wide' : ''}`}><PageHero /><Suspense fallback={null}><PageBody key={pageId} /></Suspense></div></main>
+        <main className="pg-body"><div className={`pg-inner${wide ? ' pg-wide' : ''}${fit ? ' pg-fit' : ''}`}><PageHero /><Suspense fallback={null}><PageBody key={pageId} /></Suspense></div></main>
       </div>
       <BottomNav inert={drawerOpen} />
       {/* goey-toast host for every tab but Projects, which renders its own:

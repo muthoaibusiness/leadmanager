@@ -1,10 +1,9 @@
 import { useApp } from '../context/AppContext.jsx';
-import { newProjectDraft } from '../lib/projects.js';
 
 // The ways into a project, shared by the Projects header, the project list's
 // row menus and Available Units' Manage menu, so each one opens the same way.
 export default function useProjectNav() {
-  const { user, nav, openModal, setPropSel, setPropDraft, setConsoleAdmin, setProjTab, setPlanSel, setPlanEdit } = useApp();
+  const { nav, openModal, setPropSel, setConsoleAdmin, setProjTab, setPlanSel, setPlanEdit } = useApp();
   return {
     // The project console: the agent side (deals, holds) or the admin side (settings, units).
     openConsole: (projectId, admin = false) => {
@@ -22,13 +21,8 @@ export default function useProjectNav() {
       openModal('floorplan-editor');
     },
     editFloorPlan: (projectId, planId) => { setPlanEdit({ projectId, planId }); openModal('floorplan-editor'); },
-    // Add Property: an unsaved draft, stored only once its catalog saves.
-    addProperty: () => {
-      const d = newProjectDraft(user?.companyId);
-      setPropDraft(d);
-      setConsoleAdmin(true);
-      setPropSel(d.id);
-      openModal('project-console');
-    },
+    // Add Property: the step-by-step wizard (nothing is stored until its last step saves).
+    addProperty: () => openModal('property-wizard'),
+
   };
 }

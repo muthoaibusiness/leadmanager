@@ -15,6 +15,7 @@ export const VIEW_TITLES = {
   pipeline: 'Pipeline',
   clients: 'Contacts',
   properties: 'Projects',
+  booking: 'Booking',
   reports: 'Reports',
   agentperf: 'Performance',
   perfreports: 'Reports',

@@ -12,7 +12,7 @@ import { NAV_META } from '../lib/navMeta.js';
 // opens/closes its child pages. Visibility is driven by canSee(user, key).
 const SECTIONS = [
   { label: null, keys: ['dashboard', 'companies', 'reports', 'agentperf', 'perfreports', 'requests'] },
-  { label: 'Sales Team', keys: ['leadsGroup', 'conversations', 'calendar', 'properties'] },
+  { label: 'Sales Team', keys: ['leadsGroup', 'conversations', 'calendar', 'properties', 'booking'] },
   { label: 'Admin', keys: ['inventory', 'team', 'accounts', 'aitrainer', 'fbleads', 'metacapi', 'publicproject'] },
 ];
 
