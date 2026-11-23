@@ -4,9 +4,10 @@ import useNavState from '../../hooks/useNavState.js';
 import useLeadBook from '../../hooks/useLeadBook.js';
 import useMediaQuery from '../../hooks/useMediaQuery.js';
 import { planProjects } from '../../lib/projects.js';
-import { byCode, STATUS, taka } from '../../lib/floorPlan.js';
-import { textFloor, landmarks, floorCode, shortCode, shopLabel, takaShort } from '../../lib/floorText.js';
-import BookPanel from './BookPanel.jsx';
+import { byCode } from '../../lib/floorPlan.js';
+import { textFloor, landmarks, floorCode, shortCode, takaShort } from '../../lib/floorText.js';
+import ShopCard from './ShopCard.jsx';
+import BkSelect from './BkSelect.jsx';
 import ShopGrid from './ShopGrid.jsx';
 import './ShopBooking.css';
 
@@ -60,10 +61,13 @@ export default function ShopBookingView() {
   }
 
   const zi = Math.max(0, ZOOMS.indexOf(zoom));
+  // One card width for every floor: sized for the widest floor's drawing, so
+  // switching floors never moves the columns. Each plan sits centred inside it.
+  const frameAsp = Math.max(...plans.map(p => textFloor(project, p).aspect));
 
   return (
     <div className="bk">
-      <div className="bk-layout">
+      <div className="bk-layout" style={{ '--asp': frameAsp }}>
         <nav className="bk-floors" aria-label="Floors">
           {plans.map(p => {
             const counts = textFloor(project, p).counts;
@@ -82,9 +86,7 @@ export default function ShopBookingView() {
           <div className="bk-maphead">
             <h3>{plan.name}</h3>
             {projects.length > 1 && (
-              <select className="bk-sel" value={project.id} onChange={e => pickProject(e.target.value)} aria-label="Project">
-                {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-              </select>
+              <BkSelect className="" label="Project" value={project.id} onChange={pickProject} options={projects.map(p => ({ value: p.id, label: p.name }))} />
             )}
             <div className="bk-zoom" role="group" aria-label="Zoom the plan">
               <button type="button" className="bk-zbtn" aria-label="Zoom out" disabled={zi === 0} onClick={() => setZoom(ZOOMS[zi - 1])}>−</button>
@@ -123,8 +125,8 @@ export default function ShopBookingView() {
                     onClick={() => setShopCode(s.code)}
                     aria-label={`${s.code}, ${s.size} sq ft, ${s.look.label}`}>
                     <span className="bk-cell-id">{shortCode(s.code)}</span>
-                    {hw >= 0.04 && <span className="bk-cell-m">{s.size} sft</span>}
-                    {hw >= 0.06 && s.w >= 0.075 && <span className="bk-cell-p">{s.status === 'available' ? takaShort(s.price) : s.look.label}</span>}
+                    {hw >= 0.05 && <span className="bk-cell-m">{s.size}{s.w >= 0.075 ? " sft" : ""}</span>}
+                    {hw >= 0.085 && s.w >= 0.085 && <span className="bk-cell-p">{s.status === 'available' ? takaShort(s.price) : s.look.label}</span>}
                   </button>
                 );
               })}
@@ -140,29 +142,7 @@ export default function ShopBookingView() {
               <span>{!floor.counts.total ? 'Pick another floor to book a shop.' : 'Pick a tile on the plan to see its price and book it for a customer.'}</span>
             </div>
           ) : (
-            <div className="bk-card">
-              <div className="bk-sd-head">
-                <div>
-                  <span className="bk-eyebrow">{plan.name}{shop.category ? ` · ${shop.category}` : ''}</span>
-                  <h3>{shopLabel(shop.code)}</h3>
-                </div>
-                <span className={`bk-pill s-${shop.status}`} style={shop.look.color ? { '--bk-c': shop.look.color } : undefined}>
-                  <i className="bk-dot" />{shop.look.label || STATUS[shop.status]?.label}
-                </span>
-                <button type="button" className="bk-close" aria-label="Close" onClick={() => setShopCode(null)}><Mi>close</Mi></button>
-              </div>
-              <div className="bk-sd-price">
-                <div className="bk-price">{shop.price ? taka(shop.price) : 'Price on request'}</div>
-                {shop.rate > 0 && <span className="bk-fx">{taka(shop.rate)} / sq ft</span>}
-              </div>
-              <div className="bk-pay">
-                <div><span>Size</span><b>{shop.size ? `${shop.size.toLocaleString('en-IN')} sq ft` : '—'}</b></div>
-                <div><span>Type</span><b>{shop.type || '—'}</b></div>
-                <div><span>Ownership</span><b>{shop.ownership || '—'}</b></div>
-                <div><span>Floor</span><b>{floorCode(plan.name)} · {plan.name}</b></div>
-              </div>
-              <BookPanel key={`${project.id}:${shop.code}`} project={project} shop={shop} />
-            </div>
+            <ShopCard key={`${project.id}:${shop.code}`} project={project} plan={plan} shop={shop} onClose={() => setShopCode(null)} />
           )}
         </aside>
       </div>

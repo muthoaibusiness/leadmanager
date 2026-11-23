@@ -91,6 +91,7 @@ const OVERLAYS = {
   ProjectConsole: () => import('./components/project/ProjectConsole.jsx'),
   FloorPlanEditor: () => import('./components/project/FloorPlanEditor.jsx'),
   PropertyFormModal: () => import('./components/modals/PropertyFormModal.jsx'),
+  AddPropertyWizard: () => import('./components/project/AddPropertyWizard.jsx'),
   UnitBookingModal: () => import('./components/modals/UnitBookingModal.jsx'),
   BookingModal: () => import('./components/modals/BookingModal.jsx'),
   TransferLeadModal: () => import('./components/modals/TransferLeadModal.jsx'),
@@ -412,7 +413,7 @@ function PageBody() {
 function AppShell() {
   const { view, sidebarOpen, sidebarCollapsed, pageId } = useApp();
   const wide = view === 'pipeline' || view === 'conversations'; // kanban + chat need the full canvas
-  const fit = view === 'booking'; // the floor plan is sized to the screen: the page itself never scrolls
+  const fit = view === 'booking' || view === 'requests'; // the floor plan is sized to the screen: the page itself never scrolls
   // Below 1024px the sidebar is a drawer over the page; from 1024px it is docked
   // and may be collapsed. `shown` is "on screen" in whichever layout applies.
   const drawer = useMediaQuery(DRAWER_MQ);

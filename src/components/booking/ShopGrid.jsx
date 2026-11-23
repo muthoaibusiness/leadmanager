@@ -3,7 +3,8 @@ import Mi from '../Mi.jsx';
 import useNavState from '../../hooks/useNavState.js';
 import { byCode, taka } from '../../lib/floorPlan.js';
 import { textFloor, floorCode, shortCode, shopLabel, takaShort } from '../../lib/floorText.js';
-import BookPanel from './BookPanel.jsx';
+import ShopCard from './ShopCard.jsx';
+import BkSelect from './BkSelect.jsx';
 
 // Booking on a phone: no floor plan, a grid of shop cells, five per row, in
 // shop-number order. Floors are a column on the left (F5 … FB), a filter sits
@@ -56,9 +57,7 @@ export default function ShopGrid({ project, projects, plans, plan, floor, pickPr
 
       <div className="bkm-main">
         {projects.length > 1 && (
-          <select className="bk-sel" value={project.id} onChange={e => pickProject(e.target.value)} aria-label="Project">
-            {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-          </select>
+          <BkSelect className="" label="Project" value={project.id} onChange={pickProject} options={projects.map(p => ({ value: p.id, label: p.name }))} />
         )}
         <div className="bkm-chips" role="group" aria-label="Show shops">
           {FILTERS.map(([k, label, fn]) => (
@@ -128,7 +127,7 @@ export default function ShopGrid({ project, projects, plans, plan, floor, pickPr
               </div>
               <button type="button" className="bk-x" aria-label="Close" onClick={close}><Mi>close</Mi></button>
             </div>
-            <BookPanel key={`${project.id}:${shop.code}`} project={project} shop={shop} onDone={done} />
+            <ShopCard key={`${project.id}:${shop.code}`} bare project={project} plan={plan} shop={shop} onClose={close} onDone={done} />
           </div>
         </>
       )}

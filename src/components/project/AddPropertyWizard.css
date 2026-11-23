@@ -1,0 +1,86 @@
+/* Add Property wizard (AddPropertyWizard.jsx). Tokens come from .bk in
+   booking/ShopBooking.css. Px values are one-off layout sizes. */
+/* ds-allow-hardcode:start */
+.pw-scrim { position: fixed; inset: 0; z-index: 300; background: rgb(6 14 11 / .55); display: grid; place-items: center; padding: 16px; }
+.bk.pw { flex: none; width: min(1040px, 100%); height: min(720px, 100%); display: grid; grid-template-columns: 250px minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); background: var(--bk-bg); border: 1px solid var(--bk-line); border-radius: 18px; box-shadow: 0 20px 60px rgb(0 0 0 / .35); overflow: hidden; }
+.pw-rail { background: var(--bk-surface); border-right: 1px solid var(--bk-line); padding: 18px 12px; display: grid; align-content: start; gap: 14px; overflow: auto; }
+.pw-rail-h { display: grid; gap: 2px; padding: 0 6px; min-width: 0; }
+.pw-rail-h b { font-family: var(--bk-display); font-size: 19px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pw-rail ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+.pw-rail .bk-floor { width: 100%; grid-template-columns: 34px minmax(0, 1fr); }
+.pw-rail .bk-floor:disabled { cursor: default; }
+.pw-rail .bk-fl { width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; font-size: 15px; background: var(--bk-surface2); }
+.pw-rail .bk-floor[aria-pressed="true"] .bk-fl { background: var(--bk-accent); color: var(--bk-accent-ink); }
+.pw-rail .bk-fl .mi { font-size: 18px; }
+.pw-st { display: grid; min-width: 0; }
+.pw-st b { font-size: 15px; font-weight: 600; }
+.pw-st i { font-style: normal; font-size: 13px; color: var(--bk-muted); }
+.pw-main { min-width: 0; min-height: 0; display: grid; grid-template-rows: auto minmax(0, 1fr) auto; }
+.pw-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 16px 22px; border-bottom: 1px solid var(--bk-line); }
+.pw-head h3 { margin: 0; font-family: var(--bk-display); font-size: 24px; font-weight: 600; letter-spacing: -.015em; }
+.pw-body { overflow: auto; padding: 20px 22px; display: grid; gap: 16px; align-content: start; scrollbar-width: thin; scrollbar-color: var(--bk-line) transparent; }
+.pw-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 22px; border-top: 1px solid var(--bk-line); background: var(--bk-surface); }
+.pw-acts { display: flex; gap: 8px; flex-wrap: wrap; }
+.pw-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 14px; }
+.pw-grid4 { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
+.pw-f { display: grid; gap: 6px; min-width: 0; }
+.pw-f input, .pw-type-n { width: 100%; box-sizing: border-box; background: var(--bk-surface); color: var(--bk-fg); border: 1px solid var(--bk-line); border-radius: 10px; padding: 10px 12px; font: inherit; font-size: 16px; }
+.pw-f input.pw-big { font-family: var(--bk-display); font-size: 22px; font-weight: 600; padding: 12px 14px; }
+.pw-f input:focus, .pw-type-n:focus { outline: none; border-color: var(--bk-accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--bk-accent) 22%, transparent); }
+.pw-f input::-webkit-outer-spin-button, .pw-f input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+.pw-f input[type="number"] { -moz-appearance: textfield; font-family: var(--bk-mono); }
+.pw-kinds { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.pw-kind { display: grid; gap: 2px; justify-items: start; text-align: left; padding: 14px 16px; border: 1.5px solid var(--bk-line); border-radius: var(--bk-r); background: var(--bk-surface); color: var(--bk-fg); cursor: pointer; }
+.pw-kind:hover { border-color: var(--bk-accent); }
+.pw-kind .mi { font-size: 26px; color: var(--bk-muted); }
+.pw-kind b { font-family: var(--bk-display); font-size: 18px; font-weight: 600; }
+.pw-kind span { font-size: 14px; color: var(--bk-muted); }
+.pw-kind[aria-pressed="true"] { border-color: var(--bk-accent); background: var(--bk-accent-soft); box-shadow: 0 0 0 3px color-mix(in srgb, var(--bk-accent) 18%, transparent); }
+.pw-kind[aria-pressed="true"] .mi { color: var(--bk-accent); }
+.pw-type { background: var(--bk-surface); border: 1px solid var(--bk-line); border-radius: var(--bk-r); padding: 14px; display: grid; gap: 12px; }
+.pw-type-h { display: flex; gap: 8px; align-items: center; }
+.pw-type-n { font-family: var(--bk-display); font-size: 18px; font-weight: 600; background: var(--bk-bg); }
+.pw-sum { display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; font-size: 14px; color: var(--bk-muted); font-family: var(--bk-mono); }
+.pw-sum b { color: var(--bk-fg); font-weight: 500; }
+.pw-drops { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.pw-drop { display: grid; gap: 2px; justify-items: center; text-align: center; padding: 22px 12px; border: 1.5px dashed var(--bk-line); border-radius: var(--bk-r); cursor: pointer; color: var(--bk-muted); background: var(--bk-surface); }
+.pw-drop:hover { border-color: var(--bk-accent); color: var(--bk-fg); }
+.pw-drop .mi { font-size: 28px; color: var(--bk-accent); }
+.pw-drop b { color: var(--bk-fg); font-size: 16px; font-weight: 600; }
+.pw-drop span { font-size: 13.5px; }
+.pw-thumbs { display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 10px; }
+.pw-thumb { position: relative; aspect-ratio: 4 / 3; border-radius: 10px; overflow: hidden; border: 1px solid var(--bk-line); background: var(--bk-surface2); }
+.pw-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.pw-thumb button { position: absolute; top: 4px; right: 4px; width: 26px; height: 26px; border-radius: 50%; border: 0; background: rgb(0 0 0 / .6); color: #fff; display: grid; place-items: center; cursor: pointer; }
+.pw-thumb button .mi { font-size: 16px; }
+.pw-cover { position: absolute; left: 6px; bottom: 6px; font-size: 12px; font-weight: 600; background: var(--bk-accent); color: var(--bk-accent-ink); padding: 1px 8px; border-radius: 999px; }
+.pw-item { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border: 1px solid var(--bk-line); border-radius: 10px; background: var(--bk-surface); }
+.pw-item .mi { color: var(--bk-muted); }
+.pw-item span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pw-review { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1px; background: var(--bk-line); border: 1px solid var(--bk-line); border-radius: 12px; overflow: hidden; }
+.pw-review div { background: var(--bk-surface); padding: 10px 14px; display: grid; gap: 2px; min-width: 0; }
+.pw-review b { font-family: var(--bk-display); font-size: 17px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pw-warn { display: flex; gap: 8px; align-items: center; font-size: 14.5px; padding: 9px 12px; border-radius: 10px; background: color-mix(in srgb, var(--bk-bad) 12%, transparent); color: var(--bk-bad); }
+.pw-done { display: grid; justify-items: center; text-align: center; gap: 8px; padding: 40px 10px; }
+.pw-done h4 { margin: 0; font-family: var(--bk-display); font-size: 26px; font-weight: 600; }
+.pw-done p { margin: 0 0 8px; max-width: 46ch; color: var(--bk-muted); }
+.pw-ok { width: 56px; height: 56px; border-radius: 50%; background: var(--bk-accent); color: var(--bk-accent-ink); display: grid; place-items: center; }
+.pw-ok .mi { font-size: 30px; }
+@media (max-width: 720px) {
+  .pw-scrim { padding: 0; }
+  .bk.pw { width: 100%; height: 100%; border-radius: 0; border: 0; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }
+  .pw-rail { border-right: 0; border-bottom: 1px solid var(--bk-line); padding: 10px 12px; gap: 8px; }
+  .pw-rail-h { display: none; }
+  .pw-rail ol { display: flex; gap: 4px; overflow-x: auto; }
+  .pw-rail ol li { flex: 1 0 auto; }
+  .pw-rail .bk-floor { grid-template-columns: 30px auto; padding: 6px 8px; }
+  .pw-st i { display: none; }
+  .pw-st b { font-size: 14px; white-space: nowrap; }
+  .pw-grid, .pw-kinds, .pw-drops, .pw-review { grid-template-columns: minmax(0, 1fr); }
+  .pw-grid4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .pw-head, .pw-body, .pw-foot { padding-left: 16px; padding-right: 16px; }
+  .pw-foot .bk-cap { display: none; }
+  .pw-acts { width: 100%; }
+  .pw-acts .bk-btn { flex: 1; }
+}
+/* ds-allow-hardcode:end */
