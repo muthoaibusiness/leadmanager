@@ -220,6 +220,11 @@ export function landmarks(plan) {
   };
 }
 
+// The ground floor drawing is narrow and its shops are small, so their numbers got
+// cut off. Drawing it this much wider (x / y stay fractions of the frame) gives
+// every tile that much more room for its number. The floors keep their own shapes.
+const WIDEN = { 'Ground Floor': 1.45 };
+
 // → { aspect, shops: [shop], counts: { available, hold, sold, total } }
 // aspect = the frame's width / height, so the CSS plan keeps the drawing's shape.
 // shop = { code, status, look, size, price, rate, type, category, ownership,
@@ -229,7 +234,7 @@ export function textFloor(project, plan) {
   const img = plan?.image || {};
   const { view: v } = frame(plan);
   const pxAspect = img.width > 0 && img.height > 0 ? img.width / img.height : 1;
-  const aspect = pxAspect * v.w / v.h;
+  const aspect = pxAspect * v.w / v.h * (WIDEN[plan?.name] || 1);
   const counts = { available: 0, hold: 0, sold: 0, total: 0 };
   const shops = [];
   (plan?.boxes || []).forEach(b => {
