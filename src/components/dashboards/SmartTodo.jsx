@@ -19,9 +19,11 @@ const DAY = 86_400_000;
 const PERIODS = [{ days: 7, label: 'Last 7 days' }, { days: 30, label: 'Last 30 days' }];
 const TYPE_SUB = { CALL: 'Calls completed', MESSAGE: 'Messages sent', PROJECT_VISIT: 'Project visits done', OFFICE_VISIT: 'Office visits done', MEETING: 'Meetings held' };
 
+// useCountUp writes the counting number straight into the span (the same hook
+// Meta CAPI uses); until a count arrives the tile shows a dash.
 function Num({ value }) {
-  const n = useCountUp(value);
-  return value == null ? '—' : n;
+  const ref = useCountUp(value);
+  return value == null ? '—' : <span ref={ref}>0</span>;
 }
 
 // The agent's follow-up to-do and what they completed. Today / Missed /
