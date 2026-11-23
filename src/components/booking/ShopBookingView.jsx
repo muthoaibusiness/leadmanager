@@ -7,11 +7,11 @@ import { planProjects } from '../../lib/projects.js';
 import { byCode } from '../../lib/floorPlan.js';
 import { textFloor, landmarks, floorCode, shortCode, takaShort } from '../../lib/floorText.js';
 import ShopCard from './ShopCard.jsx';
-import BkSelect from './BkSelect.jsx';
+import ProjectList from './ProjectList.jsx';
 import ShopGrid from './ShopGrid.jsx';
 import './ShopBooking.css';
 
-// Booking: choose a floor, then a shop. On a computer each floor plan is
+// Booking: choose a project, then a floor, then a shop. On a computer each floor plan is
 // redrawn in CSS: every shop a tile at its own position and size, with the
 // building outline, lifts, stairs, escalators and the rest drawn around them.
 // On a phone there is no plan: a grid of shop cells, five per row (ShopGrid).
@@ -36,13 +36,14 @@ export default function ShopBookingView() {
   void dbVersion; // re-read the store after a sync or a status change
   useLeadBook(true); // the customer search reads leads, which are not in the boot snapshot
   const phone = useMediaQuery(PHONE_MQ);
-  const projects = planProjects().filter(p => p.floorPlans.length);
+  const allProjects = planProjects(); // the list page shows every project
+  const projects = allProjects.filter(p => p.floorPlans.length);
   const [projId, setProjId] = useNavState('booking.project', null);
   const [floorId, setFloorId] = useNavState('booking.floor', null);
   const [shopCode, setShopCode] = useNavState('booking.shop', null);
   const [zoom, setZoom] = useNavState('booking.zoom', 1);
 
-  const project = projects.find(p => p.id === projId) || projects[0] || null;
+  const project = projects.find(p => p.id === projId) || null; // none picked yet: the project list
   const plans = sortPlans(project?.floorPlans || []);
   // The picked floor, else the ground floor (order 0), else the top one.
   const plan = plans.find(p => p.id === floorId) || plans.find(p => p.order === 0) || plans[0] || null;
@@ -50,14 +51,15 @@ export default function ShopBookingView() {
   const shop = floor?.shops.find(s => s.code === shopCode) || null;
   const lm = landmarks(plan);
 
-  if (!project || !plan || !floor) return <div className="bk-empty">No project has a floor plan yet. Add one in Projects → Available Units.</div>;
+  if (!project) return <ProjectList projects={allProjects} onPick={(id) => { setProjId(id); setFloorId(null); setShopCode(null); }} />;
+  if (!plan || !floor) return <div className="bk-empty">This project has no floor plan yet. Add one in Projects → Available Units.</div>;
 
-  const pickProject = (id) => { setProjId(id); setFloorId(null); setShopCode(null); };
+  const backToProjects = () => { setProjId(null); setFloorId(null); setShopCode(null); };
   const pickFloor = (p) => { setFloorId(p.id); setShopCode(null); };
 
   if (phone) {
-    return <ShopGrid project={project} projects={projects} plans={plans} plan={plan} floor={floor}
-      pickProject={pickProject} pickFloor={pickFloor} shopCode={shopCode} setShopCode={setShopCode} />;
+    return <ShopGrid project={project} plans={plans} plan={plan} floor={floor}
+      onBack={backToProjects} pickFloor={pickFloor} shopCode={shopCode} setShopCode={setShopCode} />;
   }
 
   const zi = Math.max(0, ZOOMS.indexOf(zoom));
@@ -85,9 +87,7 @@ export default function ShopBookingView() {
         <section className="bk-map" aria-label={`${plan.name} shops`}>
           <div className="bk-maphead">
             <h3>{plan.name}</h3>
-            {projects.length > 1 && (
-              <BkSelect className="" label="Project" value={project.id} onChange={pickProject} options={projects.map(p => ({ value: p.id, label: p.name }))} />
-            )}
+            <button type="button" className="bk-chip bk-back" onClick={backToProjects} title="Back to all projects"><Mi>arrow_back</Mi>{project.name}</button>
             <div className="bk-zoom" role="group" aria-label="Zoom the plan">
               <button type="button" className="bk-zbtn" aria-label="Zoom out" disabled={zi === 0} onClick={() => setZoom(ZOOMS[zi - 1])}>−</button>
               <button type="button" className="bk-zbtn wide" onClick={() => setZoom(1)} aria-label="Fit the whole floor">{zoom === 1 ? 'Fit' : `${Math.round(zoom * 100)}%`}</button>

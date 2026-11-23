@@ -6,7 +6,7 @@ import {
   DOCS, DSTAGE, docReady, docState, stageOf, genText, fileKind,
   uploadKitFile, approveKit, addShopLog, buildFloorPlanFile,
 } from '../../lib/shopDocs.js';
-import { waAccountFor, waConversationForLead, waSendMessage, WA_ACCOUNT_LABEL } from '../../lib/wa.js';
+import { waAccountFor, waConversationForLead, waSendMessage, waRetry, WA_ACCOUNT_LABEL } from '../../lib/wa.js';
 import { fmtAgo } from '../../lib/helpers.js';
 import DocViewer from './DocViewer.jsx';
 
@@ -17,6 +17,7 @@ import DocViewer from './DocViewer.jsx';
 // in History. State comes from useShopDocs (the parent keeps the
 // "4/16" count in the tab itself).
 
+const GAP_MS = 10000; // Wasender allows 1 message / 5 s per number; 5.5 to 6 s was still refused
 const canManage = (u) => u?.role === 'MANAGEMENT' || u?.role === 'MASTER';
 const when = (iso) => new Date(iso).toLocaleString('en-GB', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
 const mask = (c) => (/@/.test(c) ? c.replace(/^(.).*(@.*)$/, '$1•••$2') : c.length > 6 ? c.slice(0, 3) + '•••' + c.slice(-3) : c);
@@ -60,7 +61,7 @@ export function DocsTab({ project, shop, floorName, store, client: picked }) {
   };
   const approve = async (k, on = true) => { setBusy(true); const ok = await approveKit(cid, k, user, on); setBusy(false); if (ok) { reload(); showToast(on ? 'Approved. It can now be sent to clients.' : 'Approval withdrawn.', 'ok'); } else showToast('Could not change the approval', 'err'); };
 
-  const [sending, setSending] = useState(false);
+  const [sending, setSending] = useState('');
   // The brochure is a link on the project (label "Brochure"); management sets it from the viewer.
   const saveBrochure = async (url) => {
     const keep = (project.media?.links || []).filter(l => !/brochure/i.test(l.label || ''));
@@ -90,15 +91,36 @@ export function DocsTab({ project, shop, floorName, store, client: picked }) {
   const send = async () => {
     if (!picked?.phone || !chosen.length || sending) return;
     if (waSettings && waSettings.enabled === false) { showToast('WhatsApp chat is switched off in Chat Settings.', 'err'); return; }
-    setSending(true);
+    setSending('Sending…');
     const res = await waConversationForLead(picked, user);
-    if (!res.ok) { setSending(false); showToast(res.error, 'err'); return; }
+    if (!res.ok) { setSending(''); showToast(res.error, 'err'); return; }
     const conv = res.conversation;
     const sent = [];
     const gen = chosen.filter(d => d.t === 'gen');
     const files = chosen.filter(d => lib[d.k]?.url || lib[d.k]?.plans || lib[d.k]?.link);
     let failed = '';
-    const go = async (payload) => { const r = await waSendMessage(waSettings, { conversation: conv, user, ...payload }); if (!r.ok && !failed) failed = r.error || 'A message failed.'; return r.ok; };
+    const total = (gen.length ? 1 : 0) + files.length;
+    let last = 0; let n = 0;
+    // Wasender account protection: one message per number every 5 seconds. In practice it
+    // refuses anything under about 6 seconds, so each message waits GAP_MS after the last
+    // one, and a refused message is sent once more after another wait (waRetry replaces the
+    // failed bubble instead of leaving it in the chat).
+    const pause = (ms) => new Promise(ok => setTimeout(ok, ms));
+    const go = async (payload) => {
+      const w = GAP_MS - (Date.now() - last);
+      if (n && w > 0) await pause(w);
+      setSending(`Sending ${++n} of ${total}…`);
+      let r = await waSendMessage(waSettings, { conversation: conv, user, ...payload });
+      last = Date.now();
+      if (!r.ok && r.optimistic) {
+        setSending(`Waiting ${Math.round(GAP_MS / 1000)}s to try again…`);
+        await pause(GAP_MS);
+        r = await waRetry(waSettings, r.optimistic, conv, user);
+        last = Date.now();
+      }
+      if (!r.ok && !failed) failed = r.error || 'A message failed.';
+      return r.ok;
+    };
     if (gen.length) {
       const text = [`Hello ${client},`, '', project.name, ...gen.map(d => '\n' + genText(d.k, project, shop, floorName))].join('\n');
       if (await go({ type: 'text', body: text })) gen.forEach(d => sent.push(d.k));
@@ -119,7 +141,7 @@ export function DocsTab({ project, shop, floorName, store, client: picked }) {
     }
     const skipped = chosen.length - gen.length - files.length; // approved templates with no file yet
     if (sent.length) await addShopLog(cid, { propertyId: project.id, unitId: shop.code, kind: 'docs_sent', client, contact: mask(picked.phone), channel: `WhatsApp · ${WA_ACCOUNT_LABEL[conv.account] || conv.account}`, docs: sent }, user);
-    setSending(false);
+    setSending('');
     if (sent.length) reload();
     showToast(failed || `${sent.length} document${sent.length > 1 ? 's' : ''} sent to ${client} from ${WA_ACCOUNT_LABEL[conv.account]}${skipped ? ` (${skipped} have no file yet)` : ''}`, failed ? 'err' : 'ok');
   };
@@ -176,8 +198,8 @@ export function DocsTab({ project, shop, floorName, store, client: picked }) {
             <span className="bkd-from">{picked.phone ? `${picked.phone}${fromLabel ? ` · from ${fromLabel}` : ''}` : 'No phone number'}</span>
           </div>
         ) : <div className="bk-hint">Choose a customer above to send documents.</div>}
-        <button type="button" className="bk-btn primary" disabled={!chosen.length || !picked?.phone || sending} onClick={send}>
-          {sending ? 'Sending…' : chosen.length ? `Send ${chosen.length} document${chosen.length > 1 ? 's' : ''} on WhatsApp` : 'Select documents'}
+        <button type="button" className="bk-btn primary" disabled={!chosen.length || !picked?.phone || !!sending} onClick={send}>
+          {sending ? sending : chosen.length ? `Send ${chosen.length} document${chosen.length > 1 ? 's' : ''} on WhatsApp` : 'Select documents'}
         </button>
         {!manage && <div className="bk-hint">Management adds and approves the files.</div>}
       </div>

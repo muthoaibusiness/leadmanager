@@ -4,7 +4,6 @@ import useNavState from '../../hooks/useNavState.js';
 import { byCode, taka } from '../../lib/floorPlan.js';
 import { textFloor, floorCode, shortCode, shopLabel, takaShort } from '../../lib/floorText.js';
 import ShopCard from './ShopCard.jsx';
-import BkSelect from './BkSelect.jsx';
 
 // Booking on a phone: no floor plan, a grid of shop cells, five per row, in
 // shop-number order. Floors are a column on the left (F5 … FB), a filter sits
@@ -25,7 +24,7 @@ const customStatuses = (shops) => {
   return [...seen.values()];
 };
 
-export default function ShopGrid({ project, projects, plans, plan, floor, pickProject, pickFloor, shopCode, setShopCode }) {
+export default function ShopGrid({ project, plans, plan, floor, onBack, pickFloor, shopCode, setShopCode }) {
   const [filter, setFilter] = useNavState('booking.filter', 'open');
   const [sheet, setSheet] = useState(false);
 
@@ -56,9 +55,7 @@ export default function ShopGrid({ project, projects, plans, plan, floor, pickPr
       </nav>
 
       <div className="bkm-main">
-        {projects.length > 1 && (
-          <BkSelect className="" label="Project" value={project.id} onChange={pickProject} options={projects.map(p => ({ value: p.id, label: p.name }))} />
-        )}
+        <button type="button" className="bk-chip bk-back" onClick={onBack}><Mi>arrow_back</Mi>{project.name}</button>
         <div className="bkm-chips" role="group" aria-label="Show shops">
           {FILTERS.map(([k, label, fn]) => (
             <button key={k} type="button" className="bk-chip" aria-pressed={filter === k} onClick={() => setFilter(k)}>
