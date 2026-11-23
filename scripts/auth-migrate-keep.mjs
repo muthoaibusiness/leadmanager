@@ -17,10 +17,10 @@
 // Dry run by default. Writes only with --apply --confirm <SUPABASE_URL>.
 //
 //   PowerShell:
-//     $env:SUPABASE_URL="https://sbqmougcvnplgjgihpwe.supabase.co"
+//     $env:SUPABASE_URL="https://<project-ref>.supabase.co"
 //     $env:SUPABASE_SERVICE_ROLE_KEY="<service role key from Project Settings > API>"
 //     node scripts/auth-migrate-keep.mjs
-//     node scripts/auth-migrate-keep.mjs --apply --confirm https://sbqmougcvnplgjgihpwe.supabase.co
+//     node scripts/auth-migrate-keep.mjs --apply --confirm https://<project-ref>.supabase.co
 
 import { randomBytes } from 'node:crypto';
 
