@@ -22,7 +22,7 @@ export default function ShopCard({ project, plan, shop, onClose, bare = false, o
   const open = shop.status === 'available';
   const ready = store.loaded && !store.missing ? `${DOCS.filter(d => docReady(d, store.lib)).length}/${DOCS.length}` : '';
   const tabs = [['book', open ? 'Book' : 'Details', ''], ['docs', 'Documents', ready], ['hist', 'History', store.log.length ? String(store.log.length) : '']];
-  const facts = [shop.size ? `${shop.size.toLocaleString('en-IN')} sq ft` : '', shop.type, shop.ownership].filter(Boolean);
+  const facts = [shop.size ? `${shop.size.toLocaleString('en-IN')} sq ft` : '', shop.beds ? `${shop.beds} bed${shop.beds > 1 ? 's' : ''}` : '', shop.baths ? `${shop.baths} bath${shop.baths > 1 ? 's' : ''}` : '', shop.type, shop.ownership].filter(Boolean);
 
   return (
     <div className={bare ? 'bk-card bare' : 'bk-card'}>

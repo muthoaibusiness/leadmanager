@@ -19,7 +19,8 @@ export default function BkSelect({ value, onChange, options, label, className = 
     const r = btn.current.getBoundingClientRect();
     const room = window.innerHeight - r.bottom;
     const want = Math.min(320, options.length * 40 + 12);
-    setAt({ top: r.bottom + 6, bottom: window.innerHeight - r.top + 6, left: r.left, right: window.innerWidth - r.right, width: r.width, up: room < want && r.top > room });
+    const flip = r.left + 360 > window.innerWidth - 8 && r.right > 200;
+    setAt({ flip, top: r.bottom + 6, bottom: window.innerHeight - r.top + 6, left: r.left, right: window.innerWidth - r.right, width: r.width, up: room < want && r.top > room });
     setHi(Math.max(0, options.findIndex(o => String(o.value) === String(value))));
     setOpen(true);
   };
@@ -61,7 +62,7 @@ export default function BkSelect({ value, onChange, options, label, className = 
       </button>
       {open && at && createPortal(
         <div ref={list} id={id} role="listbox" aria-label={label} className="bk bks-pop"
-          style={{ ...(at.up ? { bottom: at.bottom } : { top: at.top }), ...(align === 'right' ? { right: at.right } : { left: at.left }), minWidth: at.width }}>
+          style={{ ...(at.up ? { bottom: at.bottom } : { top: at.top }), ...(align === 'right' || at.flip ? { right: Math.max(8, at.right) } : { left: Math.max(8, at.left) }), minWidth: at.width }}>
           {options.map((o, i) => {
             const on = String(o.value) === String(value);
             return (

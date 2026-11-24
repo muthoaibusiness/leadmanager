@@ -1,10 +1,14 @@
 import { useApp } from '../../context/AppContext.jsx';
 import useNavState from '../../hooks/useNavState.js';
+import { useState } from 'react';
 import { getHoldRequests, decideHoldRequest } from '../../lib/db.js';
 import { setUnitStatus, reservedTag, getProjectById, findUnit } from '../../lib/projects.js';
 import { fmtBDT, fmtAgo } from '../../lib/helpers.js';
 import Mi from '../Mi.jsx';
 import BkSelect from '../booking/BkSelect.jsx';
+import RequestsInsights from './RequestsInsights.jsx';
+import RequestUnitModal from './RequestUnitModal.jsx';
+import { seedNextPage } from '../../hooks/useNavHistory.js';
 import '../booking/ShopBooking.css';
 
 // Management approval queue for agent hold requests. Same look as the Booking
@@ -28,8 +32,10 @@ const SIZES = [10, 25, 50];
 const day = (iso) => new Date(iso).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' });
 
 export default function RequestsView() {
-  const { user, refreshDB, showToast, dbVersion, setPropSel, openModal } = useApp();
+  const { user, refreshDB, showToast, dbVersion, setPropSel, openModal, nav } = useApp();
   void dbVersion;
+  const [tab, setTab] = useNavState('requests.tab', 'queue');
+  const [openId, setOpenId] = useState(null); // the request shown in the pop-up
   const [status, setStatus] = useNavState('requests.status', 'pending');
   const [q, setQ] = useNavState('requests.q', '');
   const [project, setProject] = useNavState('requests.project', '');
@@ -78,11 +84,27 @@ export default function RequestsView() {
     refreshDB();
     showToast(ok ? `Hold approved · Unit ${r.unitId}` : `Request rejected · Unit ${r.unitId}`, 'ok');
   };
-  const open = (r) => { setPropSel(r.propertyId); openModal('project-console'); };
+  // A request opens as a pop-up over this page: the floor plan with its unit pointed out, and the
+  // request beside it. From there it can still go to the Booking page or the project console.
+  const open = (r) => setOpenId(r.id);
+  const opened = openId ? all.find(x => x.id === openId) : null;
+  const toBooking = (r) => {
+    const proj = getProjectById(r.propertyId);
+    const plan = (proj?.floorPlans || []).find(p => (p.boxes || []).some(b => b.unitId === r.unitId));
+    if (!proj || !plan) return;
+    seedNextPage({ 'booking.project': proj.id, 'booking.floor': plan.id, 'booking.shop': r.unitId, 'booking.tab': 'projects' });
+    setOpenId(null);
+    nav('booking');
+  };
 
   return (
     <div className="bk rqx">
       <div className="rqx-wrap">
+        <div className="rqx-tabs" role="tablist" aria-label="Requests">
+          <button type="button" role="tab" className="bk-chip" aria-selected={tab === 'queue'} aria-pressed={tab === 'queue'} onClick={() => setTab('queue')}><Mi>inbox</Mi>Queue<i>{count('pending')}</i></button>
+          <button type="button" role="tab" className="bk-chip" aria-selected={tab === 'insights'} aria-pressed={tab === 'insights'} onClick={() => setTab('insights')}><Mi>insights</Mi>Insights</button>
+        </div>
+        {tab === 'insights' ? <RequestsInsights all={all} onQueue={(k) => { setStatus(k); setPage(0); setTab('queue'); }} /> : (<>
         <div className="rqx-bar">
           <label className="bk-search rqx-search">
             <Mi>search</Mi>
@@ -162,7 +184,14 @@ export default function RequestsView() {
             </div>
           </div>
         </section>
+        </>)}
       </div>
+      {opened && (
+        <RequestUnitModal r={opened} onClose={() => setOpenId(null)}
+          onDecide={(r, ok) => { decide(r, ok); setOpenId(null); }}
+          onOpenBooking={() => toBooking(opened)}
+          onOpenConsole={() => { setOpenId(null); setPropSel(opened.propertyId); openModal('project-console'); }} />
+      )}
     </div>
   );
 }

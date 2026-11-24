@@ -12,6 +12,7 @@ import useMediaQuery from '../hooks/useMediaQuery.js';
 import useChanged from '../hooks/useChanged.js';
 import { useProjectToast } from './project/projectToast.js';
 import { toastMsg } from '../lib/toastMap.js';
+import './LeadPanel.css';
 
 const leadCode = (l) => l.externalId || ('#' + String(l.id || '').slice(-6).toUpperCase());
 const SHARED_LABEL = { price: 'Price idea', brochure: 'Brochure', floor_plan: 'Floor Plan', video: 'Video', image: 'Image' };

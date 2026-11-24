@@ -7,9 +7,13 @@ import { setFeatures, setProjects, setProfile } from '../../lib/accessAdmin.js';
 import { rlabel } from '../../lib/helpers.js';
 import { ROLES, canManageUser, initialFeatures } from '../../lib/constants.js';
 import FeatureEditor from '../FeatureEditor.jsx';
+import '../booking/ShopBooking.css';
+import '../project/AddPropertyWizard.css';
+import '../views/AccountsView.css';
 
-// Team Lead edits an agent's projects. Admins (Management/Master) additionally get a
-// per-user Feature Access checklist that overrides the role's default feature set.
+// Edit an account, in the Booking page's look. A Team Lead edits an agent's projects. Admins
+// (Management/Master) additionally get a per-user Feature Access checklist that overrides the
+// role's default feature set.
 export default function EditAgentModal() {
   const { modal, closeModal, user, editUser, refreshDB, showToast } = useApp();
   const isOpen = modal === 'edit-agent';
@@ -36,11 +40,11 @@ export default function EditAgentModal() {
     setFeat(initialFeatures(a));
   }
 
-  if (!isOpen || !a) return <div className={`mov${isOpen ? ' on' : ''}`} onClick={closeModal} />;
+  if (!isOpen || !a) return null;
 
   const projects = getProperties();
-  const toggle = (id) => setSel(s => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
-  const toggleFeat = (k) => setFeat(s => { const n = new Set(s); n.has(k) ? n.delete(k) : n.add(k); return n; });
+  const toggle = (id) => setSel(s => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n; });
+  const toggleFeat = (k) => setFeat(s => { const n = new Set(s); if (n.has(k)) n.delete(k); else n.add(k); return n; });
 
   // Each part is saved through its own path and reported truthfully: name and
   // phone as a profile edit (own row) or by an account manager, projects and
@@ -70,56 +74,62 @@ export default function EditAgentModal() {
   };
 
   return (
-    <div className="mov on" onClick={e => { if (e.target === e.currentTarget) closeModal(); }}>
-      <div className="modal">
-        <div className="m-hd">
-          <div className="m-ttl">Edit {a.name} · <span style={{ color: 'var(--t3)', fontWeight: 600 }}>{rlabel(a.role)}</span></div>
-          <button className="m-x" onClick={closeModal}><Mi>close</Mi></button>
-        </div>
-        <div className="m-body">
-          <div className="fl"><label>Name</label><input className="finp" value={name} onChange={e => setName(e.target.value)} /></div>
-          <div className="fl"><label>Phone</label><input className="finp" value={phone} onChange={e => setPhone(e.target.value)} placeholder="+880 1XXX-XXXXXX" /></div>
+    <div className="pw-scrim" onClick={e => { if (e.target === e.currentTarget) closeModal(); }}>
+      <div className="bk acx-modal" role="dialog" aria-modal="true" aria-labelledby="eam-t">
+        <header className="pw-head">
+          <div className="acx-mt"><span className="bk-eyebrow">Edit account</span><h3 id="eam-t">{a.name}</h3></div>
+          <span className={`acx-role t-${{ MANAGEMENT: 'mgmt', TEAM_LEAD: 'tl', EXECUTIVE: 'exec' }[a.role] || 'agent'}`}><i aria-hidden="true" />{rlabel(a.role)}</span>
+          <button type="button" className="bk-close" aria-label="Close" onClick={closeModal}><Mi>close</Mi></button>
+        </header>
+
+        <div className="pw-body">
+          <div className="pw-grid">
+            <label className="pw-f"><span className="bk-cap">Name</span><input value={name} onChange={e => setName(e.target.value)} /></label>
+            <label className="pw-f"><span className="bk-cap">Phone</span><input value={phone} onChange={e => setPhone(e.target.value)} placeholder="+880 1XXX-XXXXXX" /></label>
+          </div>
 
           {showProjects && (
-            <div className="fl">
-              <div className="ea-row">
-                <label style={{ margin: 0 }}>Assigned projects</label>
-                <button className={`ea-all${all ? ' on' : ''}`} onClick={() => setAll(v => !v)}>
-                  <Mi>{all ? 'check_box' : 'check_box_outline_blank'}</Mi>All projects
-                </button>
+            <div className="acp-feat">
+              <div className="acp-feat-h">
+                <span className="bk-cap">Assigned projects</span>
+                <button type="button" className="bk-chip" aria-pressed={all} onClick={() => setAll(v => !v)}><Mi>{all ? 'check_box' : 'check_box_outline_blank'}</Mi>All projects</button>
               </div>
               {all ? (
-                <div className="ea-count">This agent can deal on all {projects.length} projects.</div>
+                <span className="bk-hint">This agent can deal on all {projects.length} projects.</span>
               ) : (
                 <>
-                  <div className="ea-projs">
+                  <div className="acx-mates">
                     {projects.map(p => (
-                      <button key={p.id} className={`ea-chip${sel.has(p.id) ? ' on' : ''}`} onClick={() => toggle(p.id)}>
+                      <button key={p.id} type="button" className="bk-chip" aria-pressed={sel.has(p.id)} onClick={() => toggle(p.id)}>
                         {sel.has(p.id) && <Mi>check</Mi>}{p.name}
                       </button>
                     ))}
-                    {!projects.length && <div className="cl-none">No projects in catalog.</div>}
+                    {!projects.length && <span className="acx-muted">No projects yet.</span>}
                   </div>
-                  <div className="ea-count">{sel.size} of {projects.length} selected</div>
+                  <span className="bk-cap">{sel.size} of {projects.length} selected</span>
                 </>
               )}
             </div>
           )}
 
           {isAdmin && (
-            <div className="fl">
-              <div className="ea-row">
-                <label style={{ margin: 0 }}>Feature access</label>
-                <span className="ea-count" style={{ margin: 0 }}>{feat.size} enabled</span>
+            <div className="acp acp-feat">
+              <div className="acp-feat-h">
+                <span className="bk-cap">Feature access</span>
+                <span className="bk-cap">{feat.size} enabled</span>
               </div>
               <FeatureEditor value={feat} onToggle={toggleFeat} role={a.role} disabled={busy} />
             </div>
           )}
         </div>
-        <div className="m-ft">
-          <button className="btn btn-g" onClick={closeModal}>Cancel</button>
-          <button className="btn btn-p" onClick={save} disabled={busy}><Mi>save</Mi>{busy ? 'Saving…' : 'Save changes'}</button>
-        </div>
+
+        <footer className="pw-foot">
+          <span className="bk-cap">{isAdmin ? 'Changes apply on the account’s next request.' : ''}</span>
+          <div className="pw-acts">
+            <button type="button" className="bk-btn" onClick={closeModal}>Cancel</button>
+            <button type="button" className="bk-btn primary" onClick={save} disabled={busy}><Mi>save</Mi>{busy ? 'Saving…' : 'Save changes'}</button>
+          </div>
+        </footer>
       </div>
     </div>
   );

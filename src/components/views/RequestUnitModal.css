@@ -1,0 +1,25 @@
+/* The request pop-up (RequestUnitModal.jsx). Tokens come from .bk in booking/ShopBooking.css. */
+/* ds-allow-hardcode:start */
+.bk.acx-modal.rqm { width: min(1060px, 100%); }
+.rqm-body { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(300px, 1fr); gap: 18px; padding: 18px 22px; overflow: auto; min-height: 0; align-items: start; }
+.rqm-map { display: grid; gap: 8px; min-width: 0; }
+.rqm-stage { height: min(58vh, 560px); display: flex; flex-direction: column; min-height: 320px; }
+.rqm-stage > .bk-stage { flex: 1; }
+.rqm-side { display: grid; gap: 14px; align-content: start; min-width: 0; }
+.rqm-side .acx-dgrid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.rqm-sub { font-style: normal; font-size: 13px; color: var(--bk-muted); font-family: var(--bk-mono); }
+.rqm-facts { display: flex; flex-wrap: wrap; gap: 8px; }
+.rqm-facts span { border: 1px solid var(--bk-line); background: var(--bk-surface); border-radius: 999px; padding: 5px 12px; font-size: 14.5px; color: var(--bk-muted); }
+.rqm-facts b { color: var(--bk-fg); font-family: var(--bk-mono); font-weight: 500; }
+.rqm .pw-foot .bk-btn { display: inline-flex; align-items: center; gap: 6px; }
+/* the requested unit stands out, every other tile steps back */
+.bk-plan.has-focus .bk-cell:not([data-focus="true"]) { opacity: .32; filter: saturate(.6); pointer-events: none; }
+.bk-plan.has-focus .bk-cell[data-focus="true"] { outline: 3px solid var(--bk-fg); outline-offset: 2px; z-index: 4; box-shadow: 0 0 0 7px color-mix(in srgb, var(--bk-accent) 35%, transparent); animation: rqm-pulse 1.6s ease-in-out infinite; }
+@keyframes rqm-pulse { 50% { box-shadow: 0 0 0 11px color-mix(in srgb, var(--bk-accent) 10%, transparent); } }
+@media (prefers-reduced-motion: reduce) { .bk-plan.has-focus .bk-cell[data-focus="true"] { animation: none; } }
+@media (max-width: 860px) {
+  .rqm-body { grid-template-columns: minmax(0, 1fr); padding: 14px 16px; }
+  .rqm-stage { height: 46vh; min-height: 260px; }
+  .rqm-side .acx-dgrid { grid-template-columns: minmax(0, 1fr); }
+}
+/* ds-allow-hardcode:end */

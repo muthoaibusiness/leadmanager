@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Loader from '../ui/loader.jsx';
+import BkSelect from '../booking/BkSelect.jsx';
 import Mi from '../Mi.jsx';
 import useNavState from '../../hooks/useNavState.js';
 import { useApp } from '../../context/AppContext.jsx';
@@ -11,7 +12,9 @@ import {
   SECRETS, FIELD_TARGETS, ASSIGN_MODES, FORWARD_TAGS, DUPLICATE_POLICIES, NEW_LEAD_STATUSES, webhookUrl, emptyForm, validateForm, validateSettings,
   formToRow, rowToForm, keysOf, cleanPageId, ago, summarizeEvents,
 } from '../../lib/fbLeads.js';
+import '../booking/ShopBooking.css';
 import '../fbleads/fbleads.css';
+import '../fbleads/fbx.css';
 
 // Admin > Facebook Leads: where Facebook Lead Ads forms are connected and told what
 // to do with the leads they bring. This page only configures (tables from migration
@@ -144,6 +147,17 @@ export default function FbLeadsView() {
     if (!r.ok) showToast(`Not removed: ${r.error}`, 'err'); else setForms((all) => all.filter((x) => x.id !== f.id));
   };
 
+  const t = score.total;
+  const today0 = new Date(); today0.setHours(0, 0, 0, 0);
+  const todayN = events.filter((e) => new Date(e.received_at).getTime() >= today0.getTime()).length;
+  const kpis = [
+    ['inbox', 'Received', t ? t.received : 0, `${todayN} today${events[0] ? ` · last ${ago(events[0].received_at)}` : ''}`, ''],
+    ['call_split', 'Handed out', t ? t.distributed : 0, t && t.received ? `${Math.round((t.distributed / t.received) * 100)}% became leads` : 'no leads yet', ''],
+    ['content_copy', 'Duplicates', t ? t.duplicate : 0, 'phone already a lead', ''],
+    ['error', 'Failed', t ? t.failed : 0, t && t.failed ? 'needs a look' : 'none', t && t.failed ? 'bad' : ''],
+    ['hourglass_top', 'Queued', t ? t.queued : 0, 'waiting for the drip', t && t.queued ? 'warn' : ''],
+  ];
+
   const url = webhookUrl(SB_URL);
   const assignText = (f) => (f.assign_mode === 'agent' ? `Agent: ${nameOf(f.assign_agent_id)}`
     : f.assign_mode === 'team' ? `Team lead of ${teams.find((t) => t.id === f.assign_team_id)?.name || '—'}`
@@ -152,22 +166,29 @@ export default function FbLeadsView() {
   const setS = (patch) => setSettings((s) => ({ ...s, ...patch }));
   const setF = (patch) => setEditing((f) => ({ ...f, ...patch }));
 
-  if (loading && !settings && !missing) return <div className="fbl"><Loader className="ldr-page" title="Loading Facebook Leads…" subtitle="Fetching forms and settings" /></div>;
+  if (loading && !settings && !missing) return <div className="fbl bk fbx"><Loader className="ldr-page" title="Loading Facebook Leads…" subtitle="Fetching forms and settings" /></div>;
 
   return (
-    <div className="fbl">
+    <div className="fbl bk fbx">
       {missing && (
         <div className="fbl-warn"><Mi>database</Mi><span>The Facebook Leads tables are not in the database yet. Run <b>supabase/migrations/0059_fb_lead_forms.sql</b> in the Supabase SQL editor, then reload.</span><button className="fbl-btn" onClick={load}>Reload</button></div>
       )}
 
       {!missing && (
         <>
+          {/* What came in: one card each for received, handed out, duplicates, failures and the queue. */}
+          <div className="rqi-kpis fbx-kpis">
+            {kpis.map(([ic, label, v, sub, tone]) => (
+              <div key={label} className={`rqi-k${tone ? ` ${tone}` : ''}`}><span className="rqi-ki"><Mi>{ic}</Mi></span><span className="bk-cap">{label}</span><b>{v}</b><span className="rqi-ks">{sub}</span></div>
+            ))}
+          </div>
+
           {/* The tabs, and the receive switch at the end of their line. */}
           <div className="fbl-tabrow">
-            <div className="pill-tabs" role="tablist">
+            <div className="rqx-chips" role="tablist">
               {TABS.map((t) => (
-                <button key={t.key} role="tab" aria-selected={tab === t.key} className={tab === t.key ? 'on' : ''} onClick={() => { setTab(t.key); setErrors([]); }}>
-                  {t.label}{t.key === 'forms' && forms.length ? ` (${forms.length})` : ''}
+                <button key={t.key} type="button" role="tab" aria-selected={tab === t.key} aria-pressed={tab === t.key} className="bk-chip" onClick={() => { setTab(t.key); setErrors([]); }}>
+                  {t.label}{t.key === 'forms' && forms.length ? <i>{forms.length}</i> : null}{t.key === 'log' && score.total ? <i>{score.total.received}</i> : null}
                 </button>
               ))}
             </div>
@@ -197,11 +218,9 @@ export default function FbLeadsView() {
 
               <section className="fbl-card">
                 <h3>When a lead arrives</h3>
-                <label className="fbl-fld"><span>It starts as</span>
-                  <select value={settings.default_status} onChange={(e) => setS({ default_status: e.target.value })}>
-                    {NEW_LEAD_STATUSES.map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}
-                  </select>
-                </label>
+                <div className="fbl-fld"><span>It starts as</span>
+                  <BkSelect label="It starts as" value={settings.default_status} onChange={(v) => setS({ default_status: v })} options={NEW_LEAD_STATUSES.map((x) => ({ value: x.key, label: x.label }))} />
+                </div>
                 <div className="fbl-fld"><span>If the phone is already a lead</span>
                   <div className="fbl-opts">
                     {DUPLICATE_POLICIES.map((p) => (
@@ -271,23 +290,15 @@ export default function FbLeadsView() {
               <label className="fbl-fld"><span>Name</span>
                 <input value={editing.label} onChange={(e) => setF({ label: e.target.value })} placeholder="Citizen Avenue – shop enquiry" />
               </label>
-              <label className="fbl-fld"><span>Project</span>
-                <select value={editing.project} onChange={(e) => setF({ project: e.target.value })}>
-                  <option value="">Choose…</option>
-                  {projects.map((p) => <option key={p} value={p}>{p}</option>)}
-                </select>
-              </label>
-              <label className="fbl-fld"><span>Lead source</span>
-                <select value={editing.source} onChange={(e) => setF({ source: e.target.value })}>
-                  {Object.entries(SRC_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-                </select>
-              </label>
-              <label className="fbl-fld"><span>Starts as <small>(blank = the default in Setup)</small></span>
-                <select value={editing.status} onChange={(e) => setF({ status: e.target.value })}>
-                  <option value="">Default</option>
-                  {NEW_LEAD_STATUSES.map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}
-                </select>
-              </label>
+              <div className="fbl-fld"><span>Project</span>
+                <BkSelect label="Project" value={editing.project} onChange={(v) => setF({ project: v })} options={[{ value: '', label: 'Choose…' }, ...projects.map((p) => ({ value: p, label: p }))]} />
+              </div>
+              <div className="fbl-fld"><span>Lead source</span>
+                <BkSelect label="Lead source" value={editing.source} onChange={(v) => setF({ source: v })} options={Object.entries(SRC_LABELS).map(([k, v]) => ({ value: k, label: v }))} />
+              </div>
+              <div className="fbl-fld"><span>Starts as <small>(blank = the default in Setup)</small></span>
+                <BkSelect label="Starts as" value={editing.status} onChange={(v) => setF({ status: v })} options={[{ value: '', label: 'Default' }, ...NEW_LEAD_STATUSES.map((x) => ({ value: x.key, label: x.label }))]} />
+              </div>
 
               <div className="fbl-fld"><span>Who gets the lead</span>
                 <div className="fbl-opts">
@@ -300,20 +311,14 @@ export default function FbLeadsView() {
                 </div>
               </div>
               {editing.assign_mode === 'agent' && (
-                <label className="fbl-fld"><span>Agent</span>
-                  <select value={editing.assign_agent_id} onChange={(e) => setF({ assign_agent_id: e.target.value })}>
-                    <option value="">Choose…</option>
-                    {people.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
-                  </select>
-                </label>
+                <div className="fbl-fld"><span>Agent</span>
+                  <BkSelect label="Agent" value={editing.assign_agent_id} onChange={(v) => setF({ assign_agent_id: v })} options={[{ value: '', label: 'Choose…' }, ...people.map((u) => ({ value: u.id, label: u.name }))]} />
+                </div>
               )}
               {editing.assign_mode === 'team' && (
-                <label className="fbl-fld"><span>Team</span>
-                  <select value={editing.assign_team_id} onChange={(e) => setF({ assign_team_id: e.target.value })}>
-                    <option value="">Choose…</option>
-                    {teams.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
-                  </select>
-                </label>
+                <div className="fbl-fld"><span>Team</span>
+                  <BkSelect label="Team" value={editing.assign_team_id} onChange={(v) => setF({ assign_team_id: v })} options={[{ value: '', label: 'Choose…' }, ...teams.map((t) => ({ value: t.id, label: t.name }))]} />
+                </div>
               )}
               {editing.assign_mode === 'round_robin' && (
                 <div className="fbl-fld"><span>Agents in the rotation</span>

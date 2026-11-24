@@ -5,14 +5,14 @@ import { useApp } from '../context/AppContext.jsx';
 import { getHoldRequests } from '../lib/db.js';
 import { kbd } from '../lib/helpers.js';
 import { canSee } from '../lib/constants.js';
-import { NAV_META } from '../lib/navMeta.js';
+import { NAV_META, HIDDEN_NAV } from '../lib/navMeta.js';
 
 // Grouped, role-scoped navigation (Muthoclo admin pattern).
 // Sections render a label + their visible items; a group renders a header that
 // opens/closes its child pages. Visibility is driven by canSee(user, key).
 const SECTIONS = [
-  { label: null, keys: ['dashboard', 'companies', 'reports', 'agentperf', 'perfreports', 'requests'] },
-  { label: 'Sales Team', keys: ['leadsGroup', 'conversations', 'calendar', 'properties', 'booking'] },
+  { label: null, keys: ['dashboard', 'companies', 'reports', 'agentperf', 'requests'] },
+  { label: 'Sales Team', keys: ['leads', 'conversations', 'calendar', 'properties', 'booking'] },
   { label: 'Admin', keys: ['inventory', 'team', 'accounts', 'aitrainer', 'fbleads', 'metacapi', 'publicproject'] },
 ];
 
@@ -41,7 +41,7 @@ export default function Sidebar({ hideBtnRef }) {
 
   // Conversations is gated by the chat allow-list rather than NAV_SCOPES; a
   // group shows when the user may see at least one of its pages.
-  const visible = (k) => (GROUPS[k] ? GROUPS[k].kids.some(c => canSee(user, c.key))
+  const visible = (k) => !HIDDEN_NAV.includes(k) && (GROUPS[k] ? GROUPS[k].kids.some(c => canSee(user, c.key))
     : k === 'conversations' ? chatOk : canSee(user, k));
 
   const pendingHolds = role === 'MANAGEMENT' ? getHoldRequests().filter(r => r.status === 'pending').length : 0;

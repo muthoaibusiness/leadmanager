@@ -4,7 +4,7 @@ import { useApp } from '../../context/AppContext.jsx';
 import { saveProject } from '../../lib/projects.js';
 import {
   DOCS, DSTAGE, docReady, docState, stageOf, genText, fileKind,
-  uploadKitFile, approveKit, addShopLog, buildFloorPlanFile,
+  uploadKitFile, approveKit, addShopLog, buildFloorPlanFile, docKey, absUrl,
 } from '../../lib/shopDocs.js';
 import { waAccountFor, waConversationForLead, waSendMessage, waRetry, WA_ACCOUNT_LABEL } from '../../lib/wa.js';
 import { fmtAgo } from '../../lib/helpers.js';
@@ -55,11 +55,11 @@ export function DocsTab({ project, shop, floorName, store, client: picked }) {
     e.target.value = '';
     if (!f || !upKey.current) return;
     setBusy(true);
-    const r = await uploadKitFile(cid, upKey.current, f, user);
+    const r = await uploadKitFile(cid, docKey(upKey.current, project), f, user);
     setBusy(false);
     if (r.ok) { showToast('File added to the document kit', 'ok'); reload(); } else showToast(r.error, 'err');
   };
-  const approve = async (k, on = true) => { setBusy(true); const ok = await approveKit(cid, k, user, on); setBusy(false); if (ok) { reload(); showToast(on ? 'Approved. It can now be sent to clients.' : 'Approval withdrawn.', 'ok'); } else showToast('Could not change the approval', 'err'); };
+  const approve = async (k, on = true) => { setBusy(true); const ok = await approveKit(cid, docKey(k, project), user, on); setBusy(false); if (ok) { reload(); showToast(on ? 'Approved. It can now be sent to clients.' : 'Approval withdrawn.', 'ok'); } else showToast('Could not change the approval', 'err'); };
 
   const [sending, setSending] = useState('');
   // The brochure is a link on the project (label "Brochure"); management sets it from the viewer.
@@ -78,7 +78,7 @@ export function DocsTab({ project, shop, floorName, store, client: picked }) {
       setBuilding('Reading the brochure…');
       const { file: pdf, pages } = await buildFloorPlanFile(url, project.name.replace(/[^\w]+/g, '-').replace(/-+$/, ''), (i, n) => setBuilding(`Drawing floor plan ${Math.min(i + 1, n)} of ${n}…`));
       setBuilding('Saving…');
-      const r = await uploadKitFile(cid, 'floorplans', pdf, user);
+      const r = await uploadKitFile(cid, docKey('floorplans', project), pdf, user);
       if (!r.ok) throw new Error(r.error);
       reload();
       showToast(`Floor plans document updated from the brochure (${pages.length} pages)`, 'ok');
@@ -128,7 +128,7 @@ export function DocsTab({ project, shop, floorName, store, client: picked }) {
     for (const d of files) {
       const L = lib[d.k];
       if (L.link && !L.url) {
-        if (await go({ type: 'text', body: `${d.n}: ${L.link}` })) sent.push(d.k);
+        if (await go({ type: 'text', body: `${d.n}: ${absUrl(L.link)}` })) sent.push(d.k);
         continue;
       }
       if (L.plans) {
@@ -137,7 +137,7 @@ export function DocsTab({ project, shop, floorName, store, client: picked }) {
         if (all) sent.push(d.k);
         continue;
       }
-      if (await go({ type: fileKind(L.mime), body: d.n, mediaUrl: L.url, mediaMime: L.mime, mediaName: L.name || d.n, mediaSize: L.size })) sent.push(d.k);
+      if (await go({ type: fileKind(L.mime), body: d.n, mediaUrl: absUrl(L.url), mediaMime: L.mime, mediaName: L.name || d.n, mediaSize: L.size })) sent.push(d.k);
     }
     const skipped = chosen.length - gen.length - files.length; // approved templates with no file yet
     if (sent.length) await addShopLog(cid, { propertyId: project.id, unitId: shop.code, kind: 'docs_sent', client, contact: mask(picked.phone), channel: `WhatsApp · ${WA_ACCOUNT_LABEL[conv.account] || conv.account}`, docs: sent }, user);

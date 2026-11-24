@@ -415,9 +415,157 @@
 .bkp-stats { display: flex; gap: 6px 14px; flex-wrap: wrap; font-size: 14px; font-family: var(--bk-mono); margin-top: 4px; }
 .bkp-stats span { display: inline-flex; align-items: center; gap: 6px; }
 .bkp-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 6px; padding-top: 10px; border-top: 1px solid var(--bk-line); font-size: 14px; color: var(--bk-muted); }
-.bkp-go { display: inline-flex; align-items: center; gap: 4px; color: var(--bk-accent); font-weight: 600; }
+.bkp-go { margin-left: auto; display: inline-flex; align-items: center; gap: 4px; color: var(--bk-accent); font-weight: 600; }
 .bkp-go .mi { font-size: 18px; }
 .bk-back { max-width: 240px; }
 .bk-back .mi { font-size: 18px; }
 .bk-back { overflow: hidden; text-overflow: ellipsis; }
+/* ds-allow-hardcode:end */
+/* A big tile (an apartment) lets the rooms drawn under it show through */
+.bk-cell.big { background: transparent; border-width: 2px; }
+.bk-cell.big.s-available { background: color-mix(in srgb, var(--bk-accent) 10%, transparent); }
+.bk-cell.big.s-hold { background: color-mix(in srgb, var(--bk-held) 14%, transparent); }
+.bk-cell.big.s-sold { background: color-mix(in srgb, var(--bk-faint) 28%, transparent); }
+.bk-cell.big[style*="--bk-c"] { background: color-mix(in srgb, var(--bk-c) 12%, transparent); }
+.bk-cell.big { flex-direction: row; justify-content: flex-start; align-items: flex-start; gap: 1.2cqw; padding: .5cqw .9cqw; }
+.bk-cell.big > span { flex: none; }
+.bk-cell.big .bk-cell-m, .bk-cell.big .bk-cell-p { font-size: .75em; margin-top: .25em; }
+/* An apartment drawn as its real outline (L-shaped, around the core): the button is clipped to it
+   and an SVG draws the border and fill, since a clipped border would be cut off. */
+.bk-cell.big:has(.bk-shape) { border: 0; background: transparent !important; box-shadow: none; }
+.bk-shape { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; overflow: visible; }
+.bk-shape polygon { fill: color-mix(in srgb, var(--bk-accent) 10%, transparent); stroke: color-mix(in srgb, var(--bk-accent) 85%, var(--bk-line)); stroke-width: 2.5px; vector-effect: non-scaling-stroke; stroke-linejoin: round; }
+.bk-cell.s-hold .bk-shape polygon { fill: color-mix(in srgb, var(--bk-held) 14%, transparent); stroke: var(--bk-held); }
+.bk-cell.s-sold .bk-shape polygon { fill: color-mix(in srgb, var(--bk-faint) 28%, transparent); stroke: var(--bk-faint); }
+.bk-cell[aria-pressed="true"] .bk-shape polygon { stroke: var(--bk-fg); stroke-width: 4px; }
+.bk-cell:has(.bk-shape)[aria-pressed="true"] { outline: 0; }
+.bk-cell:has(.bk-shape) > span { position: relative; }
+/* An apartment tile shows only its name and number, as a clear badge; size and price are in the panel */
+.bk-cell.big .bk-cell-m, .bk-cell.big .bk-cell-p { display: none; }
+.bk-cell.big .bk-cell-id { font-size: 1.15em; font-weight: 600; padding: .1em .5em; border-radius: .4em; background: var(--bk-bg); border: 1px solid color-mix(in srgb, var(--bk-accent) 70%, var(--bk-line)); box-shadow: var(--bk-shadow); }
+.bk-cell.big.s-hold .bk-cell-id { border-color: var(--bk-held); }
+.bk-cell.big.s-sold .bk-cell-id { border-color: var(--bk-faint); color: var(--bk-muted); }
+/* Each apartment has its own colour so it is plain which rooms belong to A and which to B:
+   B green, A blue; a big faint letter marks it. Status stays on the badge. */
+.bk-cell[data-unit="B"] { --u: var(--bk-accent); }
+.bk-cell[data-unit="A"] { --u: #4C9BE8; }
+:root[data-theme="light"] .bk-cell[data-unit="A"] { --u: #2563B8; }
+.bk-cell[data-unit] .bk-shape polygon, .bk-cell[data-unit].s-hold .bk-shape polygon, .bk-cell[data-unit].s-sold .bk-shape polygon { fill: color-mix(in srgb, var(--u) 26%, transparent); stroke: var(--u); stroke-width: 5px; }
+.bk-cell[data-unit]:hover .bk-shape polygon { fill: color-mix(in srgb, var(--u) 36%, transparent); }
+.bk-cell[data-unit][aria-pressed="true"] .bk-shape polygon { stroke: var(--bk-fg); stroke-width: 6px; fill: color-mix(in srgb, var(--u) 40%, transparent); }
+.bk-cell[data-unit]::after { content: attr(data-unit); position: absolute; right: 9%; top: 34%; font-family: var(--bk-display); font-weight: 700; font-size: 22cqw; line-height: 1; color: color-mix(in srgb, var(--u) 22%, transparent); pointer-events: none; }
+.bk-cell[data-unit] .bk-cell-id { border-color: var(--u) !important; background: color-mix(in srgb, var(--u) 30%, var(--bk-bg)); }
+
+/* Project list: add a project, and edit one / open its plans and units */
+.bkp-tools { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.bkp-add { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.bkp-item { position: relative; }
+.bkp-item > .bkp-card { width: 100%; }
+.bkp-act { position: absolute; top: 10px; right: 10px; display: flex; gap: 6px; z-index: 2; }
+.bkp-act button { width: 32px; height: 32px; display: grid; place-items: center; border-radius: 50%; border: 1px solid var(--bk-line); background: color-mix(in srgb, var(--bk-bg) 82%, transparent); color: var(--bk-fg); cursor: pointer; backdrop-filter: blur(6px); }
+.bkp-act button:hover { border-color: var(--bk-accent); color: var(--bk-accent); }
+.bkp-act .mi, .bkp-act .material-symbols-rounded { font-size: 18px; }
+
+/* Requests: Queue / Insights tabs, and the insights page (views/RequestsInsights.jsx) */
+.rqx-tabs { display: flex; gap: 6px; flex: none; }
+.rqx-tabs .bk-chip { display: inline-flex; align-items: center; gap: 6px; }
+.rqx-tabs .bk-chip .mi { font-size: 18px; }
+.rqi-wrap { flex: 1; min-height: 0; overflow: auto; display: grid; gap: 14px; align-content: start; padding-bottom: 8px; scrollbar-width: thin; scrollbar-color: var(--bk-line) transparent; }
+.rqi-bar { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 14px; }
+.rqi-notes { display: grid; gap: 8px; padding: 12px; border: 1px solid var(--bk-line); border-radius: var(--bk-r); background: var(--bk-surface); }
+.rqi-n { display: flex; gap: 10px; align-items: center; font-size: 15.5px; padding: 8px 12px; border-radius: 10px; background: var(--bk-bg); }
+.rqi-n .mi { font-size: 22px; flex: none; }
+.rqi-n.bad { background: color-mix(in srgb, var(--bk-bad) 12%, transparent); color: var(--bk-bad); }
+.rqi-n.warn { background: color-mix(in srgb, var(--bk-held) 14%, transparent); color: var(--bk-held); }
+.rqi-n.good { background: var(--bk-accent-soft); color: var(--bk-accent); }
+.rqi-n.info .mi { color: var(--bk-held); }
+.rqi-go { justify-self: start; display: inline-flex; align-items: center; gap: 6px; }
+.rqi-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 12px; }
+.rqi-k { position: relative; display: grid; gap: 4px; padding: 14px 16px; border: 1px solid var(--bk-line); border-radius: var(--bk-r); background: var(--bk-surface); box-shadow: var(--bk-shadow); min-width: 0; }
+.rqi-k b { font-family: var(--bk-display); font-size: 30px; font-weight: 600; letter-spacing: -.02em; line-height: 1.1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rqi-ki { position: absolute; top: 12px; right: 14px; color: var(--bk-muted); }
+.rqi-ki .mi { font-size: 22px; }
+.rqi-ks { font-size: 14px; color: var(--bk-muted); display: flex; flex-wrap: wrap; gap: 4px 6px; align-items: center; }
+.rqi-k.bad { border-color: color-mix(in srgb, var(--bk-bad) 55%, var(--bk-line)); }
+.rqi-k.bad b, .rqi-k.bad .rqi-ki { color: var(--bk-bad); }
+.rqi-k.warn { border-color: color-mix(in srgb, var(--bk-held) 55%, var(--bk-line)); }
+.rqi-k.warn b, .rqi-k.warn .rqi-ki { color: var(--bk-held); }
+.rqi-d { display: inline-flex; align-items: center; font-style: normal; font-family: var(--bk-mono); font-size: 13px; color: var(--bk-muted); }
+.rqi-d .mi { font-size: 15px; }
+.rqi-d.good { color: var(--bk-accent); }
+.rqi-d.bad { color: var(--bk-bad); }
+.rqi-two { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; align-items: start; }
+.rqi-card { min-width: 0; border: 1px solid var(--bk-line); border-radius: var(--bk-r); background: var(--bk-surface); box-shadow: var(--bk-shadow); padding: 14px 16px 16px; display: grid; gap: 12px; align-content: start; }
+.rqi-card > header { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.rqi-card h3 { margin: 0; font-family: var(--bk-display); font-size: 19px; font-weight: 600; }
+.rqi-leg { display: inline-flex; align-items: center; gap: 6px; font-size: 13.5px; color: var(--bk-muted); }
+.rqi-leg i { width: 10px; height: 10px; border-radius: 3px; display: inline-block; margin-left: 8px; }
+.rqi-leg i:first-child { margin-left: 0; }
+.rqi-leg .a, .rqi-stack .a { background: var(--bk-accent); }
+.rqi-leg .r, .rqi-stack .r { background: var(--bk-bad); }
+.rqi-leg .p, .rqi-stack .p { background: var(--bk-held); }
+.rqi-chart { display: flex; align-items: flex-end; gap: 3px; height: 170px; padding-top: 6px; border-bottom: 1px solid var(--bk-line); }
+.rqi-col { flex: 1 1 0; min-width: 0; height: 100%; display: flex; align-items: flex-end; }
+.rqi-stack { width: 100%; min-height: 0; display: flex; flex-direction: column; border-radius: 4px 4px 0 0; overflow: hidden; }
+.rqi-stack i { min-height: 3px; }
+.rqi-col:hover { background: color-mix(in srgb, var(--bk-fg) 6%, transparent); }
+.rqi-axis { display: flex; justify-content: space-between; gap: 8px; font-size: 13px; color: var(--bk-muted); font-family: var(--bk-mono); }
+.rqi-wd { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; align-items: end; height: 70px; position: relative; margin-top: 6px; padding-bottom: 20px; }
+.rqi-wd span { display: grid; grid-template-rows: 1fr auto; justify-items: center; height: 100%; gap: 3px; }
+.rqi-wd span i { width: 100%; max-width: 34px; align-self: end; background: var(--bk-surface2); border-radius: 4px 4px 0 0; min-height: 2px; }
+.rqi-wd span.top i { background: var(--bk-accent); }
+.rqi-wd span b { font-size: 12.5px; font-weight: 500; color: var(--bk-muted); }
+.rqi-wd em { position: absolute; right: 0; bottom: -4px; font-style: normal; }
+.rqi-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.rqi-list li { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 9px 12px; border-radius: 10px; background: var(--bk-bg); border: 1px solid var(--bk-line); }
+.rqi-list li span { display: grid; min-width: 0; }
+.rqi-list li b { font-size: 15.5px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rqi-list li i { font-style: normal; font-size: 13.5px; color: var(--bk-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rqi-list li em { font-style: normal; font-family: var(--bk-mono); font-size: 14px; white-space: nowrap; color: var(--bk-muted); }
+.rqi-list li.warn { border-color: color-mix(in srgb, var(--bk-held) 60%, var(--bk-line)); }
+.rqi-list li.warn em { color: var(--bk-held); }
+.rqi-list li.bad { border-color: color-mix(in srgb, var(--bk-bad) 60%, var(--bk-line)); }
+.rqi-list li.bad em { color: var(--bk-bad); }
+.rqi-none { display: flex; align-items: center; gap: 10px; padding: 18px 6px; color: var(--bk-muted); }
+.rqi-more { justify-self: start; }
+.rqi-scroll { overflow-x: auto; }
+.rqi-table tbody tr { cursor: default; }
+.rqi-table tbody tr:hover { background: transparent; }
+.rqi-pc { color: var(--bk-muted); font-size: 13px; }
+.rqi-empty { text-align: center; color: var(--bk-muted); padding: 22px 10px !important; }
+.rqi-bar3 { display: flex; height: 9px; min-width: 120px; border-radius: 999px; overflow: hidden; background: var(--bk-surface2); margin-bottom: 4px; }
+.rqi-bar3 .o { background: var(--bk-accent); }
+.rqi-bar3 .h { background: var(--bk-held); }
+.rqi-bar3 .s { background: var(--bk-faint); }
+@media (max-width: 900px) { .rqi-two { grid-template-columns: minmax(0, 1fr); } }
+.rqi-table td:first-child { white-space: nowrap; }
+.rqi-kpis { grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); }
+/* Booking tabs and the agent dashboard (booking/AgentBookingDash.jsx) */
+.bkp-tabs { margin-bottom: 14px; }
+.bkd { overflow: visible; }
+.bkd-name { font-family: var(--bk-display); font-size: 20px; font-weight: 600; }
+.bkd-go { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; }
+.bkd-end { display: flex; align-items: center; gap: 10px; flex: none; }
+.bkd-end em { font-style: normal; font-family: var(--bk-mono); font-size: 13.5px; color: var(--bk-muted); }
+/* ds-allow-hardcode:start */
+/* Units nobody can book (sold, landowner and the like) look disabled: greyed, faded, dashed and struck through.
+   They stay clickable so their details can still be read. */
+.bk-cell.s-sold, .bkm-tile.s-sold { filter: grayscale(1); opacity: .5; cursor: not-allowed; border-style: dashed; background: var(--bk-hatch); }
+.bk-cell.s-sold .bk-cell-id, .bkm-tile.s-sold .bkm-code { text-decoration: line-through; text-decoration-thickness: 1px; }
+.bk-cell.s-sold[aria-pressed="true"], .bkm-tile.s-sold[aria-pressed="true"] { opacity: .85; }
+.bk-cell.big.s-sold { background: transparent; }
+.bk-cell.s-sold .bk-shape polygon { fill: color-mix(in srgb, var(--bk-faint) 18%, transparent) !important; stroke: var(--bk-faint) !important; stroke-dasharray: 8 6; }
+.bk-cell[data-unit].s-sold::after { color: color-mix(in srgb, var(--bk-faint) 30%, transparent); }
+.bk-cell[data-unit].s-sold .bk-cell-id { border-color: var(--bk-faint) !important; background: var(--bk-surface) !important; }
+.bk-cell.s-sold .bk-cell-p { text-transform: uppercase; letter-spacing: .06em; font-size: .8em; }
+.bk-plan.has-focus .bk-cell.s-sold[data-focus="true"] { opacity: 1; filter: none; }
+/* ds-allow-hardcode:end */
+/* ds-allow-hardcode:start */
+/* A project's own status (Landowner, Reserved…) keeps its colour even when it is unavailable: still faded and
+   dashed, so it reads as disabled, but not the plain grey of a sale. */
+.bk-cell.s-sold[data-custom] { filter: none; opacity: .75; border-color: var(--bk-c); background: color-mix(in srgb, var(--bk-c) 14%, var(--bk-bg)); }
+.bk-cell.big.s-sold[data-custom] { background: transparent; }
+.bk-cell.s-sold[data-custom] .bk-shape polygon { fill: color-mix(in srgb, var(--bk-c) 22%, transparent) !important; stroke: var(--bk-c) !important; }
+.bk-cell[data-unit].s-sold[data-custom] .bk-cell-id { border-color: var(--bk-c) !important; background: color-mix(in srgb, var(--bk-c) 30%, var(--bk-bg)) !important; color: var(--bk-fg); }
+.bk-cell[data-unit].s-sold[data-custom]::after { color: color-mix(in srgb, var(--bk-c) 28%, transparent); }
 /* ds-allow-hardcode:end */

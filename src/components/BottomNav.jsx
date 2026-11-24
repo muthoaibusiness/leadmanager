@@ -14,8 +14,8 @@ import { NAV_META } from '../lib/navMeta.js';
 // Candidate tabs in priority order; the first three the user may see are
 // shown, then Home last (where More used to be; the header's menu tile opens
 // the drawer). Meta CAPI takes Home's old first slot.
-const PRIORITY = ['metacapi', 'companies', 'leads', 'properties', 'reports', 'conversations',
-  'calendar', 'pipeline', 'agentperf', 'team', 'requests', 'inventory', 'accounts'];
+const PRIORITY = ['companies', 'leads', 'conversations', 'agentperf',
+  'agentperf', 'team', 'requests', 'accounts'];
 
 // `inert`: set while the drawer is open, so Tab stays in the drawer.
 export default function BottomNav({ inert }) {

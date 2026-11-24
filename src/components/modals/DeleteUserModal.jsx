@@ -3,6 +3,9 @@ import { useApp } from '../../context/AppContext.jsx';
 import { getDB, unassignDeletedUser } from '../../lib/db.js';
 import { deleteAccount } from '../../lib/accessAdmin.js';
 import { useProjectToast } from '../project/projectToast.js';
+import '../booking/ShopBooking.css';
+import '../project/AddPropertyWizard.css';
+import '../views/AccountsView.css';
 
 export default function DeleteUserModal() {
   const { modal, closeModal, deleteUserId, setDeleteUserId, refreshDB, user, view } = useApp();
@@ -27,21 +30,25 @@ export default function DeleteUserModal() {
     toast.success('User removed', u?.name ? `${u.name} can no longer sign in.` : undefined, 'User removed');
   };
 
+  if (!isOpen) return null;
   return (
-    <div className={`mov${isOpen ? ' on' : ''}`} onClick={e => { if (e.target === e.currentTarget) closeModal(); }}>
-      <div className="modal">
-        <div className="m-hd">
-          <div className="m-ttl">Remove User</div>
-          <button className="m-x" onClick={closeModal}><Mi>close</Mi></button>
+    <div className="pw-scrim" onClick={e => { if (e.target === e.currentTarget) closeModal(); }}>
+      <div className="bk acx-modal acx-modal-sm" role="alertdialog" aria-modal="true" aria-labelledby="dum-t">
+        <header className="pw-head">
+          <div className="acx-mt"><span className="bk-eyebrow">Remove account</span><h3 id="dum-t">Remove {u?.name || 'this user'}?</h3></div>
+          <button type="button" className="bk-close" aria-label="Close" onClick={closeModal}><Mi>close</Mi></button>
+        </header>
+        <div className="pw-body">
+          <div className="pw-warn"><Mi>warning</Mi>This cannot be undone.</div>
+          <p className="acx-p">Any leads they own become unassigned and stay in the company. If this is a Team Lead, their team is removed too. They can no longer sign in.</p>
         </div>
-        <div className="m-body">
-          <p style={{ fontSize: '14px', color: 'var(--t1)' }}>Remove <strong>{u?.name}</strong> from the system?</p>
-          <p style={{ fontSize: '13px', color: 'var(--t2)', marginTop: '8px' }}>Any leads they own become unassigned (kept in the company). If this is a Team Lead, their team is removed too. This cannot be undone.</p>
-        </div>
-        <div className="m-ft">
-          <button className="btn btn-g" onClick={closeModal}>Cancel</button>
-          <button className="btn btn-danger" onClick={submit}><Mi>delete</Mi>Remove</button>
-        </div>
+        <footer className="pw-foot">
+          <span />
+          <div className="pw-acts">
+            <button type="button" className="bk-btn" onClick={closeModal}>Cancel</button>
+            <button type="button" className="bk-btn acx-solid-bad" onClick={submit}><Mi>delete</Mi>Remove</button>
+          </div>
+        </footer>
       </div>
     </div>
   );

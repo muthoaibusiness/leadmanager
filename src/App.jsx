@@ -63,7 +63,7 @@ const PAGES = {
   PipelineView: () => import('./components/views/PipelineView.jsx'),
   ClientsView: () => import('./components/views/ClientsView.jsx'),
   ReportsView: () => import('./components/views/ReportsView.jsx'),
-  AgentPerformanceView: () => import('./components/views/AgentPerformanceView.jsx'),
+  AnalyticsView: () => import('./components/views/AnalyticsView.jsx'),
   PerfReportsView: () => import('./components/views/PerfReportsView.jsx'),
   FbLeadsView: () => import('./components/views/FbLeadsView.jsx'),
   InventoryView: () => import('./components/views/InventoryView.jsx'),
@@ -94,6 +94,7 @@ const OVERLAYS = {
   FloorPlanEditor: () => import('./components/project/FloorPlanEditor.jsx'),
   PropertyFormModal: () => import('./components/modals/PropertyFormModal.jsx'),
   AddPropertyWizard: () => import('./components/project/AddPropertyWizard.jsx'),
+  EditProjectModal: () => import('./components/project/EditProjectModal.jsx'),
   UnitBookingModal: () => import('./components/modals/UnitBookingModal.jsx'),
   BookingModal: () => import('./components/modals/BookingModal.jsx'),
   TransferLeadModal: () => import('./components/modals/TransferLeadModal.jsx'),
@@ -103,7 +104,7 @@ const OVERLAYS = {
 
 const lazyAll = (loaders) => Object.fromEntries(Object.entries(loaders).map(([k, f]) => [k, lazyChunk(f)]));
 
-const { AgentDash, TeamLeadDash, ManagementDash, MasterDash, LeadsView, CalendarView, TeamView, AccountsView, AiTrainerView, MetaCapiView, RequestsView, ProfileView, PropertiesView, AvailableUnitsView, BookingsView, PipelineView, ClientsView, ReportsView, AgentPerformanceView, PerfReportsView, FbLeadsView, InventoryView, ConversationsView, PublicProjectAdmin, ShopBookingView } = lazyAll(PAGES);
+const { AgentDash, TeamLeadDash, ManagementDash, MasterDash, LeadsView, CalendarView, TeamView, AccountsView, AiTrainerView, MetaCapiView, RequestsView, ProfileView, PropertiesView, AvailableUnitsView, BookingsView, PipelineView, ClientsView, ReportsView, AnalyticsView, PerfReportsView, FbLeadsView, InventoryView, ConversationsView, PublicProjectAdmin, ShopBookingView } = lazyAll(PAGES);
 const OVERLAY_COMPONENTS = Object.entries(lazyAll(OVERLAYS));
 const LandingPage = lazyChunk(() => import('./components/LandingPage.jsx'));
 const PublicProjectView = lazyChunk(() => import('./components/project/PublicProjectView.jsx'));
@@ -337,7 +338,7 @@ function PageHero() {
     clients: { sub: '360° customer view' },
     properties: { sub: `${props.length} project${props.length === 1 ? '' : 's'} · ${propAvail} unit${propAvail === 1 ? '' : 's'} available` },
     reports: { sub: 'Live sales analytics' },
-    agentperf: { sub: 'Per-role scorecards & funnels' },
+    agentperf: { sub: 'Agent scorecards, project leaderboard, Facebook & Meta' },
     perfreports: { sub: '' },
     fbleads: { sub: 'Lead Ads forms → CRM' },
     bookings: { sub: 'Payments, instalments & dues' },
@@ -438,7 +439,7 @@ function PageBody() {
   if (view === 'booking') return <ShopBookingView />;
   if (view === 'bookings') return <BookingsView />;
   if (view === 'reports') return <ReportsView />;
-  if (view === 'agentperf') return <AgentPerformanceView />;
+  if (view === 'agentperf') return <AnalyticsView />;
   if (view === 'perfreports') return <PerfReportsView />;
   if (view === 'fbleads') return <FbLeadsView />;
   if (view === 'team') return <TeamView />;

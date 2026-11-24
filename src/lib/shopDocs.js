@@ -28,6 +28,12 @@ export const MAX_BYTES = 25 * 1024 * 1024; // the bucket's own limit
 export const OK_TYPES = ['application/pdf', 'image/png', 'image/jpeg', 'image/webp'];
 const NEED = 'Document kit is off. Apply supabase/migrations/0071_shop_docs.sql.';
 
+// The brochure and the floor plans belong to a project, not to the company: their library rows are
+// stored under "<key>@<project id>" so two projects never share one file.
+export const PER_PROJECT = ['brochure', 'floorplans'];
+export const docKey = (k, project) => (PER_PROJECT.includes(k) && project?.id ? `${k}@${project.id}` : k);
+// A link kept as a path on this site ("/projects/…pdf") must be a full address before WhatsApp can fetch it.
+export const absUrl = (u) => (!u || /^(https?:|data:|blob:)/i.test(u) ? u : new URL(u, window.location.origin).href);
 export const libOf = (cid) => cid || 'company'; // storage paths start with the company id (migration 0055)
 
 const rToLib = (r) => ({ key: r.doc_key, name: r.name || '', url: r.url || '', size: r.size_bytes || 0, mime: r.mime || '', approved: !!r.approved, by: r.uploaded_by_name || '', at: r.updated_at });
@@ -174,7 +180,7 @@ export async function buildFloorPlanFile(brochureUrl, name, step = () => {}) {
     for (let n = 1; n <= pdf.numPages; n++) {
       const t = await (await pdf.doc.getPage(n)).getTextContent();
       const head = t.items.map((i) => i.str).join(' ').replace(/\s+/g, ' ').slice(0, 120);
-      if (/floor plan/i.test(head)) pages.push(n);
+      if (/floor\s+(furniture\s+)?(layout\s+)?plan/i.test(head)) pages.push(n);
     }
     if (!pages.length) throw new Error('no floor-plan pages were found in the brochure');
     const { jsPDF } = await import('jspdf');

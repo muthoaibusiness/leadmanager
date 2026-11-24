@@ -9,7 +9,7 @@ import { getSession } from './db.js';
 export const VIEW_TITLES = {
   publicproject: 'Public Project',
   dashboard: 'Dashboard',
-  leads: 'Prospects',
+  leads: 'Leads',
   conversations: 'Conversations',
   calendar: 'Calendar',
   pipeline: 'Pipeline',
@@ -17,7 +17,7 @@ export const VIEW_TITLES = {
   properties: 'Projects',
   booking: 'Booking',
   reports: 'Reports',
-  agentperf: 'Performance',
+  agentperf: 'Analytics',
   perfreports: 'Reports',
   fbleads: 'Facebook Leads',
   bookings: 'Sales Activity',
@@ -63,7 +63,7 @@ export function homeView(user) {
 
 // What the Back link calls a page.
 export function pageLabel(s, db) {
-  if (s.agentFilter) return db?.users?.find(u => u.id === s.agentFilter)?.name || 'Prospects';
+  if (s.agentFilter) return db?.users?.find(u => u.id === s.agentFilter)?.name || 'Leads';
   if (s.teamFilter) {
     const tl = db?.users?.find(u => u.role === ROLES.TL && u.teamId === s.teamFilter);
     return `${tl?.name || 'Team'}'s Team`;

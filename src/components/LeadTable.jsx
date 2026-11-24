@@ -1,37 +1,91 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import Mi from './Mi.jsx';
-import { LoadingBar } from './Spinner.jsx';
-import Loader from './ui/loader.jsx';
-import Pagination from './Pagination.jsx';
-import { fmtDateTimeAP, leadDisplayStatus } from '../lib/helpers.js';
+import Avatar from './Avatar.jsx';
+import './booking/ShopBooking.css';
+import { fmtDateTimeAP, leadDisplayStatus, rlabel, ini, avc } from '../lib/helpers.js';
 import { SRC_LABELS, ROLES } from '../lib/constants.js';
 import { useApp } from '../context/AppContext.jsx';
-import { bulkDeleteLeads, lastFollowupFor } from '../lib/db.js';
+import { bulkDeleteLeads, lastFollowupFor, getDB } from '../lib/db.js';
 import TransferLeadModal from './modals/TransferLeadModal.jsx';
 import useChanged from '../hooks/useChanged.js';
+import './LeadTable.css';
 
 export const PAGE_SIZE = 15;
 
-function leadCode(l) { return l.externalId || ('#' + String(l.id || '').slice(-6).toUpperCase()); }
 
 // One list for the three header copies (loading, empty, rows), so they cannot drift.
-const COLS = ['Lead ID', 'Customer Name', 'Source', 'Property', 'Status', 'Last Follow-up', 'Create date'];
+const COLS = ['Person', 'Source', 'Property', 'Status', 'Agent', 'Last Activity', 'Next Follow-up', 'Created Date'];
 
-// Last Follow-up: line 1 is when the newest FOLLOW_UP was logged, line 2 the
-// newest Add Note text, each "—" when there is none. Until the server has
-// answered for this page (still loading, or the request failed), a lead with
-// nothing known shows "…" rather than "—", so the cell never claims
-// "no follow-up" without an answer.
-function FollowUpCell({ leadId, fromServer, pending }) {
-  const { fu, note } = lastFollowupFor(leadId, fromServer);
+// Last Activity: when the lead was last touched (the newest logged follow-up or note, else its last
+// change), with what was logged on line 2. Until the server has answered for this page (still
+// loading, or the request failed), a lead with nothing known shows "…" rather than "—", so the cell
+// never claims "no activity" without an answer.
+function LastActivityCell({ lead, fromServer, pending }) {
+  const { fu, note } = lastFollowupFor(lead.id, fromServer);
   const wait = pending && !fromServer;
-  const when = fu ? fmtDateTimeAP(fu.timestamp) : '';
+  const stamps = [fu?.timestamp, note?.timestamp, lead.updatedAt].filter(Boolean).map(t => new Date(t).getTime()).filter(Number.isFinite);
+  const at = stamps.length ? new Date(Math.max(...stamps)).toISOString() : '';
+  const what = note?.description || fu?.description || '';
   return (
-    <div className="lt-cell lt-cell-fu">
+    <div className="lt-two">
       <div style={{ minWidth: 0 }}>
-        <div className={`lt-date${fu ? ' lt-fu-on' : ''}`} title={fu ? fu.description : undefined}>{when || (wait ? '…' : '—')}</div>
-        <div className={`lt-sub${note ? ' lt-fu-on' : ''}`} title={note ? note.description : undefined}>{note ? note.description : (wait ? '' : '—')}</div>
+        <div className={`lt-date${at ? ' lt-fu-on' : ''}`} title={what || undefined}>{at ? fmtDateTimeAP(at) : (wait ? '…' : '—')}</div>
+        <div className={`lt-sub${what ? ' lt-fu-on' : ''}`} title={what || undefined}>{what || (wait ? '' : '—')}</div>
       </div>
+    </div>
+  );
+}
+
+const isPast = (t) => t < Date.now();
+
+// Next Follow-up: the scheduled time on the lead; red once it has passed.
+function NextFollowCell({ lead }) {
+  const t = lead.nextFollowup ? new Date(lead.nextFollowup).getTime() : NaN;
+  const has = Number.isFinite(t);
+  const late = has && isPast(t);
+  return (
+    <div className="lt-two">
+      <div style={{ minWidth: 0 }}>
+        <div className={`lt-date${has ? (late ? ' lt-late' : ' lt-fu-on') : ''}`}>{has ? fmtDateTimeAP(lead.nextFollowup) : '—'}</div>
+        {late && <div className="lt-sub lt-late">overdue</div>}
+      </div>
+    </div>
+  );
+}
+
+// Agent: the name, and on hover a card with who they are (role, team, contact, status).
+function AgentCell({ lead }) {
+  const [at, setAt] = useState(null);
+  const ref = useRef(null);
+  const id = lead.assignedTo;
+  const db = getDB();
+  const u = id ? (db.users || []).find(x => x.id === id) : null;
+  const name = u?.name || lead.assignedToName || '';
+  if (!name) return <span className="lt-sub">Unassigned</span>;
+  const team = u ? ((db.teams || []).find(t => t.id === u.teamId) || (db.teams || []).find(t => t.leadId === u.id)) : null;
+  const show = () => {
+    const r = ref.current.getBoundingClientRect();
+    const below = window.innerHeight - r.bottom > 230;
+    setAt({ left: Math.min(r.left, window.innerWidth - 300), top: below ? r.bottom + 6 : null, bottom: below ? null : window.innerHeight - r.top + 6 });
+  };
+  return (
+    <div className="lt-agent" title={name} ref={ref} onMouseEnter={show} onMouseLeave={() => setAt(null)} onFocus={show} onBlur={() => setAt(null)} tabIndex={0}>
+      <Avatar name={name} avatar={u?.avatar} className="lt-av lt-av-ag" />
+      <span className="lt-agent-n">{name}</span>
+      {at && createPortal(
+        <div className="lt-agent-card" role="tooltip" style={{ left: at.left, top: at.top ?? undefined, bottom: at.bottom ?? undefined }}>
+          <div className="lt-agent-hd">
+            <Avatar name={name} avatar={u?.avatar} className="lt-av lg" />
+            <div><b>{name}</b><span>{u ? rlabel(u.role) : 'Agent'}</span></div>
+          </div>
+          <dl>
+            {team && <><dt>Team</dt><dd>{team.name}</dd></>}
+            {u?.phone && <><dt>Phone</dt><dd>{u.phone}</dd></>}
+            {u?.email && <><dt>Email</dt><dd>{u.email}</dd></>}
+            <dt>Status</dt><dd>{u && u.isActive === false ? 'Inactive' : 'Active'}</dd>
+          </dl>
+        </div>, document.body)}
     </div>
   );
 }
@@ -104,44 +158,32 @@ export default function LeadTable({ leads, total = null, page: pageProp, onPage,
     showToast(`${ids.length} customer${ids.length > 1 ? "s" : ""} deleted`, 'ok');
   }
 
-  if (!leads.length) {
-    // A loading page and an empty result look identical otherwise — one says
-    // "wait", the other says "nothing matches", and showing the wrong one reads
-    // as data loss.
-    if (loading) {
-      return (
-        <div className={`lt lt-leads${canSelect ? ' lt-with-cb' : ''}`}>
-          <div className="lt-hdr">
-            {canSelect && <div className="lt-cb-col" />}
-            {COLS.map(c => <div key={c}>{c}</div>)}
-          </div>
-          <Loader size="sm" title="Loading customers…" subtitle="Fetching the list" />
-        </div>
-      );
-    }
-    return (
-      <div className={`lt lt-leads${canSelect ? ' lt-with-cb' : ''}`}>
-        <div className="lt-hdr">
-          {canSelect && <div className="lt-cb-col" />}
-          {COLS.map(c => <div key={c}>{c}</div>)}
-        </div>
-        <div className="empty"><Mi>inbox</Mi><p>No customers here</p></div>
-      </div>
-    );
-  }
+  const heads = (
+    <tr>
+      {canSelect && (
+        <th className="lt-c-chk">
+          <button type="button" className={`lt-chk${allSelected ? ' on' : ''}`} onClick={toggleAll} role="checkbox" aria-checked={allSelected} aria-label="Select all on this page" disabled={!slice.length}>
+            <Mi>{allSelected ? 'check_box' : 'check_box_outline_blank'}</Mi>
+          </button>
+        </th>
+      )}
+      {COLS.map((c, i) => <th key={c} className={`lt-h${i}`}>{c}</th>)}
+    </tr>
+  );
+  const first = leads.length ? page * pageSize + 1 : 0;
+  const count = server ? total : leads.length;
+  const pages = Math.max(1, Math.ceil(count / pageSize));
+  const curPage = Math.min(page, pages - 1);
+  const last = Math.min(first + slice.length - 1, count);
 
   return (
-    <div>
+    <div className="bk lvx-t">
       {canSelect && selected.size > 0 && (
-        <div className="bulk-bar">
-          <span className="bulk-ct">{selected.size} selected</span>
-          <button className="btn btn-purple btn-sm" onClick={() => setXferOpen(true)}>
-            <Mi>swap_horiz</Mi>Transfer Selected
-          </button>
-          <button className="btn btn-sm" style={{ background: 'var(--red-l)', color: 'var(--red)' }} onClick={handleBulkDelete}>
-            <Mi>delete</Mi>Delete Selected
-          </button>
-          <button className="btn btn-g btn-sm" onClick={() => setSelected(new Set())}>Clear</button>
+        <div className="lt-bulk">
+          <span>{selected.size} selected</span>
+          <button type="button" className="bk-btn" onClick={() => setXferOpen(true)}><Mi>swap_horiz</Mi>Transfer</button>
+          <button type="button" className="bk-btn lt-danger" onClick={handleBulkDelete}><Mi>delete</Mi>Delete</button>
+          <button type="button" className="bk-btn" onClick={() => setSelected(new Set())}>Clear</button>
         </div>
       )}
       {canSelect && (
@@ -152,65 +194,64 @@ export default function LeadTable({ leads, total = null, page: pageProp, onPage,
           onDone={() => setSelected(new Set())}
         />
       )}
-      <div className={`lt lt-wrap lt-leads${canSelect ? ' lt-with-cb' : ''}${loading ? ' lt-busy' : ''}`}>
-        {loading && <LoadingBar />}
-        <div className="lt-hdr">
-          {canSelect && (
-            <div className="lt-cb-col" onClick={toggleAll} title={allSelected ? 'Clear all' : 'Select all'}>
-              <input type="checkbox" checked={allSelected} onChange={() => {}} onClick={(e) => { e.stopPropagation(); toggleAll(); }} />
+      <section className={`rqx-card lt-card${loading ? ' lt-busy' : ''}`} aria-label="Leads" aria-busy={loading}>
+        {loading && <span className="lt-bar" aria-hidden="true" />}
+        {!leads.length ? (
+          <>
+            <div className="rqx-scroll"><table className="rqx-table lt-table"><thead>{heads}</thead></table></div>
+            <div className="bk-empty bk-empty-lg">
+              <Mi>{loading ? 'hourglass_top' : 'inbox'}</Mi>
+              <b>{loading ? 'Loading leads…' : 'No leads here'}</b>
+              <span>{loading ? 'Fetching the list.' : 'Nothing matches. Try another word, status or project.'}</span>
             </div>
-          )}
-          {COLS.map(c => <div key={c}>{c}</div>)}
-        </div>
-        {slice.map(l => (
-          <div key={l.id} className={`lt-row${selected.has(l.id) ? ' lt-sel' : ''}`}
-            onClick={() => selected.size > 0 && canSelect ? toggleOne(l.id, { stopPropagation: () => {} }) : setPanLead(l.id)}>
-            {canSelect && (
-              <div className="lt-cb-col" onClick={e => toggleOne(l.id, e)}>
-                <input type="checkbox" checked={selected.has(l.id)} onChange={() => {}} onClick={e => toggleOne(l.id, e)} />
-              </div>
-            )}
-            <div className="lt-cell lt-cell-id">
-              <span className="lt-id" title={leadCode(l)}>{leadCode(l)}</span>
-            </div>
-            <div className="lt-cell lt-cell-main">
-              <div style={{ minWidth: 0, flex: 1 }}>
-                <div className="lt-n">{l.name}</div>
-                <div className="lt-sub">{l.phone}</div>
-              </div>
-              {l.phone && chatOk && (
-                <button
-                  type="button"
-                  className="lt-wa-btn"
-                  title={`Chat on WhatsApp with ${l.name || 'customer'}`}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setChatTarget(l);
-                  }}
-                >
-                  <Mi>chat</Mi>
-                </button>
-              )}
-            </div>
-            <div className="lt-cell lt-cell-src">
-              <span className="lt-src">{SRC_LABELS[l.source] || l.source || '—'}</span>
-            </div>
-            <div className="lt-cell lt-cell-prop">
-              <div style={{ minWidth: 0 }}>
-                <div className="lt-prop">{l.propertyInterest || '—'}</div>
-              </div>
-            </div>
-            <div className="lt-cell lt-cell-status">
-              {(() => { const ds = leadDisplayStatus(l); return <span className={`bdg ${ds.cls}`}>{ds.label}</span>; })()}
-            </div>
-            <FollowUpCell leadId={l.id} fromServer={lastFu[l.id]} pending={fuPending} />
-            <div className="lt-cell lt-cell-date">
-              <span className="lt-date">{fmtDateTimeAP(l.createdAt)}</span>
-            </div>
+          </>
+        ) : (
+          <div className="rqx-scroll">
+            <table className="rqx-table lt-table">
+              <thead>{heads}</thead>
+              <tbody>
+                {slice.map(l => (
+                  <tr key={l.id} className={selected.has(l.id) ? 'sel' : ''}
+                    onClick={() => (selected.size > 0 && canSelect ? toggleOne(l.id, { stopPropagation: () => {} }) : setPanLead(l.id))}>
+                    {canSelect && (
+                      <td className="lt-c-chk" onClick={e => toggleOne(l.id, e)}>
+                        <button type="button" className={`lt-chk${selected.has(l.id) ? ' on' : ''}`} role="checkbox" aria-checked={selected.has(l.id)} aria-label={`Select ${l.name}`} onClick={e => toggleOne(l.id, e)}>
+                          <Mi>{selected.has(l.id) ? 'check_box' : 'check_box_outline_blank'}</Mi>
+                        </button>
+                      </td>
+                    )}
+                    <td className="lt-c-person">
+                      <span className="lt-person">
+                        <span className="lt-av" style={{ background: avc(l.name) }}>{ini(l.name)}</span>
+                        <span className="lt-pn"><b>{l.name}</b><span className="rqx-mono">{l.phone}</span></span>
+                        {l.phone && chatOk && (
+                          <button type="button" className="lt-wa" title={`Chat on WhatsApp with ${l.name || 'this person'}`} aria-label={`Chat with ${l.name}`}
+                            onClick={(e) => { e.stopPropagation(); setChatTarget(l); }}><Mi>chat</Mi></button>
+                        )}
+                      </span>
+                    </td>
+                    <td><span className="lt-src">{SRC_LABELS[l.source] || l.source || '—'}</span></td>
+                    <td className="lt-prop" title={l.propertyInterest || undefined}>{l.propertyInterest || '—'}</td>
+                    <td>{(() => { const ds = leadDisplayStatus(l); return <span className={`bdg lt-st ${ds.cls}`}><i className="bk-dot" />{ds.label}</span>; })()}</td>
+                    <td><AgentCell lead={l} /></td>
+                    <td><LastActivityCell lead={l} fromServer={lastFu[l.id]} pending={fuPending} /></td>
+                    <td><NextFollowCell lead={l} /></td>
+                    <td className="lt-created">{fmtDateTimeAP(l.createdAt)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
-        ))}
-      </div>
-      <Pagination page={page} total={server ? total : leads.length} pageSize={pageSize} onChange={setPage} />
+        )}
+        <div className="rqx-foot">
+          <span className="bk-cap">{count ? `${first}–${last} of ${count}` : '0 leads'}</span>
+          <div className="rqx-pager" role="group" aria-label="Pages">
+            <button type="button" className="bk-zbtn" aria-label="Previous page" disabled={curPage === 0} onClick={() => setPage(curPage - 1)}><Mi>chevron_left</Mi></button>
+            <span className="bk-zbtn wide rqx-pg">{curPage + 1} / {pages}</span>
+            <button type="button" className="bk-zbtn" aria-label="Next page" disabled={curPage >= pages - 1} onClick={() => setPage(curPage + 1)}><Mi>chevron_right</Mi></button>
+          </div>
+        </div>
+      </section>
     </div>
   );
 }

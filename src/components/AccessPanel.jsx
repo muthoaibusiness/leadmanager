@@ -6,7 +6,9 @@ import { canManageUser, assignableRoles, initialFeatures } from '../lib/constant
 import { setFeatures, setRole, setActive } from '../lib/accessAdmin.js';
 import FeatureEditor from './FeatureEditor.jsx';
 import './AccessPanel.css';
-import { Select, SelectLabel, SelectTrigger, SelectValue, SelectPopover, SelectListBox, SelectItem } from './ui/select.jsx';
+import BkSelect from './booking/BkSelect.jsx';
+import './booking/ShopBooking.css';
+import './project/AddPropertyWizard.css';
 
 // Users & Accounts › Access: one account at a time, its role, status and
 // feature access. Every save goes to the access-admin function, which checks
@@ -25,7 +27,7 @@ export default function AccessPanel({ users }) {
   // storeUserRow replaces the cached object with the server's row.
   if (target && shownFor !== target.id) { setShownFor(target.id); setFeat(initialFeatures(target)); setErr(''); }
 
-  if (!editable.length) return <div className="acc-card"><div className="acc-card-s">No accounts you can manage.</div></div>;
+  if (!editable.length) return <div className="bk-empty bk-empty-lg"><Mi>shield</Mi><b>No accounts you can manage</b><span>Accounts you may change appear here.</span></div>;
 
   const before = initialFeatures(target);
   const dirty = before.size !== feat.size || [...feat].some(k => !before.has(k));
@@ -42,60 +44,46 @@ export default function AccessPanel({ users }) {
   };
 
   const active = target.isActive !== false;
+  const roleOpts = [...new Set([target.role, ...assignableRoles(user)])].map(r => ({ value: r, label: rlabel(r) }));
   return (
-    <div className="acc-card acp">
-      <div className="acc-card-hd">
-        <div>
-          <div className="acc-card-t"><Mi>shield</Mi>Access</div>
-          <div className="acc-card-s">Changes apply on the account's next request. Deactivating also signs it out everywhere.</div>
-        </div>
-      </div>
+    <section className="rqi-card acp" aria-label="Access">
+      <header>
+        <div><h3>Access</h3><span className="bk-cap">Changes apply on the account's next request. Deactivating also signs it out everywhere.</span></div>
+      </header>
 
       <div className="acp-row">
-        {/* ds-allow-native-select: ui/select.jsx (radix), not a native <select>; the lint is case-insensitive. */}
-        <Select className="acp-f" value={pickId} onChange={setPickId} disabled={busy} name="access-account">
-          <SelectLabel>Account</SelectLabel>
-          <SelectTrigger><SelectValue /></SelectTrigger>
-          <SelectPopover><SelectListBox>
-            {editable.map(u => <SelectItem key={u.id} value={u.id}>{u.name} · {rlabel(u.role)}{u.isActive === false ? ' (inactive)' : ''}</SelectItem>)}
-          </SelectListBox></SelectPopover>
-        </Select>
-        {/* ds-allow-native-select: same radix Select. */}
-        <Select className="acp-f" value={target.role} name="access-role"
-          disabled={busy || !assignableRoles(user).includes(target.role)}
-          onChange={r => { if (r !== target.role) apply(() => setRole(target.id, r), 'Role saved'); }}>
-          <SelectLabel>Role</SelectLabel>
-          <SelectTrigger><SelectValue /></SelectTrigger>
-          <SelectPopover><SelectListBox>
-            {[...new Set([target.role, ...assignableRoles(user)])].map(r => <SelectItem key={r} value={r}>{rlabel(r)}</SelectItem>)}
-          </SelectListBox></SelectPopover>
-        </Select>
-        <div className="acp-f"><span className="sel-label">Status</span>
-          <button type="button" className={`btn btn-g${active ? '' : ' on'}`} disabled={busy}
+        <div className="pw-f"><span className="bk-cap">Account</span>
+          <BkSelect label="Account" value={pickId} onChange={v => { if (!busy) setPickId(v); }}
+            options={editable.map(u => ({ value: u.id, label: `${u.name} · ${rlabel(u.role)}${u.isActive === false ? ' (inactive)' : ''}` }))} /></div>
+        <div className="pw-f"><span className="bk-cap">Role</span>
+          <BkSelect label="Role" value={target.role} options={roleOpts}
+            onChange={r => { if (!busy && assignableRoles(user).includes(target.role) && r !== target.role) apply(() => setRole(target.id, r), 'Role saved'); }} /></div>
+        <div className="pw-f"><span className="bk-cap">Status</span>
+          <button type="button" className="bk-btn" disabled={busy}
             onClick={() => apply(() => setActive(target.id, !active), active ? 'Account deactivated' : 'Account reactivated')}>
             <Mi>{active ? 'block' : 'check_circle'}</Mi>{active ? 'Deactivate' : 'Reactivate'}
           </button>
         </div>
       </div>
 
-      <div className="fl">
-        <div className="ea-row">
-          <label style={{ margin: 0 }}>Feature access</label>
-          <span className="ea-count" style={{ margin: 0 }}>{feat.size} enabled{Array.isArray(target.allowedFeatures) ? '' : ' · role defaults'}</span>
+      <div className="acp-feat">
+        <div className="acp-feat-h">
+          <span className="bk-cap">Feature access</span>
+          <span className="bk-cap">{feat.size} enabled{Array.isArray(target.allowedFeatures) ? '' : ' · role defaults'}</span>
         </div>
         <FeatureEditor value={feat} onToggle={toggle} role={target.role} disabled={busy} />
       </div>
-      {err && <div className="acp-err" role="alert"><Mi>error</Mi>{err}</div>}
+      {err && <div className="pw-warn" role="alert"><Mi>error</Mi>{err}</div>}
       <div className="acp-ft">
-        <button type="button" className="btn btn-g" disabled={busy || !Array.isArray(target.allowedFeatures)}
+        <button type="button" className="bk-btn" disabled={busy || !Array.isArray(target.allowedFeatures)}
           onClick={() => apply(() => setFeatures(target.id, null), 'Back to role defaults')}>
           <Mi>restart_alt</Mi>Use role defaults
         </button>
-        <button type="button" className="btn btn-p" disabled={busy || !dirty}
+        <button type="button" className="bk-btn primary" disabled={busy || !dirty}
           onClick={() => apply(() => setFeatures(target.id, [...feat]), 'Access saved')}>
           <Mi>save</Mi>{busy ? 'Saving…' : 'Save access'}
         </button>
       </div>
-    </div>
+    </section>
   );
 }

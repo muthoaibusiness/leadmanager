@@ -1,0 +1,64 @@
+/* Facebook Leads in the Booking page's look. Scoped to .fbx, so nothing else changes.
+   Tokens come from .bk in booking/ShopBooking.css; the cards, chips and KPI pieces are the Requests ones. */
+/* ds-allow-hardcode:start */
+.fbl.fbx { flex: none; display: flex; flex-direction: column; gap: 14px; max-width: none; color: var(--bk-fg); font-family: var(--bk-body, inherit); padding-bottom: 20px; }
+.fbx .fbl-tabrow { flex-wrap: wrap; }
+.fbx .fbl-onoff { font-size: 15px; color: var(--bk-muted); }
+.fbx .fbl-sw { background: var(--bk-line); }
+.fbx .fbl-sw.on { background: var(--bk-accent); }
+.fbx .fbl-warn { background: color-mix(in srgb, var(--bk-held) 14%, transparent); color: var(--bk-held); border-radius: var(--bk-r); font-size: 15px; }
+.fbx .fbl-errs { background: color-mix(in srgb, var(--bk-bad) 12%, transparent); color: var(--bk-bad); border-radius: var(--bk-r); font-size: 15px; }
+.fbx .fbl-card { background: var(--bk-surface); border: 1px solid var(--bk-line); border-radius: var(--bk-r); box-shadow: var(--bk-shadow); padding: 16px 18px; }
+.fbx .fbl-card h3 { font-family: var(--bk-display); font-size: 20px; font-weight: 600; color: var(--bk-fg); }
+.fbx .fbl-card h4 { font-size: 15px; color: var(--bk-fg); }
+.fbx .fbl-note { font-size: 14px; color: var(--bk-muted); }
+.fbx .fbl-empty { color: var(--bk-muted); font-size: 15px; }
+.fbx .fbl-fld { font-size: 14px; color: var(--bk-muted); }
+.fbx .fbl-fld > span { font-size: 12.5px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; }
+.fbx .fbl-fld small { text-transform: none; letter-spacing: 0; }
+.fbx .fbl-fld input:not([type]), .fbx .fbl-fld input[type="text"], .fbx .fbl-map input { background: var(--bk-bg); color: var(--bk-fg); border: 1px solid var(--bk-line); border-radius: 10px; padding: 10px 12px; font: inherit; font-size: 16px; }
+.fbx .fbl-fld input:focus, .fbx .fbl-map input:focus { outline: none; border-color: var(--bk-accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--bk-accent) 22%, transparent); }
+.fbx .fbl-map em { font-size: 13px; color: var(--bk-muted); }
+.fbx .fbl-check { color: var(--bk-fg); font-size: 15px; }
+.fbx .fbl-opt { background: var(--bk-bg); border: 1px solid var(--bk-line); border-radius: var(--bk-r); }
+.fbx .fbl-opt b { font-size: 15px; color: var(--bk-fg); }
+.fbx .fbl-opt small { font-size: 13.5px; color: var(--bk-muted); }
+.fbx .fbl-opt.on { border-color: var(--bk-accent); background: var(--bk-accent-soft); }
+.fbx .fbl-steps { font-size: 15px; color: var(--bk-fg); }
+.fbx .fbl-steps code, .fbx .fbl-secrets code, .fbx .fbl-note code { background: var(--bk-surface2); border: 1px solid var(--bk-line); font-family: var(--bk-mono); }
+.fbx .fbl-secrets li { border: 1px solid var(--bk-line); border-radius: var(--bk-r); background: var(--bk-bg); }
+.fbx .fbl-secrets small { color: var(--bk-muted); font-size: 13px; }
+.fbx .fbl-btn { border: 1px solid var(--bk-line); background: var(--bk-bg); color: var(--bk-fg); font: 500 15px/1 inherit; padding: 9px 15px; border-radius: 10px; }
+.fbx .fbl-btn:hover:not(:disabled) { border-color: var(--bk-accent); color: var(--bk-accent); }
+.fbx .fbl-btn.solid { background: var(--bk-accent); border-color: var(--bk-accent); color: var(--bk-accent-ink); }
+.fbx .fbl-btn.solid:hover:not(:disabled) { color: var(--bk-accent-ink); filter: brightness(1.08); }
+.fbx .fbl-btn.ghost { background: transparent; }
+.fbx .fbl-btn.danger { color: var(--bk-bad); }
+.fbx .fbl-btn .mi { font-size: 19px; }
+.fbx .fbl-form-top small, .fbx .fbl-log-main small, .fbx .fbl-log-when { color: var(--bk-muted); font-size: 13.5px; }
+.fbx .fbl-form-top b, .fbx .fbl-log-main b { font-size: 16px; color: var(--bk-fg); }
+.fbx .fbl-chips span { background: var(--bk-surface2); border: 1px solid var(--bk-line); color: var(--bk-muted); font-size: 13.5px; }
+.fbx .fbl-pool button { border: 1px solid var(--bk-line); background: var(--bk-bg); color: var(--bk-fg); font-size: 14.5px; }
+.fbx .fbl-pool button.on { background: var(--bk-accent); border-color: var(--bk-accent); color: var(--bk-accent-ink); }
+.fbx .fbl-log li { border-top: 1px solid var(--bk-line); }
+.fbx .fbl-tag { font-size: 12.5px; }
+.fbx .fbl-tag.ok { background: var(--bk-accent-soft); color: var(--bk-accent); }
+.fbx .fbl-tag.warn { background: color-mix(in srgb, var(--bk-held) 16%, transparent); color: var(--bk-held); }
+.fbx .fbl-tag.bad { background: color-mix(in srgb, var(--bk-bad) 14%, transparent); color: var(--bk-bad); }
+.fbx .fbl-tag.mut { background: var(--bk-surface2); color: var(--bk-muted); }
+.fbx .fbl-sum th { color: var(--bk-muted); font-size: 12.5px; letter-spacing: .06em; border-bottom: 1px solid var(--bk-line); }
+.fbx .fbl-sum td { color: var(--bk-fg); border-top: 1px solid var(--bk-line); font-family: var(--bk-mono); font-size: 14px; }
+.fbx .fbl-sum td:first-child { font-family: inherit; }
+.fbx .fbl-sum td.ok { color: var(--bk-accent); }
+.fbx .fbl-sum td.bad { color: var(--bk-bad); }
+.fbx .fbl-sum td.warn { color: var(--bk-held); }
+.fbx .fbl-sum tr.tot td { border-top: 2px solid var(--bk-line); }
+/* ds-allow-hardcode:end */
+/* ds-allow-hardcode:start */
+.fbx .fbx-kpis { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+@media (max-width: 1100px) { .fbx .fbx-kpis { grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); } }
+.fbx .fbl-sw { border: 1px solid var(--bk-faint); }
+.fbx .fbl-sw i { background: var(--bk-fg); }
+.fbx .fbl-sw.on { border-color: var(--bk-accent); }
+.fbx .fbl-sw.on i { background: var(--bk-accent-ink); }
+/* ds-allow-hardcode:end */

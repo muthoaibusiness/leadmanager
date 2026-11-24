@@ -84,3 +84,6 @@
   .pw-acts .bk-btn { flex: 1; }
 }
 /* ds-allow-hardcode:end */
+
+/* Edit project: make a photo the cover */
+.pw-mk { position: absolute; left: 6px; bottom: 6px; top: auto !important; right: auto !important; width: auto !important; height: auto !important; border-radius: 999px !important; font-size: 12px; padding: 1px 8px; background: rgb(0 0 0 / .65) !important; }

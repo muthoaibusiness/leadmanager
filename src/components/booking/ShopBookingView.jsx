@@ -5,8 +5,9 @@ import useLeadBook from '../../hooks/useLeadBook.js';
 import useMediaQuery from '../../hooks/useMediaQuery.js';
 import { planProjects } from '../../lib/projects.js';
 import { byCode } from '../../lib/floorPlan.js';
-import { textFloor, landmarks, floorCode, shortCode, takaShort } from '../../lib/floorText.js';
+import { textFloor, landmarks, floorCode } from '../../lib/floorText.js';
 import ShopCard from './ShopCard.jsx';
+import FloorCanvas from './FloorCanvas.jsx';
 import ProjectList from './ProjectList.jsx';
 import ShopGrid from './ShopGrid.jsx';
 import './ShopBooking.css';
@@ -24,15 +25,8 @@ const PHONE_MQ = '(max-width: 720px)';
 // The project's own statuses (Landowner, Reserved…) that this floor uses, for the legend.
 const customStatuses = (shops) => {
   const seen = new Map();
-  shops.forEach(s => { if (s.look.color && !seen.has(s.look.label)) seen.set(s.look.label, { label: s.look.label, color: s.look.color }); });
+  shops.forEach(s => { if (!s.look.color) return; const e = seen.get(s.look.label) || { label: s.look.label, color: s.look.color, n: 0 }; e.n++; seen.set(s.look.label, e); });
   return [...seen.values()];
-};
-
-// A narrow tile gets a smaller type so its number is never cut off: the number
-// (mono, about 0.62 em a character) has to fit the tile's width less its padding.
-const codeFit = (s) => {
-  const em = (s.w * 100 - 1.5) / (0.62 * shortCode(s.code).length); // in cqw
-  return em < 1.75 ? { fontSize: `max(6.5px, ${Math.max(em, 0.5).toFixed(2)}cqw)` } : null;
 };
 
 const ZOOMS = [1, 1.5, 2, 3]; // plan width as a multiple of its box; 1 = the whole floor fits
@@ -52,8 +46,11 @@ export default function ShopBookingView() {
 
   const project = projects.find(p => p.id === projId) || null; // none picked yet: the project list
   const plans = sortPlans(project?.floorPlans || []);
-  // The picked floor, else the ground floor (order 0), else the top one.
-  const plan = plans.find(p => p.id === floorId) || plans.find(p => p.order === 0) || plans[0] || null;
+  // The picked floor, else the ground floor if it has units, else the lowest floor that does.
+  const hasShops = (p) => textFloor(project, p).counts.total > 0;
+  const plan = plans.find(p => p.id === floorId)
+    || [...plans].reverse().find(p => p.order === 0 && hasShops(p)) || [...plans].reverse().find(hasShops) // the lowest floor that has units
+    || plans.find(p => p.order === 0) || plans[0] || null;
   const floor = project && plan ? textFloor(project, plan) : null;
   const shop = floor?.shops.find(s => s.code === shopCode) || null;
   const lm = landmarks(plan);
@@ -105,48 +102,21 @@ export default function ShopBookingView() {
             {floor.counts.total ? (
               <>
                 <span><i className="bk-sw s-available" />Available <b>{floor.counts.available}</b></span>
-                <span><i className="bk-sw s-hold" />On hold <b>{floor.counts.hold}</b></span>
-                <span><i className="bk-sw s-sold" />Sold <b>{floor.counts.sold}</b></span>
-                {customStatuses(floor.shops).map(c => <span key={c.label}><i className="bk-sw" style={{ background: c.color }} />{c.label}</span>)}
+                <span><i className="bk-sw s-hold" />On hold <b>{floor.shops.filter(x => x.status === 'hold' && !x.look.color).length}</b></span>
+                <span><i className="bk-sw s-sold" />Sold <b>{floor.shops.filter(x => x.status === 'sold' && !x.look.color).length}</b></span>
+                {customStatuses(floor.shops).map(c => <span key={c.label}><i className="bk-sw" style={{ background: c.color }} />{c.label} <b>{c.n}</b></span>)}
               </>
-            ) : <span>Parking level: no shops for sale on this floor.</span>}
+            ) : <span>{plan.note || 'No units for sale on this floor.'}</span>}
           </div>
-          <div className="bk-stage">
-            {/* The plan keeps the drawing's shape; every tile sits at its box's
-                own position and size, as a percentage of it. */}
-            <div className="bk-plan" style={{ '--asp': floor.aspect, '--z': zoom }}>
-              {lm.hull && <div className="bk-hull-wrap" aria-hidden="true"><div className="bk-hull" style={{ clipPath: lm.hull }} /></div>}
-              {lm.marks.map((m, i) => (
-                <div key={i} className={`bk-mark k-${m.kind}`} aria-hidden="true"
-                  style={{ left: `${m.x * 100}%`, top: `${m.y * 100}%`, width: `${m.w * 100}%`, height: `${m.h * 100}%`, ...(m.clip ? { clipPath: `polygon(${m.clip.map(([x, y]) => `${x * 100}% ${y * 100}%`).join(', ')})` } : null) }}>
-                  {m.label && <span>{m.label}</span>}
-                </div>
-              ))}
-              {floor.shops.map(s => {
-                // Tile height measured in plan widths, so "room for a second
-                // line" does not depend on the drawing's aspect ratio.
-                const hw = s.h / floor.aspect;
-                return (
-                  <button key={s.code} type="button" className={`bk-cell s-${s.status}`} aria-pressed={shopCode === s.code}
-                    style={{ left: `${s.x * 100}%`, top: `${s.y * 100}%`, width: `${s.w * 100}%`, height: `${s.h * 100}%`, ...(s.look.color ? { '--bk-c': s.look.color } : null), ...codeFit(s) }}
-                    onClick={() => setShopCode(s.code)}
-                    aria-label={`${s.code}, ${s.size} sq ft, ${s.look.label}`}>
-                    <span className="bk-cell-id">{shortCode(s.code)}</span>
-                    {hw >= 0.05 && <span className="bk-cell-m">{s.size}{s.w >= 0.075 ? " sft" : ""}</span>}
-                    {hw >= 0.085 && s.w >= 0.085 && <span className="bk-cell-p">{s.status === 'available' ? takaShort(s.price) : s.look.label}</span>}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
+          <FloorCanvas floor={floor} lm={lm} zoom={zoom} shopCode={shopCode} onPick={setShopCode} />
         </section>
 
         <aside className={`bk-detail${shop ? ' has-shop' : ''}`} aria-live="polite">
           {!shop ? (
             <div className="bk-empty bk-empty-lg">
               <Mi>touch_app</Mi>
-              <b>{!floor.counts.total ? 'No shops on this floor' : 'Select a shop'}</b>
-              <span>{!floor.counts.total ? 'Pick another floor to book a shop.' : 'Pick a tile on the plan to see its price and book it for a customer.'}</span>
+              <b>{!floor.counts.total ? 'No units on this floor' : 'Select a shop'}</b>
+              <span>{!floor.counts.total ? 'Pick another floor to book a unit.' : 'Pick a tile on the plan to see its price and book it for a customer.'}</span>
             </div>
           ) : (
             <ShopCard key={`${project.id}:${shop.code}`} project={project} plan={plan} shop={shop} onClose={() => setShopCode(null)} />

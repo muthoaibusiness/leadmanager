@@ -120,7 +120,7 @@ export default function ShopGrid({ project, plans, plan, floor, onBack, pickFloo
             <div className="bkm-sheet-h">
               <div>
                 <h3>{shopLabel(shop.code)}</h3>
-                <div className="bkm-sheet-p"><b>{shop.price ? taka(shop.price) : 'Price on request'}</b>{shop.size ? <span> · {shop.size} sq ft</span> : null}</div>
+                <div className="bkm-sheet-p"><b>{shop.price ? taka(shop.price) : 'Price on request'}</b>{shop.size ? <span> · {shop.size} sq ft</span> : null}{shop.beds ? <span> · {shop.beds} bed{shop.beds > 1 ? 's' : ''}</span> : null}</div>
               </div>
               <button type="button" className="bk-x" aria-label="Close" onClick={close}><Mi>close</Mi></button>
             </div>
