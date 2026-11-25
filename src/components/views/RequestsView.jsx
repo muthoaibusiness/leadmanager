@@ -2,12 +2,13 @@ import { useApp } from '../../context/AppContext.jsx';
 import useNavState from '../../hooks/useNavState.js';
 import { useState } from 'react';
 import { getHoldRequests, decideHoldRequest } from '../../lib/db.js';
-import { setUnitStatus, reservedTag, getProjectById, findUnit } from '../../lib/projects.js';
+import { setUnitStatus, reservedTag, getProjectById, findUnit, listProjects } from '../../lib/projects.js';
 import { fmtBDT, fmtAgo } from '../../lib/helpers.js';
 import Mi from '../Mi.jsx';
 import BkSelect from '../booking/BkSelect.jsx';
 import RequestsInsights from './RequestsInsights.jsx';
 import RequestUnitModal from './RequestUnitModal.jsx';
+import RequestsHeld from './RequestsHeld.jsx';
 import { seedNextPage } from '../../hooks/useNavHistory.js';
 import '../booking/ShopBooking.css';
 
@@ -29,13 +30,15 @@ const SORTS = [
   ['client', 'Client A–Z'],
 ];
 const SIZES = [10, 25, 50];
+const stamp = () => Date.now();
 const day = (iso) => new Date(iso).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' });
 
 export default function RequestsView() {
-  const { user, refreshDB, showToast, dbVersion, setPropSel, openModal, nav } = useApp();
+  const { user, refreshDB, showToast, dbVersion, setPropSel, openModal, nav, setBookProj } = useApp();
   void dbVersion;
   const [tab, setTab] = useNavState('requests.tab', 'queue');
   const [openId, setOpenId] = useState(null); // the request shown in the pop-up
+  const [openHeld, setOpenHeld] = useState(null); // a held unit shown in the same pop-up
   const [status, setStatus] = useNavState('requests.status', 'pending');
   const [q, setQ] = useNavState('requests.q', '');
   const [project, setProject] = useNavState('requests.project', '');
@@ -45,6 +48,8 @@ export default function RequestsView() {
   const [page, setPage] = useNavState('requests.page', 0);
 
   const all = getHoldRequests();
+  const [now] = useState(stamp);
+  const heldCount = listProjects().reduce((n, p) => n + (p.variants || []).reduce((m, v) => m + (v.units || []).filter(u => u.status === 'hold').length, 0), 0);
   const count = (k) => (k === 'all' ? all.length : all.filter(r => r.status === k).length);
   const projects = [...new Set(all.map(r => r.propertyName).filter(Boolean))].sort();
   const agents = [...new Set(all.map(r => r.agentName).filter(Boolean))].sort();
@@ -87,14 +92,28 @@ export default function RequestsView() {
   // A request opens as a pop-up over this page: the floor plan with its unit pointed out, and the
   // request beside it. From there it can still go to the Booking page or the project console.
   const open = (r) => setOpenId(r.id);
-  const opened = openId ? all.find(x => x.id === openId) : null;
+  const opened = openId ? all.find(x => x.id === openId) : openHeld;
+  // a held unit opens in the request pop-up, shaped like a request (no decision buttons)
+  const openHeldUnit = (h) => setOpenHeld({ ...(h.req || {}), id: h.key, propertyId: h.projectId, propertyName: h.project, variantId: h.variantId, unitId: h.unitId,
+    clientName: h.client, clientPhone: h.phone, agentName: h.by, createdAt: h.req?.createdAt || h.start, holdUntil: h.left == null ? null : new Date(now + h.left).toISOString(), status: 'held' });
+  // an approved request whose unit is still on hold can be released from the queue too
+  const isHeld = (r) => findUnit(getProjectById(r.propertyId), r.unitId)?.unit.status === 'hold';
+  const closePop = () => { setOpenId(null); setOpenHeld(null); };
+  const unholdUnit = (h) => {
+    setUnitStatus(h.propertyId, h.variantId, h.unitId, 'available', { user });
+    all.filter(x => x.propertyId === h.propertyId && x.unitId === h.unitId && x.status === 'pending').forEach(x => decideHoldRequest(x.id, false, user));
+    closePop();
+    refreshDB();
+    showToast(`Unit ${h.unitId} is available again`, 'ok');
+  };
   const toBooking = (r) => {
     const proj = getProjectById(r.propertyId);
     const plan = (proj?.floorPlans || []).find(p => (p.boxes || []).some(b => b.unitId === r.unitId));
     if (!proj || !plan) return;
-    seedNextPage({ 'booking.project': proj.id, 'booking.floor': plan.id, 'booking.shop': r.unitId, 'booking.tab': 'projects' });
+    seedNextPage({ 'booking.floor': plan.id, 'booking.shop': r.unitId, 'booking.ptab': 'booking' });
     setOpenId(null);
     nav('booking');
+    setBookProj(proj.id);
   };
 
   return (
@@ -102,9 +121,10 @@ export default function RequestsView() {
       <div className="rqx-wrap">
         <div className="rqx-tabs" role="tablist" aria-label="Requests">
           <button type="button" role="tab" className="bk-chip" aria-selected={tab === 'queue'} aria-pressed={tab === 'queue'} onClick={() => setTab('queue')}><Mi>inbox</Mi>Queue<i>{count('pending')}</i></button>
+          <button type="button" role="tab" className="bk-chip" aria-selected={tab === 'held'} aria-pressed={tab === 'held'} onClick={() => setTab('held')}><Mi>lock_clock</Mi>Held units<i>{heldCount}</i></button>
           <button type="button" role="tab" className="bk-chip" aria-selected={tab === 'insights'} aria-pressed={tab === 'insights'} onClick={() => setTab('insights')}><Mi>insights</Mi>Insights</button>
         </div>
-        {tab === 'insights' ? <RequestsInsights all={all} onQueue={(k) => { setStatus(k); setPage(0); setTab('queue'); }} /> : (<>
+        {tab === 'held' ? <RequestsHeld all={all} user={user} refreshDB={refreshDB} showToast={showToast} onOpen={openHeldUnit} /> : tab === 'insights' ? <RequestsInsights all={all} onQueue={(k) => { setStatus(k); setPage(0); setTab('queue'); }} /> : (<>
         <div className="rqx-bar">
           <label className="bk-search rqx-search">
             <Mi>search</Mi>
@@ -158,6 +178,9 @@ export default function RequestsView() {
                       </td>
                       <td><span className={`bk-pill rqx-st-${r.status}`}><i className="bk-dot" />{r.status}</span></td>
                       <td className="rqx-acts" onClick={e => e.stopPropagation()}>
+                        {r.status === 'approved' && isHeld(r) && (
+                          <button type="button" className="bk-btn rqx-b" onClick={() => unholdUnit(r)}><Mi>lock_open</Mi>Unhold</button>
+                        )}
                         {r.status === 'pending' && (
                           <>
                             <button type="button" className="bk-btn rqx-b" onClick={() => decide(r, false)}><Mi>close</Mi>Reject</button>
@@ -187,10 +210,10 @@ export default function RequestsView() {
         </>)}
       </div>
       {opened && (
-        <RequestUnitModal r={opened} onClose={() => setOpenId(null)}
-          onDecide={(r, ok) => { decide(r, ok); setOpenId(null); }}
+        <RequestUnitModal r={opened} onClose={closePop} onUnhold={unholdUnit}
+          onDecide={(r, ok) => { decide(r, ok); closePop(); }}
           onOpenBooking={() => toBooking(opened)}
-          onOpenConsole={() => { setOpenId(null); setPropSel(opened.propertyId); openModal('project-console'); }} />
+          onOpenConsole={() => { closePop(); setPropSel(opened.propertyId); openModal('project-console'); }} />
       )}
     </div>
   );

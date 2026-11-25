@@ -5,8 +5,6 @@ import { getProperty } from '../../lib/db.js';
 import { canSee } from '../../lib/constants.js';
 import { useApp } from '../../context/AppContext.jsx';
 import useProjectNav from '../../hooks/useProjectNav.js';
-import useNavState from '../../hooks/useNavState.js';
-import AgentBookingDash from './AgentBookingDash.jsx';
 
 // Booking, step one: every project as a card. A project opens on its floors
 // (and then its shops); one with no floor plan yet cannot be booked from here
@@ -16,7 +14,6 @@ export default function ProjectList({ projects, onPick }) {
   const { user, setPropEdit, openModal } = useApp();
   const pnav = useProjectNav();
   const manage = canSee(user, 'properties');
-  const [tab, setTab] = useNavState('booking.tab', 'projects');
   const edit = (id) => { const p = getProperty(id); if (p) { setPropEdit(p); openModal('property-edit'); } };
   const [q, setQ] = useState('');
   const term = q.trim().toLowerCase();
@@ -25,11 +22,6 @@ export default function ProjectList({ projects, onPick }) {
   return (
     <div className="bk">
       <div className="bkp">
-        <div className="rqx-tabs bkp-tabs" role="tablist" aria-label="Booking">
-          <button type="button" role="tab" className="bk-chip" aria-selected={tab === 'projects'} aria-pressed={tab === 'projects'} onClick={() => setTab('projects')}><Mi>apartment</Mi>Projects</button>
-          <button type="button" role="tab" className="bk-chip" aria-selected={tab === 'dash'} aria-pressed={tab === 'dash'} onClick={() => setTab('dash')}><Mi>insights</Mi>Dashboard</button>
-        </div>
-        {tab === 'dash' ? <AgentBookingDash onBook={() => setTab('projects')} /> : (<>
         <header className="bkp-head">
           <div>
             <span className="bk-eyebrow">Booking</span>
@@ -83,7 +75,6 @@ export default function ProjectList({ projects, onPick }) {
                 {manage && (
                   <span className="bkp-act">
                     <button type="button" onClick={() => edit(p.id)} aria-label={`Edit ${p.name}`} title="Edit details"><Mi>edit</Mi></button>
-                    <button type="button" onClick={() => pnav.openUnits(p.id)} aria-label={`Floor plans and units of ${p.name}`} title="Plans & units"><Mi>layers</Mi></button>
                   </span>
                 )}
                 </div>
@@ -91,7 +82,6 @@ export default function ProjectList({ projects, onPick }) {
             })}
           </div>
         )}
-        </>)}
       </div>
     </div>
   );

@@ -1,8 +1,9 @@
 import { useEffect } from 'react';
 import Mi from '../Mi.jsx';
 import FloorCanvas from '../booking/FloorCanvas.jsx';
+import { StackTable } from '../booking/StackGrid.jsx';
 import { getProjectById } from '../../lib/projects.js';
-import { textFloor, landmarks, shopLabel } from '../../lib/floorText.js';
+import { textFloor, landmarks, shopLabel, stackOf } from '../../lib/floorText.js';
 import { fmtBDT, fmtAgo } from '../../lib/helpers.js';
 import '../booking/ShopBooking.css';
 import '../project/AddPropertyWizard.css';
@@ -15,7 +16,7 @@ import './RequestUnitModal.css';
 
 const day = (iso) => (iso ? new Date(iso).toLocaleString('en-GB', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—');
 
-export default function RequestUnitModal({ r, onClose, onDecide, onOpenBooking, onOpenConsole }) {
+export default function RequestUnitModal({ r, onClose, onDecide, onOpenBooking, onOpenConsole, onUnhold }) {
   useEffect(() => {
     const onKey = (e) => { if (e.key === 'Escape') onClose(); };
     window.addEventListener('keydown', onKey);
@@ -27,6 +28,8 @@ export default function RequestUnitModal({ r, onClose, onDecide, onOpenBooking, 
   const floor = proj && plan ? textFloor(proj, plan) : null;
   const lm = plan ? landmarks(plan) : null;
   const shop = floor?.shops.find(s => s.code === r.unitId) || null;
+  // a tower (Shafiq Sapphire) is shown as its building grid, like the Booking page
+  const stack = plan?.grid ? stackOf(proj, [...proj.floorPlans].sort((a, b) => (b.order ?? 0) - (a.order ?? 0))) : null;
 
   return (
     <div className="pw-scrim" onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
@@ -36,13 +39,18 @@ export default function RequestUnitModal({ r, onClose, onDecide, onOpenBooking, 
             <span className="bk-eyebrow">{r.propertyName}{plan ? ` · ${plan.name}` : ''}</span>
             <h3 id="rqm-t">{shopLabel(r.unitId)}</h3>
           </div>
-          <span className={`bk-pill rqx-st-${r.status}`}><i className="bk-dot" />{r.status}</span>
+          <span className={`bk-pill rqx-st-${r.status}`}><i className="bk-dot" />{r.status === 'held' ? 'On hold' : r.status}</span>
           <button type="button" className="bk-close" aria-label="Close" onClick={onClose}><Mi>close</Mi></button>
         </header>
 
         <div className="rqm-body">
           <div className="rqm-map">
-            {floor && lm ? (
+            {stack ? (
+              <>
+                <div className="rqm-stage rqm-stack"><StackTable rows={stack.rows} cols={stack.cols} focus={r.unitId} shopCode={r.unitId} /></div>
+                <span className="bk-cap">{plan.name} · the requested unit is outlined</span>
+              </>
+            ) : floor && lm ? (
               <>
                 <div className="rqm-stage"><FloorCanvas floor={floor} lm={lm} focus={r.unitId} shopCode={r.unitId} /></div>
                 <span className="bk-cap">{plan.name} · the requested unit is outlined</span>
@@ -86,6 +94,11 @@ export default function RequestUnitModal({ r, onClose, onDecide, onOpenBooking, 
               <>
                 <button type="button" className="bk-btn" onClick={() => onDecide(r, false)}><Mi>close</Mi>Reject</button>
                 <button type="button" className="bk-btn primary" onClick={() => onDecide(r, true)}><Mi>check</Mi>Approve</button>
+              </>
+            ) : (r.status === 'held' || shop?.status === 'hold') && onUnhold ? (
+              <>
+                <button type="button" className="bk-btn" onClick={onClose}>Keep on hold</button>
+                <button type="button" className="bk-btn primary" onClick={() => onUnhold(r)}><Mi>lock_open</Mi>Unhold</button>
               </>
             ) : <button type="button" className="bk-btn primary" onClick={onClose}>Done</button>}
           </div>

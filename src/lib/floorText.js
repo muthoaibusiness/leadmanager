@@ -29,7 +29,8 @@ export function shortCode(code) {
   const m = /^([A-Za-z]+)[-\s]?(.*)$/.exec(String(code || ''));
   if (!m) return String(code || '');
   const p = m[1].toUpperCase();
-  return (SHORT[p] || p.slice(0, 3)) + (m[2] ? '-' + m[2] : '');
+  if (!m[2]) return String(code); // a code with no number (SUPERSHOP) is shown in full
+  return (SHORT[p] || p.slice(0, 3)) + '-' + m[2];
 }
 
 // The heading for a shop: SHOP-115 → "Shop 115"; other codes as they are.
@@ -542,6 +543,7 @@ export function textFloor(project, plan) {
     shops.push({
       code: unit.id, status, variantId: variant.id,
       clientName: unit.clientName || '', heldByName: unit.heldByName || '', holdUntil: unit.holdUntil || null,
+      clientPhone: unit.clientPhone || unit.sheet?.phone || '', bookingDate: unit.bookingDate || unit.sheet?.bookingDate || '', paymentDate: unit.paymentDate || unit.sheet?.paymentDate || '',
       look: statusLook(project.unitStatuses, unit),
       size, price, rate: size > 0 && price > 0 ? price / size : 0,
       type: variant.name || '',
@@ -555,4 +557,13 @@ export function textFloor(project, plan) {
     counts.total++;
   });
   return { aspect, shops, counts };
+}
+
+// The rows and columns of a tower, and every unit with its floor.
+export function stackOf(project, plans) {
+  const rows = plans.filter(p => p.grid).map(p => ({ plan: p, shops: textFloor(project, p).shops }));
+  const used = new Set(rows.flatMap(r => r.shops.map(s => s.variantId)));
+  const cols = (project.variants || []).filter(v => used.has(v.id));
+  const all = rows.flatMap(r => r.shops.map(s => ({ ...s, plan: r.plan })));
+  return { rows, cols, all };
 }

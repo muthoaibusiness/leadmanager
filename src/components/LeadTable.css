@@ -1,219 +1,237 @@
-/* Leads table (LeadTable.jsx) in the Booking page's look. Tokens come from .bk in booking/ShopBooking.css;
-   the card, table and pager pieces are the Requests ones (.rqx-*).
-   ds-allow-hardcode: column and avatar sizes are one-off layout values. */
+/* Leads page (views/LeadsView.jsx) and its table (LeadTable.jsx), in the Booking look. Tokens come from
+   .bk in booking/ShopBooking.css; the card, table and pager pieces are the Requests ones (.rqx-*).
+   Computers: a fixed-layout table whose 15 rows share the screen height, so a page of leads fits with
+   no scrolling. Phones: each lead is a card.
+   ds-allow-hardcode: column widths and avatar sizes are one-off layout values. */
 /* ds-allow-hardcode:start */
-.bk.lvx-t { flex: none; display: block; min-height: 0; }
-.lt-card { position: relative; flex: none; }
-.lt-bar { position: absolute; top: 0; left: 0; right: 0; height: 3px; z-index: 2; background: linear-gradient(90deg, transparent, var(--bk-accent), transparent); background-size: 40% 100%; background-repeat: no-repeat; animation: lt-slide 1.1s linear infinite; }
+.bk.lvx, .bk.lvx-t { flex: none; display: block; min-height: 0; }
+.lvx-wrap { display: flex; flex-direction: column; gap: 10px; }
+.lvx .rqx-bar { align-items: center; }
+.lvx-tabs { display: flex; flex-wrap: wrap; gap: 8px; }
+.lvx-tabs .bk-chip, .lvx-tabs .bk-btn { display: inline-flex; align-items: center; gap: 6px; }
+
+/* ── the card ── */
+.lt-card { position: relative; flex: none; --lt-row: clamp(22px, calc((100dvh - 306px) / 15), 40px); }
+.lt-card .rqx-scroll { max-height: none; min-height: 0; overflow-x: auto; overflow-y: hidden; }
+.lt-bar { position: absolute; top: 0; left: 0; right: 0; height: 3px; z-index: 3; background: linear-gradient(90deg, transparent, var(--bk-accent), transparent) no-repeat; background-size: 40% 100%; animation: lt-slide 1.1s linear infinite; }
 @keyframes lt-slide { from { background-position: -40% 0; } to { background-position: 140% 0; } }
-.lt-busy .lt-table tbody { opacity: .55; transition: opacity .15s; }
-.lt-table tbody tr { cursor: pointer; }
-.lt-table tbody tr.sel { background: var(--bk-accent-soft); box-shadow: inset 3px 0 0 var(--bk-accent); }
-.lt-table th, .lt-table td { white-space: nowrap; }
-.lt-table td { vertical-align: middle; }
-.lt-c-chk { width: 44px; padding-right: 0 !important; }
+.lt-card.lt-busy .lt-table tbody { opacity: .55; transition: opacity .15s; }
+.bk.lvx-t .rqx-foot { padding: 6px 14px; }
+
+/* ── the table ── */
+.lt-card .lt-table { table-layout: fixed; width: 100%; min-width: 1090px; }
+.lt-card .lt-table th, .lt-card .lt-table td { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding: 0 6px; vertical-align: middle; }
+.lt-card .lt-table th { position: sticky; top: 0; z-index: 2; height: 34px; font-size: 12px; font-weight: 700; letter-spacing: .04em; color: var(--bk-fg); background: color-mix(in srgb, var(--bk-accent) 14%, var(--bk-surface)); border-bottom: 2px solid var(--bk-accent); }
+.lt-card .lt-table td { height: var(--lt-row); line-height: 1.25; border-bottom: 1px solid var(--bk-line); }
+.lt-card .lt-table th + th { border-left: 1px solid color-mix(in srgb, var(--bk-accent) 45%, var(--bk-line)); }
+.lt-card .lt-table td + td { border-left: 1px solid var(--bk-line); }
+.lt-card .lt-table tbody tr { cursor: pointer; }
+.lt-card .lt-table tbody tr:nth-child(even) td { background-color: color-mix(in srgb, var(--bk-fg) 3%, transparent); }
+.lt-card .lt-table tbody tr:hover td { background-color: color-mix(in srgb, var(--bk-accent) 8%, transparent); }
+.lt-card .lt-table tbody tr.sel { box-shadow: inset 3px 0 0 var(--bk-accent); }
+.lt-card .lt-table tbody tr.sel td { background-color: var(--bk-accent-soft); }
+.lt-card .lt-table .lt-c-chk { width: 40px; }
+.lt-h0 { width: 190px; } .lt-h1 { width: 104px; } .lt-h2 { width: 120px; } .lt-h3 { width: 132px; }
+.lt-h4 { width: 76px; text-align: center; } .lt-h5 { width: 150px; } .lt-h6 { width: 142px; } .lt-h7 { width: 150px; }
+.lt-h4, .lt-c-agent { text-overflow: clip; }
+
+/* ── cells ── */
 .lt-chk { border: 0; background: none; color: var(--bk-muted); cursor: pointer; display: grid; place-items: center; padding: 2px; border-radius: 6px; }
 .lt-chk .mi { font-size: 22px; }
 .lt-chk:hover, .lt-chk.on { color: var(--bk-accent); }
-.lt-person { display: inline-flex; align-items: center; gap: 10px; min-width: 0; }
-.lt-pn { display: grid; min-width: 0; line-height: 1.3; }
-.lt-pn b { font-weight: 600; max-width: 200px; overflow: hidden; text-overflow: ellipsis; }
-.lt-pn .rqx-mono { font-size: 13.5px; color: var(--bk-muted); }
-.lt-av { width: 34px; height: 34px; border-radius: 50%; flex: none; display: grid; place-items: center; color: #fff; font-family: var(--bk-display); font-size: 12.5px; font-weight: 600; }
+.lt-person { display: inline-flex; align-items: center; gap: 8px; min-width: 0; max-width: 100%; }
+.lt-pn { display: grid; min-width: 0; line-height: 1.15; }
+.lt-pn b { font-weight: 600; font-size: 14.5px; overflow: hidden; text-overflow: ellipsis; }
+.lt-pn .rqx-mono { font-size: 12.5px; color: var(--bk-muted); overflow: hidden; text-overflow: ellipsis; }
+.lt-av { width: 28px; height: 28px; border-radius: 50%; flex: none; display: grid; place-items: center; color: #fff; font-family: var(--bk-display); font-size: 11.5px; font-weight: 600; object-fit: cover; }
 .lt-av.lg { width: 46px; height: 46px; font-size: 16px; }
-.lt-wa { width: 30px; height: 30px; border-radius: 50%; border: 1px solid var(--bk-line); background: var(--bk-bg); color: var(--bk-muted); display: grid; place-items: center; cursor: pointer; margin-left: 2px; }
-.lt-wa .mi { font-size: 17px; }
+.lt-av-ag { width: 30px; height: 30px; border: 1.5px solid var(--bk-line); }
+img.lt-av { display: block; }
+.lt-wa { display: none; width: 28px; height: 28px; border-radius: 50%; border: 1px solid var(--bk-line); background: var(--bk-bg); color: var(--bk-muted); place-items: center; cursor: pointer; flex: none; }
+.lt-wa .mi { font-size: 16px; }
 .lt-wa:hover { color: var(--bk-accent); border-color: var(--bk-accent); }
-.lt-src { font-size: 14.5px; color: var(--bk-muted); }
-.lt-prop { max-width: 200px; overflow: hidden; text-overflow: ellipsis; }
-.lt-st { display: inline-flex; align-items: center; gap: 7px; padding: 3px 11px; border-radius: 999px; font-size: 13.5px; font-weight: 600; }
+.lt-card .lt-table tr:hover .lt-wa { display: grid; }
+.lt-src { font-size: 14px; color: var(--bk-muted); }
+.lt-st { display: inline-flex; align-items: center; gap: 6px; padding: 0 8px; border-radius: 999px; font-size: 12px; font-weight: 600; line-height: 1.6; }
 .lt-st .bk-dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; flex: none; }
 .lt-two { min-width: 0; }
-.lt-two .lt-date { font-size: 14.5px; font-family: var(--bk-mono); }
-.lt-two .lt-sub { font-size: 13.5px; color: var(--bk-muted); max-width: 190px; overflow: hidden; text-overflow: ellipsis; display: block; }
-.lt-fu-on { color: var(--bk-fg); }
+.lt-two .lt-date, .lt-created { font-size: 13px; }
 .lt-two .lt-date.lt-fu-on { color: var(--bk-accent); }
+.lt-two .lt-sub { display: none; }
 .lt-late { color: var(--bk-bad) !important; font-weight: 600; }
-.lt-created { font-family: var(--bk-mono); font-size: 14px; color: var(--bk-muted); }
-.lt-agent { display: inline-flex; align-items: center; gap: 8px; min-width: 0; cursor: default; outline: none; }
-.lt-agent-n { font-weight: 500; max-width: 150px; overflow: hidden; text-overflow: ellipsis; }
+.lt-created { color: var(--bk-muted); }
+.lt-c-agent { text-align: center; }
+.lt-agent { display: inline-flex; align-items: center; justify-content: center; cursor: default; outline: none; }
+.lt-agent:hover .lt-av-ag, .lt-agent:focus .lt-av-ag { border-color: var(--bk-accent); }
+.lt-agent-n { display: none; }
+
+/* ── selection bar ── */
 .lt-bulk { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 8px 12px; margin-bottom: 10px; border: 1px solid var(--bk-accent); border-radius: var(--bk-r); background: var(--bk-accent-soft); font-weight: 500; }
 .lt-bulk span { margin-right: auto; }
 .lt-bulk .bk-btn { display: inline-flex; align-items: center; gap: 6px; }
 .lt-danger { color: var(--bk-bad); }
 .lt-danger:hover { border-color: var(--bk-bad); }
-/* the agent card, shown on hover (rendered in the page body, outside .bk, so it carries its own colours) */
-.lt-agent-card { position: fixed; z-index: 400; width: 290px; padding: 14px; border-radius: 14px; background: #101a16; color: #e8f1ec; border: 1px solid #2a3a32; box-shadow: 0 14px 40px rgb(0 0 0 / .4); pointer-events: none; font-family: inherit; }
-:root[data-theme="light"] .lt-agent-card { background: #ffffff; color: #17241d; border-color: #d3ddd7; }
-.lt-agent-hd { display: flex; align-items: center; gap: 10px; padding-bottom: 10px; border-bottom: 1px solid color-mix(in srgb, currentColor 18%, transparent); margin-bottom: 8px; }
+
+/* ── the agent card shown on hover (rendered in <body>, so it reads the app-wide tokens) ── */
+.lt-agent-card { position: fixed; z-index: 400; width: 290px; padding: 14px; border-radius: 14px; background: var(--bk-bg); color: var(--bk-fg); border: 1px solid var(--bk-line); box-shadow: 0 14px 40px rgb(0 0 0 / .4); pointer-events: none; font-family: var(--bk-body); }
+.lt-agent-hd { display: flex; align-items: center; gap: 10px; padding-bottom: 10px; border-bottom: 1px solid var(--bk-line); margin-bottom: 8px; }
 .lt-agent-hd div { display: grid; min-width: 0; }
 .lt-agent-hd b { font-size: 16px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.lt-agent-hd span:not(.lt-av) { font-size: 13px; opacity: .65; }
+.lt-agent-hd span:not(.lt-av) { font-size: 13px; color: var(--bk-muted); }
 .lt-agent-card dl { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 6px 12px; font-size: 14px; }
-.lt-agent-card dt { opacity: .6; }
+.lt-agent-card dt { color: var(--bk-muted); }
 .lt-agent-card dd { margin: 0; font-weight: 600; text-align: right; overflow-wrap: anywhere; }
-/* Leads page: filter bar and tabs (LeadsView.jsx) */
-.bk.lvx { flex: none; display: block; min-height: 0; }
-.lvx-wrap { display: flex; flex-direction: column; gap: 14px; padding-bottom: 20px; }
-.lvx .rqx-bar { align-items: center; }
-.lvx-tabs { display: flex; flex-wrap: wrap; gap: 8px; }
-.lvx-tabs .bk-chip, .lvx-tabs .bk-btn { display: inline-flex; align-items: center; gap: 6px; }
-@media (max-width: 768px) {
-  .lt-table { min-width: 880px; }
-}
-/* ds-allow-hardcode:end */
-/* ds-allow-hardcode:start */
-/* compact: all eight columns fit a laptop-width card */
-.lt-table th, .lt-table td { padding-left: 10px; padding-right: 10px; }
-.lt-two .lt-date, .lt-created { font-family: inherit; font-size: 13.5px; letter-spacing: 0; }
-.lt-pn b { max-width: 150px; }
-.lt-prop { max-width: 150px; }
-.lt-agent-n { max-width: 110px; }
-.lt-two .lt-sub { max-width: 150px; }
-.lt-wa { display: none; }
-.lt-table tr:hover .lt-wa { display: grid; }
-/* ds-allow-hardcode:end */
-/* ds-allow-hardcode:start */
-.lt-table th, .lt-table td { padding-left: 7px; padding-right: 7px; }
-.lt-table th { letter-spacing: .04em; font-size: 12px; }
-.lt-agent .lt-av { display: none; }
-.lt-st { padding: 2px 9px; font-size: 12.5px; }
-.lt-person { gap: 8px; }
-.lt-two .lt-date, .lt-created { font-size: 13px; }
-.lt-pn b { max-width: 130px; }
-.lt-prop { max-width: 130px; }
-/* ds-allow-hardcode:end */
-/* ds-allow-hardcode:start */
-.lt-pn b { max-width: 115px; }
-.lt-prop { max-width: 105px; }
-.lt-created { padding-right: 14px !important; }
-/* ds-allow-hardcode:end */
-/* ds-allow-hardcode:start */
-/* keep the table a table on narrow screens (the Requests card layout would crush it); it scrolls sideways */
-@media (max-width: 720px) {
-  .rqx-scroll > .lt-table { display: table; width: 100%; min-width: 900px; }
-  .rqx-scroll > .lt-table thead { display: table-header-group; }
-  .rqx-scroll > .lt-table tbody { display: table-row-group; }
-  .rqx-scroll > .lt-table tr { display: table-row; padding: 0; border: 0; }
-  .rqx-scroll > .lt-table th, .rqx-scroll > .lt-table td { display: table-cell; width: auto; padding: 10px 7px; border-bottom: 1px solid var(--bk-line); }
-}
-/* highlighted columns: a stronger header and a faint divider between columns */
-.lt-table thead th { background: color-mix(in srgb, var(--bk-accent) 14%, var(--bk-surface)); color: var(--bk-fg); border-bottom: 2px solid var(--bk-accent); font-weight: 700; }
-.lt-table th + th, .lt-table td + td { border-left: 1px solid color-mix(in srgb, var(--bk-line) 70%, transparent); }
-.lt-table th:nth-child(odd), .lt-table td:nth-child(odd) { background-color: color-mix(in srgb, var(--bk-fg) 2.5%, transparent); }
-.lt-table thead th:nth-child(odd) { background: color-mix(in srgb, var(--bk-accent) 20%, var(--bk-surface)); }
-.lt-table tbody tr.sel td { background: var(--bk-accent-soft); }
-/* ds-allow-hardcode:end */
-/* ds-allow-hardcode:start */
-/* the list scrolls inside its card (header stays put) instead of moving the whole page */
-.lt-card .rqx-scroll { max-height: calc(100dvh - 330px); min-height: 260px; overflow: auto; overscroll-behavior: contain; }
-.lt-table thead th { position: sticky; top: 0; z-index: 2; }
-/* ds-allow-hardcode:end */
-/* ds-allow-hardcode:start */
-/* agent column: the photo; the name is in the hover card and the tooltip */
-.lt-agent .lt-av { display: grid; }
-.lt-av-ag { width: 38px; height: 38px; object-fit: cover; border: 2px solid var(--bk-line); }
-img.lt-av-ag { display: block; }
-.lt-agent-n { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
-.lt-agent:hover .lt-av-ag, .lt-agent:focus .lt-av-ag { border-color: var(--bk-accent); }
-/* fixed column widths: columns no longer shift from one page of leads to the next */
-.lt-table { table-layout: fixed; min-width: 1240px; width: 100%; }
-.lt-table th, .lt-table td { overflow: hidden; text-overflow: ellipsis; }
-.lt-table .lt-c-chk { width: 44px; }
-.lt-h0 { width: 240px; } .lt-h1 { width: 100px; } .lt-h2 { width: 150px; } .lt-h3 { width: 160px; }
-.lt-h4 { width: 84px; text-align: center; } .lt-h5 { width: 190px; } .lt-h6 { width: 170px; } .lt-h7 { width: 170px; }
-.lt-table td:has(> .lt-agent) { text-align: center; }
-.lt-agent { justify-content: center; position: relative; }
-@media (max-width: 720px) { .rqx-scroll > .lt-table { min-width: 1240px; } }
-/* ds-allow-hardcode:end */
-/* ds-allow-hardcode:start */
-.lt-table { min-width: 1090px; }
-.lt-table .lt-c-chk { width: 40px; }
-.lt-h0 { width: 205px; } .lt-h1 { width: 86px; } .lt-h2 { width: 120px; } .lt-h3 { width: 132px; }
-.lt-h4 { width: 62px; } .lt-h5 { width: 150px; } .lt-h6 { width: 142px; } .lt-h7 { width: 150px; }
-.lt-table th, .lt-table td { padding-left: 6px; padding-right: 6px; }
-.lt-st { padding: 2px 7px; font-size: 12px; }
-@media (max-width: 720px) { .rqx-scroll > .lt-table { min-width: 1090px; } }
-/* ds-allow-hardcode:end */
-/* ds-allow-hardcode:start */
-.lt-agent-n { display: none; }
-.lt-table td:has(> .lt-agent), .lt-h4 { text-overflow: clip; }
-.lt-h0 { width: 190px; } .lt-h1 { width: 104px; } .lt-h4 { width: 76px; }
-/* ds-allow-hardcode:end */
-.lt-agent-card img.lt-av { object-fit: cover; display: block; }
-/* ds-allow-hardcode:start */
-/* clearer column separation: a solid line between every column, even rows lightly banded */
-.lt-table th + th, .lt-table td + td { border-left: 1px solid var(--bk-line); }
-.lt-table thead th + th { border-left: 1px solid color-mix(in srgb, var(--bk-accent) 45%, var(--bk-line)); }
-.lt-table th:nth-child(odd), .lt-table td:nth-child(odd) { background-color: transparent; }
-.lt-table thead th:nth-child(odd) { background: color-mix(in srgb, var(--bk-accent) 14%, var(--bk-surface)); }
-.lt-table tbody tr:nth-child(even) td { background-color: color-mix(in srgb, var(--bk-fg) 3%, transparent); }
-.lt-table tbody tr:hover td { background-color: color-mix(in srgb, var(--bk-accent) 8%, transparent); }
-.lt-table tbody tr.sel td { background-color: var(--bk-accent-soft); }
-.lt-table td { border-bottom: 1px solid var(--bk-line); }
-/* ds-allow-hardcode:end */
-/* ds-allow-hardcode:start */
-/* compact rows: 15 leads fit one screen with no scrolling */
-.lt-card .rqx-scroll { max-height: none; min-height: 0; overflow-y: hidden; }
-.lt-table td { padding-top: 5px; padding-bottom: 5px; height: 42px; }
-.lt-table th { padding-top: 9px; padding-bottom: 9px; }
-.lt-two .lt-sub { display: none; }
-.lt-pn { line-height: 1.2; }
-.lt-pn b { font-size: 14.5px; }
-.lt-pn .rqx-mono { font-size: 12.5px; }
-.lt-av { width: 30px; height: 30px; font-size: 11.5px; }
-.lt-av-ag { width: 32px; height: 32px; }
-.lt-st { padding: 1px 8px; }
-.lvx-wrap { padding-bottom: 0; gap: 10px; }
-.bk.lvx-t .rqx-foot { padding: 6px 14px; }
-.bk.lvx-t .rqx-foot .bk-zbtn { min-height: 30px; }
-/* ds-allow-hardcode:end */
-/* ds-allow-hardcode:start */
-.lt-card .lt-table td { padding-top: 3px; padding-bottom: 3px; height: 38px; line-height: 1.25; }
-.lt-card .lt-table th { padding-top: 8px; padding-bottom: 8px; }
-.lt-card .lt-table .lt-pn b, .lt-card .lt-table .lt-pn .rqx-mono { line-height: 1.15; }
-.lt-card .lt-table .lt-st { padding: 0 8px; line-height: 1.6; }
-.lt-card .lt-table .lt-av { width: 28px; height: 28px; }
-.lt-card .lt-table .lt-av-ag { width: 30px; height: 30px; border-width: 1.5px; }
-/* ds-allow-hardcode:end */
-/* ds-allow-hardcode:start */
-/* Rows share the screen height so 15 leads always fit without scrolling: the page chrome above the table
-   (title, filters) and the footer below it are taken off the viewport and the rest is split 15 ways. */
-.lt-card { --lt-row: clamp(22px, calc((100dvh - 306px) / 15), 40px); }
-.lt-card .lt-table td { height: var(--lt-row); padding-top: 0; padding-bottom: 0; }
-.lt-card .lt-table th { height: 34px; padding-top: 0; padding-bottom: 0; }
-@media (max-height: 880px) {
-  .lt-card .lt-table td, .lt-card .lt-table th { font-size: 13px; }
-  .lt-card .lt-table .lt-pn b { font-size: 13.5px; }
-  .lt-card .lt-table .lt-pn .rqx-mono { font-size: 11.5px; }
-  .lt-card .lt-table .lt-av { width: 24px; height: 24px; font-size: 10px; }
-  .lt-card .lt-table .lt-av-ag { width: 26px; height: 26px; }
-  .lt-card .lt-table .lt-st { font-size: 11.5px; line-height: 1.5; padding: 0 7px; }
-  .lt-two .lt-date, .lt-created, .lt-src { font-size: 12.5px; }
-  .lt-card .lt-table .lt-chk .mi { font-size: 19px; }
-  .bk.lvx-t .rqx-foot { padding: 3px 14px; }
-}
-@media (max-height: 760px) {
-  .lt-card .lt-table .lt-pn { display: flex; align-items: baseline; gap: 8px; }
-  .lt-card .lt-table .lt-wa { display: none !important; }
-  .lt-card .lt-table .lt-pn .rqx-mono { font-size: 11px; opacity: .8; }
-  .lt-card .lt-table .lt-person .lt-av { display: none; }
-}
-/* the page's own title block and filters take less room on a short screen */
-@media (min-width: 721px) and (max-height: 820px) {
-  .lvx-wrap { gap: 6px; }
-}
-/* ds-allow-hardcode:end */
-/* ds-allow-hardcode:start */
-/* laptop widths: narrower columns so nothing scrolls sideways either */
+
+/* ── laptop widths: narrower columns, nothing scrolls sideways ── */
 @media (min-width: 721px) and (max-width: 1500px) {
-  .lt-table { min-width: 0; }
-  .lt-table .lt-c-chk { width: 34px; }
+  .lt-card .lt-table { min-width: 0; }
+  .lt-card .lt-table .lt-c-chk { width: 34px; }
   .lt-h0 { width: 168px; } .lt-h1 { width: 80px; } .lt-h2 { width: 112px; } .lt-h3 { width: 118px; }
   .lt-h4 { width: 58px; } .lt-h5 { width: 142px; } .lt-h6 { width: 142px; } .lt-h7 { width: 138px; }
-  .lt-card .lt-table td, .lt-card .lt-table th { padding-left: 5px; padding-right: 5px; font-size: 12.5px; }
-  .lt-two .lt-date, .lt-created { font-size: 12px; }
+  .lt-card .lt-table th, .lt-card .lt-table td { padding: 0 5px; font-size: 12.5px; }
   .lt-card .lt-table th { letter-spacing: .02em; font-size: 11.5px; }
-  .lt-card .lt-table .lt-st { font-size: 11px; padding: 0 6px; }
+  .lt-two .lt-date, .lt-created { font-size: 12px; }
+  .lt-st { font-size: 11px; padding: 0 6px; }
+}
+/* ── short screens: smaller type and photos so 15 rows still fit ── */
+@media (min-width: 721px) and (max-height: 880px) {
+  .lt-card .lt-table td, .lt-card .lt-table th { font-size: 13px; }
+  .lt-pn b { font-size: 13.5px; }
+  .lt-pn .rqx-mono { font-size: 11.5px; }
+  .lt-av { width: 24px; height: 24px; font-size: 10px; }
+  .lt-av-ag { width: 26px; height: 26px; }
+  .lt-st { font-size: 11.5px; line-height: 1.5; padding: 0 7px; }
+  .lt-chk .mi { font-size: 19px; }
+  .bk.lvx-t .rqx-foot { padding: 3px 14px; }
+}
+@media (min-width: 721px) and (max-height: 800px) {
+  .lt-pn { display: flex; align-items: baseline; gap: 8px; }
+  .lt-pn .rqx-mono { font-size: 11px; opacity: .8; }
+  .lt-person .lt-av, .lt-card .lt-table tr:hover .lt-wa { display: none; }
+  .lvx-wrap { gap: 6px; }
+}
+
+/* ── phones: every lead is a card ──
+   name + status on the first line, project and agent on the second, the two dates on the third. */
+@media (max-width: 720px) {
+  .lt-card { --lt-row: auto; }
+  .lt-card .rqx-scroll { overflow: visible; }
+  .lt-card .rqx-scroll > .lt-table { display: block; min-width: 0; width: 100%; }
+  .lt-card .lt-table thead { display: none; }
+  .lt-card .lt-table tbody { display: block; }
+  .lt-card .lt-table tr { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; grid-template-areas: "chk person status" "chk prop agent" "chk act next"; gap: 6px 10px; align-items: center; padding: 12px 14px; border-bottom: 1px solid var(--bk-line); width: auto; }
+  .lt-card .lt-table td { display: block; width: auto; height: auto; padding: 0; border: 0; background: none !important; min-width: 0; text-align: left !important; }
+  .lt-card .lt-table td.lt-c-chk { grid-area: chk; align-self: start; padding-top: 4px; }
+  .lt-card .lt-table td.lt-c-person { grid-area: person; }
+  .lt-card .lt-table td.lt-c-status { grid-area: status; justify-self: end; }
+  .lt-card .lt-table td.lt-c-prop { grid-area: prop; font-size: 14px; color: var(--bk-muted); }
+  .lt-card .lt-table td.lt-c-agent { grid-area: agent; justify-self: end; }
+  .lt-card .lt-table td.lt-c-act { grid-area: act; }
+  .lt-card .lt-table td.lt-c-next { grid-area: next; justify-self: end; }
+  .lt-card .lt-table td.lt-c-src, .lt-card .lt-table td.lt-created { display: none; }
+  .lt-card .lt-table td.lt-c-act .lt-date::before { content: "Last "; color: var(--bk-faint); }
+  .lt-card .lt-table td.lt-c-next .lt-date::before { content: "Next "; color: var(--bk-faint); }
+  .lt-card .lt-table .lt-two .lt-date { font-size: 12.5px; }
+  .lt-pn b { font-size: 16px; }
+  .lt-pn .rqx-mono { font-size: 13px; }
+  .lt-av { width: 38px; height: 38px; font-size: 13.5px; }
+  .lt-av-ag { width: 26px; height: 26px; }
+  .lt-st { font-size: 12.5px; }
+  .lt-card .lt-table .lt-wa { display: none !important; }
+  .lt-card .lt-table tbody tr.sel { background: var(--bk-accent-soft); }
+  .lt-bulk { position: sticky; top: 0; z-index: 5; }
+}
+/* ds-allow-hardcode:end */
+/* ds-allow-hardcode:start */
+/* Computers: the table runs down to the bottom of the screen. The page's own bottom padding shrinks to 8px
+   on this page, and the 15 rows share everything between the header row and the pager
+   (298px = the page chrome above the first row + the pager + that 8px). */
+@media (min-width: 721px) {
+  .pg-body:has(.lvx) { padding-bottom: 8px; }
+  .lt-card { --lt-row: clamp(22px, calc((100dvh - 298px) / 15), 58px); }
+}
+/* ds-allow-hardcode:end */
+/* ds-allow-hardcode:start */
+@media (min-width: 721px) {
+  /* an agent's My leads / Forwarded tabs sit above the filters: that row comes off the rows' share too */
+  .lvx-wrap:has(.lvx-tabs) .lt-card { --lt-row: clamp(22px, calc((100dvh - 347px) / 15), 58px); }
+}
+@media (min-width: 721px) and (max-height: 800px) {
+  .lt-card .lt-table .lt-av-ag { width: 21px; height: 21px; border-width: 1px; }
+  .lt-card .lt-table .lt-chk { padding: 0; }
+  .lt-card .lt-table .lt-chk .mi { font-size: 17px; }
+  .lt-card .lt-table .lt-st { line-height: 1.35; }
+}
+/* ds-allow-hardcode:end */
+/* ds-allow-hardcode:start */
+/* Computers: the space above the table (search bar → table) and the space under it (table → screen edge)
+   are the same 14px. Under the table that is 6px of page padding plus the shell's 8px inset. The rows take
+   exactly what is left: 100dvh minus everything above the first row, the pager and that bottom gap
+   (300px; 294px on short screens, where the pager is 6px shorter; +53px when the agent's tabs show). */
+@media (min-width: 721px) {
+  .lvx-wrap { gap: 14px; }
+  .pg-body:has(.lvx) { padding-bottom: 6px; }
+  .lt-card { --lt-row: clamp(22px, calc((100dvh - 300px) / 15), 58px); }
+  .lvx-wrap:has(.lvx-tabs) .lt-card { --lt-row: clamp(22px, calc((100dvh - 353px) / 15), 58px); }
+}
+@media (min-width: 721px) and (max-height: 880px) {
+  .lt-card { --lt-row: clamp(22px, calc((100dvh - 294px) / 15), 58px); }
+  .lvx-wrap:has(.lvx-tabs) .lt-card { --lt-row: clamp(22px, calc((100dvh - 347px) / 15), 58px); }
+}
+/* ds-allow-hardcode:end */
+/* ds-allow-hardcode:start */
+/* ── Phones: one screen holds the whole page of leads (10), no scrolling ──
+   The filters sit on one line, and each lead is a compact two-line row: name + phone, status and the
+   agent's photo; under it the project and the next follow-up. The rows share the height left between
+   the filters and the pager (--lt-chrome is everything else on the screen). */
+@media (max-width: 720px) {
+  .lvx .fpv-ph { margin-bottom: 0; gap: 0; }
+  #root .lvx-wrap { gap: 8px; padding-bottom: 0; }
+  #root .lvx .rqx-bar { gap: 6px; }
+  #root .lvx .rqx-search input { padding: 6px 0; font-size: 15px; }
+  #root .lvx .rqx-sels { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); grid-template-columns: none; gap: 6px; width: 100%; }
+  #root .lvx .rqx-sels .bks { min-width: 0; padding: 6px 8px; font-size: 13px; gap: 2px; }
+  #root .lvx .rqx-sels .bks .mi { font-size: 18px; }
+  #root .lvx .rqx-sels > :only-child { grid-column: auto; }
+  .lvx-tabs { gap: 6px; }
+  .lvx-tabs .bk-chip, .lvx-tabs .bk-btn { padding: 5px 11px; font-size: 13.5px; min-height: 0; }
+
+  .lt-card { --lt-chrome: 298px; --lt-row: clamp(34px, calc((100dvh - var(--lt-chrome)) / 10), 64px); }
+  .lvx-wrap:has(.lvx-tabs) .lt-card { --lt-chrome: 340px; }
+  .lt-card .lt-table tr { grid-template-columns: auto minmax(0, 1fr) auto auto; grid-template-areas: "chk person status agent" "chk prop next agent"; gap: 0 8px; padding: 0 10px; height: var(--lt-row); align-content: center; }
+  .lt-card .lt-table td.lt-c-chk { align-self: center; padding-top: 0; }
+  .lt-card .lt-table td.lt-c-agent { align-self: center; }
+  .lt-card .lt-table td.lt-c-act { display: none; }
+  .lt-card .lt-table td.lt-c-prop { font-size: 12.5px; line-height: 1.25; }
+  .lt-card .lt-table td.lt-c-next { justify-self: end; }
+  .lt-card .lt-table .lt-two .lt-date { font-size: 12px; line-height: 1.25; }
+  .lt-card .lt-table .lt-person .lt-av { display: none; }
+  .lt-card .lt-table .lt-pn { display: flex; align-items: baseline; gap: 6px; line-height: 1.25; }
+  .lt-card .lt-table .lt-pn b { font-size: 14.5px; flex: 0 1 auto; }
+  .lt-card .lt-table .lt-pn .rqx-mono { font-size: 11.5px; flex: 0 2 auto; }
+  .lt-card .lt-table .lt-st { font-size: 11.5px; padding: 0 7px; line-height: 1.5; }
+  .lt-card .lt-table .lt-av-ag { width: 26px; height: 26px; }
+  .lt-card .lt-table .lt-chk .mi { font-size: 20px; }
+  .bk.lvx-t .rqx-foot { padding: 4px 10px; }
+  .bk.lvx-t .rqx-foot .bk-zbtn { min-height: 28px; height: 28px; }
+}
+/* short phones: one line a lead (name, status, agent) */
+@media (max-width: 720px) and (max-height: 720px) {
+  .lt-card { --lt-row: clamp(26px, calc((100dvh - var(--lt-chrome)) / 10), 64px); }
+  .lt-card .lt-table tr { grid-template-areas: "chk person status agent"; }
+  .lt-card .lt-table td.lt-c-prop, .lt-card .lt-table td.lt-c-next { display: none; }
+  .lt-card .lt-table .lt-av-ag { width: 22px; height: 22px; }
+}
+/* ds-allow-hardcode:end */
+/* ds-allow-hardcode:start */
+/* phones: the list ends 8px above the bottom bar (70px tall), the same gap as above the list */
+@media (max-width: 720px) { .pg-body:has(.lvx) { padding-bottom: 78px; } }
+/* ds-allow-hardcode:end */
+/* ds-allow-hardcode:start */
+@media (max-width: 720px) {
+  /* the name keeps its room; the phone number takes what is left and shortens first */
+  .lt-card .lt-table .lt-pn b { flex: 0 1 auto; min-width: 0; max-width: 100%; }
+  .lt-card .lt-table .lt-pn .rqx-mono { flex: 1 100 0; min-width: 0; }
+  .lt-card .lt-table .lt-person, .lt-card .lt-table .lt-pn { width: 100%; }
 }
 /* ds-allow-hardcode:end */

@@ -332,7 +332,7 @@ function PageHero() {
   // Titles come from VIEW_TITLES, which also labels the Back link to each page.
   const META = {
     dashboard: { sub: '' },
-    leads: { sub: leadCounts?.total == null ? 'Counting…' : `${leadCounts.total} prospects ·${leadCounts.active ?? 0} active` },
+    leads: { sub: leadCounts?.total == null ? 'Counting…' : `${leadCounts.total} leads · ${leadCounts.active ?? 0} active` },
     calendar: { sub: 'Your scheduled meetings' },
     pipeline: { sub: 'Drag deals across stages' },
     clients: { sub: '360° customer view' },
@@ -351,7 +351,7 @@ function PageHero() {
     metacapi: { sub: 'Lead events reported to Meta' },
   };
   for (const k in META) META[k].title = VIEW_TITLES[k];
-  let { title, sub } = META[view] || { title: view, sub: '' };
+  let { title, sub } = META[view] || { title: VIEW_TITLES[view] || view, sub: '' };
   if (user.role === ROLES.MASTER) ({ title, sub } = META.companies); // master only ever sees the company overview
   if (drilled) {
     title = agentFilter && agentName ? agentName : (tlUser?.name || 'Team') + "'s Team";

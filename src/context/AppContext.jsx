@@ -46,6 +46,7 @@ export function AppProvider({ children }) {
   // ({ projectId, planId } — planId null for a new plan).
   const [projTab, setProjTab] = useState(boot.snap.projTab); // 'list' | 'units'
   const [planSel, setPlanSel] = useState({ projectId: null, planId: null });
+  const [bookProj, setBookProj] = useState(boot.snap.bookProj || null); // Booking: the open project (null = the project list)
   const [planEdit, setPlanEdit] = useState(null);
   const [bookSel, setBookSel] = useState(null);    // booking id for detail modal
   const [createUserRoles, setCreateUserRoles] = useState([]);
@@ -163,6 +164,7 @@ export function AppProvider({ children }) {
     // on phones (a project's row or card opens its units: useProjectNav.openUnits).
     setProjTab(v === 'properties' && !window.matchMedia(PHONE_MQ).matches ? 'units' : 'list');
     setTab(0);
+    setBookProj(null); // Booking from the menu always opens the project list
     setStatusFilter('ALL');
     setSearch('');
     setAgentFilter(null);
@@ -178,6 +180,7 @@ export function AppProvider({ children }) {
   const applySnap = useCallback((s) => {
     setView(s.view);
     setProjTab(s.projTab);
+    setBookProj(s.bookProj || null);
     setAgentFilter(s.agentFilter);
     setTeamFilter(s.teamFilter);
     setTab(s.tab);
@@ -205,7 +208,7 @@ export function AppProvider({ children }) {
   const db = getDB();
   const { pageId, back: navBack, trail: navTrail } = useNavHistory({
     boot, user, db, apply: applySnap, closeAll, closeNotif, openMenu,
-    snap: { view, projTab, agentFilter, teamFilter, tab, statusFilter, sortBy, search },
+    snap: { view, projTab, bookProj, agentFilter, teamFilter, tab, statusFilter, sortBy, search },
     overlays: { modal, panLead, notifOpen, sidebarOpen },
   });
   // Whether the signed-in account may see the Conversations section at all.
@@ -231,6 +234,7 @@ export function AppProvider({ children }) {
     propEdit, setPropEdit,
     propDraft, setPropDraft,
     projTab, setProjTab,
+    bookProj, setBookProj,
     planSel, setPlanSel,
     planEdit, setPlanEdit,
     bookSel, setBookSel,

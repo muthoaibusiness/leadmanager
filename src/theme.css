@@ -1,0 +1,272 @@
+/* ── WEPRO theme: the Booking look, app-wide ───────────────────────────────────────────────────────
+   Loaded last (main.jsx), after index.css and fixes.css. The older screens read the app tokens
+   (--surf, --bd, --t1, --accent, --font-display …); this file re-points those tokens at the Booking
+   palette and type (see .bk in components/booking/ShopBooking.css), so every screen takes the same
+   look without touching its markup. Below the tokens come the few shared controls whose shape, not
+   just colour, differs (buttons, fields, badges, tabs, modals, sidebar), and the phone rules that
+   apply to every page.
+   ds-allow-hardcode: this is the token file; the px values are the design scale itself. */
+/* ds-allow-hardcode:start */
+:root {
+  --bk-display: "Familjen Grotesk", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --bk-body: "Hind Siliguri", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --bk-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --bk-bg: #0C1411; --bk-surface: #121D19; --bk-surface2: #192722; --bk-line: #25362F;
+  --bk-fg: #E6EEE9; --bk-muted: #97A99F; --bk-faint: #6E8077;
+  --bk-accent: #3DB38F; --bk-accent-ink: #04130D; --bk-accent-soft: #14302A;
+  --bk-gold: #D8AC58; --bk-gold-soft: #2A2214;
+  --bk-ok: #4BC27E; --bk-bad: #E2806A; --bk-held: #DDA83F; --bk-plat: #9FB3C4;
+  --bk-shadow: 0 1px 2px rgb(0 0 0 / .3), 0 8px 24px rgb(0 0 0 / .25);
+  --bk-r: 14px;
+
+  --bg: #070D0B;
+  --surf: var(--bk-surface); --surf2: var(--bk-surface2);
+  --surf-solid: #121D19; --surf2-solid: #192722;
+  --bd: var(--bk-line); --bd2: #34493F;
+  --t1: var(--bk-fg); --t2: var(--bk-muted); --t3: var(--bk-faint);
+  --accent: var(--bk-accent); --accent-d: #2F9C7B; --on-accent: var(--bk-accent-ink);
+  --volt: var(--bk-accent); --gold: var(--bk-gold);
+  --blue: var(--bk-accent); --blue-d: #2F9C7B; --blue-l: rgb(61 179 143 / .14); --blue-b: rgb(61 179 143 / .38);
+  --green: var(--bk-ok); --green-l: rgb(75 194 126 / .14); --green-b: rgb(75 194 126 / .36);
+  --orange: var(--bk-held); --orange-l: rgb(221 168 63 / .15);
+  --red: var(--bk-bad); --red-l: rgb(226 128 106 / .14);
+  --purple: var(--bk-accent); --purple-l: rgb(61 179 143 / .14);
+  --teal: #45C2A8; --teal-l: rgb(69 194 168 / .14);
+  --sh: 0 1px 2px rgb(0 0 0 / .3); --sh-md: var(--bk-shadow); --sh-lg: 0 20px 60px rgb(0 0 0 / .45);
+  --r: 10px; --r-sm: 8px; --r-lg: 14px; --r-xl: 18px;
+  --font-display: var(--bk-display);
+}
+:root[data-theme="light"] {
+  --bk-bg: #FFFFFF; --bk-surface: #F4F8F6; --bk-surface2: #E8F0EC; --bk-line: #D9E4DE;
+  --bk-fg: #11201A; --bk-muted: #5A6C64; --bk-faint: #8C9C94;
+  --bk-accent: #0F6E56; --bk-accent-ink: #FFFFFF; --bk-accent-soft: #E2F1EA;
+  --bk-gold: #A47520; --bk-gold-soft: #F8EFDC;
+  --bk-ok: #1C8248; --bk-bad: #B4442F; --bk-held: #B98316; --bk-plat: #4F6272;
+  --bk-shadow: 0 1px 2px rgb(17 32 26 / .06), 0 8px 24px rgb(17 32 26 / .06);
+
+  --bg: #EEF3F0;
+  --surf: #FFFFFF; --surf2: #F1F6F3;
+  --surf-solid: #FFFFFF; --surf2-solid: #F1F6F3;
+  --bd: var(--bk-line); --bd2: #C2D1C9;
+  --accent-d: #0B5A46; --blue-d: #0B5A46;
+  --blue-l: rgb(15 110 86 / .10); --blue-b: rgb(15 110 86 / .30);
+  --green-l: rgb(28 130 72 / .12); --green-b: rgb(28 130 72 / .30);
+  --orange-l: rgb(185 131 22 / .14); --red-l: rgb(180 68 47 / .12);
+  --purple-l: rgb(15 110 86 / .10); --teal: #12806A; --teal-l: rgb(18 128 106 / .12);
+  --sh: 0 1px 2px rgb(17 32 26 / .08); --sh-lg: 0 20px 50px rgb(17 32 26 / .16);
+  --t1: var(--bk-fg); --t2: var(--bk-muted); --t3: var(--bk-faint);
+  --accent: var(--bk-accent); --on-accent: var(--bk-accent-ink); --volt: var(--bk-accent); --gold: var(--bk-gold);
+  --blue: var(--bk-accent); --purple: var(--bk-accent); --green: var(--bk-ok); --orange: var(--bk-held); --red: var(--bk-bad);
+  --sh-md: var(--bk-shadow);
+}
+
+/* ── The canvas: a flat, dark-green ground with one soft glow. No photo and no backdrop blur behind
+   every card, so scrolling repaints far less (the old glass shell blurred each card per frame). */
+body { font-family: var(--bk-body); background: var(--bg); background-image: none; }
+#app {
+  --surf: var(--surf-solid); --surf2: var(--surf2-solid);
+  --glass-panel: transparent; --glass-blur: none; --card-blur: none;
+  background-color: var(--bg);
+  background-image: radial-gradient(90% 60% at 85% -10%, rgb(61 179 143 / .10), transparent 60%), radial-gradient(70% 50% at 0% 100%, rgb(216 172 88 / .05), transparent 60%);
+  background-blend-mode: normal;
+}
+:root[data-theme="light"] #app {
+  --surf: var(--surf-solid); --surf2: var(--surf2-solid); --glass-panel: transparent;
+  background-color: var(--bg);
+  background-image: radial-gradient(90% 60% at 85% -10%, rgb(15 110 86 / .08), transparent 60%);
+  background-blend-mode: normal;
+}
+#app :is(.sidebar, .bnav, .card, .mc, .lt, .rep-card), #app [class] { -webkit-backdrop-filter: none; backdrop-filter: none; }
+.app-aurora { display: none; }
+#app .sidebar, :root[data-theme="light"] #app .sidebar { background: var(--bk-bg); border-right: 1px solid var(--bk-line); }
+::selection { background: var(--bk-accent); color: var(--bk-accent-ink); }
+* { scrollbar-width: thin; scrollbar-color: var(--bk-line) transparent; }
+
+/* ── Type: Hind Siliguri for text and controls, Familjen Grotesk for titles, JetBrains Mono for figures. */
+#root :is(input, select, textarea, button, option):not(.mi) { font-family: inherit; }
+.bk :is(input, select, textarea, button) { font-family: inherit; }
+.pg-title, .m-ttl, .sec-t, .np-ttl, .pf-name, .li-n, .mc-v, .acc-kpi-v, .rep-hd, .kpi-v, .sc-v, .wlogo { font-family: var(--bk-display); }
+.pg-title { font-size: clamp(22px, 1.4vw + 16px, 30px); font-weight: 600; letter-spacing: -.02em; text-transform: none; }
+.pg-sub { font-size: 14.5px; color: var(--t2); }
+.m-ttl { font-size: 20px; font-weight: 600; letter-spacing: -.015em; }
+.sec-t { font-size: 18px; font-weight: 600; letter-spacing: -.01em; text-transform: none; }
+
+/* ── Buttons: the Booking button (10px radius, sentence case). */
+.btn { padding: 9px 15px; border-radius: 10px; font-size: 14.5px; font-weight: 500; letter-spacing: 0; text-transform: none; border: 1px solid var(--bd); line-height: 1.3; }
+.btn .mi { font-size: 18px; }
+.btn-sm { padding: 6px 11px; font-size: 13.5px; }
+.btn-sm .mi { font-size: 16px; }
+.btn-p, .btn-teal, .btn-purple, .btn-success { background: var(--bk-accent); border-color: var(--bk-accent); color: var(--bk-accent-ink); font-weight: 600; }
+.btn-p:hover, .btn-teal:hover, .btn-purple:hover, .btn-success:hover { background: var(--accent-d); border-color: var(--accent-d); }
+.btn-g, .btn-warn { background: var(--bk-bg); color: var(--bk-fg); border-color: var(--bd); }
+.btn-g:hover, .btn-warn:hover { background: var(--bk-bg); border-color: var(--bk-accent); color: var(--bk-accent); }
+.btn-g.on { border-color: var(--bk-accent); color: var(--bk-accent); background: var(--bk-accent-soft); }
+.btn-neutral { background: var(--bk-surface2); color: var(--bk-muted); border-color: var(--bd); }
+.btn-danger { background: var(--bk-bad); border-color: var(--bk-bad); color: #fff; }
+.btn-danger:hover { background: var(--bk-bad); filter: brightness(1.08); }
+.btn:focus-visible, .sb-it:focus-visible, .fi:focus-visible { outline: 2px solid var(--bk-accent); outline-offset: 2px; }
+
+/* ── Fields. */
+.fi, .finp, .fsel, .sbox, textarea.fi, .fg input, .fg select, .fg textarea, .fl input.finp, .fl select.finp, .fl textarea.finp {
+  border-radius: 10px; border: 1px solid var(--bd); background-color: var(--bk-bg); color: var(--bk-fg); font-family: var(--bk-body); font-size: 15.5px;
+}
+.finp { padding: 11px 13px; }
+.fi { padding: 10px 12px; }
+.fi:focus, .finp:focus, .fsel:focus, .sbox:focus-within { border-color: var(--bk-accent); background-color: var(--bk-bg); box-shadow: 0 0 0 3px color-mix(in srgb, var(--bk-accent) 22%, transparent); outline: none; }
+.fi::placeholder, .finp::placeholder { color: var(--bk-faint); }
+.fsel { height: 42px; padding: 0 34px 0 13px; font-weight: 500; font-size: 15px; background-position: right 12px center; }
+.fg > label, .fl > label, .fwd-label { font-size: 12.5px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--bk-muted); font-family: var(--bk-body); }
+.fi-hint, .ea-count { font-size: 13.5px; color: var(--bk-muted); }
+input[type="checkbox"], input[type="radio"] { accent-color: var(--bk-accent); }
+
+/* ── Cards, tables, badges, tabs. */
+.card, .mc, .sc-card, .kpi-tile, .tc, .agc, .tmcard, .lt, .fbar, .rep-card, .alert-card, .prop-card, .cl-card, .cal-card, .acc-card, .acc-kpi, .uct-card {
+  border-radius: 14px; border: 1px solid var(--bd); background: var(--bk-surface); box-shadow: var(--bk-shadow);
+}
+.lt-hdr { background: color-mix(in srgb, var(--bk-accent) 12%, var(--bk-surface)); color: var(--bk-fg); font-size: 12px; letter-spacing: .08em; border-bottom: 2px solid var(--bk-accent); font-family: var(--bk-body); }
+.lt-row { border-color: var(--bd); }
+.lt-row:hover { background: color-mix(in srgb, var(--bk-accent) 7%, transparent); }
+.bdg { padding: 3px 11px; border-radius: 999px; font-size: 12.5px; font-weight: 600; letter-spacing: .01em; text-transform: none; font-family: var(--bk-body); border: 1px solid color-mix(in srgb, currentColor 35%, transparent); }
+.pill-tabs, :root[data-theme="light"] .pill-tabs { background: transparent; border: 0; padding: 0; gap: 6px; box-shadow: none; display: flex; flex-wrap: wrap; }
+.pill-tabs > button { border: 1px solid var(--bd); background: var(--bk-bg); color: var(--bk-fg); border-radius: 999px; padding: 7px 14px; font-size: 14px; font-weight: 500; letter-spacing: 0; text-transform: none; font-family: var(--bk-body); display: inline-flex; align-items: center; gap: 6px; box-shadow: none; }
+.pill-tabs > button.on, .pill-tabs > button[aria-selected="true"] { background: var(--bk-fg); color: var(--bk-bg); border-color: var(--bk-fg); }
+.ftab { border: 1px solid var(--bd); background: var(--bk-bg); color: var(--bk-fg); border-radius: 999px; padding: 6px 13px; font-size: 14px; font-weight: 500; text-transform: none; letter-spacing: 0; }
+.ftab.on { background: var(--bk-fg); color: var(--bk-bg); border-color: var(--bk-fg); }
+.seg { background: var(--bk-bg); border: 1px solid var(--bd); border-radius: 12px; padding: 4px; }
+.seg-b { border-radius: 9px; font-size: 14px; font-weight: 500; text-transform: none; letter-spacing: 0; }
+.seg-b.on { background: var(--bk-surface2); color: var(--bk-fg); box-shadow: var(--sh); }
+.empty { color: var(--bk-muted); }
+.empty .mi { color: var(--bk-accent); opacity: .7; }
+
+/* ── Modals and the dialogs that share their frame. */
+.mov { background: rgb(6 14 11 / .58); }
+.modal { background: var(--bk-bg); border: 1px solid var(--bd); border-radius: 18px; box-shadow: 0 20px 60px rgb(0 0 0 / .4); }
+.m-hd { padding: 16px 20px; border-bottom: 1px solid var(--bd); }
+.m-body { padding: 18px 20px; }
+.m-ft { padding: 12px 20px; border-top: 1px solid var(--bd); background: var(--bk-surface); border-radius: 0 0 18px 18px; }
+.m-x { width: 34px; height: 34px; border-radius: 50%; border: 1px solid var(--bd); background: var(--bk-bg); color: var(--bk-fg); display: grid; place-items: center; }
+.m-x:hover { border-color: var(--bk-accent); color: var(--bk-accent); }
+.m-hint { background: var(--bk-accent-soft); color: var(--bk-fg); border: 1px solid color-mix(in srgb, var(--bk-accent) 35%, var(--bd)); border-radius: 12px; font-size: 14.5px; }
+
+/* ── Sidebar and the header bar. */
+.sb-it { font-size: 15px; font-weight: 500; letter-spacing: 0; text-transform: none; border-radius: 10px; padding: 9px 12px; color: var(--bk-muted); border: 1px solid transparent; }
+.sb-it:hover { background: var(--bk-surface); color: var(--bk-fg); }
+.sb-it.on { background: var(--bk-surface); border-color: var(--bk-line); color: var(--bk-fg); font-weight: 600; box-shadow: inset 3px 0 0 var(--bk-accent); }
+.sb-it.on::before { display: none; }
+.sb-it.on .mi { color: var(--bk-accent); }
+.sb-it .mi { font-size: 21px; }
+.sb-lbl, .sb-sec { font-size: 11.5px; font-weight: 600; letter-spacing: .12em; color: var(--bk-faint); }
+.sb-badge { background: var(--bk-held); color: #1b1404; font-family: var(--bk-mono); font-weight: 600; }
+.wlogo { letter-spacing: .04em; font-weight: 700; }
+.wlogo-accent { color: var(--bk-accent); }
+
+/* ── Small screens, every page: nothing may be wider than the screen, and tap targets stay reachable. */
+@media (max-width: 767px) {
+  .pg-title { font-size: 22px; }
+  .modal { max-width: 100%; max-height: 100dvh; border-radius: 18px 18px 0 0; }
+  .mov { align-items: flex-end; padding: 0; }
+  .m-ft { border-radius: 0; position: sticky; bottom: 0; }
+  .m-ft .btn { flex: 1; justify-content: center; }
+  .fg-row { grid-template-columns: minmax(0, 1fr); }
+  .btn { min-height: 40px; }
+}
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; } }
+/* ds-allow-hardcode:end */
+
+/* ds-allow-hardcode:start */
+/* ── Page titles (the hero above every page). */
+.hero-title { font-family: var(--bk-display); font-size: clamp(22px, 1.2vw + 14px, 30px); font-weight: 600; letter-spacing: -.02em; text-transform: none; line-height: 1.15; }
+.hero-sub { font-size: 14.5px; color: var(--bk-muted); }
+
+/* ── KPI cards on the dashboards (StatTrend): the Booking surface in both themes, not a fixed black. */
+.st-card {
+  --st-accent: var(--bk-gold); --st-ink: var(--bk-fg); --st-title: var(--bk-muted); --st-mute: var(--bk-muted); --st-icon: var(--bk-faint); --st-track: var(--bk-line);
+  background: var(--bk-surface); border: 1px solid var(--bk-line); border-top-color: var(--bk-line); border-radius: 14px; box-shadow: var(--bk-shadow);
+}
+.rep-card { --rep-accent: var(--bk-accent); }
+.rep-hd { font-size: 16px; font-weight: 600; letter-spacing: 0; text-transform: none; }
+
+/* ── KPI strips (Requests, Analytics, Users, Booking dashboard): as many equal cards as fit, never one orphan. */
+#root .rqi-kpis { grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); }
+#root .rqi-k b { font-size: clamp(22px, 1.1vw + 14px, 30px); }
+
+/* ── Tab rows: one line that scrolls sideways when it does not fit. */
+#root .rqx-tabs, #root .pill-tabs, #root .lvx-tabs { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; max-width: 100%; }
+#root .rqx-tabs::-webkit-scrollbar, #root .pill-tabs::-webkit-scrollbar { display: none; }
+#root .rqx-tabs > *, #root .pill-tabs > * { flex: none; }
+
+/* ── Phone Home (dashboards/*, .mh): its own palette, re-pointed at the Booking one. */
+@media (max-width: 767px) {
+  :root, :root[data-theme="light"] {
+    --mh-page: var(--bg); --mh-card: var(--bk-surface); --mh-well: var(--bk-surface2); --mh-track: var(--bk-line);
+    --mh-ink: var(--bk-fg); --mh-mute: var(--bk-muted); --mh-mute2: var(--bk-muted); --mh-line: var(--bk-line);
+    --mh-strong: var(--bk-fg); --mh-on-strong: var(--bk-bg); --mh-good: var(--bk-ok); --mh-bad: var(--bk-bad);
+    --mh-warm: var(--bk-gold); --mh-warm-hi: var(--bk-gold); --mh-warm-ink: var(--bk-gold);
+    --mh-shadow: var(--bk-shadow); --mh-barbg: var(--bk-line); --mh-heat0: var(--bk-surface2); --mh-heat1: var(--bk-line); --mh-heat2: var(--bk-faint); --mh-heat3: var(--bk-accent);
+  }
+  .mh { font-family: var(--bk-body); }
+  .mh h1, .mh h2, .mh-card-t, .mh-big, .mh-num { font-family: var(--bk-display); }
+  .mh-card { border: 1px solid var(--bk-line); }
+
+  /* every page: two KPI cards a row, tighter cards, full-width filters */
+  #root .rqi-kpis, #root .acx-kpis, #root .fbx .fbx-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  #root .rqi-k { padding: 12px 12px 12px; }
+  #root .rqi-k b { font-size: 24px; }
+  #root .rqi-ks { font-size: 12.5px; }
+  #root .rqi-ki { top: 10px; right: 10px; }
+  #root .rqi-ki .mi { font-size: 18px; }
+  #root .rqx-bar { gap: 8px; }
+  #root .rqx-bar .rqx-search { flex: 1 1 100%; max-width: none; }
+  #root .rqx-chips { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; max-width: 100%; }
+  #root .rqx-chips > * { flex: none; }
+  #root .rqx-sels { width: 100%; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  #root .rqx-sels .bks { width: 100%; min-width: 0; }
+  #root .rqx-sels > :only-child { grid-column: 1 / -1; }
+  #root .acx-acts-r .bk-btn { flex: 1 1 auto; justify-content: center; }
+  #root .anx-podium { grid-template-columns: minmax(0, 1fr); }
+  #root .rqi-card { padding: 12px; }
+  #root .rqi-chart { height: 130px; }
+  /* tables that are not card lists scroll inside their card */
+  #root .rqi-scroll, #root .anx-card .rqx-scroll, #root .acx-card .rqx-scroll, #root .fbl-sum-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  #root .anx-table, #root .rqi-table, #root .acx-table { display: table !important; min-width: 640px; }
+  #root .anx-table thead, #root .rqi-table thead, #root .acx-table thead { display: table-header-group !important; }
+  #root .anx-table tbody, #root .rqi-table tbody, #root .acx-table tbody { display: table-row-group !important; }
+  #root .anx-table tr, #root .rqi-table tr, #root .acx-table tr { display: table-row !important; padding: 0 !important; }
+  #root .anx-table th, #root .anx-table td, #root .rqi-table th, #root .rqi-table td, #root .acx-table th, #root .acx-table td { display: table-cell !important; width: auto !important; padding: 9px 10px !important; border-bottom: 1px solid var(--bk-line) !important; }
+  /* Conversations: the page header already names the page */
+  #root .cvx .wa-bar-l { display: none; }
+  #root .cvx .wa-bar { justify-content: flex-end; }
+  /* dialogs fill the screen */
+  #root .pw-scrim { padding: 0; align-items: end; }
+  #root .bk.acx-modal, #root .acx-dcard { width: 100%; max-height: 100dvh; border-radius: 18px 18px 0 0; }
+  #root .acx-dft .bk-btn, #root .acx-modal .pw-acts .bk-btn { flex: 1 1 auto; justify-content: center; }
+  #pan { width: 100vw; }
+}
+/* ds-allow-hardcode:end */
+
+/* ds-allow-hardcode:start */
+/* A page column never grows wider than the screen because of a one-line (scrolling) row inside it. */
+#root .bk > *, #root .rqx-wrap, #root .rqx-bar, #root .rqx-bar > *, #root .rqi-wrap, #root .lvx-wrap, #root .acx-wrap, #root .anx-wrap { min-width: 0; }
+#root .rqx-wrap, #root .rqi-wrap { max-width: 100%; }
+/* ds-allow-hardcode:end */
+
+/* ds-allow-hardcode:start */
+/* ── Tablets and small laptops: tables keep readable columns and scroll inside their card. */
+@media (min-width: 721px) and (max-width: 1180px) {
+  #root .lt-table { min-width: 980px; }
+  #root .rqx-scroll > .rqx-table:not(.lt-table) { min-width: 780px; }
+  #root .rqx-table td, #root .rqx-table th { white-space: nowrap; }
+}
+/* ds-allow-hardcode:end */
+
+/* ds-allow-hardcode:start */
+/* KPI card visuals (StatTrend): gold accent on the theme's own track colours, in both themes. */
+#root .st-bars { border-bottom-color: var(--bk-line); }
+#root .st-bars i { background: var(--bk-faint); }
+#root .st-bars i.on { background: var(--st-accent); box-shadow: none; }
+#root .st-dots i { background: var(--bk-line); }
+#root .st-dots i.on { background: var(--st-accent); box-shadow: none; }
+#root .st-pill { background: repeating-linear-gradient(90deg, var(--bk-line) 0 3px, var(--bk-surface2) 3px 6px); }
+#root .st-pill i { background: var(--st-accent); box-shadow: none; }
+#root .st-card { box-shadow: var(--bk-shadow); }
+/* ds-allow-hardcode:end */

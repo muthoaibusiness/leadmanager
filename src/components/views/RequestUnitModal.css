@@ -23,3 +23,21 @@
   .rqm-side .acx-dgrid { grid-template-columns: minmax(0, 1fr); }
 }
 /* ds-allow-hardcode:end */
+/* ds-allow-hardcode:start */
+/* a tower in the pop-up: the building grid, the requested unit outlined, the rest faded */
+.rqm-stack { overflow: auto; }
+.rqm-stack .stk { height: 100%; max-width: 460px; margin: 0 auto; }
+.stk-focus .stk-cell:not([data-focus="true"]) { opacity: .35; filter: saturate(.6); }
+.stk-focus .stk-cell[data-focus="true"] { outline: 3px solid var(--bk-fg); outline-offset: 2px; box-shadow: 0 0 0 7px color-mix(in srgb, var(--bk-accent) 35%, transparent); opacity: 1; filter: none; }
+.stk-cell:disabled { cursor: default; }
+/* ds-allow-hardcode:end */
+/* ds-allow-hardcode:start */
+/* Requests › Held units */
+.rqx-st-held { --bk-c: var(--bk-gold); }
+.rqh-tag { margin-left: 8px; font-size: 11.5px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; padding: 2px 7px; border-radius: 999px; background: color-mix(in srgb, var(--bk-accent) 16%, transparent); color: var(--bk-accent); }
+.rqh-mu { color: var(--bk-muted); }
+.rqh-ok { color: var(--bk-ok, var(--bk-accent)); }
+.rqh-bad { color: var(--bk-bad, #d4513b); }
+.rqh-lock { display: inline-flex; align-items: center; gap: 4px; }
+.rqh-lock .mi, .rqh-lock span { font-size: 16px; }
+/* ds-allow-hardcode:end */

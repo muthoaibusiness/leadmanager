@@ -53,6 +53,14 @@ export async function loadShopDocs(cid, propertyId, unitId) {
   return { lib, log: (Array.isArray(logRows) ? logRows : []).map(rToLog), loaded: true, missing: false };
 }
 
+// Every document sent for a project, newest first: what went to which client (Booking › Documents).
+export async function loadProjectDocLog(cid, propertyId) {
+  if (!(await hasColumn('shop_docs', 'doc_key', NEED))) return { log: [], missing: true };
+  const c = encodeURIComponent(libOf(cid));
+  const rows = await sbGet(`shop_doc_log?company_id=eq.${c}&property_id=eq.${encodeURIComponent(propertyId)}&kind=eq.docs_sent&order=created_at.desc&limit=500&select=*`);
+  return { log: (Array.isArray(rows) ? rows : []).map(r => ({ ...rToLog(r), unitId: r.unit_id })), missing: false };
+}
+
 // Upload a file for a kit item (a template counts as approved once a file is in).
 export async function uploadKitFile(cid, key, file, user) {
   if (!OK_TYPES.includes(file.type)) return { ok: false, error: 'Use a PDF, PNG, JPG or WebP file.' };

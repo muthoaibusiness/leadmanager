@@ -11,7 +11,7 @@ const ICONS = { dollar: DollarSign, up: TrendingUp, down: TrendingDown, refresh:
 //   kind 'dots'  — a dot-matrix bar chart of `points`
 //   kind 'pill'  — a capsule filled to `pct` (0–100)
 // With no kind, 'area' when there are points, else no visual.
-export default function StatTrend({ label, value, delta, sub, points, pct, kind, color = '#FB8849', icon, gid, onClick }) {
+export default function StatTrend({ label, value, delta, sub, points, pct, kind, color = 'var(--bk-gold)', icon, gid, onClick }) {
   const Icon = ICONS[icon];
   const hasGraph = Array.isArray(points) && points.length > 1;
   const up = (delta ?? 0) >= 0;

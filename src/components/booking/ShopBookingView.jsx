@@ -10,6 +10,9 @@ import ShopCard from './ShopCard.jsx';
 import FloorCanvas from './FloorCanvas.jsx';
 import ProjectList from './ProjectList.jsx';
 import ShopGrid from './ShopGrid.jsx';
+import StackGrid from './StackGrid.jsx';
+import ProjectOverview from './ProjectOverview.jsx';
+import ProjectDocs from './ProjectDocs.jsx';
 import './ShopBooking.css';
 
 // Booking: choose a project, then a floor, then a shop. On a computer each floor plan is
@@ -32,19 +35,45 @@ const customStatuses = (shops) => {
 const ZOOMS = [1, 1.5, 2, 3]; // plan width as a multiple of its box; 1 = the whole floor fits
 const sortPlans = (plans) => [...plans].sort((a, b) => (b.order ?? 0) - (a.order ?? 0) || byCode(a.name || '', b.name || ''));
 
+// A project opens on three tabs: Overview (figures, customers, holds), Booking (the plan) and Documents.
+const PTABS = [['overview', 'Overview', 'insights'], ['booking', 'Booking', 'event_seat'], ['docs', 'Documents', 'description']];
+
 export default function ShopBookingView() {
+  const { bookProj, setBookProj } = useApp();
+  const [ptab, setPtab] = useNavState('booking.ptab', 'booking');
+  const allProjects = planProjects();
+  const project = allProjects.find(p => p.id === bookProj) || null;
+  if (!project) return <ProjectList projects={allProjects} onPick={(id) => setBookProj(id)} />;
+  return (
+    <div className="bk bkx">
+      <div className="bkx-head">
+        <button type="button" className="bk-chip bk-back" onClick={() => setBookProj(null)} title="All projects"><Mi>arrow_back</Mi>Projects</button>
+        <h2>{project.name}</h2>
+        <div className="rqx-tabs" role="tablist" aria-label="Project">
+          {PTABS.map(([k, l, ic]) => (
+            <button key={k} type="button" role="tab" className="bk-chip" aria-selected={ptab === k} aria-pressed={ptab === k} onClick={() => setPtab(k)}><Mi>{ic}</Mi>{l}</button>
+          ))}
+        </div>
+      </div>
+      <div className="bkx-body">
+        {ptab === 'overview' ? <ProjectOverview project={project} />
+          : ptab === 'docs' ? <ProjectDocs project={project} />
+          : <ProjectBooking project={project} onBack={() => setBookProj(null)} />}
+      </div>
+    </div>
+  );
+}
+
+// The Booking tab: the project's floors and units (the drawn plan, the building grid, or on a phone the unit grid).
+function ProjectBooking({ project, onBack }) {
   const { dbVersion } = useApp();
   void dbVersion; // re-read the store after a sync or a status change
   useLeadBook(true); // the customer search reads leads, which are not in the boot snapshot
   const phone = useMediaQuery(PHONE_MQ);
-  const allProjects = planProjects(); // the list page shows every project
-  const projects = allProjects.filter(p => p.floorPlans.length);
-  const [projId, setProjId] = useNavState('booking.project', null);
   const [floorId, setFloorId] = useNavState('booking.floor', null);
   const [shopCode, setShopCode] = useNavState('booking.shop', null);
   const [zoom, setZoom] = useNavState('booking.zoom', 1);
 
-  const project = projects.find(p => p.id === projId) || null; // none picked yet: the project list
   const plans = sortPlans(project?.floorPlans || []);
   // The picked floor, else the ground floor if it has units, else the lowest floor that does.
   const hasShops = (p) => textFloor(project, p).counts.total > 0;
@@ -55,16 +84,18 @@ export default function ShopBookingView() {
   const shop = floor?.shops.find(s => s.code === shopCode) || null;
   const lm = landmarks(plan);
 
-  if (!project) return <ProjectList projects={allProjects} onPick={(id) => { setProjId(id); setFloorId(null); setShopCode(null); }} />;
   if (!plan || !floor) return <div className="bk-empty">This project has no floor plan yet. Add one in Projects → Available Units.</div>;
 
-  const backToProjects = () => { setProjId(null); setFloorId(null); setShopCode(null); };
+  const backToProjects = onBack;
   const pickFloor = (p) => { setFloorId(p.id); setShopCode(null); };
 
   if (phone) {
     return <ShopGrid project={project} plans={plans} plan={plan} floor={floor}
       onBack={backToProjects} pickFloor={pickFloor} shopCode={shopCode} setShopCode={setShopCode} />;
   }
+
+  // A tower whose floors are marked as grid floors is booked from one building view: a row per floor.
+  if (plans.some(p => p.grid)) return <StackGrid project={project} plans={plans} shopCode={shopCode} setShopCode={setShopCode} onBack={backToProjects} />;
 
   const zi = Math.max(0, ZOOMS.indexOf(zoom));
   // One card width for every floor: sized for the widest floor's drawing, so

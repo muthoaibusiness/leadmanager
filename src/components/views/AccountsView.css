@@ -128,3 +128,16 @@
 .acx-pw input { flex: 1; min-width: 0; }
 .acx-modal .pw-f input { width: 100%; box-sizing: border-box; }
 /* ds-allow-hardcode:end */
+/* ds-allow-hardcode:start */
+/* Bulk add on narrower screens: the fields take the grid, the row number and the remove button sit in the corners. */
+@media (max-width: 1100px) {
+  .acx-row { position: relative; grid-template-columns: repeat(2, minmax(0, 1fr)); padding-top: 40px; }
+  .acx-row .acx-idx { display: block; position: absolute; top: 10px; left: 12px; padding: 0; }
+  .acx-row > .bk-close { position: absolute; top: 6px; right: 6px; grid-column: auto; grid-row: auto; }
+}
+@media (max-width: 720px) {
+  .acx-row { grid-template-columns: minmax(0, 1fr); }
+  .acx-bulk > header { flex-direction: column; align-items: stretch; }
+  .acx-bulk-ft .bk-btn { flex: 1 1 auto; justify-content: center; }
+}
+/* ds-allow-hardcode:end */

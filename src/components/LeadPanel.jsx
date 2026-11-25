@@ -322,7 +322,7 @@ function Actions({ l }) {
     // a team member (open stage, owned), the Team Lead (after the site visit,
     // with the offer), and myself (Add-Customer holder or self_forward grant,
     // when not already assigned here). Shown when any of the three applies.
-    const teamRoute = user.role !== ROLES.MA && s !== 'NEGOTIATING' && s !== 'DEAL_CLOSED_WON' && s !== 'DEAL_CLOSED_LOST' && s !== 'NOT_INTERESTED' && l.assignedTo === user.id;
+    const teamRoute = s !== 'NEGOTIATING' && s !== 'DEAL_CLOSED_WON' && s !== 'DEAL_CLOSED_LOST' && s !== 'NOT_INTERESTED' && l.assignedTo === user.id;
     const tlRoute = s === 'SITE_VISIT_DONE';
     const selfRoute = canSelfForward(user) && l.assignedTo !== user.id;
     if (teamRoute || tlRoute || selfRoute) btns.push(

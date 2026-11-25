@@ -17,15 +17,30 @@ export default function BookPanel({ project, shop, client, onDone }) {
   const [offer, setOffer] = useState(shop.price > 0 ? String(Math.round(shop.price)) : '');
 
   if (shop.status !== 'available') {
+    const sold = shop.status === 'sold';
+    const day = (d) => (d ? new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '');
+    const rows = [
+      ['Customer', shop.clientName],
+      ['Contact', shop.clientPhone],
+      [sold ? 'Booked' : 'Held since', day(shop.bookingDate)],
+      ['Paid', day(shop.paymentDate)],
+      ['Held by', !sold ? shop.heldByName : ''],
+      ['Hold until', !sold ? day(shop.holdUntil) : ''],
+    ].filter(([, v]) => v);
     return (
       <div className="bk-book">
-        <div className="bk-taken">
-          <Mi>{shop.status === 'hold' ? 'hourglass_top' : 'cancel'}</Mi>
+        <div className={`bk-taken${sold ? ' is-sold' : ''}`} style={shop.look?.color ? { '--bk-c': shop.look.color } : undefined}>
+          <Mi>{shop.status === 'hold' ? 'hourglass_top' : shop.look?.color ? 'real_estate_agent' : 'verified'}</Mi>
           <div>
-            <b>{shop.status === 'hold' ? 'On hold' : 'Not available'}</b>
-            <span>{shop.clientName ? `For ${shop.clientName}` : 'No customer recorded'}{shop.heldByName ? ` · by ${shop.heldByName}` : ''}</span>
+            <b>{shop.look?.label || (shop.status === 'hold' ? 'On hold' : 'Sold')}</b>
+            <span>{rows.length ? (sold ? 'Sold to' : 'Held for') + ' ' + (shop.clientName || 'a customer') : 'No customer recorded'}</span>
           </div>
         </div>
+        {rows.length > 0 && (
+          <dl className="bk-cust">
+            {rows.map(([k, v]) => <div key={k}><dt>{k}</dt><dd className={k === 'Contact' ? 'mono' : ''}>{v}</dd></div>)}
+          </dl>
+        )}
       </div>
     );
   }
@@ -64,7 +79,7 @@ export default function BookPanel({ project, shop, client, onDone }) {
         )}
       </div>
 
-      <button type="button" className="bk-btn primary" disabled={!ready} onClick={book}>Book shop {shop.code}</button>
+      <button type="button" className="bk-btn primary" disabled={!ready} onClick={book}>{/^shop/i.test(shop.type || shop.code) ? 'Book shop' : 'Book unit'} {shop.code}</button>
       <div className="bk-hint">{!client ? 'Choose a customer above to continue.' : price > 0 ? 'Sent to management for approval; the shop is held meanwhile.' : 'Enter the customer price.'}</div>
     </div>
   );

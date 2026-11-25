@@ -230,12 +230,12 @@ export default function LeadTable({ leads, total = null, page: pageProp, onPage,
                         )}
                       </span>
                     </td>
-                    <td><span className="lt-src">{SRC_LABELS[l.source] || l.source || '—'}</span></td>
-                    <td className="lt-prop" title={l.propertyInterest || undefined}>{l.propertyInterest || '—'}</td>
-                    <td>{(() => { const ds = leadDisplayStatus(l); return <span className={`bdg lt-st ${ds.cls}`}><i className="bk-dot" />{ds.label}</span>; })()}</td>
-                    <td><AgentCell lead={l} /></td>
-                    <td><LastActivityCell lead={l} fromServer={lastFu[l.id]} pending={fuPending} /></td>
-                    <td><NextFollowCell lead={l} /></td>
+                    <td className="lt-c-src"><span className="lt-src">{SRC_LABELS[l.source] || l.source || '—'}</span></td>
+                    <td className="lt-c-prop" title={l.propertyInterest || undefined}>{l.propertyInterest || '—'}</td>
+                    <td className="lt-c-status">{(() => { const ds = leadDisplayStatus(l); return <span className={`bdg lt-st ${ds.cls}`}><i className="bk-dot" />{ds.label}</span>; })()}</td>
+                    <td className="lt-c-agent"><AgentCell lead={l} /></td>
+                    <td className="lt-c-act"><LastActivityCell lead={l} fromServer={lastFu[l.id]} pending={fuPending} /></td>
+                    <td className="lt-c-next"><NextFollowCell lead={l} /></td>
                     <td className="lt-created">{fmtDateTimeAP(l.createdAt)}</td>
                   </tr>
                 ))}
