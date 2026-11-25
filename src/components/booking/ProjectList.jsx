@@ -64,7 +64,8 @@ export default function ProjectList({ projects, onPick }) {
                       <span className="bkp-stats">
                         <span><i className="bk-sw s-available" />{inv.available} open</span>
                         <span><i className="bk-sw s-hold" />{inv.hold} held</span>
-                        <span><i className="bk-sw s-sold" />{inv.sold} sold</span>
+                        <span><i className="bk-sw s-sold" />{inv.soldOnly} sold</span>
+                        {inv.landowner > 0 && <span><i className="bk-sw s-land" />{inv.landowner} landowner</span>}
                       </span>
                     ) : null}
                     <span className="bkp-foot">

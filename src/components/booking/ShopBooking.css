@@ -68,6 +68,8 @@
 .bk-sw.s-available { background: var(--bk-accent-soft); border-color: color-mix(in srgb, var(--bk-accent) 55%, var(--bk-line)); }
 .bk-sw.s-hold { background: var(--bk-gold-soft); border-color: var(--bk-held); }
 .bk-sw.s-sold { background: var(--bk-hatch); }
+/* landowner: the same violet as Project Overview's Landowner figure (.pov-k b.pl) */
+.bk-sw.s-land { background: color-mix(in srgb, #A78BFA 22%, transparent); border-color: #A78BFA; }
 
 /* ── floors (computer): F-code, name, open count ── */
 .bk-floors { min-height: 0; display: grid; align-content: start; gap: 4px; overflow-x: hidden; overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--bk-line) transparent; }

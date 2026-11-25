@@ -189,13 +189,16 @@ export function getProjectById(id) { return toProject(getProperty(id)); }
 //            null when the project has no units yet
 export function projectInventory(raw) {
   const p = toProject(raw);
-  let total = 0, available = 0, hold = 0, sold = 0, area = 0;
+  let total = 0, available = 0, hold = 0, sold = 0, landowner = 0, soldOnly = 0, area = 0;
   const rates = [], sizes = [];
   (p?.variants || []).forEach(v => {
     const units = v.units || [];
     total += units.length;
     units.forEach(u => {
       if (u.status === 'available') available++; else if (u.status === 'sold') sold++; else hold++;
+      // Landowner units (tag st-landowner, as Project Overview counts them) apart from the sold ones;
+      // `sold` above still includes them, for the Projects page and the sold-out status.
+      if (u.tag === 'st-landowner') landowner++; else if (u.status === 'sold') soldOnly++;
       area += unitSize(u, v);
       if (u.size > 0) sizes.push(u.size);
       if (u.price > 0 && unitSize(u, v) > 0) rates.push(Math.round(u.price / unitSize(u, v)));
@@ -211,7 +214,7 @@ export function projectInventory(raw) {
   const span = (xs) => (xs.length ? [Math.min(...xs), Math.max(...xs)] : [null, null]);
   const [rateMin, rateMax] = span(rates);
   const [sizeMin, sizeMax] = span(sizes);
-  return { total, available, hold, sold, area, rateMin, rateMax, sizeMin, sizeMax, status };
+  return { total, available, hold, sold, landowner, soldOnly, area, rateMin, rateMax, sizeMin, sizeMax, status };
 }
 
 // ── project CRUD ─────────────────────────────────────────────────────────────
