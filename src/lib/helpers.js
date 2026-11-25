@@ -45,6 +45,19 @@ export function fmtAgo(iso) {
   return Math.floor(m / 1440) + 'd ago';
 }
 
+// How far a time is from now, either way: "just now", "5m ago", "3h ago",
+// "2d ago", "4mo ago", or "in 20m", "in 3h", "in 2d". The lead table shows this
+// and keeps the exact date and time for its tooltip.
+export function fmtRel(iso) {
+  if (!iso) return '';
+  const ms = new Date(iso).getTime() - Date.now();
+  if (!Number.isFinite(ms)) return '';
+  const m = Math.floor(Math.abs(ms) / 60000);
+  if (m < 1) return 'just now';
+  const span = m < 60 ? m + 'm' : m < 1440 ? Math.floor(m / 60) + 'h' : m < 1440 * 60 ? Math.floor(m / 1440) + 'd' : Math.floor(m / 43200) + 'mo';
+  return ms > 0 ? 'in ' + span : span + ' ago';
+}
+
 // Long form of fmtAgo, for the freshness line under a KPI value: "3 hours ago"
 // reads as prose where "3h ago" reads as a log entry. Anything older than a
 // month becomes a date, since "47 days ago" stops being useful.

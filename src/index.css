@@ -8337,6 +8337,12 @@ textarea.fi {
   grid-template-columns: 22px 1.7fr 100px 1fr 1.5fr 116px 112px 40px
 }
 
+/* Computers: project rows are as tall as their content (the two-line units cell, 40px)
+   plus 6px above and below, not the lead table's 68px. ds-allow-hardcode: no spacing tokens here. */
+@media (min-width: 721px) {
+  .lt-row.prop-row { min-height: 52px; padding-top: 6px; padding-bottom: 6px }
+}
+
 /* the row's ⋯ menu (ui/menu.jsx) */
 .lt-more {
   display: inline-grid; place-items: center; width: 32px; height: 32px; padding: 0;
@@ -14775,3 +14781,41 @@ input[type="time"]::-webkit-calendar-picker-indicator { opacity: .9; cursor: poi
 .pc-offer-acts { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .pc-offer-acts .btn { justify-content: center; }
 
+
+/* ds-allow-hardcode:start */
+/* ── Compact chrome (computers) ──
+   Smaller type and tighter spacing in the sidebar and in every page's header
+   (top bar, breadcrumb, page title, subtitle, Refresh, search and filter row),
+   so more of the screen goes to the page itself. Phones keep their own layout.
+   #root lifts these over the many page-specific rules above. Sizes before → after:
+   sidebar 256 → 224px wide, menu item 43 → 34px / 15 → 13.5px; top bar 58 → 42px;
+   page title 30 → 24px (no padding above it); Refresh 47 → 36px; search 44 → 36px; filters 38 → 34px. */
+@media (min-width: 721px) {
+  :root { --sw: clamp(200px, 5vw + 140px, 224px); --hh: 42px; --body-top: 0px; }
+
+  /* sidebar */
+  #root .sb-brand { height: 52px; padding: 6px 16px 0; }
+  #root .sb-nav { padding: 8px 10px; gap: 1px; }
+  #root .sb-sec-lbl { font-size: 10px; padding: 12px 10px 4px; }
+  #root .sb-it { font-size: 13.5px; padding: 6px 10px; gap: 10px; line-height: 1.5; }
+  #root .sb-it .mi, #root .sb-it svg { font-size: 18px; width: 18px; height: 18px; }
+  #root .sb-subit { font-size: 12.5px; }
+  #root .sb-badge { min-width: 18px; height: 18px; font-size: 10.5px; }
+
+  /* top bar */
+  #root .pg-head { height: var(--hh); }
+  #root .pg-head .bcr-seg { font-size: 12.5px; padding: 2px 4px; }
+
+  /* page title row */
+  #root .hero { margin-bottom: 8px; gap: 10px 16px; }
+  #root .hero-title { font-size: 24px; }
+  #root .hero-sub { font-size: 13px; margin-top: 2px; }
+  #root .rf-btn { padding: 7px 18px; font-size: 13px; }
+  #root .rf-btn .mi { font-size: 16px; }
+
+  /* search and filters under the title */
+  #root .bk-search input { font-size: 14px; padding: 6px 0; }
+  #root .bk-search .mi { font-size: 18px; }
+  #root .bks { font-size: 13.5px; padding: 6px 8px 6px 10px; }
+}
+/* ds-allow-hardcode:end */

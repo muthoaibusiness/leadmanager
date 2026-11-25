@@ -73,7 +73,7 @@ export default function KpiRow({ variant }) {
   const newCount = bucketsOf(14, 'day').map(sumIn(leads, at('createdAt'), () => 1)).reduce((s, v) => s + v, 0);
 
   const cards = [
-    { label: 'Revenue', value: fmtBDT(rev), points: revGraph.points, kind: 'area', icon: 'dollar',
+    { label: 'Revenue', value: fmtBDT(rev), points: revGraph.points, kind: 'area', icon: 'taka',
       ...(revGraph.window ? { sub: `Won, ${revGraph.window}` } : { delta: revGraph.delta }) },
     { label: 'New Customers', value: newCount, points: leadGraph.points, kind: 'bars', icon: 'up',
       ...(leadGraph.window ? { sub: `New, ${leadGraph.window}` } : { delta: leadGraph.delta }) },
