@@ -1,0 +1,424 @@
+/* ── WEPRO designs: Blueprint, Pebble, Ink ─────────────────────────────────────────────────────────
+   Loaded last (main.jsx), after theme.css. "Classic" is theme.css as it stands and sets no
+   attribute; an admin-chosen design is <html data-design="blueprint|pebble|ink"> (lib/theme.js),
+   beside the personal data-theme="dark|light". Functionality is untouched: this file only paints.
+
+   How a design reaches every screen:
+   1. PALETTE   each design × theme sets a small set of --p-* colours.
+   2. MAPPING   one shared block points every app token (--bg, --surf, --t1, --accent, --bk-*, …)
+                at the --p-* set, also inside the scopes that redefine tokens locally (.bk, .bkm,
+                #pan, #app, .mip), so pages written against any of the token families follow.
+   3. CORNERS   every corner radius in the app's CSS is var(--rad-N, Npx); a design rescales them.
+   4. SHAPE     below the tokens, the shared controls whose form (not just colour) differs:
+                canvas, sidebar, buttons, fields, chips, tables, badges, modals, bottom bar.
+
+   Selectors carry [data-design][data-theme] so they outrank theme.css and the component styles
+   whatever order the lazy chunks load in.
+   ds-allow-hardcode: this is a token file; the hex and px values are the designs' own scales. */
+/* ds-allow-hardcode:start */
+
+/* ════ 1. PALETTES ════════════════════════════════════════════════════════════════════════════════ */
+
+/* Blueprint: a drafting sheet. Dark is the blueprint itself, light is the white print. */
+:root[data-design="blueprint"][data-theme] {
+  --p-page: #091230; --p-panel: transparent; --p-side: #091230;
+  --p-card: #0E1B44; --p-raise: #152556; --p-well: #0A1538;
+  --p-line: #26397A; --p-line2: #3A52A3; --p-edge: #26397A;
+  --p-fg: #EAF0FF; --p-mu: #A3B3E0; --p-fa: #7083BC;
+  --p-ac: #8DB0FF; --p-ac-d: #B4CBFF; --p-ac-ink: #071030; --p-ac-soft: #18306E;
+  --p-gold: #F0C36A; --p-gold-soft: #2E2A22; --p-ok: #5ED6A6; --p-bad: #FF8E7D; --p-held: #F0C36A; --p-plat: #B6C4E8;
+  --p-shadow: none; --p-shadow-lg: 0 0 0 1px #3A52A3, 0 24px 60px rgb(2 6 23 / .6);
+  --p-scrim: rgb(4 9 26 / .7);
+  --p-grid: rgb(141 176 255 / .07); --p-grid2: rgb(141 176 255 / .14);
+  --d-display: "Barlow Semi Condensed", "Barlow", "Hind Siliguri", system-ui, sans-serif;
+  --d-body: "Barlow", "Hind Siliguri", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --d-mono: "IBM Plex Mono", "JetBrains Mono", ui-monospace, Menlo, monospace;
+  --rad-1: 0; --rad-1_5: 0; --rad-2: 0; --rad-3: 0; --rad-4: 0; --rad-5: 0; --rad-6: 0; --rad-7: 0; --rad-8: 0; --rad-9: 0;
+  --rad-10: 0; --rad-11: 0; --rad-12: 0; --rad-13: 0; --rad-14: 0; --rad-16: 0; --rad-18: 0; --rad-20: 0; --rad-22: 0;
+  --rad-24: 0; --rad-26: 0; --rad-28: 0; --rad-pill: 0;
+  --d-r: 0px; --d-r-sm: 0px; --d-r-lg: 0px; --d-r-xl: 0px;
+}
+:root[data-design="blueprint"][data-theme="light"] {
+  --p-page: #EDF1F9; --p-side: #EDF1F9;
+  --p-card: #FFFFFF; --p-raise: #EEF2FB; --p-well: #FFFFFF;
+  --p-line: #C3CFEA; --p-line2: #8FA3D6; --p-edge: #C3CFEA;
+  --p-fg: #0D1B4A; --p-mu: #46578A; --p-fa: #7C8AB4;
+  --p-ac: #1C43D4; --p-ac-d: #1535AD; --p-ac-ink: #FFFFFF; --p-ac-soft: #E1E9FE;
+  --p-gold: #A8630A; --p-gold-soft: #FBF1DE; --p-ok: #0B7A52; --p-bad: #C7331F; --p-held: #A8630A; --p-plat: #4B5C8C;
+  --p-shadow-lg: 0 0 0 1px #8FA3D6, 0 24px 60px rgb(13 27 74 / .18);
+  --p-scrim: rgb(13 27 74 / .38);
+  --p-grid: rgb(28 67 212 / .075); --p-grid2: rgb(28 67 212 / .15);
+}
+
+/* Pebble: tinted, borderless layers. Canvas → sheet → card, each one step lighter. */
+:root[data-design="pebble"][data-theme] {
+  --p-page: #0D0F15; --p-panel: #14171F; --p-side: transparent;
+  --p-card: #1C202B; --p-raise: #262B38; --p-well: #262B38;
+  --p-line: #2A2F3D; --p-line2: #3A4052; --p-edge: transparent;
+  --p-fg: #EEF0F7; --p-mu: #A4AABB; --p-fa: #71788B;
+  --p-ac: #9C93FF; --p-ac-d: #B3ACFF; --p-ac-ink: #100C33; --p-ac-soft: #292656;
+  --p-gold: #F1B95C; --p-gold-soft: #33291A; --p-ok: #55D3A0; --p-bad: #FF8C9B; --p-held: #F1B95C; --p-plat: #AEB7CC;
+  --p-shadow: none; --p-shadow-lg: 0 30px 80px rgb(0 0 0 / .55);
+  --p-scrim: rgb(6 7 11 / .64);
+  --d-display: "Figtree", "Hind Siliguri", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --d-body: "Figtree", "Hind Siliguri", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --d-mono: "Figtree", "Hind Siliguri", system-ui, sans-serif;
+  --rad-5: 8px; --rad-6: 10px; --rad-7: 12px; --rad-8: 14px; --rad-9: 16px; --rad-10: 18px; --rad-11: 18px; --rad-12: 20px;
+  --rad-13: 22px; --rad-14: 26px; --rad-16: 28px; --rad-18: 30px; --rad-20: 32px; --rad-22: 34px; --rad-24: 36px;
+  --rad-26: 38px; --rad-28: 40px;
+  --d-r: 18px; --d-r-sm: 12px; --d-r-lg: 26px; --d-r-xl: 30px;
+}
+:root[data-design="pebble"][data-theme="light"] {
+  --p-page: #E6E9F1; --p-panel: #F2F4F9;
+  --p-card: #FFFFFF; --p-raise: #EDF0F6; --p-well: #EDF0F6;
+  --p-line: #E3E6EE; --p-line2: #CFD4E0;
+  --p-fg: #191C27; --p-mu: #5A6072; --p-fa: #9096A6;
+  --p-ac: #5746F5; --p-ac-d: #4636D9; --p-ac-ink: #FFFFFF; --p-ac-soft: #EAE8FF;
+  --p-gold: #B5771A; --p-gold-soft: #FBF0DC; --p-ok: #168A5B; --p-bad: #D03E55; --p-held: #B5771A; --p-plat: #566078;
+  --p-shadow: 0 1px 2px rgb(25 28 39 / .04), 0 12px 32px rgb(25 28 39 / .05);
+  --p-shadow-lg: 0 30px 80px rgb(25 28 39 / .18);
+  --p-scrim: rgb(25 28 39 / .34);
+}
+
+/* Ink: paper and ink. One highlight colour (--p-hl, marker yellow) marks what is selected. */
+:root[data-design="ink"][data-theme] {
+  --p-page: #0B0B0B; --p-panel: transparent; --p-side: #0B0B0B;
+  --p-card: #121212; --p-raise: #1E1E1E; --p-well: #0B0B0B;
+  --p-line: #3A3A3A; --p-line2: #6A6A6A; --p-edge: #EDEDED;
+  --p-fg: #F4F4F2; --p-mu: #B4B4B0; --p-fa: #80807C;
+  --p-ac: #FFE14A; --p-ac-d: #FFEB85; --p-ac-ink: #0A0A0A; --p-ac-soft: #3A330E;
+  --p-hl: #FFE14A; --p-hl-ink: #0A0A0A;
+  --p-float: 0 0 0 1.5px var(--p-edge); /* what floats without being a dialog gets an ink outline, not the stamp */
+  --p-gold: #FFE14A; --p-gold-soft: #3A330E; --p-ok: #6FDc9A; --p-bad: #FF8A80; --p-held: #FFC457; --p-plat: #C4C4C0;
+  --p-shadow: none; --p-shadow-lg: 8px 8px 0 #EDEDED;
+  --p-scrim: rgb(0 0 0 / .72);
+  --d-display: "Bricolage Grotesque", "Instrument Sans", "Hind Siliguri", system-ui, sans-serif;
+  --d-body: "Instrument Sans", "Hind Siliguri", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --d-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --rad-1: 0; --rad-1_5: 0; --rad-2: 0; --rad-3: 2px; --rad-4: 2px; --rad-5: 4px; --rad-6: 4px; --rad-7: 4px; --rad-8: 4px; --rad-9: 4px;
+  --rad-10: 6px; --rad-11: 6px; --rad-12: 6px; --rad-13: 6px; --rad-14: 8px; --rad-16: 8px; --rad-18: 8px; --rad-20: 10px;
+  --rad-22: 10px; --rad-24: 10px; --rad-26: 10px; --rad-28: 10px;
+  --d-r: 6px; --d-r-sm: 4px; --d-r-lg: 8px; --d-r-xl: 10px;
+}
+:root[data-design="ink"][data-theme="light"] {
+  --p-page: #FFFFFF; --p-side: #FFFFFF;
+  --p-card: #FFFFFF; --p-raise: #F1F1EE; --p-well: #FFFFFF;
+  --p-line: #D6D6D2; --p-line2: #9A9A96; --p-edge: #0A0A0A;
+  --p-fg: #0A0A0A; --p-mu: #4A4A47; --p-fa: #858581;
+  --p-ac: #0A0A0A; --p-ac-d: #333330; --p-ac-ink: #FFFFFF; --p-ac-soft: #FFF3A6;
+  --p-gold: #8A6A00; --p-gold-soft: #FFF3A6; --p-ok: #0F7A45; --p-bad: #C62B1E; --p-held: #9A6200; --p-plat: #55554F;
+  --p-shadow-lg: 8px 8px 0 #0A0A0A;
+  --p-scrim: rgb(10 10 10 / .5);
+}
+
+/* ════ 2. MAPPING: every token family the app reads, pointed at the palette ═══════════════════════ */
+:root[data-design][data-theme],
+:root[data-design][data-theme] :is(.bk, .bkm, #pan, #app) {
+  --bk-display: var(--d-display); --bk-body: var(--d-body); --bk-mono: var(--d-mono);
+  --bk-bg: var(--p-well); --bk-surface: var(--p-card); --bk-surface2: var(--p-raise); --bk-line: var(--p-line);
+  --bk-fg: var(--p-fg); --bk-muted: var(--p-mu); --bk-faint: var(--p-fa);
+  --bk-accent: var(--p-ac); --bk-accent-ink: var(--p-ac-ink); --bk-accent-soft: var(--p-ac-soft);
+  --bk-gold: var(--p-gold); --bk-gold-soft: var(--p-gold-soft);
+  --bk-ok: var(--p-ok); --bk-bad: var(--p-bad); --bk-held: var(--p-held); --bk-plat: var(--p-plat);
+  --bk-shadow: var(--p-shadow); --bk-r: var(--d-r-lg);
+
+  --bg: var(--p-page);
+  --surf: var(--p-card); --surf2: var(--p-raise); --surf-solid: var(--p-card); --surf2-solid: var(--p-raise);
+  --glass-panel: var(--p-panel); --glass-blur: none; --card-blur: none;
+  --bd: var(--p-line); --bd2: var(--p-line2);
+  --t1: var(--p-fg); --t2: var(--p-mu); --t3: var(--p-fa);
+  --accent: var(--p-ac); --accent-d: var(--p-ac-d); --on-accent: var(--p-ac-ink); --volt: var(--p-ac); --gold: var(--p-gold);
+  --blue: var(--p-ac); --blue-d: var(--p-ac-d);
+  --blue-l: color-mix(in srgb, var(--p-ac) 13%, transparent); --blue-b: color-mix(in srgb, var(--p-ac) 36%, transparent);
+  --purple: var(--p-ac); --purple-l: color-mix(in srgb, var(--p-ac) 13%, transparent);
+  --green: var(--p-ok); --green-l: color-mix(in srgb, var(--p-ok) 14%, transparent); --green-b: color-mix(in srgb, var(--p-ok) 34%, transparent);
+  --orange: var(--p-held); --orange-l: color-mix(in srgb, var(--p-held) 15%, transparent);
+  --red: var(--p-bad); --red-l: color-mix(in srgb, var(--p-bad) 13%, transparent);
+  --teal: var(--p-ok); --teal-l: color-mix(in srgb, var(--p-ok) 13%, transparent);
+  --sh: var(--p-shadow); --sh-md: var(--p-shadow); --sh-lg: var(--p-float, var(--p-shadow-lg));
+  --r: var(--d-r); --r-sm: var(--d-r-sm); --r-lg: var(--d-r-lg); --r-xl: var(--d-r-xl); --r-md: var(--d-r);
+  --font-display: var(--d-display); --font-alt: var(--d-body); --font-mono: var(--d-mono);
+}
+/* Meeting page (.mip) keeps a palette of its own. */
+:root[data-design][data-theme] .mip {
+  --mip-bg: var(--p-page); --mip-surf: var(--p-card); --mip-bd: var(--p-line); --mip-acc: var(--p-ac);
+  --mip-grn: var(--p-ok); --mip-wrn: var(--p-held); --mip-red: var(--p-bad);
+  --mip-t1: var(--p-fg); --mip-t2: var(--p-mu); --mip-inset: var(--p-well); --mip-track: var(--p-line);
+}
+:root[data-design][data-theme] .st-card { --st-accent: var(--p-gold); }
+
+/* ════ 3. SHARED SHAPE: what every design restates in its own tokens ══════════════════════════════ */
+:root[data-design] body { font-family: var(--d-body); background: var(--p-page); color: var(--p-fg); }
+:root[data-design][data-theme] #app { background-color: var(--p-page); background-image: none; background-blend-mode: normal; }
+:root[data-design][data-theme] #app .sidebar { background: var(--p-side); }
+:root[data-design] :is(.bk, .bkm, .mh) { font-family: var(--d-body); }
+:root[data-design] :is(.pg-title, .m-ttl, .sec-t, .np-ttl, .pf-name, .li-n, .mc-v, .acc-kpi-v, .rep-hd, .kpi-v, .sc-v, .wlogo, .hero-title, .mh h1, .mh h2, .mh-card-t, .mh-big, .mh-num) { font-family: var(--d-display); }
+:root[data-design] ::selection { background: var(--p-ac); color: var(--p-ac-ink); }
+:root[data-design] .mov, :root[data-design] #root .pw-scrim { background: var(--p-scrim); }
+:root[data-design] .modal { background: var(--p-card); box-shadow: var(--p-shadow-lg); }
+:root[data-design] .m-ft { background: var(--p-card); border-radius: 0 0 var(--d-r-xl) var(--d-r-xl); }
+:root[data-design] :is(.umenu, .notif-panel, .drp-panel, .sel-content, .ces-content, .kpi-sheet, .bks-menu, .acsw-menu) { box-shadow: var(--p-shadow-lg); }
+:root[data-design] #pan:not(.on) { box-shadow: none; }
+/* Profile: the hero is a card of the design, not a fixed dark slab; an icon given a fixed white reads on any surface. */
+:root[data-design] .pf-hero { background: var(--p-card); color: var(--p-fg); box-shadow: var(--p-shadow); }
+:root[data-design] .pf-av-acts .btn { background: var(--p-raise); color: var(--p-fg); border-color: var(--p-line2); }
+:root[data-design] :is(.pf-av-img, .pf-av-fb) { border-color: var(--p-line2); box-shadow: none; }
+:root[data-design] .pf-av-demos-l { color: var(--p-mu); }
+:root[data-design] .pf-pill { background: var(--p-raise); border-color: var(--p-line); color: var(--p-fg); }
+:root[data-design] .pf-kpi-ico[style*="255, 255, 255"] { color: var(--p-fg) !important; background: var(--p-raise) !important; }
+:root[data-design] .sb-badge { background: var(--p-held); color: #14100a; font-family: var(--d-mono); }
+@media (max-width: 767px) {
+  :root[data-design] .modal, :root[data-design] #root :is(.bk.acx-modal, .acx-dcard) { border-radius: var(--d-r-xl) var(--d-r-xl) 0 0; }
+  :root[data-design] .m-ft { border-radius: 0; }
+}
+
+/* ════ 4a. BLUEPRINT ══════════════════════════════════════════════════════════════════════════════ */
+/* The canvas is the drawing grid: a fine 24px module with a heavier line every fifth. */
+:root[data-design="blueprint"][data-theme] #app {
+  --inset: 0px;
+  background-image:
+    linear-gradient(var(--p-grid2) 1px, transparent 1px), linear-gradient(90deg, var(--p-grid2) 1px, transparent 1px),
+    linear-gradient(var(--p-grid) 1px, transparent 1px), linear-gradient(90deg, var(--p-grid) 1px, transparent 1px);
+  background-size: 120px 120px, 120px 120px, 24px 24px, 24px 24px;
+  background-repeat: repeat; background-position: 0 0;
+}
+:root[data-design="blueprint"][data-theme] #app .sidebar { border-right: 1px solid var(--p-line2); }
+:root[data-design="blueprint"] .page { box-shadow: none; }
+:root[data-design="blueprint"] :is(.pg-title, .hero-title, .m-ttl, .sec-t, .rep-hd, .rqi-card h3, .bk-empty b) { text-transform: uppercase; letter-spacing: .035em; font-weight: 600; }
+:root[data-design="blueprint"] .hero-title { font-size: clamp(24px, 1.3vw + 15px, 32px); }
+:root[data-design="blueprint"] .wlogo { letter-spacing: .14em; font-weight: 700; }
+/* Sheet corners: every card carries registration marks, like the crop marks of a drawing. */
+:root[data-design="blueprint"] :is(.card, .mc, .sc-card, .kpi-tile, .tc, .agc, .tmcard, .rep-card, .alert-card, .prop-card, .cl-card, .cal-card, .acc-card, .acc-kpi, .st-card, .rqi-k, .rqi-card, .pf-kpi, .pf-form, .pks, .pk-demand, .dnc, .pmc, .ev-card, .mh-card, .dsg-opt) {
+  box-shadow: none;
+  background-image:
+    linear-gradient(var(--p-ac), var(--p-ac)), linear-gradient(var(--p-ac), var(--p-ac)),
+    linear-gradient(var(--p-ac), var(--p-ac)), linear-gradient(var(--p-ac), var(--p-ac)),
+    linear-gradient(var(--p-ac), var(--p-ac)), linear-gradient(var(--p-ac), var(--p-ac)),
+    linear-gradient(var(--p-ac), var(--p-ac)), linear-gradient(var(--p-ac), var(--p-ac));
+  background-size: 9px 2px, 2px 9px, 9px 2px, 2px 9px, 9px 2px, 2px 9px, 9px 2px, 2px 9px;
+  background-position: 0 0, 0 0, 100% 0, 100% 0, 0 100%, 0 100%, 100% 100%, 100% 100%;
+  background-repeat: no-repeat;
+}
+/* Buttons: flat sheets of ink. A hover lays a section hatch over the plain ones. */
+:root[data-design="blueprint"] :is(.btn, .bk-btn) { border-radius: 0; font-family: var(--d-display); font-weight: 600; letter-spacing: .05em; text-transform: uppercase; box-shadow: none; }
+:root[data-design="blueprint"] :is(.btn-g, .btn-warn, .btn-neutral), :root[data-design="blueprint"] .bk-btn:not(.primary) { background: transparent; border-color: var(--p-line2); color: var(--p-fg); }
+:root[data-design="blueprint"] :is(.btn-g, .btn-warn, .btn-neutral):hover, :root[data-design="blueprint"] .bk-btn:not(.primary):hover:not(:disabled) {
+  border-color: var(--p-ac); color: var(--p-ac);
+  background: repeating-linear-gradient(135deg, color-mix(in srgb, var(--p-ac) 16%, transparent) 0 1px, transparent 1px 6px);
+}
+:root[data-design="blueprint"] :is(.hd-ic, .m-x, .acx-ib, .ham, .sb-tog, .bnav-it, .bnav-add) { border-radius: 0; }
+:root[data-design="blueprint"] .hd-ic { border-color: var(--p-line2); }
+/* Fields: a ruled box; focus is a second, offset rule instead of a glow. */
+:root[data-design="blueprint"] :is(.fi, .finp, .fsel, .sbox, .bk-search, .bk-money, .bks, .sel-trigger, .wa-search) { border-color: var(--p-line2); box-shadow: none; }
+:root[data-design="blueprint"] :is(.fi, .finp, .fsel):focus, :root[data-design="blueprint"] :is(.sbox, .bk-search, .bk-money):focus-within, :root[data-design="blueprint"] .bks:is([aria-expanded="true"], :focus-visible) { border-color: var(--p-ac); box-shadow: 3px 3px 0 color-mix(in srgb, var(--p-ac) 35%, transparent); }
+:root[data-design="blueprint"] :is(.fg > label, .fl > label, .fwd-label, .bk-eyebrow, .sb-sec-lbl, .sb-lbl) { font-family: var(--d-display); letter-spacing: .14em; }
+/* Chips and tabs: boxed labels; the chosen one is inked in. */
+:root[data-design="blueprint"] :is(.bk-chip, .ftab, .pill-tabs > button, .fu-chip) { background: transparent; border-color: var(--p-line2); font-family: var(--d-display); letter-spacing: .04em; text-transform: uppercase; font-size: 13.5px; }
+:root[data-design="blueprint"] :is(.bk-chip[aria-pressed="true"], .ftab.on, .pill-tabs > button.on, .pill-tabs > button[aria-selected="true"]) { background: var(--p-ac); color: var(--p-ac-ink); border-color: var(--p-ac); }
+:root[data-design="blueprint"] .bdg, :root[data-design="blueprint"] .bk-pill, :root[data-design="blueprint"] .acx-role { font-family: var(--d-mono); font-size: 11.5px; letter-spacing: .02em; text-transform: uppercase; }
+/* Tables: a title-block header, dashed rules between rows. */
+:root[data-design="blueprint"] :is(.lt-hdr, .rqx-table th) { background: var(--p-raise); color: var(--p-fg); font-family: var(--d-display); letter-spacing: .12em; border-bottom: 1px solid var(--p-ac); }
+:root[data-design="blueprint"] .rqx-table td, :root[data-design="blueprint"] .lt-row { border-bottom-style: dashed; }
+:root[data-design="blueprint"] :is(.lt-row:hover, .rqx-table tbody tr:hover) { background: color-mix(in srgb, var(--p-ac) 8%, transparent); }
+/* Sidebar: the current page is a ruled, inked entry. */
+:root[data-design="blueprint"] .sb-it { border-radius: 0; font-family: var(--d-display); font-size: 15.5px; letter-spacing: .03em; }
+:root[data-design="blueprint"] .sb-it:hover { background: color-mix(in srgb, var(--p-ac) 8%, transparent); }
+:root[data-design="blueprint"] .sb-it.on { background: var(--p-ac); border-color: var(--p-ac); color: var(--p-ac-ink); box-shadow: none; }
+:root[data-design="blueprint"] .sb-it.on .mi { color: var(--p-ac-ink); }
+:root[data-design="blueprint"] .modal { border: 1px solid var(--p-line2); border-top: 3px solid var(--p-ac); }
+:root[data-design="blueprint"] .m-hint { border-style: dashed; }
+@media (max-width: 767px) {
+  :root[data-design="blueprint"] .bnav-pill { border-radius: 0; border-color: var(--p-ac); box-shadow: 4px 4px 0 color-mix(in srgb, var(--p-ac) 30%, transparent); }
+  :root[data-design="blueprint"] .bnav-it.on { background: var(--p-ac); color: var(--p-ac-ink); }
+  :root[data-design="blueprint"] .bnav-add { box-shadow: none; background: var(--p-ac); color: var(--p-ac-ink); }
+  :root[data-design="blueprint"] :is(.hd-back, .rf-ring, .rf-btn, .hd-grp) { border-radius: 0; }
+}
+
+/* ════ 4b. PEBBLE ═════════════════════════════════════════════════════════════════════════════════ */
+:root[data-design="pebble"][data-theme] #app {
+  background-image: radial-gradient(80% 55% at 88% -8%, color-mix(in srgb, var(--p-ac) 13%, transparent), transparent 62%);
+}
+:root[data-design="pebble"] .page { box-shadow: none; }
+:root[data-design="pebble"] :is(.pg-title, .hero-title, .m-ttl, .sec-t, .rep-hd) { font-weight: 700; letter-spacing: -.025em; }
+:root[data-design="pebble"] * { font-variant-numeric: tabular-nums; }
+/* Surfaces carry no outline: a card is told from the sheet by its tone alone. */
+:root[data-design="pebble"] :is(.card, .mc, .sc-card, .kpi-tile, .tc, .agc, .tmcard, .lt, .fbar, .rep-card, .alert-card, .prop-card, .cl-card, .cal-card, .acc-card, .acc-kpi, .uct-card, .st-card, .rqi-k, .rqi-card, .rqx-card, .wa-list, .wa-main, .pf-hero, .pf-form, .pf-kpi, .pk-col, .pk-card, .pks, .pk-demand, .dnc, .pmc, .bkp-card, .ev-card, .mh-card) { border-color: transparent; }
+:root[data-design="pebble"] .rqi-k:is(.bad, .warn) { border-color: transparent; }
+/* Buttons: pebbles. The main action is the one coloured stone. */
+:root[data-design="pebble"] :is(.btn, .bk-btn) { border-radius: 999px; border-color: transparent; box-shadow: none; }
+:root[data-design="pebble"] .btn { padding-inline: 18px; }
+:root[data-design="pebble"] :is(.btn-g, .btn-warn, .btn-neutral), :root[data-design="pebble"] .bk-btn:not(.primary) { background: var(--p-raise); color: var(--p-fg); border-color: transparent; }
+:root[data-design="pebble"] :is(.btn-g, .btn-warn, .btn-neutral):hover, :root[data-design="pebble"] .bk-btn:not(.primary):hover:not(:disabled) { background: var(--p-ac-soft); color: var(--p-ac); border-color: transparent; }
+:root[data-design="pebble"] :is(.btn-p, .btn-teal, .btn-purple, .btn-success), :root[data-design="pebble"] .bk-btn.primary { box-shadow: 0 8px 20px color-mix(in srgb, var(--p-ac) 32%, transparent); }
+:root[data-design="pebble"] :is(.hd-ic, .m-x, .acx-ib, .ham, .sb-tog) { border-color: transparent; background: var(--p-raise); color: var(--p-fg); }
+:root[data-design="pebble"] :is(.hd-ic, .m-x, .acx-ib):hover { background: var(--p-ac-soft); color: var(--p-ac); border-color: transparent; }
+/* Fields: soft wells that light up with a ring. */
+:root[data-design="pebble"] :is(.fi, .finp, .fsel, .sbox, textarea.fi, .bk-search, .bk-money, .bks, .sel-trigger, .wa-search, .bk-sel) { background-color: var(--p-raise); border-color: transparent; }
+:root[data-design="pebble"] :is(.fi, .finp, .fsel):focus, :root[data-design="pebble"] :is(.sbox, .bk-search, .bk-money):focus-within, :root[data-design="pebble"] .bks:is([aria-expanded="true"], :focus-visible) { background-color: var(--p-card); border-color: var(--p-ac); box-shadow: 0 0 0 4px color-mix(in srgb, var(--p-ac) 18%, transparent); }
+:root[data-design="pebble"] :is(.fg > label, .fl > label, .fwd-label, .bk-eyebrow) { text-transform: none; letter-spacing: 0; font-size: 13.5px; font-weight: 600; }
+:root[data-design="pebble"] :is(.sb-sec-lbl, .sb-lbl) { text-transform: none; letter-spacing: 0; font-size: 12.5px; }
+/* Chips and tabs. */
+:root[data-design="pebble"] :is(.bk-chip, .ftab, .pill-tabs > button, .fu-chip) { background: var(--p-raise); border-color: transparent; }
+:root[data-design="pebble"] :is(.bk-chip[aria-pressed="true"], .ftab.on, .pill-tabs > button.on, .pill-tabs > button[aria-selected="true"]) { background: var(--p-ac); color: var(--p-ac-ink); border-color: transparent; }
+:root[data-design="pebble"] .seg { border-color: transparent; background: var(--p-raise); }
+:root[data-design="pebble"] .seg-b.on { background: var(--p-card); }
+:root[data-design="pebble"] .bdg { border-color: transparent; background: color-mix(in srgb, currentColor 13%, transparent); }
+:root[data-design="pebble"] .rqx-pager { border-color: transparent; background: var(--p-raise); }
+/* Tables: quiet headings, hairline rows. */
+:root[data-design="pebble"] :is(.lt-hdr, .rqx-table th) { background: var(--p-card); color: var(--p-fa); text-transform: none; letter-spacing: 0; font-size: 13.5px; font-weight: 600; border-bottom: 1px solid var(--p-line); }
+:root[data-design="pebble"] :is(.lt-row:hover, .rqx-table tbody tr:hover) { background: var(--p-raise); }
+:root[data-design="pebble"] :is(.rqx-foot, .m-ft, .m-hd) { border-color: var(--p-line); }
+/* Sidebar: no panel of its own; the current page is a filled pebble. */
+:root[data-design="pebble"] .sb-it { border-radius: 999px; padding-inline: 14px; }
+:root[data-design="pebble"] .sb-it:hover { background: var(--p-raise); }
+:root[data-design="pebble"] .sb-it.on { background: var(--p-ac); border-color: transparent; color: var(--p-ac-ink); box-shadow: 0 8px 18px color-mix(in srgb, var(--p-ac) 30%, transparent); }
+:root[data-design="pebble"] .sb-it.on .mi { color: var(--p-ac-ink); }
+/* Below 1024px the sidebar is a drawer over the page, so it needs a body of its own. */
+@media (max-width: 1023px) {
+  :root[data-design="pebble"][data-theme] #app .sidebar { background: var(--p-panel); border-right: 0; border-radius: 0 var(--d-r-xl) var(--d-r-xl) 0; box-shadow: var(--p-shadow-lg); }
+}
+:root[data-design="pebble"] .modal { border-color: transparent; }
+:root[data-design="pebble"] .m-hint { border-color: transparent; }
+:root[data-design="pebble"] :is(.umenu, .notif-panel, .drp-panel, .sel-content, .bks-menu) { border-color: transparent; }
+@media (max-width: 767px) {
+  :root[data-design="pebble"] .bnav-pill { border-color: transparent; background: var(--p-card); }
+  :root[data-design="pebble"] .bnav-it.on { background: var(--p-ac-soft); color: var(--p-ac); }
+  :root[data-design="pebble"] .bnav-add { background: var(--p-ac); color: var(--p-ac-ink); box-shadow: 0 8px 20px color-mix(in srgb, var(--p-ac) 35%, transparent); }
+}
+
+/* ════ 4c. INK ════════════════════════════════════════════════════════════════════════════════════ */
+:root[data-design="ink"][data-theme] #app { --inset: 0px; }
+:root[data-design="ink"][data-theme] #app .sidebar { border-right: 1.5px solid var(--p-edge); }
+:root[data-design="ink"] .page { box-shadow: none; }
+:root[data-design="ink"] ::selection { background: var(--p-hl); color: var(--p-hl-ink); }
+:root[data-design="ink"] :is(.pg-title, .hero-title, .m-ttl, .sec-t, .rep-hd, .rqi-card h3) { font-weight: 800; letter-spacing: -.035em; }
+:root[data-design="ink"] .hero-title { font-size: clamp(28px, 1.8vw + 16px, 42px); line-height: 1.02; }
+:root[data-design="ink"] .wlogo { font-weight: 800; letter-spacing: -.01em; }
+:root[data-design="ink"] .wlogo-accent { color: var(--p-fg); background: linear-gradient(transparent 55%, var(--p-hl) 55%); }
+:root[data-design="ink"][data-theme="dark"] .wlogo-accent { color: var(--p-hl); background: none; }
+/* Every surface is outlined in ink; nothing floats on a shadow. */
+:root[data-design="ink"] :is(.card, .mc, .sc-card, .kpi-tile, .tc, .agc, .tmcard, .lt, .fbar, .rep-card, .alert-card, .prop-card, .cl-card, .cal-card, .acc-card, .acc-kpi, .uct-card, .st-card, .rqi-k, .rqi-card, .rqx-card, .wa-list, .wa-main, .pf-hero, .pf-form, .pf-kpi, .pk-col, .pk-card, .pks, .pk-demand, .dnc, .pmc, .bkp-card, .ev-card, .mh-card) { border: 1.5px solid var(--p-edge); box-shadow: none; }
+/* Buttons: ink blocks. Hover lifts them off a marker-yellow stamp. */
+:root[data-design="ink"] :is(.btn, .bk-btn) { border-width: 1.5px; font-weight: 600; box-shadow: none; transition: transform .12s ease, box-shadow .12s ease, background-color .12s ease; }
+:root[data-design="ink"] :is(.btn-p, .btn-teal, .btn-purple, .btn-success), :root[data-design="ink"] .bk-btn.primary { background: var(--p-fg); color: var(--p-page); border-color: var(--p-fg); filter: none; }
+:root[data-design="ink"] :is(.btn-p, .btn-teal, .btn-purple, .btn-success):hover, :root[data-design="ink"] .bk-btn.primary:hover:not(:disabled) { background: var(--p-fg); border-color: var(--p-fg); filter: none; transform: translate(-2px, -2px); box-shadow: 4px 4px 0 var(--p-hl); }
+:root[data-design="ink"] :is(.btn-g, .btn-warn, .btn-neutral), :root[data-design="ink"] .bk-btn:not(.primary) { background: var(--p-card); color: var(--p-fg); border-color: var(--p-edge); }
+:root[data-design="ink"] :is(.btn-g, .btn-warn, .btn-neutral):hover, :root[data-design="ink"] .bk-btn:not(.primary):hover:not(:disabled) { background: var(--p-hl); color: var(--p-hl-ink); border-color: var(--p-edge); }
+:root[data-design="ink"] :is(.btn, .bk-btn):active { transform: none; box-shadow: none; }
+:root[data-design="ink"] :is(.hd-ic, .m-x, .acx-ib) { border: 1.5px solid var(--p-edge); background: var(--p-card); color: var(--p-fg); }
+:root[data-design="ink"] :is(.hd-ic, .m-x, .acx-ib):hover, :root[data-design="ink"] .hd-ic.open { background: var(--p-hl); color: var(--p-hl-ink); border-color: var(--p-edge); }
+/* Fields: an outlined box; focus stamps it. */
+:root[data-design="ink"] :is(.fi, .finp, .fsel, .sbox, textarea.fi, .bk-search, .bk-money, .bks, .sel-trigger, .wa-search, .bk-sel) { border: 1.5px solid var(--p-edge); background-color: var(--p-card); }
+:root[data-design="ink"] :is(.fi, .finp, .fsel):focus, :root[data-design="ink"] :is(.sbox, .bk-search, .bk-money):focus-within, :root[data-design="ink"] .bks:is([aria-expanded="true"], :focus-visible) { border-color: var(--p-edge); box-shadow: 4px 4px 0 var(--p-hl); }
+:root[data-design="ink"] :is(.btn, .sb-it, .fi, .bk-btn, .bk-chip):focus-visible { outline: 2px solid var(--p-fg); outline-offset: 2px; }
+/* Chips and tabs: the chosen one is run over with the marker. */
+:root[data-design="ink"] :is(.bk-chip, .ftab, .pill-tabs > button, .fu-chip) { border: 1.5px solid var(--p-edge); background: var(--p-card); color: var(--p-fg); }
+:root[data-design="ink"] :is(.bk-chip[aria-pressed="true"], .ftab.on, .pill-tabs > button.on, .pill-tabs > button[aria-selected="true"]) { background: var(--p-hl); color: var(--p-hl-ink); border-color: var(--p-edge); }
+:root[data-design="ink"] .seg { border: 1.5px solid var(--p-edge); }
+:root[data-design="ink"] .seg-b.on { background: var(--p-hl); color: var(--p-hl-ink); box-shadow: none; }
+:root[data-design="ink"] .bdg { border: 1.5px solid currentColor; background: transparent; }
+:root[data-design="ink"] .rqx-pager { border: 1.5px solid var(--p-edge); }
+/* Tables: a reversed header bar. */
+:root[data-design="ink"] :is(.lt-hdr, .rqx-table th) { background: var(--p-fg); color: var(--p-page); border-bottom: 0; letter-spacing: .06em; }
+:root[data-design="ink"] :is(.lt-hdr, .rqx-table th) :is(.mi, button, span, .lt-chk, .acx-chk) { color: inherit; }
+:root[data-design="ink"] #root :is(.anx-table, .rqi-table, .acx-table, .rqx-table) th { background: var(--p-fg); color: var(--p-page); }
+:root[data-design="ink"] :is(.lt-row:hover, .rqx-table tbody tr:hover) { background: color-mix(in srgb, var(--p-hl) 22%, transparent); }
+:root[data-design="ink"] .rqx-foot { border-top: 1.5px solid var(--p-edge); }
+/* Sidebar: the current page is highlighted, as on paper. */
+:root[data-design="ink"] .sb-it { color: var(--p-fg); font-weight: 500; }
+:root[data-design="ink"] .sb-it:hover { background: var(--p-raise); }
+:root[data-design="ink"] .sb-it.on { background: var(--p-hl); color: var(--p-hl-ink); border-color: var(--p-edge); border-width: 1.5px; box-shadow: none; font-weight: 700; }
+:root[data-design="ink"] .sb-it.on .mi { color: var(--p-hl-ink); }
+:root[data-design="ink"] .sb-badge { background: var(--p-fg); color: var(--p-page); }
+:root[data-design="ink"] .sb-it.on .sb-badge { background: var(--p-hl-ink); color: var(--p-hl); }
+:root[data-design="ink"] .modal { border: 1.5px solid var(--p-edge); }
+:root[data-design="ink"] :is(.m-hd, .m-ft) { border-color: var(--p-edge); border-width: 1.5px; }
+:root[data-design="ink"] .m-hint { background: var(--p-ac-soft); border: 1.5px solid var(--p-edge); color: var(--p-fg); }
+:root[data-design="ink"] :is(.umenu, .notif-panel, .drp-panel, .sel-content, .bks-menu, .toast) { border: 1.5px solid var(--p-edge); box-shadow: 5px 5px 0 var(--p-edge); }
+@media (max-width: 767px) {
+  :root[data-design="ink"] .bnav-pill { border: 1.5px solid var(--p-edge); box-shadow: 4px 4px 0 var(--p-edge); background: var(--p-card); }
+  :root[data-design="ink"] .bnav-it.on { background: var(--p-hl); color: var(--p-hl-ink); }
+  :root[data-design="ink"] .bnav-add { background: var(--p-fg); color: var(--p-page); box-shadow: none; }
+  :root[data-design="ink"] .modal { box-shadow: none; }
+}
+
+/* ════ 4d. DIALOGS AND THE LEAD PANEL: the same forms, in each design's hand ══════════════════════ */
+:root[data-design] #root :is(.bk.acx-modal, .acx-dcard) { background: var(--p-card); box-shadow: var(--p-shadow-lg); }
+/* Blueprint */
+:root[data-design="blueprint"] #root :is(.bk.acx-modal, .acx-dcard) { border: 1px solid var(--p-line2); border-top: 3px solid var(--p-ac); }
+:root[data-design="blueprint"] :is(.pw-f input, .pw-type-n, .acx-paste textarea) { border-color: var(--p-line2); background: var(--p-well); }
+:root[data-design="blueprint"] :is(.pw-f input, .pw-type-n):focus { border-color: var(--p-ac); box-shadow: 3px 3px 0 color-mix(in srgb, var(--p-ac) 35%, transparent); }
+:root[data-design="blueprint"] #pan .btn { font-family: var(--d-display); font-weight: 600; letter-spacing: .05em; text-transform: uppercase; border-color: var(--p-line2); background: transparent; }
+:root[data-design="blueprint"] #pan .btn:is(.btn-success, .btn-teal, .btn-p) { background: var(--p-ac); border-color: var(--p-ac); }
+:root[data-design="blueprint"] #pan :is(.ld-card, .score-card, .act-card, .offer-card, .tl) { box-shadow: none; }
+/* Pebble */
+:root[data-design="pebble"] #root :is(.bk.acx-modal, .acx-dcard) { border-color: transparent; }
+:root[data-design="pebble"] :is(.pw-f input, .pw-type-n, .acx-paste textarea) { background: var(--p-raise); border-color: transparent; }
+:root[data-design="pebble"] :is(.pw-f input, .pw-type-n):focus { background: var(--p-card); border-color: var(--p-ac); box-shadow: 0 0 0 4px color-mix(in srgb, var(--p-ac) 18%, transparent); }
+:root[data-design="pebble"] #pan .btn { border-radius: 999px; border-color: transparent; background: var(--p-raise); }
+:root[data-design="pebble"] #pan .btn:hover:not(:disabled) { border-color: transparent; background: var(--p-ac-soft); color: var(--p-ac); }
+:root[data-design="pebble"] #pan .btn:is(.btn-success, .btn-teal, .btn-p) { background: var(--p-ac); color: var(--p-ac-ink); }
+:root[data-design="pebble"] #pan :is(.ld-card, .score-card, .act-card, .offer-card, .tl) { border-color: transparent; }
+:root[data-design="pebble"] #pan .p-hd { border-bottom-color: transparent; }
+/* Ink */
+:root[data-design="ink"] #root :is(.bk.acx-modal, .acx-dcard) { border: 1.5px solid var(--p-edge); }
+:root[data-design="ink"] :is(.pw-f input, .pw-type-n, .acx-paste textarea) { border: 1.5px solid var(--p-edge); background: var(--p-card); }
+:root[data-design="ink"] :is(.pw-f input, .pw-type-n):focus { border-color: var(--p-edge); box-shadow: 4px 4px 0 var(--p-hl); }
+:root[data-design="ink"] #pan { border-left: 1.5px solid var(--p-edge); }
+:root[data-design="ink"] #pan .p-hd { border-bottom: 1.5px solid var(--p-edge); }
+:root[data-design="ink"] #pan .btn { border: 1.5px solid var(--p-edge); background: var(--p-card); color: var(--p-fg); }
+:root[data-design="ink"] #pan .btn:hover:not(:disabled) { background: var(--p-hl); color: var(--p-hl-ink); border-color: var(--p-edge); }
+:root[data-design="ink"] #pan .btn:is(.btn-success, .btn-teal, .btn-p) { background: var(--p-fg); color: var(--p-page); border-color: var(--p-fg); }
+:root[data-design="ink"] #pan .btn:is(.btn-success, .btn-teal, .btn-p):hover:not(:disabled) { background: var(--p-fg); color: var(--p-page); filter: none; box-shadow: 4px 4px 0 var(--p-hl); }
+:root[data-design="ink"] #pan :is(.ld-card, .score-card, .act-card, .offer-card, .tl) { border: 1.5px solid var(--p-edge); box-shadow: none; }
+@media (max-width: 767px) { :root[data-design="ink"] #root :is(.bk.acx-modal, .acx-dcard) { box-shadow: none; } }
+
+/* ════ 5. THE PICKER (Users › Appearance) ═════════════════════════════════════════════════════════ */
+.dsg { gap: 18px; }
+.dsg-hd { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px 24px; flex-wrap: wrap; }
+.dsg-hd > div:first-child { display: grid; gap: 4px; max-width: 62ch; }
+.dsg-mode { display: flex; gap: 6px; flex: none; }
+.dsg-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 14px; }
+.dsg-opt { display: grid; grid-template-rows: auto 1fr; gap: 0; padding: 0; text-align: left; font: inherit; color: var(--bk-fg); cursor: pointer; overflow: hidden;
+  background: var(--bk-bg); border: 1px solid var(--bk-line); border-radius: var(--bk-r); transition: border-color .15s, transform .15s; }
+.dsg-opt:hover:not(:disabled) { border-color: var(--bk-accent); transform: translateY(-2px); }
+.dsg-opt.on { border-color: var(--bk-accent); box-shadow: 0 0 0 2px var(--bk-accent); }
+.dsg-opt:disabled { opacity: .55; cursor: progress; }
+.dsg-meta { display: grid; gap: 4px; padding: 12px 14px 14px; border-top: 1px solid var(--bk-line); }
+.dsg-name { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-family: var(--bk-display); font-size: 17px; font-weight: 600; }
+.dsg-on { display: inline-flex; align-items: center; gap: 4px; font-family: var(--bk-body); font-size: 12.5px; font-weight: 600; color: var(--bk-accent); }
+.dsg-on .mi { font-size: 16px; }
+.dsg-note { font-size: 13.5px; color: var(--bk-muted); line-height: 1.45; }
+
+/* The drawing of the app inside each option, painted from that design's own colours. */
+.dsg-prev { --v-page: #070D0B; --v-side: #0C1411; --v-card: #121D19; --v-line: #25362F; --v-fg: #E6EEE9; --v-mu: #6E8077; --v-ac: #3DB38F; --v-on: #121D19; --v-r: 5px; --v-rb: 4px; --v-bw: 1px; --v-edge: var(--v-line);
+  display: grid; grid-template-columns: 26% 1fr; aspect-ratio: 16 / 10; background: var(--v-page); }
+:root[data-theme="light"] .dsg-prev { --v-page: #EEF3F0; --v-side: #FFFFFF; --v-card: #FFFFFF; --v-line: #D9E4DE; --v-fg: #11201A; --v-mu: #8C9C94; --v-ac: #0F6E56; --v-on: #F1F6F3; }
+.dsg-prev[data-d="blueprint"] { --v-page: #091230; --v-side: #091230; --v-card: #0E1B44; --v-line: #3A52A3; --v-fg: #EAF0FF; --v-mu: #7083BC; --v-ac: #8DB0FF; --v-on: #8DB0FF; --v-r: 0px; --v-rb: 0px;
+  background-image: linear-gradient(rgb(141 176 255 / .12) 1px, transparent 1px), linear-gradient(90deg, rgb(141 176 255 / .12) 1px, transparent 1px); background-size: 12px 12px; }
+:root[data-theme="light"] .dsg-prev[data-d="blueprint"] { --v-page: #EDF1F9; --v-side: #EDF1F9; --v-card: #FFFFFF; --v-line: #8FA3D6; --v-fg: #0D1B4A; --v-mu: #7C8AB4; --v-ac: #1C43D4; --v-on: #1C43D4;
+  background-image: linear-gradient(rgb(28 67 212 / .10) 1px, transparent 1px), linear-gradient(90deg, rgb(28 67 212 / .10) 1px, transparent 1px); }
+.dsg-prev[data-d="pebble"] { --v-page: #0D0F15; --v-side: #0D0F15; --v-card: #1C202B; --v-line: transparent; --v-fg: #EEF0F7; --v-mu: #71788B; --v-ac: #9C93FF; --v-on: #9C93FF; --v-r: 10px; --v-rb: 99px; --v-bw: 0px; }
+:root[data-theme="light"] .dsg-prev[data-d="pebble"] { --v-page: #E6E9F1; --v-side: #E6E9F1; --v-card: #FFFFFF; --v-fg: #191C27; --v-mu: #9096A6; --v-ac: #5746F5; --v-on: #5746F5; }
+.dsg-prev[data-d="ink"] { --v-page: #0B0B0B; --v-side: #0B0B0B; --v-card: #121212; --v-line: #EDEDED; --v-fg: #F4F4F2; --v-mu: #80807C; --v-ac: #F4F4F2; --v-on: #FFE14A; --v-r: 3px; --v-rb: 2px; --v-bw: 1.5px; }
+:root[data-theme="light"] .dsg-prev[data-d="ink"] { --v-page: #FFFFFF; --v-side: #FFFFFF; --v-card: #FFFFFF; --v-line: #0A0A0A; --v-fg: #0A0A0A; --v-mu: #858581; --v-ac: #0A0A0A; }
+.dsg-p-side { display: grid; align-content: start; gap: 5px; padding: 12px 8px; background: var(--v-side); border-right: var(--v-bw) solid var(--v-line); }
+.dsg-p-side i { height: 7px; border-radius: var(--v-rb); background: var(--v-mu); opacity: .45; }
+.dsg-p-side i.on { background: var(--v-on); opacity: 1; height: 9px; }
+.dsg-p-main { display: grid; grid-template-rows: auto auto 1fr auto; gap: 7px; padding: 12px 12px 10px; min-width: 0; }
+.dsg-p-title { width: 46%; height: 9px; border-radius: var(--v-rb); background: var(--v-fg); }
+.dsg-p-row { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.dsg-p-card { display: grid; gap: 4px; padding: 6px; background: var(--v-card); border: var(--v-bw) solid var(--v-line); border-radius: var(--v-r); }
+.dsg-p-card b { width: 55%; height: 8px; border-radius: var(--v-rb); background: var(--v-fg); }
+.dsg-p-card i { width: 80%; height: 4px; border-radius: var(--v-rb); background: var(--v-mu); opacity: .6; }
+.dsg-p-table { display: grid; align-content: start; gap: 4px; padding: 6px; background: var(--v-card); border: var(--v-bw) solid var(--v-line); border-radius: var(--v-r); }
+.dsg-p-table i { height: 4px; border-radius: var(--v-rb); background: var(--v-mu); opacity: .5; }
+.dsg-p-table i:first-child { background: var(--v-fg); opacity: .9; width: 100%; }
+.dsg-p-btn { justify-self: end; width: 34%; height: 11px; border-radius: var(--v-rb); background: var(--v-ac); }
+@media (max-width: 767px) {
+  .dsg-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .dsg-note { font-size: 12.5px; }
+  .dsg-mode { width: 100%; }
+  .dsg-mode .bk-chip { flex: 1; justify-content: center; }
+}
+/* ds-allow-hardcode:end */

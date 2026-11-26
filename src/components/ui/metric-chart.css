@@ -11,7 +11,7 @@
 
 .mtc-tip {
   position: absolute; transform: translate(12px, -50%); z-index: 2; pointer-events: none;
-  padding: 7px 10px; border-radius: 10px; white-space: nowrap;
+  padding: 7px 10px; border-radius: var(--rad-10, 10px); white-space: nowrap;
   background: var(--surf-solid); border: 1px solid var(--bd2); box-shadow: var(--sh);
 }
 .mtc-tip.left { transform: translate(calc(-100% - 12px), -50%); }
@@ -23,10 +23,10 @@
 
 /* Header controls take the pointer back from the pass-through layer. */
 .mtc-view, .mtc-period { pointer-events: auto; }
-.mtc-view { display: inline-flex; gap: 2px; padding: 2px; border-radius: 8px; background: var(--surf2); border: 1px solid var(--bd); }
+.mtc-view { display: inline-flex; gap: 2px; padding: 2px; border-radius: var(--rad-8, 8px); background: var(--surf2); border: 1px solid var(--bd); }
 .mtc-view-b {
   width: 26px; height: 22px; display: inline-flex; align-items: center; justify-content: center;
-  padding: 0; border: 0; border-radius: 6px; background: transparent; color: var(--t3); cursor: pointer;
+  padding: 0; border: 0; border-radius: var(--rad-6, 6px); background: transparent; color: var(--t3); cursor: pointer;
   transition: background var(--tr), color var(--tr);
 }
 .mtc-view-b:hover { color: var(--t1); }

@@ -1,0 +1,335 @@
+/* ── WEPRO layouts: Rail, Topbar, Dock ─────────────────────────────────────────────────────────────
+   Loaded last (main.jsx). "Sidebar" is the original shell and sets no attribute; an admin-chosen
+   layout is <html data-layout="rail|topbar|dock"> (lib/theme.js). Where designs.css changes how
+   things are painted, this file changes where things are and how a page is built, from the same
+   markup and with no change to what anything does:
+
+     NAVIGATION   the sidebar element becomes an icon rail, a tab bar or a dock
+     PAGE         how a page is headed and how wide its content runs
+     HOME         how the KPI cards are arranged
+     LISTS        how table rows are presented
+     RECORD       how a lead opens (#pan): inspector, record page or sheet
+     PHONE        how the bottom bar is built
+
+   Desktop rules sit under the app's own "not the drawer" query; from 1023px down the sidebar is the
+   drawer in every layout, so only the phone bar and the record differ there. Colours come from the
+   active design's tokens, so every layout works with every design and both themes.
+   ds-allow-hardcode: layout sizes are this file's own scale. */
+/* ds-allow-hardcode:start */
+
+/* ════ RAIL ═══════════════════════════════════════════════════════════════════════════════════════
+   A 64px icon rail that widens over the page on hover or keyboard focus (not after a mouse click,
+   which would leave it open over the page). Nothing in it changes
+   height between the two states, so no item moves under the pointer as it opens. */
+@media not all and (max-width: 1023px) {
+  :root[data-layout="rail"] { --sw: 64px; --rail-open: 252px; --gutter: clamp(14px, 1vw + 6px, 22px); --content-max: none; }
+  :root[data-layout="rail"] #app .sidebar {
+    width: var(--sw); overflow: hidden; z-index: 220; border-right: 1px solid transparent;
+    transition: width .2s var(--sb-ease), box-shadow .2s, background-color .2s, transform var(--sb-in) var(--sb-ease), visibility 0s;
+  }
+  :root[data-layout="rail"] #app:not(.sb-collapsed) .sidebar:is(:hover, :has(:focus-visible)) {
+    width: var(--rail-open); background: var(--surf-solid); border-right-color: var(--bd); box-shadow: var(--sh-lg), 12px 0 40px rgb(0 0 0 / .12);
+    transition-delay: .12s, .12s, .12s, 0s, 0s;
+  }
+  /* closed, the brand is its monogram; the wordmark slides out beside it as the rail opens */
+  :root[data-layout="rail"] #app .sb-brand { padding-inline: 16px 12px; gap: 12px; flex-wrap: nowrap; justify-content: flex-start; }
+  :root[data-layout="rail"] #app .sb-brand::before { content: 'W'; flex: none; width: 32px; height: 32px; display: grid; place-items: center; border-radius: var(--r, 10px); background: var(--accent); color: var(--on-accent); font-family: var(--font-display); font-size: 17px; font-weight: 800; }
+  :root[data-layout="rail"] #app .sb-brand .wlogo { white-space: nowrap; opacity: 0; transition: opacity .16s; }
+  :root[data-layout="rail"] #app .sb-brand .sb-tog { margin-left: auto; }
+  :root[data-layout="rail"] #app .sb-tog { opacity: 0; pointer-events: none; transition: opacity .15s; }
+  :root[data-layout="rail"] #app .sb-nav { padding: 10px; overflow-x: hidden; scrollbar-width: none; }
+  :root[data-layout="rail"] #app .sb-sec + .sb-sec { margin-top: 0; }
+  :root[data-layout="rail"] #app .sb-sec-lbl { height: 1px; padding: 0; margin: 9px 10px; font-size: 0; background: var(--bd); overflow: hidden; }
+  :root[data-layout="rail"] #app .sb-it { height: 44px; padding: 0 11px; gap: 14px; white-space: nowrap; border-radius: var(--r, 10px); }
+  :root[data-layout="rail"] #app .sb-it .mi { font-size: 22px; }
+  :root[data-layout="rail"] #app :is(.sb-tx, .sb-chev, .sb-subit) { opacity: 0; transition: opacity .16s; }
+  :root[data-layout="rail"] #app .sb-badge { position: absolute; left: 26px; top: 4px; margin: 0; transform: scale(.82); transform-origin: left top; }
+  :root[data-layout="rail"] #app .sb-sub { margin-left: 0; padding-left: 0; border-left: 0; position: relative; }
+  :root[data-layout="rail"] #app .sb-subit { white-space: nowrap; height: 34px; display: flex; align-items: center; padding: 0 12px 0 47px; position: relative; }
+  /* closed, a group's pages show as dots under its icon; the one you are on is the filled dot */
+  :root[data-layout="rail"] #app .sb-subit::before { content: ''; display: block; position: absolute; left: 19px; top: 50%; width: 6px; height: 6px; margin: -3px 0 0; border-radius: 50%; background: var(--bd2); transform: none; }
+  :root[data-layout="rail"] #app .sb-subit.on::before { background: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent); }
+  :root[data-layout="rail"] #app:not(.sb-collapsed) .sidebar:is(:hover, :has(:focus-visible)) :is(.sb-tx, .sb-chev, .sb-subit) { opacity: 1; transition-delay: .14s; }
+  :root[data-layout="rail"] #app:not(.sb-collapsed) .sidebar:is(:hover, :has(:focus-visible)) .sb-brand .wlogo { opacity: 1; transition-delay: .14s; }
+  :root[data-layout="rail"] #app:not(.sb-collapsed) .sidebar:is(:hover, :has(:focus-visible)) .sb-tog { opacity: 1; pointer-events: auto; }
+  :root[data-layout="rail"] #app:not(.sb-collapsed) .sidebar:is(:hover, :has(:focus-visible)) .sb-badge { position: static; margin-left: auto; transform: none; }
+
+  /* PAGE: one compact toolbar row, the title and its note on a line, a rule under it. */
+  :root[data-layout="rail"] .hero { align-items: center; padding-bottom: 10px; margin-bottom: 14px; border-bottom: 1px solid var(--bd); }
+  :root[data-layout="rail"] .hero-main { display: flex; align-items: baseline; gap: 6px 14px; flex-wrap: wrap; }
+  :root[data-layout="rail"] .hero-title { font-size: 21px; line-height: 1.2; }
+  :root[data-layout="rail"] .hero-sub { font-size: 13.5px; margin: 0; }
+
+  /* HOME: the KPI cards join into one strip, a rule between each figure. */
+  :root[data-layout="rail"] #root :is(.kpi-cards, .rqi-kpis, .pf-kpi-grid) { gap: 0; background: var(--surf); border: 1px solid var(--bd); border-radius: var(--r-lg, 14px); box-shadow: var(--sh); overflow: hidden; }
+  :root[data-layout="rail"] #root :is(.kpi-cards, .rqi-kpis, .pf-kpi-grid) > * { border: 0; border-left: 1px solid var(--bd); border-radius: 0; box-shadow: none; background: none; background-image: none; margin: 0; }
+  :root[data-layout="rail"] #root :is(.kpi-cards, .rqi-kpis, .pf-kpi-grid) > :first-child { border-left: 0; }
+  :root[data-layout="rail"] #root :is(.kpi-cards, .rqi-kpis, .pf-kpi-grid) > *:hover { background: color-mix(in srgb, var(--accent) 6%, transparent); }
+
+  /* LISTS: dense rows. */
+  :root[data-layout="rail"] #root .rqx-table th { padding: 8px 12px; }
+  :root[data-layout="rail"] #root .rqx-table td { padding: 6px 12px; }
+  :root[data-layout="rail"] #root .rqx-table { font-size: 14px; }
+  :root[data-layout="rail"] #root .rqx-foot { padding-block: 6px; }
+}
+/* RECORD: an inspector. It floats inside the window and leaves the list readable beside it. */
+@media (min-width: 768px) {
+  :root[data-layout="rail"] #pan { top: 10px; right: 10px; bottom: 10px; width: min(480px, calc(100vw - 20px)); border-radius: var(--r-xl, 18px); border: 1px solid var(--bd); overflow: hidden; transform: translateX(calc(100% + 24px)); box-shadow: var(--sh-lg), -18px 0 50px rgb(0 0 0 / .16); }
+  :root[data-layout="rail"] #pan.on { transform: none; }
+  :root[data-layout="rail"] #pov.on { background: rgb(0 0 0 / .12); }
+}
+/* PHONE: a docked tab bar with a label under each icon; the quick-actions button floats above it. */
+@media (max-width: 767px) {
+  :root[data-layout="rail"] { --bnav: calc(62px + 10px + env(safe-area-inset-bottom, 0px)); }
+  :root[data-layout="rail"] .bnav { left: 0; right: 0; bottom: 0; max-width: none; margin: 0; height: auto; gap: 0; }
+  :root[data-layout="rail"] .bnav-pill { height: calc(62px + env(safe-area-inset-bottom, 0px)); padding: 0 4px env(safe-area-inset-bottom, 0px); border-radius: 0; border: 0; border-top: 1px solid var(--bd); background: var(--surf-solid); box-shadow: none; justify-content: stretch; }
+  :root[data-layout="rail"] .bnav-it { flex: 1 1 0; width: auto; height: 100%; border-radius: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; background: none; position: relative; }
+  :root[data-layout="rail"] .bnav-it::after { content: attr(title); font-size: 10.5px; font-weight: 600; line-height: 1.2; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  :root[data-layout="rail"] .bnav-it.on { background: none; color: var(--accent); }
+  :root[data-layout="rail"] .bnav-it.on::before { content: ''; position: absolute; top: 0; left: 22%; right: 22%; height: 3px; border-radius: 0 0 3px 3px; background: var(--accent); }
+  :root[data-layout="rail"] .bnav-badge { left: calc(50% + 4px); right: auto; top: 6px; }
+  :root[data-layout="rail"] .bnav-addwrap { position: absolute; right: 14px; bottom: calc(100% + 12px); }
+  :root[data-layout="rail"] .bnav-add { width: 52px; height: 52px; border-radius: 16px; }
+}
+
+/* ════ TOPBAR ═════════════════════════════════════════════════════════════════════════════════════
+   Two rows across the top. Row one: the brand, where you are, and the account tools (the page's
+   own header). Row two: the navigation as tabs. The sidebar element is laid over both rows and
+   passes clicks through everywhere except its brand and its tabs. */
+@media not all and (max-width: 1023px) {
+  :root[data-layout="topbar"] { --sw: 0px; --inset: 0px; --tabs: 46px; --brand-w: 178px; --hh: calc(54px + var(--tabs)); --content-max: 1360px; }
+  :root[data-layout="topbar"][data-theme] #app { --inset: 0px; }
+  :root[data-layout="topbar"][data-theme] #app .sidebar,
+  :root[data-layout="topbar"][data-theme] #app.sb-collapsed .sidebar {
+    inset: 0 0 auto 0; width: auto; height: var(--hh); transform: none; visibility: visible; z-index: 6;
+    background: none; border: 0; box-shadow: none; pointer-events: none; overflow: visible; display: block; border-radius: 0; transition: none;
+  }
+  :root[data-layout="topbar"] #app .sb-brand { position: absolute; left: 0; top: 0; width: var(--brand-w); height: calc(var(--hh) - var(--tabs)); padding: 0 0 0 var(--gutter); pointer-events: auto; border: 0; }
+  :root[data-layout="topbar"] #app .sb-tog, :root[data-layout="topbar"] #app .pg-head .ham { display: none; }
+  :root[data-layout="topbar"] #app .sb-nav {
+    position: absolute; left: 0; right: 0; top: calc(var(--hh) - var(--tabs)); height: var(--tabs); pointer-events: auto;
+    flex-direction: row; align-items: stretch; gap: 2px; padding: 0 calc(var(--gutter) - 10px); overflow-x: auto; overflow-y: hidden; scrollbar-width: none;
+    background: var(--surf-solid); border-top: 1px solid var(--bd); border-bottom: 1px solid var(--bd);
+  }
+  :root[data-layout="topbar"] #app .sb-nav::-webkit-scrollbar { display: none; }
+  :root[data-layout="topbar"] #app .sb-sec { flex-direction: row; align-items: stretch; gap: 2px; margin: 0; flex: none; }
+  :root[data-layout="topbar"] #app .sb-sec + .sb-sec { margin: 0 0 0 8px; padding-left: 8px; position: relative; }
+  :root[data-layout="topbar"] #app .sb-sec + .sb-sec::before { content: ''; position: absolute; left: 0; top: 12px; bottom: 12px; width: 1px; background: var(--bd2); }
+  :root[data-layout="topbar"] #app .sb-sec-lbl, :root[data-layout="topbar"] #app .sb-grp { display: none; }
+  :root[data-layout="topbar"] #app .sb-sec > div:not(.sb-sec-lbl) { display: flex; align-items: stretch; flex: none; }
+  :root[data-layout="topbar"] #app .sb-sub { display: flex; flex-direction: row; align-items: stretch; gap: 2px; margin: 0; padding: 0; border: 0; }
+  :root[data-layout="topbar"] #app :is(.sb-it, .sb-subit) {
+    position: relative; display: flex; align-items: center; gap: 7px; height: 100%; padding: 0 12px; margin: 0; white-space: nowrap;
+    border: 0; border-radius: 0; background: none; box-shadow: none; color: var(--t2); font-size: 14.5px; font-weight: 500; letter-spacing: 0; text-transform: none;
+    transition: color .15s;
+  }
+  :root[data-layout="topbar"] #app .sb-it .mi { font-size: 19px; color: inherit; }
+  :root[data-layout="topbar"] #app .sb-subit::before { display: none; }
+  /* the tab's marker: a bar that grows from the middle on hover and stays under the current page */
+  :root[data-layout="topbar"] #app :is(.sb-it, .sb-subit)::after { content: ''; position: absolute; left: 10px; right: 10px; bottom: -1px; height: 3px; border-radius: 3px 3px 0 0; background: var(--accent); transform: scaleX(0); transition: transform .2s cubic-bezier(.2, .8, .2, 1); }
+  :root[data-layout="topbar"] #app :is(.sb-it, .sb-subit):hover { color: var(--t1); background: none; }
+  :root[data-layout="topbar"] #app :is(.sb-it, .sb-subit):hover::after { transform: scaleX(.45); }
+  :root[data-layout="topbar"] #app :is(.sb-it.on, .sb-subit.on) { color: var(--t1); font-weight: 600; background: none; box-shadow: none; border: 0; }
+  :root[data-layout="topbar"] #app :is(.sb-it.on, .sb-subit.on)::after { transform: scaleX(1); }
+  :root[data-layout="topbar"] #app .sb-it.on .mi { color: var(--accent); }
+  :root[data-layout="topbar"] #app .sb-badge { position: static; margin: 0; }
+
+  /* PAGE: full-width, no inset panel; the page's own header is row one. */
+  :root[data-layout="topbar"] .page, :root[data-layout="topbar"] #app.sb-collapsed .page { margin: 0; height: 100dvh; border-radius: 0; box-shadow: none; background: transparent; }
+  :root[data-layout="topbar"] .pg-head { height: var(--hh); padding: 0 var(--gutter) var(--tabs) calc(var(--brand-w) + 6px); background: var(--surf-solid); box-sizing: border-box; }
+  :root[data-layout="topbar"] .pg-body { padding-top: 0; }
+  /* each page opens with a header band that runs the full width of the window */
+  :root[data-layout="topbar"] .hero { align-items: center; margin: 0 0 20px; padding: 20px 0 18px; background: var(--surf-solid); box-shadow: 0 0 0 100vmax var(--surf-solid), 0 1px 0 100vmax var(--bd); clip-path: inset(0 -100vmax -1px); }
+  :root[data-layout="topbar"] .hero-title { font-size: clamp(24px, 1.2vw + 14px, 32px); }
+  :root[data-layout="topbar"] .hero-acts .btn { min-height: 40px; }
+  :root[data-layout="topbar"] .pg-inner:not(.pg-wide):not(.pg-fit) { padding-top: 0; }
+  :root[data-layout="topbar"] .pg-inner > :not(.hero):first-child { margin-top: 20px; }
+
+  /* HOME: KPI cards read as a ledger row, a coloured rule on top of each. */
+  :root[data-layout="topbar"] #root :is(.kpi-cards > *, .rqi-kpis > *) { border-top: 3px solid var(--accent); border-top-left-radius: 0; border-top-right-radius: 0; transition: transform .16s, box-shadow .16s; }
+  :root[data-layout="topbar"] #root :is(.kpi-cards > *, .rqi-kpis > *):nth-child(4n + 2) { border-top-color: var(--gold); }
+  :root[data-layout="topbar"] #root :is(.kpi-cards > *, .rqi-kpis > *):nth-child(4n + 3) { border-top-color: var(--green); }
+  :root[data-layout="topbar"] #root :is(.kpi-cards > *, .rqi-kpis > *):nth-child(4n + 4) { border-top-color: var(--orange); }
+  :root[data-layout="topbar"] #root :is(.kpi-cards > *, .rqi-kpis > *):hover { transform: translateY(-3px); }
+
+  /* LISTS: roomy rows, alternate rows tinted. */
+  :root[data-layout="topbar"] #root .rqx-table td { padding-block: 14px; }
+  :root[data-layout="topbar"] #root .rqx-table tbody tr:nth-child(even) { background: color-mix(in srgb, var(--t1) 3%, transparent); }
+}
+/* RECORD: a lead opens as a record page in the middle of the window: details on the left, the
+   activity timeline as its own column on the right. */
+@media (min-width: 768px) {
+  :root[data-layout="topbar"] #pan {
+    left: 50%; right: auto; top: 4vh; bottom: 4vh; width: min(1080px, calc(100vw - 32px)); border-radius: var(--r-xl, 18px); border: 1px solid var(--bd); overflow: hidden;
+    transform: translate(-50%, 18px) scale(.985); opacity: 0; visibility: hidden; pointer-events: none;
+    transition: transform .24s cubic-bezier(.2, .8, .2, 1), opacity .18s, visibility 0s linear .24s; box-shadow: var(--sh-lg), 0 30px 80px rgb(0 0 0 / .3);
+  }
+  :root[data-layout="topbar"] #pan.on { transform: translate(-50%, 0); opacity: 1; visibility: visible; pointer-events: auto; transition: transform .24s cubic-bezier(.2, .8, .2, 1), opacity .18s, visibility 0s; }
+  :root[data-layout="topbar"] #pov.on { background: rgb(0 0 0 / .5); }
+}
+@media (min-width: 900px) {
+  :root[data-layout="topbar"] #pan .p-body, :root[data-layout="dock"] #pan .p-body { display: grid; grid-template-columns: minmax(0, 1.08fr) minmax(0, 1fr); grid-auto-rows: max-content; align-content: start; gap: 14px 18px; }
+  :root[data-layout="topbar"] #pan .p-body > *, :root[data-layout="dock"] #pan .p-body > * { grid-column: 1; min-width: 0; }
+  :root[data-layout="topbar"] #pan .p-body > .tl, :root[data-layout="dock"] #pan .p-body > .tl { grid-column: 2; grid-row: 1 / span 12; align-self: start; }
+}
+/* PHONE: a docked bar of plain icons; the current page carries a bar above it, like the tabs. */
+@media (max-width: 767px) {
+  :root[data-layout="topbar"] { --bnav: calc(56px + 10px + env(safe-area-inset-bottom, 0px)); }
+  :root[data-layout="topbar"] .bnav { left: 0; right: 0; bottom: 0; max-width: none; margin: 0; height: auto; gap: 0; }
+  :root[data-layout="topbar"] .bnav-pill { height: calc(56px + env(safe-area-inset-bottom, 0px)); padding: 0 76px env(safe-area-inset-bottom, 0px) 8px; border-radius: 0; border: 0; border-top: 1px solid var(--bd); background: var(--surf-solid); box-shadow: none; }
+  :root[data-layout="topbar"] .bnav-it { border-radius: 12px; background: none; position: relative; }
+  :root[data-layout="topbar"] .bnav-it.on { background: none; color: var(--accent); }
+  :root[data-layout="topbar"] .bnav-it.on::before { content: ''; position: absolute; top: -6px; left: 8px; right: 8px; height: 3px; border-radius: 0 0 3px 3px; background: var(--accent); }
+  :root[data-layout="topbar"] .bnav-addwrap { position: absolute; right: 12px; bottom: calc(14px + env(safe-area-inset-bottom, 0px)); }
+  :root[data-layout="topbar"] .bnav-add { width: 54px; height: 54px; border-radius: 16px; }
+}
+
+/* ════ DOCK ═══════════════════════════════════════════════════════════════════════════════════════
+   The navigation is a floating dock of icons at the bottom of the window. An icon lifts and grows
+   under the pointer and names itself; a group opens its pages in a small card above the dock.
+   The page above it is a single centred column. */
+@media not all and (max-width: 1023px) {
+  :root[data-layout="dock"] { --sw: 0px; --inset: 0px; --dock: 62px; --bnav: calc(var(--dock) + 30px); --content-max: 1240px; }
+  :root[data-layout="dock"][data-theme] #app { --inset: 0px; }
+  :root[data-layout="dock"][data-theme] #app .sidebar,
+  :root[data-layout="dock"][data-theme] #app.sb-collapsed .sidebar {
+    top: auto; left: 50%; bottom: 16px; width: max-content; max-width: calc(100vw - 32px); height: var(--dock); transform: translateX(-50%); visibility: visible;
+    flex-direction: row; align-items: center; padding: 0 9px; overflow: visible; z-index: 210;
+    background: color-mix(in srgb, var(--surf-solid) 88%, transparent); -webkit-backdrop-filter: blur(18px) saturate(150%); backdrop-filter: blur(18px) saturate(150%);
+    border: 1px solid var(--bd2); border-radius: 999px; box-shadow: 0 18px 50px rgb(0 0 0 / .28), 0 2px 6px rgb(0 0 0 / .12); transition: none;
+  }
+  :root[data-layout="dock"] #app .sb-brand, :root[data-layout="dock"] #app .pg-head .ham, :root[data-layout="dock"] #app .sb-sec-lbl { display: none; }
+  :root[data-layout="dock"] #app .sb-nav { flex: none; flex-direction: row; align-items: center; gap: 4px; padding: 0; overflow: visible; }
+  :root[data-layout="dock"] #app .sb-sec { flex-direction: row; align-items: center; gap: 4px; margin: 0; }
+  :root[data-layout="dock"] #app .sb-sec + .sb-sec { margin: 0 0 0 5px; padding-left: 9px; border-left: 1px solid var(--bd2); }
+  :root[data-layout="dock"] #app .sb-sec > div { position: relative; }
+  :root[data-layout="dock"] #app .sb-it {
+    width: 44px; height: 44px; padding: 0; justify-content: center; gap: 0; border-radius: 50%; border: 0; position: relative; color: var(--t2); background: none; box-shadow: none;
+    transition: transform .2s cubic-bezier(.3, 1.5, .5, 1), background-color .15s, color .15s;
+  }
+  :root[data-layout="dock"] #app .sb-it .mi { font-size: 23px; color: inherit; }
+  :root[data-layout="dock"] #app :is(.sb-tx, .sb-chev) { display: none; }
+  :root[data-layout="dock"] #app .sb-it:hover { transform: translateY(-7px) scale(1.2); background: var(--surf2); color: var(--t1); }
+  :root[data-layout="dock"] #app .sb-it:active { transform: translateY(-2px) scale(1.05); }
+  :root[data-layout="dock"] #app .sb-it:is(.on, .has-on) { background: var(--accent); color: var(--on-accent); }
+  :root[data-layout="dock"] #app .sb-it:is(.on, .has-on)::before { content: ''; display: block; position: absolute; left: 50%; top: auto; bottom: -7px; width: 5px; height: 5px; margin-left: -2.5px; border-radius: 50%; background: var(--accent); transform: none; }
+  :root[data-layout="dock"] #app .sb-badge { position: absolute; right: -4px; top: -4px; margin: 0; transform: scale(.85); box-shadow: 0 0 0 2px var(--surf-solid); }
+  /* the name of the page, above the icon */
+  :root[data-layout="dock"] #app .sb-it:not(.sb-grp)::after {
+    content: attr(data-tip); position: absolute; left: 50%; bottom: calc(100% + 10px); transform: translateX(-50%) translateY(4px); opacity: 0; pointer-events: none;
+    padding: 4px 9px; border-radius: 8px; background: var(--t1); color: var(--bg); font-size: 11.5px; font-weight: 600; letter-spacing: 0; text-transform: none; white-space: nowrap; transition: opacity .12s, transform .12s;
+  }
+  :root[data-layout="dock"] #app .sb-it:not(.sb-grp):is(:hover, :focus-visible)::after { opacity: 1; transform: translateX(-50%); }
+  /* a group's pages: a card above its icon, open while the pointer or focus is on the group */
+  :root[data-layout="dock"] #app .sb-sub {
+    position: absolute; left: 50%; bottom: calc(100% + 16px); margin: 0; padding: 6px; min-width: 164px; display: grid; gap: 2px;
+    background: var(--surf-solid); border: 1px solid var(--bd2); border-radius: 16px; box-shadow: 0 18px 44px rgb(0 0 0 / .28);
+    transform: translateX(-50%) translateY(8px) scale(.96); transform-origin: 50% 100%; opacity: 0; visibility: hidden; transition: transform .16s, opacity .14s, visibility 0s linear .16s;
+  }
+  :root[data-layout="dock"] #app .sb-sub::after { content: ''; position: absolute; left: 0; right: 0; top: 100%; height: 20px; }
+  :root[data-layout="dock"] #app .sb-grpw:is(:hover, :focus-within) .sb-sub { transform: translateX(-50%); opacity: 1; visibility: visible; transition: transform .16s, opacity .14s, visibility 0s; }
+  :root[data-layout="dock"] #app .sb-subit { padding: 9px 12px; margin: 0; border-radius: 10px; font-size: 14.5px; white-space: nowrap; letter-spacing: 0; text-transform: none; }
+  :root[data-layout="dock"] #app .sb-subit::before { display: none; }
+  :root[data-layout="dock"] #app .sb-subit:hover { background: var(--surf2); color: var(--t1); }
+  :root[data-layout="dock"] #app .sb-subit.on { background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); font-weight: 600; }
+
+  /* PAGE: no panel, one centred column, room under it for the dock. The brand sits in the header. */
+  :root[data-layout="dock"] .page, :root[data-layout="dock"] #app.sb-collapsed .page { margin: 0; height: 100dvh; border-radius: 0; box-shadow: none; background: transparent; }
+  :root[data-layout="dock"] .page .pg-body { padding-bottom: calc(var(--gutter-y) + var(--bnav)); }
+  :root[data-layout="dock"] .pg-head { height: 60px; max-width: calc(var(--content-max) + 2 * var(--gutter)); width: 100%; margin-inline: auto; box-sizing: border-box; }
+  :root[data-layout="dock"] .pg-head::before { content: 'WEPRO'; font-family: var(--font-display); font-weight: 700; font-size: 15px; letter-spacing: .16em; color: var(--t1); margin-right: 10px; padding-right: 14px; border-right: 1px solid var(--bd2); }
+  :root[data-layout="dock"] .hero { margin-top: 10px; margin-bottom: 22px; }
+  :root[data-layout="dock"] .hero-title { font-size: clamp(28px, 1.8vw + 14px, 40px); }
+
+  /* HOME: a bento. The first figure is the large tile, the second runs wide beside it. */
+  :root[data-layout="dock"] #root .kpi-cards { grid-template-columns: repeat(4, minmax(0, 1fr)); grid-auto-rows: minmax(132px, auto); gap: 14px; }
+  :root[data-layout="dock"] #root .kpi-cards > :first-child { grid-column: span 2; grid-row: span 2; }
+  :root[data-layout="dock"] #root .kpi-cards > :nth-child(2) { grid-column: span 2; }
+  :root[data-layout="dock"] #root .kpi-cards > :first-child .st-v { font-size: clamp(40px, 3.4vw, 62px); line-height: 1.02; }
+  :root[data-layout="dock"] #root .kpi-cards > :first-child .st-l { font-size: 17px; }
+  :root[data-layout="dock"] #root .kpi-cards > :first-child .st-body { flex: 1; align-items: flex-end; }
+  :root[data-layout="dock"] #root .kpi-cards > * { transition: transform .2s cubic-bezier(.2, .8, .2, 1), box-shadow .2s; }
+  :root[data-layout="dock"] #root .kpi-cards > *:hover { transform: translateY(-4px); box-shadow: 0 18px 40px rgb(0 0 0 / .14); }
+  :root[data-layout="dock"] #root .rqi-kpis > :first-child { grid-column: span 2; }
+  :root[data-layout="dock"] #root .rqi-kpis > :first-child b { font-size: clamp(34px, 2.4vw, 46px); }
+}
+/* LISTS: every row is a card of its own; it lifts under the pointer. */
+@media (min-width: 768px) {
+  :root[data-layout="dock"] #root .rqx-card:has(> .rqx-scroll > .rqx-table) { background: none; border-color: transparent; box-shadow: none; overflow: visible; background-image: none; }
+  :root[data-layout="dock"] #root .rqx-table { border-collapse: separate; border-spacing: 0 8px; }
+  :root[data-layout="dock"] #root .rqx-scroll { padding: 0 4px; }
+  :root[data-layout="dock"] #root .rqx-table th { background: var(--bg); color: var(--t2); border-bottom: 0; padding-block: 6px; }
+  :root[data-layout="dock"] #root .rqx-table th :is(.mi, button, span, .lt-chk, .acx-chk) { color: var(--t2); }
+  :root[data-layout="dock"] #root .rqx-table tbody td { background: var(--surf-solid); border: 0; border-block: 1px solid var(--bd); transition: background-color .15s; }
+  :root[data-layout="dock"] #root .rqx-table tbody td:first-child { border-left: 1px solid var(--bd); border-radius: var(--r-lg, 14px) 0 0 var(--r-lg, 14px); }
+  :root[data-layout="dock"] #root .rqx-table tbody td:last-child { border-right: 1px solid var(--bd); border-radius: 0 var(--r-lg, 14px) var(--r-lg, 14px) 0; }
+  :root[data-layout="dock"] #root .rqx-table tbody tr { transition: transform .16s cubic-bezier(.2, .8, .2, 1); background: none; }
+  :root[data-layout="dock"] #root .rqx-table tbody tr:hover { transform: translateY(-2px); background: none; }
+  :root[data-layout="dock"] #root .rqx-table tbody tr:hover td { background: var(--surf2-solid); }
+  :root[data-layout="dock"] #root .rqx-foot { background: none; border-top: 0; }
+  /* RECORD: a sheet that rises from the bottom edge. */
+  :root[data-layout="dock"] #pan {
+    left: 50%; right: auto; top: auto; bottom: 0; width: min(1160px, 100vw); height: min(88vh, 900px); border-radius: 28px 28px 0 0; border: 1px solid var(--bd); border-bottom: 0; overflow: hidden;
+    transform: translate(-50%, 104%); transition: transform .34s cubic-bezier(.2, .9, .25, 1); box-shadow: 0 -24px 70px rgb(0 0 0 / .3);
+  }
+  :root[data-layout="dock"] #pan.on { transform: translate(-50%, 0); }
+  :root[data-layout="dock"] #pan .p-hd { position: relative; padding-top: 22px; }
+  :root[data-layout="dock"] #pan .p-hd::before { content: ''; position: absolute; left: 50%; top: 8px; width: 44px; height: 5px; margin-left: -22px; border-radius: 99px; background: var(--bd2); }
+}
+/* PHONE: the floating pill the app already has; the current page becomes a filled bubble. */
+@media (max-width: 767px) {
+  :root[data-layout="dock"] .bnav-it { transition: transform .2s cubic-bezier(.3, 1.5, .5, 1), background-color .15s; }
+  :root[data-layout="dock"] .bnav-it.on { background: var(--accent); color: var(--on-accent); transform: translateY(-6px) scale(1.08); box-shadow: 0 8px 18px color-mix(in srgb, var(--accent) 40%, transparent); }
+}
+
+/* ════ THE PICKER: a wireframe of each layout (DesignPicker.jsx) ══════════════════════════════════ */
+.lyt-prev { position: relative; display: block; aspect-ratio: 16 / 10; background: color-mix(in srgb, var(--bk-fg) 9%, var(--bk-surface2)); overflow: hidden; }
+.lyt-prev i { position: absolute; display: block; border-radius: 3px; background: var(--bk-faint); opacity: .5; }
+.lyt-prev i.nav { background: var(--bk-fg); opacity: .85; }
+.lyt-prev i.on { background: var(--bk-accent); opacity: 1; }
+.lyt-prev i.card { background: var(--bk-surface); opacity: 1; border: 1px solid var(--bk-line); box-shadow: 0 1px 3px rgb(0 0 0 / .1); }
+.lyt-prev i.rec { border-color: var(--bk-accent); }
+/* sidebar */
+.lyt-prev[data-l="sidebar"] .nav { left: 0; top: 0; bottom: 0; width: 24%; border-radius: 0; opacity: .14; }
+.lyt-prev[data-l="sidebar"] .n1 { left: 5%; top: 14%; width: 14%; height: 5%; }
+.lyt-prev[data-l="sidebar"] .n2 { left: 5%; top: 24%; width: 14%; height: 5%; }
+.lyt-prev[data-l="sidebar"] .n3 { left: 5%; top: 34%; width: 14%; height: 5%; }
+.lyt-prev[data-l="sidebar"] .c1 { left: 29%; top: 14%; width: 20%; height: 20%; }
+.lyt-prev[data-l="sidebar"] .c2 { left: 52%; top: 14%; width: 20%; height: 20%; }
+.lyt-prev[data-l="sidebar"] .c3 { left: 75%; top: 14%; width: 20%; height: 20%; }
+.lyt-prev[data-l="sidebar"] .c4 { left: 29%; top: 40%; width: 43%; height: 50%; }
+.lyt-prev[data-l="sidebar"] .rec { left: 75%; top: 40%; width: 20%; height: 50%; }
+/* rail */
+.lyt-prev[data-l="rail"] .nav { left: 0; top: 0; bottom: 0; width: 8%; border-radius: 0; opacity: .14; }
+.lyt-prev[data-l="rail"] .n1 { left: 2.4%; top: 14%; width: 3.4%; height: 5.5%; }
+.lyt-prev[data-l="rail"] .n2 { left: 2.4%; top: 24%; width: 3.4%; height: 5.5%; }
+.lyt-prev[data-l="rail"] .n3 { left: 2.4%; top: 34%; width: 3.4%; height: 5.5%; }
+.lyt-prev[data-l="rail"] .c1 { left: 12%; top: 12%; width: 54%; height: 14%; }
+.lyt-prev[data-l="rail"] .c2 { left: 12%; top: 31%; width: 54%; height: 7%; }
+.lyt-prev[data-l="rail"] .c3 { left: 12%; top: 41%; width: 54%; height: 7%; }
+.lyt-prev[data-l="rail"] .c4 { left: 12%; top: 51%; width: 54%; height: 39%; }
+.lyt-prev[data-l="rail"] .rec { left: 70%; top: 6%; width: 26%; height: 88%; border-radius: 6px; }
+/* topbar */
+.lyt-prev[data-l="topbar"] .nav { left: 0; right: 0; top: 0; height: 22%; border-radius: 0; opacity: .14; }
+.lyt-prev[data-l="topbar"] .n1 { left: 6%; top: 14%; width: 11%; height: 4.5%; }
+.lyt-prev[data-l="topbar"] .n2 { left: 20%; top: 14%; width: 11%; height: 4.5%; }
+.lyt-prev[data-l="topbar"] .n3 { left: 34%; top: 14%; width: 11%; height: 4.5%; }
+.lyt-prev[data-l="topbar"] .c1 { left: 6%; top: 30%; width: 26%; height: 18%; }
+.lyt-prev[data-l="topbar"] .c2 { left: 37%; top: 30%; width: 26%; height: 18%; }
+.lyt-prev[data-l="topbar"] .c3 { left: 68%; top: 30%; width: 26%; height: 18%; }
+.lyt-prev[data-l="topbar"] .c4 { left: 6%; top: 54%; width: 88%; height: 38%; }
+.lyt-prev[data-l="topbar"] .rec { left: 24%; top: 26%; width: 52%; height: 60%; border-radius: 6px; box-shadow: 0 6px 18px rgb(0 0 0 / .25); }
+/* dock */
+.lyt-prev[data-l="dock"] .nav { left: 30%; right: 30%; bottom: 7%; height: 13%; border-radius: 99px; opacity: .2; }
+.lyt-prev[data-l="dock"] .n1 { left: 36%; bottom: 10%; width: 6%; height: 7%; border-radius: 50%; }
+.lyt-prev[data-l="dock"] .n2 { left: 47%; bottom: 10%; width: 6%; height: 7%; border-radius: 50%; }
+.lyt-prev[data-l="dock"] .n3 { left: 58%; bottom: 10%; width: 6%; height: 7%; border-radius: 50%; }
+.lyt-prev[data-l="dock"] .c1 { left: 12%; top: 10%; width: 36%; height: 38%; border-radius: 7px; }
+.lyt-prev[data-l="dock"] .c2 { left: 52%; top: 10%; width: 36%; height: 17%; border-radius: 7px; }
+.lyt-prev[data-l="dock"] .c3 { left: 52%; top: 31%; width: 16%; height: 17%; border-radius: 7px; }
+.lyt-prev[data-l="dock"] .c4 { left: 72%; top: 31%; width: 16%; height: 17%; border-radius: 7px; }
+.lyt-prev[data-l="dock"] .rec { left: 12%; top: 54%; width: 76%; height: 16%; border-radius: 7px; }
+.dsg-sec { display: grid; gap: 12px; }
+.dsg-sec > h4 { margin: 0; font-family: var(--bk-display); font-size: 16px; font-weight: 600; }
+.dsg-sec > h4 span { font-family: var(--bk-body); font-size: 13.5px; font-weight: 400; color: var(--bk-muted); margin-left: 8px; }
+/* ds-allow-hardcode:end */

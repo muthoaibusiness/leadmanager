@@ -9,7 +9,7 @@
 .rqm-side .acx-dgrid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .rqm-sub { font-style: normal; font-size: 13px; color: var(--bk-muted); font-family: var(--bk-mono); }
 .rqm-facts { display: flex; flex-wrap: wrap; gap: 8px; }
-.rqm-facts span { border: 1px solid var(--bk-line); background: var(--bk-surface); border-radius: 999px; padding: 5px 12px; font-size: 14.5px; color: var(--bk-muted); }
+.rqm-facts span { border: 1px solid var(--bk-line); background: var(--bk-surface); border-radius: var(--rad-pill, 999px); padding: 5px 12px; font-size: 14.5px; color: var(--bk-muted); }
 .rqm-facts b { color: var(--bk-fg); font-family: var(--bk-mono); font-weight: 500; }
 .rqm .pw-foot .bk-btn { display: inline-flex; align-items: center; gap: 6px; }
 /* the requested unit stands out, every other tile steps back */
@@ -34,7 +34,7 @@
 /* ds-allow-hardcode:start */
 /* Requests › Held units */
 .rqx-st-held { --bk-c: var(--bk-gold); }
-.rqh-tag { margin-left: 8px; font-size: 11.5px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; padding: 2px 7px; border-radius: 999px; background: color-mix(in srgb, var(--bk-accent) 16%, transparent); color: var(--bk-accent); }
+.rqh-tag { margin-left: 8px; font-size: 11.5px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; padding: 2px 7px; border-radius: var(--rad-pill, 999px); background: color-mix(in srgb, var(--bk-accent) 16%, transparent); color: var(--bk-accent); }
 .rqh-mu { color: var(--bk-muted); }
 .rqh-ok { color: var(--bk-ok, var(--bk-accent)); }
 .rqh-bad { color: var(--bk-bad, #d4513b); }

@@ -4,6 +4,7 @@
 // Nothing here trusts a user id from localStorage.
 import { SB_URL, SB_KEY, setAccessToken, ensureFreshToken, rToU } from './supabase.js';
 import { clearLocalDB, SESSION_KEY, getDB, saveDB, migrateTenancy } from './db.js';
+import { disablePush } from './webPush.js';
 
 export { SESSION_KEY };
 const LEGACY_KEY = 'pcrm_sess';
@@ -219,6 +220,7 @@ export function signOutLocal() {
 export async function signOut() {
   const s = read();
   if (s && s.access_token) {
+    disablePush(s.access_token); // this phone stops getting the account's push notifications
     try { await fetch(`${SB_URL}/auth/v1/logout?scope=local`, { method: 'POST', headers: { apikey: SB_KEY, Authorization: `Bearer ${s.access_token}` } }); }
     catch { /* offline: the local session still ends below */ }
   }

@@ -1,8 +1,44 @@
+import { useState } from 'react';
 import Mi from './Mi.jsx';
 import { useApp } from '../context/AppContext.jsx';
 import { getNotifs, getUnreadCount, markAllRead, markOneRead } from '../lib/db.js';
 import { fmtAgo } from '../lib/helpers.js';
 import { NOTIF_ICO, NOTIF_CLR } from '../lib/constants.js';
+import { pushPermission, enablePush } from '../lib/webPush.js';
+import { isIOS, isStandalone } from '../lib/pwa.js';
+
+// Push for the installed app (lib/webPush.js). Shown only while there is
+// something to do: allow notifications (a tap is required on iOS), install the
+// app first (an iPhone only pushes to a Home Screen app), or unblock them.
+// Once notifications are on, and in a desktop browser tab, it renders nothing.
+function PushRow() {
+  const [perm, setPerm] = useState(pushPermission);
+  const [busy, setBusy] = useState(false);
+  const row = { display: 'flex', alignItems: 'center', gap: 10, padding: '10px 16px', borderBottom: '1px solid var(--bd)', fontSize: 12.5, color: 'var(--t3)', flexShrink: 0 };
+
+  if (perm === 'unsupported') {
+    if (!isIOS() || isStandalone()) return null;
+    return <div style={row}><Mi>add_circle</Mi><span>To get notifications on this iPhone: Share, then Add to Home Screen.</span></div>;
+  }
+  if (perm === 'granted') return null;
+  if (perm === 'denied') {
+    return <div style={row}><Mi>warning</Mi><span>Notifications are blocked for this app. Allow them in the phone&apos;s settings.</span></div>;
+  }
+  const turnOn = async () => {
+    setBusy(true);
+    const res = await enablePush();
+    setBusy(false);
+    // 'failed' = allowed, but the phone could not be registered (no signal):
+    // keep the button so it can be tried again.
+    setPerm(res === 'on' ? 'granted' : res === 'failed' ? 'default' : res);
+  };
+  return (
+    <div style={row}>
+      <span style={{ flex: 1 }}>Get notifications on this phone, even with the app closed.</span>
+      <button type="button" className="btn btn-p btn-sm" onClick={turnOn} disabled={busy}>{busy ? 'Turning on…' : 'Turn on'}</button>
+    </div>
+  );
+}
 
 export default function NotifBell() {
   const { user, notifOpen, setNotifOpen, setPanLead, refreshDB } = useApp();
@@ -47,6 +83,7 @@ export default function NotifBell() {
           </div>
           <button className="btn btn-g btn-sm" onClick={handleMarkAllRead}>Mark all read</button>
         </div>
+        <PushRow />
         <div className="np-body">
           {!notifs.length ? (
             <div className="np-empty"><Mi>notifications_none</Mi><p>No notifications yet</p></div>

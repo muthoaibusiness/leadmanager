@@ -6,7 +6,7 @@
 .ait { display: flex; flex-direction: column; gap: 10px; }
 .ait-err { color: var(--red); font-size: 13px; }
 .ait-list { display: flex; flex-direction: column; gap: 8px; }
-.ait-row { display: flex; gap: 12px; align-items: flex-start; justify-content: space-between; padding: 10px 12px; border-radius: 10px; background: var(--surf2); }
+.ait-row { display: flex; gap: 12px; align-items: flex-start; justify-content: space-between; padding: 10px 12px; border-radius: var(--rad-10, 10px); background: var(--surf2); }
 .ait-row .meta { font-size: 12px; opacity: .7; }
 /* History rows are buttons, which do not inherit the page text colour or font.
    --surf2 / --bd are the app surface tokens (index.css); --card and --bg2
@@ -14,22 +14,22 @@
 button.ait-row { color: inherit; font: inherit; }
 button.ait-row:hover { background: var(--bd); }
 button.ait-row:focus-visible { outline: 2px solid var(--green); outline-offset: 2px; }
-.ait-badge { display: inline-flex; gap: 4px; align-items: center; padding: 2px 8px; border-radius: 999px; font-size: 12px; background: var(--bd); }
+.ait-badge { display: inline-flex; gap: 4px; align-items: center; padding: 2px 8px; border-radius: var(--rad-pill, 999px); font-size: 12px; background: var(--bd); }
 .ait-badge.pass { color: var(--green); }
 .ait-badge.fail { color: var(--red); }
 .ait-badge.inc { color: var(--amber, #c80); }
 .ait-chat { display: flex; flex-direction: column; gap: 8px; min-height: 240px; }
-.ait-msg { max-width: 80%; padding: 8px 12px; border-radius: 12px; white-space: pre-wrap; }
+.ait-msg { max-width: 80%; padding: 8px 12px; border-radius: var(--rad-12, 12px); white-space: pre-wrap; }
 .ait-msg.customer { align-self: flex-end; background: var(--bd); }
 .ait-msg.bot { align-self: flex-start; background: var(--surf2); }
 .ait-trace { font-size: 12px; opacity: .8; margin-top: 4px; }
 /* Knowledge sections a reply was retrieved with (Playground trace). */
 .ait-docs { margin-top: 4px; white-space: normal; }
-.ait-docs > summary { cursor: pointer; width: fit-content; border-radius: 4px; }
+.ait-docs > summary { cursor: pointer; width: fit-content; border-radius: var(--rad-4, 4px); }
 .ait-docs > summary:hover { opacity: 1; }
 .ait-docs > summary:focus-visible { outline: 2px solid var(--green); outline-offset: 2px; }
 .ait-docs ul { list-style: none; margin: 4px 0 0; padding: 0; display: flex; flex-direction: column; gap: 2px; font-size: 12px; color: var(--t1); }
-.ait-docs li { display: flex; justify-content: space-between; gap: 12px; padding: 4px 8px; border-radius: 6px; background: var(--surf); border: 1px solid var(--bd); }
+.ait-docs li { display: flex; justify-content: space-between; gap: 12px; padding: 4px 8px; border-radius: var(--rad-6, 6px); background: var(--surf); border: 1px solid var(--bd); }
 .ait-docs li > span:first-child { min-width: 0; overflow-wrap: anywhere; }
 .ait-docs-score { flex-shrink: 0; font-variant-numeric: tabular-nums; }
 .ait-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 320px); gap: 16px; }
@@ -62,7 +62,7 @@ button.ait-row:focus-visible { outline: 2px solid var(--green); outline-offset: 
 
 /* Customer-reply switch: role="switch", text label beside the knob so state is never colour alone. */
 .bc-switch { flex-shrink: 0; display: inline-flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 4px; border: 0; background: none; color: var(--t2); cursor: pointer; font: inherit; font-size: 13px; font-weight: 600; }
-.bc-switch .bc-knob { position: relative; width: 40px; height: 22px; border-radius: 999px; background: var(--surf2); border: 1px solid var(--bd2); transition: background var(--tr); }
+.bc-switch .bc-knob { position: relative; width: 40px; height: 22px; border-radius: var(--rad-pill, 999px); background: var(--surf2); border: 1px solid var(--bd2); transition: background var(--tr); }
 .bc-switch .bc-knob::after { content: ""; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: var(--t2); transition: transform var(--tr), background var(--tr); }
 .bc-switch.on { color: var(--green); }
 .bc-switch.on .bc-knob { background: var(--green-l); border-color: var(--green); }
@@ -103,7 +103,7 @@ button.ait-row:focus-visible { outline: 2px solid var(--green); outline-offset: 
 .ait-pills {
   display: flex; align-items: center; gap: 3px; align-self: flex-start;
   max-width: 100%; padding: 4px; overflow-x: auto; overscroll-behavior-x: contain;
-  scrollbar-width: none; border-radius: 999px;
+  scrollbar-width: none; border-radius: var(--rad-pill, 999px);
   background: color-mix(in srgb, var(--surf2) 70%, transparent);
   border: 1px solid var(--bd);
   box-shadow: var(--sh-md), inset 0 1px 0 color-mix(in srgb, var(--t1) 4%, transparent);
@@ -151,7 +151,7 @@ button.ait-row:focus-visible { outline: 2px solid var(--green); outline-offset: 
 /* Phones: the 20px under the Back row is the shell's (AvailableUnitsTab.css --body-top). */
 .ait-pill {
   position: relative; flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: center;
-  min-width: 34px; height: 34px; padding: 0 10px; border: 0; border-radius: 999px;
+  min-width: 34px; height: 34px; padding: 0 10px; border: 0; border-radius: var(--rad-pill, 999px);
   background: transparent; color: var(--t2); font: inherit; cursor: pointer;
   transition: color var(--tr);
 }

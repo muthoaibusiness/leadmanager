@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import Mi from './Mi.jsx';
 import Avatar from './Avatar.jsx';
 import './booking/ShopBooking.css';
-import { fmtDateTimeAP, leadDisplayStatus, rlabel, ini, avc } from '../lib/helpers.js';
+import { fmtDateTimeAP, fmtRel, leadDisplayStatus, rlabel, ini, avc } from '../lib/helpers.js';
 import { SRC_LABELS, ROLES } from '../lib/constants.js';
 import { useApp } from '../context/AppContext.jsx';
 import { bulkDeleteLeads, lastFollowupFor, getDB } from '../lib/db.js';
@@ -17,7 +17,7 @@ export const PAGE_SIZE = 15;
 // One list for the three header copies (loading, empty, rows), so they cannot drift.
 const COLS = ['Person', 'Source', 'Property', 'Status', 'Agent', 'Last Activity', 'Next Follow-up', 'Created Date'];
 
-// Last Activity: when the lead was last touched (the newest logged follow-up or note, else its last
+// Last Activity: how long ago the lead was last touched ("3h ago"; exact time on hover) (the newest logged follow-up or note, else its last
 // change), with what was logged on line 2. Until the server has answered for this page (still
 // loading, or the request failed), a lead with nothing known shows "…" rather than "—", so the cell
 // never claims "no activity" without an answer.
@@ -30,7 +30,7 @@ function LastActivityCell({ lead, fromServer, pending }) {
   return (
     <div className="lt-two">
       <div style={{ minWidth: 0 }}>
-        <div className={`lt-date${at ? ' lt-fu-on' : ''}`} title={what || undefined}>{at ? fmtDateTimeAP(at) : (wait ? '…' : '—')}</div>
+        <div className={`lt-date${at ? ' lt-fu-on' : ''}`} title={at ? fmtDateTimeAP(at) : undefined}>{at ? fmtRel(at) : (wait ? '…' : '—')}</div>
         <div className={`lt-sub${what ? ' lt-fu-on' : ''}`} title={what || undefined}>{what || (wait ? '' : '—')}</div>
       </div>
     </div>
@@ -39,7 +39,8 @@ function LastActivityCell({ lead, fromServer, pending }) {
 
 const isPast = (t) => t < Date.now();
 
-// Next Follow-up: the scheduled time on the lead; red once it has passed.
+// Next Follow-up: how long until the scheduled time ("in 3h"), red once it has
+// passed ("2d ago" · overdue). The exact date and time is the tooltip.
 function NextFollowCell({ lead }) {
   const t = lead.nextFollowup ? new Date(lead.nextFollowup).getTime() : NaN;
   const has = Number.isFinite(t);
@@ -47,7 +48,7 @@ function NextFollowCell({ lead }) {
   return (
     <div className="lt-two">
       <div style={{ minWidth: 0 }}>
-        <div className={`lt-date${has ? (late ? ' lt-late' : ' lt-fu-on') : ''}`}>{has ? fmtDateTimeAP(lead.nextFollowup) : '—'}</div>
+        <div className={`lt-date${has ? (late ? ' lt-late' : ' lt-fu-on') : ''}`} title={has ? fmtDateTimeAP(lead.nextFollowup) : undefined}>{has ? fmtRel(lead.nextFollowup) : '—'}</div>
         {late && <div className="lt-sub lt-late">overdue</div>}
       </div>
     </div>

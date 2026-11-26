@@ -12,6 +12,7 @@ import '../booking/ShopBooking.css';
 import '../LeadTable.css';
 import useChanged from '../../hooks/useChanged.js';
 import useNavState from '../../hooks/useNavState.js';
+import { loadLeadPage, storeLeadPage } from '../../lib/deviceCache.js';
 import useIsPhone from '../../hooks/useIsPhone.js';
 import Mi from '../Mi.jsx';
 import BackButton from '../BackButton.jsx';
@@ -140,14 +141,37 @@ export default function LeadsView() {
   // The fetch. `seq` guards against out-of-order responses: typing in the search
   // box fires several, and a slow early one must not overwrite a fast later one.
   const seq = useRef(0);
+  // Which page the rows on screen answer. The last answer for a page is kept on
+  // the device (deviceCache.js) and shown while the fresh one loads, so a list
+  // that was looked at before opens at once. `loading` stays true meanwhile:
+  // the table shows its busy bar and the header publishes no count yet.
+  const shownPage = useRef(null);
   useEffect(() => {
     const mine = ++seq.current;
+    const pageKey = `${qKey}|${page}|${pageSize}|${sortBy}`;
+    let answered = false;
+    // Only for a page that is not on screen already: a data change (dbVersion)
+    // refetches the same page, and its stored copy is what is showing.
+    if (shownPage.current !== pageKey) {
+      loadLeadPage(pageKey).then(hit => {
+        if (!hit || answered || mine !== seq.current) return;
+        shownPage.current = pageKey;
+        setResult(hit);
+      });
+    }
     queryLeads(query, { page, size: pageSize, sort: sortBy })
       .then(res => {
         if (mine !== seq.current) return;
+        answered = true;
         // null = the request failed. Keep whatever is on screen rather than
         // blanking the table and claiming there are no customers.
-        if (res) setResult(res);
+        if (res) {
+          shownPage.current = pageKey;
+          setResult(res);
+          // A search is typed letter by letter; keeping each step would push
+          // the pages worth keeping out of the store.
+          if (!query.search) storeLeadPage(pageKey, res);
+        }
         setDoneKey(fetchKey);
       });
   }, [fetchKey, qKey, page, pageSize, sortBy, dbVersion, query]);

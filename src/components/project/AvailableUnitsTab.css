@@ -4,11 +4,11 @@
    The tabs are a pill toggle. */
 .hero-tabs {
   display: inline-flex; align-items: center; gap: 2px; padding: 3px;
-  border: 1px solid var(--bd2); border-radius: 999px; background: var(--surf2);
+  border: 1px solid var(--bd2); border-radius: var(--rad-pill, 999px); background: var(--surf2);
 }
 .hero-tabs button {
   display: inline-flex; align-items: center; gap: 6px; height: 34px; padding: 0 14px;
-  border: 0; border-radius: 999px; background: transparent; color: var(--t2);
+  border: 0; border-radius: var(--rad-pill, 999px); background: transparent; color: var(--t2);
   font: 700 12.5px/1 var(--font-display); letter-spacing: .04em; text-transform: uppercase; cursor: pointer;
   transition: background var(--tr), color var(--tr);
 }
@@ -43,8 +43,8 @@
   /* A little smaller than the shared 44px round Back (index.css); the extra class outranks it */
   .fpv-ph .fpv-ph-top .hd-back { width: 40px; height: 40px; }
   .fpv-ph .fpv-ph-top .hd-back .mi.hd-back-chev { font-size: 22px; }
-  .fpv-vt { flex: none; justify-self: end; display: flex; gap: 2px; padding: 4px; border-radius: 14px; background: var(--surf2); }
-  .fpv-vt button { display: grid; place-items: center; width: 40px; height: 32px; padding: 0; border: 0; border-radius: 10px; background: transparent; color: var(--t2); cursor: pointer; }
+  .fpv-vt { flex: none; justify-self: end; display: flex; gap: 2px; padding: 4px; border-radius: var(--rad-14, 14px); background: var(--surf2); }
+  .fpv-vt button { display: grid; place-items: center; width: 40px; height: 32px; padding: 0; border: 0; border-radius: var(--rad-10, 10px); background: transparent; color: var(--t2); cursor: pointer; }
   .fpv-vt button[aria-pressed="true"] { background: color-mix(in srgb, var(--accent) 16%, transparent); color: var(--accent); }
   .fpv-vt button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   .fpv-vt .mi { font-size: 20px; }
@@ -96,7 +96,7 @@
   /* compact pills so all four fit a 412px screen without scrolling */
   .lv-tabs .asw-btn { height: 36px; padding: 0 12px; font-size: 13px; }
   .lv-act {
-    display: inline-flex; align-items: center; gap: 4px; height: 36px; padding: 0 12px 0 10px; border-radius: 999px;
+    display: inline-flex; align-items: center; gap: 4px; height: 36px; padding: 0 12px 0 10px; border-radius: var(--rad-pill, 999px);
     border: 1px solid var(--bd); background: var(--surf); color: var(--t1); font: 500 13px/1 var(--font-display); white-space: nowrap; cursor: pointer;
   }
   .lv-act .mi { font-size: 17px; }

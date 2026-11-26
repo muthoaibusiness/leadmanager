@@ -11,8 +11,8 @@
 .anx-table tbody tr { cursor: default; }
 .anx-table th, .anx-table td { white-space: nowrap; }
 .anx-spark { width: 84px; height: 26px; stroke: var(--bk-accent); display: block; }
-.anx-rate { display: inline-block; width: 90px; height: 8px; border-radius: 999px; background: var(--bk-surface2); overflow: hidden; vertical-align: middle; margin-right: 8px; }
-.anx-rate i { display: block; height: 100%; border-radius: 999px; background: var(--bk-accent); }
+.anx-rate { display: inline-block; width: 90px; height: 8px; border-radius: var(--rad-pill, 999px); background: var(--bk-surface2); overflow: hidden; vertical-align: middle; margin-right: 8px; }
+.anx-rate i { display: block; height: 100%; border-radius: var(--rad-pill, 999px); background: var(--bk-accent); }
 .anx-rate.warn i { background: var(--bk-held); }
 .anx-rate.bad i { background: var(--bk-bad); }
 .anx-pc.good { color: var(--bk-accent); }
@@ -35,4 +35,41 @@
 .anx-rank.t3 { background: #C98A5A; }
 /* the merged Facebook Leads and Meta CAPI pages keep their own widths inside the tab */
 .anx .fbl { max-width: none; }
+/* ds-allow-hardcode:end */
+
+/* ds-allow-hardcode:start */
+/* Phones, Analytics › Performance: the page itself never scrolls. The summary cards sit three to a
+   row in a compact form, and the agent table takes the height that is left and scrolls inside its
+   own card (its header row stays at the top of that card). */
+@media (max-width: 720px) {
+  .pg-body:has(.anx-wrap > .rqi-kpis) { overflow: hidden; display: flex; flex-direction: column; padding-bottom: calc(var(--bnav, 0px) + 8px); }
+  .pg-inner:has(.anx-wrap > .rqi-kpis) { flex: 1 1 0; min-height: 0; display: flex; flex-direction: column; }
+  .pg-inner:has(.anx-wrap > .rqi-kpis) > * { flex: none; }
+  .bk.anx:has(.anx-wrap > .rqi-kpis) { flex: 1 1 0; min-height: 0; display: flex; flex-direction: column; }
+  .anx-wrap:has(> .rqi-kpis) { flex: 1 1 0; min-height: 0; display: flex; flex-direction: column; gap: 8px; padding-bottom: 0; }
+  .anx-wrap:has(> .rqi-kpis) > * { flex: none; min-width: 0; }
+  .anx-wrap:has(> .rqi-kpis) .rqx-bar { gap: 6px; }
+  .anx-wrap:has(> .rqi-kpis) .rqx-search input { padding: 6px 0; font-size: 14px; }
+  .anx-wrap:has(> .rqi-kpis) .anx-note { margin-top: 0; font-size: 11px; }
+  #root .anx-wrap > .rqi-kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+  #root .anx-wrap > .rqi-kpis .rqi-k { gap: 1px; padding: 7px 8px; border-radius: var(--rad-12, 12px); min-width: 0; }
+  #root .anx-wrap > .rqi-kpis .rqi-k .bk-cap { font-size: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #root .anx-wrap > .rqi-kpis .rqi-k b { font-size: 18px; }
+  #root .anx-wrap > .rqi-kpis .rqi-ks { font-size: 10px; display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .anx-wrap:has(> .rqi-kpis) > .anx-card { flex: 1 1 0; min-height: 0; display: flex; flex-direction: column; }
+  .anx-wrap:has(> .rqi-kpis) > .anx-card .rqx-scroll { flex: 1 1 0; min-height: 0; overflow: auto; overscroll-behavior: contain; }
+  .anx-wrap:has(> .rqi-kpis) > .anx-card thead th { position: sticky; top: 0; z-index: 2; background: var(--bk-surface2, var(--bk-surface)); }
+  /* compact agent rows, so several show at once */
+  .anx-wrap:has(> .rqi-kpis) .anx-table th { padding: 7px 10px; font-size: 11px; }
+  .anx-wrap:has(> .rqi-kpis) .anx-table td { padding: 6px 10px; font-size: 13px; }
+  .anx-wrap:has(> .rqi-kpis) .anx-table .acx-who { gap: 8px; }
+  .anx-wrap:has(> .rqi-kpis) .anx-table .lt-av { width: 26px; height: 26px; font-size: 10px; }
+  .anx-wrap:has(> .rqi-kpis) .anx-table .rqx-client { font-size: 13.5px; }
+  .anx-wrap:has(> .rqi-kpis) .anx-table .rqx-sub { font-size: 11px; }
+}
+@media (max-width: 720px) and (max-height: 780px) {
+  /* short phones: the summary cards keep their label and number only */
+  #root .anx-wrap > .rqi-kpis .rqi-ks { display: none; }
+  .anx-wrap:has(> .rqi-kpis) { gap: 6px; }
+}
 /* ds-allow-hardcode:end */

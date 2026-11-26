@@ -92,13 +92,14 @@ function ProjectBooking({ project, onBack }) {
   const backToProjects = onBack;
   const pickFloor = (p) => { setFloorId(p.id); setShopCode(null); };
 
+  // A tower whose floors are marked as grid floors is booked from one building view: a row per floor.
+  // Phones get the same building view as computers (ShopBooking.css lays it out for a narrow screen).
+  if (plans.some(p => p.grid)) return <StackGrid project={project} plans={plans} shopCode={shopCode} setShopCode={setShopCode} onBack={backToProjects} />;
+
   if (phone) {
     return <ShopGrid project={project} plans={plans} plan={plan} floor={floor}
       onBack={backToProjects} pickFloor={pickFloor} shopCode={shopCode} setShopCode={setShopCode} />;
   }
-
-  // A tower whose floors are marked as grid floors is booked from one building view: a row per floor.
-  if (plans.some(p => p.grid)) return <StackGrid project={project} plans={plans} shopCode={shopCode} setShopCode={setShopCode} onBack={backToProjects} />;
 
   const zi = Math.max(0, ZOOMS.indexOf(zoom));
   // One card width for every floor: sized for the widest floor's drawing, so

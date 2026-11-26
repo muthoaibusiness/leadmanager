@@ -1,5 +1,6 @@
 import { ROLES, normRole, isNiHandler, canSelfForward, STATUS_LABELS, SRC_LABELS, PAST_CONTACT, OFFER_MAX } from './constants.js';
 import { pruneNotifList } from './notifRetention.js';
+import { clearDeviceData } from './deviceCache.js';
 import { setOfferResolver } from './offerRegistry.js';
 import { uid, now_, fmtBDT, fmtDT, curMonth, startOfMonth, rlabel } from './helpers.js';
 import { leadFilterParam, ORDER } from './leadQuery.js';
@@ -509,6 +510,7 @@ export function clearLocalDB() {
   _DB = null;
   resetActCache();
   resetLeadCache();
+  clearDeviceData(); // lead-list pages and pictures kept for this account
 }
 
 export function clearSession() {

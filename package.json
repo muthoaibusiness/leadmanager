@@ -37,6 +37,9 @@
     "test:0065": "node scripts/test-0065.mjs",
     "test:0066": "node scripts/test-0066.mjs",
     "test:0068": "node scripts/test-0068.mjs",
+    "test:0074": "node scripts/test-0074.mjs",
+    "test:0076": "node scripts/test-0076.mjs",
+    "test:push": "node --test supabase/functions/_shared/push-core.test.ts",
     "test:capi:report": "node scripts/metaCapiReport.test.mjs",
     "test:capi": "node --test supabase/functions/_shared/capi-core.test.ts supabase/functions/_shared/capi-rest.test.ts supabase/functions/_shared/capi-sched.test.ts && vite-node scripts/metacapi-access.test.mjs",
     "test:capi:race": "node scripts/capi-limiter.race.test.mjs",
@@ -68,6 +71,15 @@
     "globals": "^17.5.0",
     "happy-dom": "^20.14.6",
     "vite": "^8.0.10",
-    "vite-node": "^6.0.0"
+    "vite-node": "^6.0.0",
+    "vite-plugin-pwa": "^2.0.0",
+    "workbox-build": "^7.4.1",
+    "workbox-cacheable-response": "^7.4.1",
+    "workbox-core": "^7.4.1",
+    "workbox-expiration": "^7.4.1",
+    "workbox-precaching": "^7.4.1",
+    "workbox-routing": "^7.4.1",
+    "workbox-strategies": "^7.4.1",
+    "workbox-window": "^7.4.1"
   }
 }

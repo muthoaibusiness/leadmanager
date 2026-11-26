@@ -58,6 +58,19 @@ A lead's status is only ever changed by the status writers in `db.js`: `changeSt
 
 `src/lib/wa.js` mirrors supabase.js conventions (raw REST, row converters, own realtime socket). The client **never** holds the Wasender API token — outbound sends POST to a server-side relay (Supabase Edge Function `wa-send` or n8n) whose URL comes from the `wa_settings` row; the relay holds the credential. Chat access is granted by the `wa_settings` allow-list / an explicit `allowedFeatures` grant, **not** by role (`waCanChat()`), which is why `conversations: []` in `NAV_SCOPES` and the view is exempted from the role-based redirect in `App.jsx`.
 
+### Installed app (PWA) and push
+
+The phone app is this same site, installed to the home screen (Android: "Install app"; iOS: Share → Add to Home Screen). There is no native project.
+
+- `vite-plugin-pwa` builds `src/sw.js` (our own worker, `injectManifest`) and the web manifest; `src/lib/pwa.js` registers it, in production builds only. The worker keeps the built files, fonts and Supabase Storage pictures on the device. It **never** handles Supabase REST/auth/realtime/Edge Function calls: the data cache is `db.js` alone.
+- A new version waits and is switched to at launch, before anything is touched (`pwa.js`). Do not add `skipWaiting()` on install or an auto-reload: it would reload the page under a half-typed form.
+- `src/lib/deviceCache.js` keeps the last answer per lead-list page (IndexedDB), shown by `LeadsView` while the fresh page loads. It and the picture cache are emptied by `clearLocalDB()`: like the snapshot, they hold one account's data.
+- Push (migration 0074): `src/lib/webPush.js` registers the phone through the `push_subscribe` RPC, only in the installed app (a browser tab keeps the quiet `pushNotify.js` behaviour). A statement trigger on `notifications` hands new rows to the `push-send` Edge Function (`_shared/push-core.ts`, `_shared/webpush-core.ts`), which encrypts and sends them. Anything that should reach a phone must therefore be a `notifications` row. The hook key and VAPID keys live in `app_secrets`; there is nothing to configure. iOS asks permission only from a tap: the bell panel's "Turn on" row (`NotifBell.jsx`).
+
+### Native app (`mobile/`)
+
+The Android and iOS app is a React Native (Expo) project in `mobile/`, with its own `package.json` and its own `mobile/CLAUDE.md`. It does not copy this app's logic: it imports `src/lib/*.js` and `supabase/functions/_shared/access-rules.js` directly. So everything under `src/lib` must stay free of React and of DOM access at import time (guard `window`/`document`/`navigator`, as the existing files do), and a signature changed there is changed for the phone too. Native push is migration 0076 (`push_devices`, Expo push tokens), sent by the same `push-send` function as Web Push.
+
 ### UI structure
 
 - `src/App.jsx` — root. `PageHero`/`PageBody` switch on `view`; `PageBody` picks the dashboard by `effectiveRole()`. Boot logic (warm-cache vs cold-fetch paths) lives in the mount effect — read the `needsBootFetch` / `enterApp` / `hydrateFromCloud` comments before touching login/boot.
@@ -74,6 +87,15 @@ There is no router. The page on screen is AppContext state (`view`, `projTab`, t
 - **Redirects** (a view the account may not see) go through `replaceView()`, which replaces the entry instead of pushing one. `homeView(user)` is the fallback home page.
 - **The top header bar** holds `<BackButton />` and `ui/bellows-crumb.jsx`, fed by the `back` / `trail` that `useNavHistory` returns. Back goes to the previous entry in this tab, else to the page above (`parentOf()`); the crumb trail comes from `trailOf()`, and an ancestor crumb opens that page as a new entry. Page titles, Back labels and crumbs share `VIEW_TITLES` (all three in `src/lib/navHistory.js`).
 - The history store is module-level state in `useNavHistory.js` (one app, one history), so render code never reads refs, which react-hooks lint forbids.
+
+### Designs (Users › Appearance)
+
+Two independent switches on `<html>`: `data-theme` (dark/light, each person's own) and `data-design` (the look an admin picks for the company: `blueprint`, `pebble`, `ink`; Classic sets no attribute). `src/lib/theme.js` holds both; `src/designs.css` (loaded last) holds the three designs.
+
+- A design is a palette (`--p-*`) mapped once onto every token family the app reads (`--bg`/`--surf`/`--t1`, `--bk-*`, `--mip-*`), including the scopes that redefine tokens locally (`.bk`, `.bkm`, `#pan`, `#app`). New CSS that uses those tokens follows every design with no extra work; hardcoded colours do not.
+- Corner radii are tokens: write `border-radius: var(--rad-10, 10px)` (pill: `--rad-pill`), never a bare px value. The fallback is the Classic value; each design rescales the `--rad-*` set.
+- A third switch, `data-layout` (`rail`, `topbar`, `dock`; the original Sidebar shell sets no attribute), changes structure instead of paint: `src/layouts.css` re-lays the same markup (where the navigation sits, the page header, KPI arrangement, list rows, how the lead panel `#pan` opens, the phone bottom bar). It reads only the active design's tokens, so every layout works with every design. `Sidebar.jsx` is the one component that knows about it (groups stay open outside the Sidebar layout; items carry `data-tip` and a `.sb-tx` label span for the icon-only layouts). A fixed bar that covers the page bottom must set `--bnav`, which toasts and full-height pages already subtract.
+- The company's choices live in `companies.ui_design` and `companies.ui_layout`, written through the `crm_set_company_design` / `crm_set_company_layout` RPCs (migrations 0073 and 0075; plain writes to `companies` are Master-only). `src/lib/companyDesign.js` falls back to a per-device choice while a function is missing.
 
 ### Conventions
 

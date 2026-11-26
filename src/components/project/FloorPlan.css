@@ -55,11 +55,11 @@
 
 .fp-zoom {
   position: absolute; right: 10px; bottom: 10px; display: flex; gap: 4px;
-  background: rgba(255, 255, 255, .92); border: 1px solid rgba(0, 0, 0, .12); border-radius: 10px; padding: 4px;
+  background: rgba(255, 255, 255, .92); border: 1px solid rgba(0, 0, 0, .12); border-radius: var(--rad-10, 10px); padding: 4px;
   box-shadow: 0 1px 4px rgba(0, 0, 0, .12);
 }
 .fp-zoom button {
-  width: 34px; height: 34px; display: grid; place-items: center; border: 0; border-radius: 7px;
+  width: 34px; height: 34px; display: grid; place-items: center; border: 0; border-radius: var(--rad-7, 7px);
   background: transparent; color: #1c2221; cursor: pointer;
 }
 .fp-zoom button:hover:not(:disabled) { background: rgba(0, 0, 0, .07); }
@@ -70,7 +70,7 @@
 /* Status marks outside the canvas — theme colours. */
 .fp-dot, .fp-sw { display: inline-block; flex: none; }
 .fp-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--t3); }
-.fp-sw { width: 14px; height: 14px; border-radius: 3px; border: 2px solid var(--t3); background: color-mix(in srgb, var(--t3) 18%, transparent); }
+.fp-sw { width: 14px; height: 14px; border-radius: var(--rad-3, 3px); border: 2px solid var(--t3); background: color-mix(in srgb, var(--t3) 18%, transparent); }
 .fp-dot.st-available { background: var(--green); }
 .fp-dot.st-hold { background: var(--gold); }
 .fp-dot.st-sold { background: var(--red); }
@@ -80,7 +80,7 @@
 .fp-sw.st-unlinked { border-style: dashed; }
 .fp-sw.has-c { border-color: var(--st-c); background: color-mix(in srgb, var(--st-c) 22%, transparent); }
 .fp-pill {
-  display: inline-flex; align-items: center; gap: 5px; padding: 3px 10px; border-radius: 999px;
+  display: inline-flex; align-items: center; gap: 5px; padding: 3px 10px; border-radius: var(--rad-pill, 999px);
   font-size: 11.5px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; white-space: nowrap;
   color: var(--t2); background: var(--surf2);
 }
@@ -95,7 +95,7 @@
   background: color-mix(in srgb, var(--gold) 10%, var(--surf)); color: var(--t1); font-size: 13.5px; line-height: 1.45;
 }
 .fp-banner .mi { color: var(--gold); font-size: 20px; }
-.fp-banner code { font-size: 12px; background: var(--surf2); padding: 1px 5px; border-radius: 5px; overflow-wrap: anywhere; }
+.fp-banner code { font-size: 12px; background: var(--surf2); padding: 1px 5px; border-radius: var(--rad-5, 5px); overflow-wrap: anywhere; }
 
 /* ── Viewer ─────────────────────────────────────────────────────────────── */
 .fpv { min-width: 0; }
@@ -140,7 +140,7 @@
 .fpv-filters { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; margin-bottom: 12px; }
 .fpv-chips { display: flex; flex-wrap: wrap; gap: 6px; }
 .fpv-chip {
-  display: inline-flex; align-items: center; gap: 7px; height: 34px; padding: 0 12px; border-radius: 999px;
+  display: inline-flex; align-items: center; gap: 7px; height: 34px; padding: 0 12px; border-radius: var(--rad-pill, 999px);
   border: 1px solid var(--bd2); background: transparent; color: var(--t2); font-size: 12.5px; font-weight: 600; cursor: pointer;
 }
 .fpv-chip b { color: var(--t1); font-variant-numeric: tabular-nums; }
@@ -149,7 +149,7 @@
 .fpv-chip.ch-custom.on { border-color: var(--st-c); }
 .fpv-search {
   display: flex; align-items: center; gap: 6px; height: 34px; padding: 0 12px; margin-left: auto;
-  border: 1px solid var(--bd2); border-radius: 999px; background: var(--surf2); min-width: 0; flex: 0 1 220px;
+  border: 1px solid var(--bd2); border-radius: var(--rad-pill, 999px); background: var(--surf2); min-width: 0; flex: 0 1 220px;
 }
 .fpv-search .mi { font-size: 18px; color: var(--t3); }
 .fpv-search input { border: 0; outline: 0; background: transparent; color: var(--t1); font-size: 13px; width: 100%; min-width: 0; }
@@ -196,11 +196,11 @@
    near-square seat (a touch taller than wide), rows spaced wider apart than
    seats, at most 7 a row: 7 × 48px + 6 × 8px gaps = 384px, so 8 never fit. */
 .is-seats .fps-tiles { grid-template-columns: repeat(auto-fill, 48px); gap: 10px 8px; max-width: 384px; }
-.is-seats .fps-tile { height: 52px; padding: 3px 2px; border-radius: 9px; font-size: 10.5px; }
+.is-seats .fps-tile { height: 52px; padding: 3px 2px; border-radius: var(--rad-9, 9px); font-size: 10.5px; }
 .is-seats .fps-sz { font-size: 9px; }
 .fps-tile {
   display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px;
-  min-height: 44px; padding: 4px 3px; border-radius: 8px; border: 1.5px solid color-mix(in srgb, var(--t1) 72%, transparent);
+  min-height: 44px; padding: 4px 3px; border-radius: var(--rad-8, 8px); border: 1.5px solid color-mix(in srgb, var(--t1) 72%, transparent);
   background: var(--surf); color: var(--t1); font-size: 11px; font-weight: 700; line-height: 1.2;
   overflow-wrap: anywhere; cursor: pointer; transition: transform .12s, box-shadow .12s;
 }
@@ -232,7 +232,7 @@
 
 /* the plan's optional landmarks, above / below the units */
 .fps-mark {
-  padding: 7px 10px; border-radius: 8px; background: var(--surf2); color: var(--t2);
+  padding: 7px 10px; border-radius: var(--rad-8, 8px); background: var(--surf2); color: var(--t2);
   font-size: 11.5px; font-weight: 600; letter-spacing: .04em; text-align: center; overflow-wrap: anywhere;
 }
 
@@ -344,14 +344,14 @@
 .is-art .fp-box.on .fp-lbl-sub, .is-art .fp-box.on .fp-lbl-note { fill: #BFEFD0; }
 .is-art .fp-box:hover:not(.on) .fp-edge, .is-art .fp-box.hl:not(.on) .fp-edge { stroke: var(--unit-sel-edge); stroke-opacity: .6; stroke-width: 2; }
 /* legend swatches match the map's soft tint */
-.fpm-legend .fp-sw { border-width: 1px; border-radius: 4px; }
+.fpm-legend .fp-sw { border-width: 1px; border-radius: var(--rad-4, 4px); }
 .fpm-legend .fp-sw.st-sold { border-color: #8C929A; background: color-mix(in srgb, #8C929A 18%, transparent); }
 
 /* details: tabs + panel */
-.fpt { display: flex; gap: 2px; padding: 3px; border: 1px solid var(--bd); border-radius: 999px; background: var(--surf); }
+.fpt { display: flex; gap: 2px; padding: 3px; border: 1px solid var(--bd); border-radius: var(--rad-pill, 999px); background: var(--surf); }
 .fpt button {
   flex: 1 1 0; min-width: 0; display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 36px; padding: 0 10px;
-  border: 0; border-radius: 999px; background: transparent; color: var(--t2); font: 600 13px/1 var(--font-display); cursor: pointer;
+  border: 0; border-radius: var(--rad-pill, 999px); background: transparent; color: var(--t2); font: 600 13px/1 var(--font-display); cursor: pointer;
 }
 .fpt button .mi { font-size: 17px; }
 .fpt button:hover { color: var(--t1); }
@@ -548,12 +548,12 @@
   .fpv-projsel .sel-chev { color: var(--t1); }
   .fpv-projsel-tx { font: 700 17px/1.2 var(--font-display); color: var(--t1); text-transform: uppercase; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .sel-content.fpv-projsel-list {
-    min-width: 0; width: max-content; max-width: calc(100vw - 32px); padding: 6px; border-radius: 16px;
+    min-width: 0; width: max-content; max-width: calc(100vw - 32px); padding: 6px; border-radius: var(--rad-16, 16px);
     border: 1px solid color-mix(in srgb, var(--t1) 12%, transparent); background: color-mix(in srgb, var(--surf-solid) 72%, transparent);
     -webkit-backdrop-filter: blur(16px) saturate(1.2); backdrop-filter: blur(16px) saturate(1.2);
     box-shadow: 0 12px 32px rgba(0, 0, 0, .18);
   }
-  .fpv-projsel-list .sel-item { min-height: 44px; padding: 0 12px; border-radius: 10px; font-size: 14px; }
+  .fpv-projsel-list .sel-item { min-height: 44px; padding: 0 12px; border-radius: var(--rad-10, 10px); font-size: 14px; }
   .fpv-projsel-list .sel-item[data-highlighted] { background: color-mix(in srgb, var(--t1) 8%, transparent); }
 
   /* Floor row, the calendar's month row: the floor and its free count, then
@@ -598,12 +598,12 @@
   .fpv-rsv {
     position: fixed; left: 12px; right: 12px; bottom: var(--bnav, 0px); z-index: 60;
     display: flex; align-items: center; gap: 10px; min-height: 64px; padding: 8px 8px 8px 16px;
-    border-radius: 20px; background: var(--surf2); box-shadow: 0 8px 24px rgba(0, 0, 0, .18);
+    border-radius: var(--rad-20, 20px); background: var(--surf2); box-shadow: 0 8px 24px rgba(0, 0, 0, .18);
   }
   .fpv-rsv > div { flex: 1; min-width: 0; }
   .fpv-rsv b { display: block; font: 600 16px/1.2 var(--font-display); color: var(--t1); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .fpv-rsv > div span { font: 500 12.5px/1.3 Inter, sans-serif; color: var(--t2); }
-  .fpv-rsv .btn { flex: none; height: 48px; padding: 0 18px; justify-content: center; gap: 8px; border-radius: 999px; font: 700 13px/1 var(--font-display); letter-spacing: .1em; text-transform: uppercase; }
+  .fpv-rsv .btn { flex: none; height: 48px; padding: 0 18px; justify-content: center; gap: 8px; border-radius: var(--rad-pill, 999px); font: 700 13px/1 var(--font-display); letter-spacing: .1em; text-transform: uppercase; }
   .fpv-rsv .btn .mi { letter-spacing: 0; }
   /* A taken unit's button reads its status: plain black, the status dot in
      its own colour. Tapping it opens the details sheet. */
