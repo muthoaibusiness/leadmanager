@@ -1,0 +1,1532 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<title>Citizen Avenue Mall</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Familjen+Grotesk:wght@500;600;700&family=Hind+Siliguri:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: sticky brand bar + role switch, tabbed single-page app; floor stack | floor map | shop sheet on the inventory view */
+:root{
+  --bg:#FFFFFF; --surface:#F4F8F6; --surface-2:#E8F0EC; --line:#D9E4DE;
+  --fg:#11201A; --muted:#5A6C64; --faint:#8C9C94;
+  --accent:#0F6E56; --accent-ink:#FFFFFF; --accent-soft:#E2F1EA;
+  --gold:#A47520; --gold-ink:#FFFFFF; --gold-soft:#F8EFDC;
+  --plat:#4F6272; --ok:#1C8248; --bad:#B4442F; --held:#B98316;
+  --shadow:0 1px 2px rgb(17 32 26 / .06),0 8px 24px rgb(17 32 26 / .06);
+  --display:"Familjen Grotesk",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --body:"Hind Siliguri",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --mono:"JetBrains Mono",ui-monospace,"SF Mono",Menlo,monospace;
+  --r:14px;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0C1411; --surface:#121D19; --surface-2:#192722; --line:#25362F;
+  --fg:#E6EEE9; --muted:#97A99F; --faint:#6E8077;
+  --accent:#3DB38F; --accent-ink:#04130D; --accent-soft:#14302A;
+  --gold:#D8AC58; --gold-ink:#1A1205; --gold-soft:#2A2214;
+  --plat:#9FB3C4; --ok:#4BC27E; --bad:#E2806A; --held:#DDA83F;
+  --shadow:0 1px 2px rgb(0 0 0 / .3),0 8px 24px rgb(0 0 0 / .25);
+  color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0C1411; --surface:#121D19; --surface-2:#192722; --line:#25362F;
+  --fg:#E6EEE9; --muted:#97A99F; --faint:#6E8077;
+  --accent:#3DB38F; --accent-ink:#04130D; --accent-soft:#14302A;
+  --gold:#D8AC58; --gold-ink:#1A1205; --gold-soft:#2A2214;
+  --plat:#9FB3C4; --ok:#4BC27E; --bad:#E2806A; --held:#DDA83F;
+  --shadow:0 1px 2px rgb(0 0 0 / .3),0 8px 24px rgb(0 0 0 / .25);
+  color-scheme:dark}
+
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--body);font-size:15px;line-height:1.55;-webkit-font-smoothing:antialiased}
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:30;background:var(--bg)}
+.wrap{max-width:1200px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+h1,h2,h3{font-family:var(--display);text-wrap:balance;margin:0;letter-spacing:-.015em}
+h1{font-size:clamp(32px,4.6vw,56px);line-height:1.02;font-weight:700}
+h2{font-size:clamp(22px,2.4vw,28px);line-height:1.15;font-weight:600}
+h3{font-size:17px;font-weight:600}
+p{margin:0}
+.bn{font-family:var(--body);font-weight:500}
+.eyebrow{font-size:12px;text-transform:uppercase;letter-spacing:.12em;color:var(--muted);font-weight:600}
+.muted{color:var(--muted)}
+.num{font-family:var(--mono);font-variant-numeric:tabular-nums}
+.small{font-size:13px}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+button{font-family:inherit}
+
+/* header */
+.top{position:sticky;top:env(safe-area-inset-top,0px);z-index:20;background:var(--bg);border-bottom:1px solid var(--line)}
+.top-in{display:flex;align-items:center;gap:12px 16px;padding-block:12px 4px;flex-wrap:wrap}
+.brand{display:flex;align-items:center;gap:10px;margin-right:auto;min-width:0}
+.mark{font-family:var(--display);font-weight:700;letter-spacing:.16em;font-size:11px;color:var(--accent);border:1.5px solid var(--accent);padding:3px 6px 2px;border-radius:4px}
+.brand b{font-family:var(--display);font-size:19px;font-weight:600;white-space:nowrap}
+.brand .bn{color:var(--muted);font-size:14px}
+.proto{font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--gold);background:var(--gold-soft);padding:3px 8px;border-radius:999px}
+.seg{display:inline-flex;background:var(--surface-2);border-radius:999px;padding:3px;gap:2px}
+.seg button{border:0;background:none;padding:6px 13px;border-radius:999px;font-size:13px;font-weight:500;color:var(--muted);cursor:pointer}
+.seg button[aria-pressed="true"]{background:var(--bg);color:var(--fg);box-shadow:var(--shadow)}
+select,input,textarea{font:inherit;color:var(--fg);background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:8px 10px}
+.cur-sel{padding:6px 8px;font-size:13px}
+.tabs{display:flex;gap:2px;overflow-x:auto;scrollbar-width:none;margin-top:2px}
+.tabs::-webkit-scrollbar{display:none}
+.tabs button{flex:none;border:0;background:none;padding:10px 12px 11px;font-size:14px;font-weight:500;color:var(--muted);cursor:pointer;border-bottom:2px solid transparent;display:inline-flex;gap:6px;align-items:center}
+.tabs button:hover{color:var(--fg)}
+.tabs button[aria-current="page"]{color:var(--fg);border-bottom-color:var(--accent)}
+.tabs .lock{width:12px;height:12px;opacity:.6}
+
+main.wrap{padding-block:28px 72px}
+.view{display:grid;gap:44px}
+.view[hidden]{display:none!important}
+.sec-head{display:flex;align-items:end;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:18px}
+.sec-head p{max-width:60ch}
+
+.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:20px;min-width:0}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;border-radius:10px;padding:10px 16px;font-size:14px;font-weight:600;border:1px solid var(--line);background:var(--bg);color:var(--fg);cursor:pointer;text-decoration:none;line-height:1.2}
+.btn:hover{border-color:var(--accent)}
+.btn.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+.btn.primary:hover{filter:brightness(1.07)}
+.btn.gold{background:var(--gold);color:var(--gold-ink);border-color:var(--gold)}
+.btn.ghost{background:transparent}
+.btn.sm{padding:7px 11px;font-size:13px;border-radius:8px}
+.btn[disabled]{opacity:.45;cursor:not-allowed}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+.pill{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:600;padding:3px 9px;border-radius:999px;background:var(--surface-2);color:var(--fg);white-space:nowrap}
+.dot{width:8px;height:8px;border-radius:50%;background:currentColor;flex:none}
+.t-platinum{--tc:var(--plat)} .t-luxury{--tc:var(--accent)} .t-gold{--tc:var(--gold)} .t-silver{--tc:var(--faint)}
+.pill.tier .dot{background:var(--tc)}
+.kv{display:grid;grid-template-columns:auto 1fr;gap:6px 16px;font-size:14px}
+.kv dt{color:var(--muted)} .kv dd{margin:0;text-align:right;font-variant-numeric:tabular-nums}
+
+/* hero */
+.hero{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,.85fr);gap:32px;align-items:center}
+.hero-copy{display:grid;gap:18px}
+.hero-copy .bn-line{font-size:18px;color:var(--accent);font-weight:600}
+.hero-copy p.lead{font-size:17px;color:var(--muted);max-width:52ch}
+.stack-wrap{background:var(--surface);border:1px solid var(--line);border-radius:20px;padding:18px 14px 10px}
+.stack-wrap svg{width:100%;height:auto;display:block}
+.stack-floor{cursor:pointer}
+.stack-floor:hover .sf-base,.stack-floor:focus-visible .sf-base{stroke:var(--accent);stroke-width:2}
+.stack-floor:focus{outline:none}
+.legend{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:var(--muted);justify-content:center;padding-top:8px}
+.legend span{display:inline-flex;align-items:center;gap:6px}
+.sw{width:12px;height:12px;border-radius:3px;display:inline-block}
+.sw.av{background:var(--accent)} .sw.bk{background:var(--surface-2);border:1px solid var(--line)} .sw.hd{background:var(--held)}
+
+.facts{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));border:1px solid var(--line);border-radius:var(--r);overflow:hidden}
+.fact{padding:16px 18px;border-right:1px solid var(--line)}
+.fact:last-child{border-right:0}
+.fact b{display:block;font-family:var(--display);font-size:24px;font-weight:600;line-height:1.1}
+.fact span{font-size:13px;color:var(--muted)}
+
+/* alert */
+.alert{display:flex;gap:14px 20px;align-items:center;flex-wrap:wrap;background:var(--gold-soft);border:1px solid color-mix(in srgb,var(--gold) 40%,transparent);border-radius:var(--r);padding:14px 18px}
+.alert .ic{width:38px;height:38px;border-radius:10px;background:var(--gold);color:var(--gold-ink);display:grid;place-items:center;flex:none}
+.alert .txt{flex:1 1 320px;min-width:0}
+.alert .txt b{font-weight:600}
+.alert .cd{display:flex;gap:6px;align-items:baseline}
+.alert .cd .num{font-size:26px;font-weight:500;color:var(--gold)}
+.toggle{display:inline-flex;align-items:center;gap:10px;cursor:pointer;font-size:14px;font-weight:500;user-select:none}
+.toggle input{position:absolute;opacity:0;pointer-events:none}
+.toggle .tr{width:38px;height:22px;border-radius:999px;background:var(--line);position:relative;transition:background .2s}
+.toggle .tr::after{content:"";position:absolute;top:3px;left:3px;width:16px;height:16px;border-radius:50%;background:var(--bg);transition:transform .2s}
+.toggle input:checked + .tr{background:var(--accent)}
+.toggle input:checked + .tr::after{transform:translateX(16px)}
+.toggle input:focus-visible + .tr{outline:2px solid var(--accent);outline-offset:2px}
+
+/* tiers */
+.tiers{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px}
+.tier{display:flex;flex-direction:column;gap:14px;background:var(--bg);border:1px solid var(--line);border-radius:var(--r);padding:18px;position:relative;overflow:hidden}
+.tier::before{content:"";position:absolute;inset:0 0 auto;height:4px;background:var(--tc)}
+.tier .tname{font-family:var(--display);font-size:20px;font-weight:600;line-height:1.1}
+.tier .fair{font-size:12px;color:var(--muted);letter-spacing:.04em}
+.tier ul{margin:0;padding:0;list-style:none;display:grid;gap:6px;font-size:13.5px;color:var(--muted)}
+.tier li{display:flex;gap:8px}
+.tier li::before{content:"";width:5px;height:5px;border-radius:50%;background:var(--tc);margin-top:8px;flex:none}
+.tier .from{margin-top:auto;display:grid;gap:2px}
+.tier .from b{font-family:var(--display);font-size:22px;font-weight:600}
+.avbar{height:6px;border-radius:999px;background:var(--surface-2);overflow:hidden;display:flex}
+.avbar i{display:block;height:100%}
+
+/* progress */
+.prog{display:grid;grid-template-columns:minmax(0,.9fr) minmax(0,1.1fr);gap:20px}
+.ringbox{display:flex;gap:22px;align-items:center;flex-wrap:wrap}
+.ring{width:132px;height:132px;flex:none}
+.ms{list-style:none;margin:0;padding:0;display:grid;gap:0}
+.ms li{display:grid;grid-template-columns:20px minmax(0,1fr) auto;gap:12px;align-items:start;padding:10px 0;border-bottom:1px dashed var(--line)}
+.ms li:last-child{border-bottom:0}
+.ms .mk{width:14px;height:14px;border-radius:50%;border:2px solid var(--line);background:var(--bg);margin-top:4px}
+.ms li.done .mk{background:var(--accent);border-color:var(--accent)}
+.ms li.now .mk{border-color:var(--gold);background:var(--gold-soft);box-shadow:0 0 0 4px color-mix(in srgb,var(--gold) 25%,transparent)}
+.ms .step{font-size:12px;font-family:var(--mono);color:var(--muted);text-align:right;white-space:nowrap}
+.ms .step b{display:block;color:var(--fg);font-weight:500}
+.ms li.done .step b{color:var(--muted)}
+
+.camlock{position:relative;border-radius:var(--r);overflow:hidden;min-height:230px;background:linear-gradient(160deg,#28463c,#13241e 70%);display:grid;place-items:center;text-align:center;padding:24px;color:#E8F2EC}
+.camlock::before{content:"";position:absolute;inset:0;background:repeating-linear-gradient(0deg,rgb(255 255 255 / .03) 0 2px,transparent 2px 4px)}
+.camlock > div{position:relative;display:grid;gap:10px;justify-items:center;max-width:36ch}
+.camlock .btn{background:#E8F2EC;color:#0F2A21;border-color:#E8F2EC}
+
+.gallery{display:grid;grid-template-columns:2fr 1fr 1fr;grid-template-rows:170px 170px;gap:12px}
+.shot{border-radius:var(--r);position:relative;overflow:hidden;display:flex;align-items:end;padding:14px;color:#fff;font-weight:600;font-size:14px}
+.shot small{display:block;font-weight:400;opacity:.8;font-size:12px}
+.shot:nth-child(1){grid-row:span 2;background:linear-gradient(180deg,rgb(0 0 0 / 0) 40%,rgb(0 0 0 / .55)),radial-gradient(120% 80% at 50% 0%,#F4D58D 0%,#C4924A 30%,#3B5E52 70%,#12261F 100%)}
+.shot:nth-child(2){background:linear-gradient(180deg,transparent 40%,rgb(0 0 0 / .55)),linear-gradient(135deg,#0F2B44,#1F5C6E 50%,#E8B04B 100%)}
+.shot:nth-child(3){background:linear-gradient(180deg,transparent 40%,rgb(0 0 0 / .55)),linear-gradient(200deg,#E9DCC5,#B98D5D 55%,#5B3B23)}
+.shot:nth-child(4){background:linear-gradient(180deg,transparent 40%,rgb(0 0 0 / .55)),linear-gradient(160deg,#56707A,#24353C)}
+.shot:nth-child(5){background:linear-gradient(180deg,transparent 40%,rgb(0 0 0 / .55)),linear-gradient(120deg,#0F6E56,#0A3A2E)}
+.shot::after{content:"";position:absolute;inset:0;background:repeating-linear-gradient(90deg,rgb(255 255 255 / .06) 0 1px,transparent 1px 38px)}
+.shot span{position:relative;z-index:1}
+
+.contact{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}
+.contact .card{display:grid;gap:8px;align-content:start}
+.hotline{font-family:var(--mono);font-size:20px;user-select:all}
+
+/* shops */
+.toolbar{display:flex;gap:10px 18px;flex-wrap:wrap;align-items:center;margin-bottom:16px}
+.chips{display:flex;gap:6px;flex-wrap:wrap}
+.chip{border:1px solid var(--line);background:var(--bg);color:var(--fg);border-radius:999px;padding:6px 12px;font-size:13px;font-weight:500;cursor:pointer;display:inline-flex;gap:6px;align-items:center}
+.chip[aria-pressed="true"]{background:var(--fg);color:var(--bg);border-color:var(--fg)}
+.chip .dot{background:var(--tc,var(--muted))}
+.summary{display:flex;gap:18px;flex-wrap:wrap;font-size:13px;color:var(--muted);margin-left:auto}
+.summary b{color:var(--fg);font-family:var(--mono);font-weight:500}
+.shops-layout{display:grid;grid-template-columns:190px minmax(0,1fr) 340px;gap:18px;align-items:start}
+.fstack{display:grid;gap:4px}
+.fbtn{display:grid;grid-template-columns:34px minmax(0,1fr) auto;gap:8px;align-items:center;border:1px solid transparent;background:none;border-radius:10px;padding:7px 8px;cursor:pointer;text-align:left;color:var(--fg)}
+.fbtn:hover{background:var(--surface)}
+.fbtn[aria-pressed="true"]{background:var(--surface);border-color:var(--line)}
+.fbtn .fl{font-family:var(--display);font-weight:600;font-size:15px}
+.fbtn .fc{font-size:12px;color:var(--muted);font-family:var(--mono)}
+.mapcard{padding:16px}
+.maphead{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:baseline;margin-bottom:12px}
+.map-scroll{overflow-x:auto;padding-bottom:4px}
+.map{display:grid;grid-template-columns:repeat(6,minmax(76px,1fr));grid-template-rows:repeat(4,88px);gap:6px;min-width:500px;position:relative}
+.cell{border-radius:9px;border:1.5px solid var(--line);padding:7px 8px;text-align:left;display:flex;flex-direction:column;justify-content:space-between;cursor:pointer;background:var(--bg);color:var(--fg);font-size:12px;min-width:0;position:relative;transition:transform .12s,box-shadow .12s}
+.cell:hover{transform:translateY(-1px);box-shadow:var(--shadow)}
+.cell .cid{font-family:var(--mono);font-weight:500;font-size:12px;display:flex;justify-content:space-between;gap:4px}
+.cell .csz{color:var(--muted);font-size:11.5px;line-height:1.25}
+.cell .tbar{position:absolute;left:8px;right:8px;bottom:0;height:3px;border-radius:3px 3px 0 0;background:var(--tc)}
+.cell.available{border-color:color-mix(in srgb,var(--accent) 55%,var(--line));background:var(--accent-soft)}
+.cell.booked{background:repeating-linear-gradient(135deg,var(--surface-2) 0 5px,var(--surface) 5px 10px);color:var(--faint)}
+.cell.booked .csz{color:var(--faint)}
+.cell.held{border-color:var(--held);background:var(--gold-soft)}
+.cell.yours{border-color:var(--gold);border-width:2px;background:var(--gold-soft)}
+.cell.dim{opacity:.28}
+.cell[aria-pressed="true"]{outline:2.5px solid var(--fg);outline-offset:1px}
+.atrium{grid-column:3 / span 2;grid-row:2 / span 2;border:1.5px dashed var(--line);border-radius:12px;display:grid;place-items:center;text-align:center;color:var(--muted);font-size:12px;background:radial-gradient(circle at 50% 50%,var(--surface-2),transparent 70%)}
+.atrium svg{width:44px;height:44px;margin:0 auto 4px;display:block;color:var(--accent)}
+.detail{position:sticky;top:calc(env(safe-area-inset-top,0px) + 110px)}
+.detail .card{background:var(--bg);box-shadow:var(--shadow);display:grid;gap:16px}
+.empty{color:var(--muted);font-size:14px;padding:24px 18px;border:1.5px dashed var(--line);border-radius:var(--r);text-align:center;display:grid;gap:10px;justify-items:center}
+.price-big{font-family:var(--display);font-size:30px;font-weight:600;line-height:1}
+.fx{display:block;font-size:12.5px;color:var(--muted);font-family:var(--mono)}
+.ladder svg{width:100%;height:auto;display:block}
+.note{font-size:12px;color:var(--muted);line-height:1.45}
+.earn{display:flex;justify-content:space-between;align-items:center;gap:10px;background:var(--gold-soft);border-radius:10px;padding:10px 12px;font-size:14px}
+.earn b{font-family:var(--mono);color:var(--gold);font-weight:500}
+
+/* unit */
+.grid2{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:18px}
+.grid3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:18px}
+.profile{display:flex;gap:14px;align-items:center}
+.avatar{width:52px;height:52px;border-radius:50%;background:var(--accent);color:var(--accent-ink);display:grid;place-items:center;font-family:var(--display);font-weight:700;font-size:19px;flex:none}
+.cam{position:relative;border-radius:var(--r);overflow:hidden;background:#0d1a15;aspect-ratio:16/9;max-width:100%}
+.cam canvas{width:100%;height:100%;display:block}
+.camtabs{display:flex;gap:6px;flex-wrap:wrap}
+.tbl-scroll{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:14px}
+th{text-align:left;font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);padding:8px 10px;border-bottom:1px solid var(--line);white-space:nowrap}
+td{padding:10px;border-bottom:1px solid var(--line);vertical-align:middle;white-space:nowrap}
+td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}
+tr.me td{background:var(--gold-soft)}
+.st{font-size:12px;font-weight:600;padding:3px 8px;border-radius:999px;white-space:nowrap}
+.st.paid{background:var(--accent-soft);color:var(--accent)}
+.st.due{background:var(--gold-soft);color:var(--gold)}
+.st.up{background:var(--surface-2);color:var(--muted)}
+.docs{display:grid;gap:8px}
+.doc{display:flex;align-items:center;gap:12px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--bg)}
+.doc .fi{width:32px;height:38px;border-radius:5px;background:var(--surface-2);display:grid;place-items:center;font-size:9px;font-weight:700;color:var(--bad);font-family:var(--mono);flex:none}
+.doc > div{flex:1;min-width:0}
+.doc small{color:var(--muted);display:block}
+
+.lockp{display:grid;gap:14px;justify-items:start;max-width:620px;padding:28px}
+.lockp ul{margin:0;padding-left:18px;color:var(--muted);display:grid;gap:4px}
+
+/* loan */
+.banks{display:grid;gap:10px}
+.bank{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:12px;align-items:center;border:1.5px solid var(--line);border-radius:12px;padding:12px 14px;cursor:pointer;background:var(--bg)}
+.bank:has(input:checked){border-color:var(--accent);background:var(--accent-soft)}
+.bank input{accent-color:var(--accent)}
+.bank .rate{font-family:var(--mono);font-size:14px;text-align:right}
+.field{display:grid;gap:6px}
+.field label{font-size:13px;font-weight:600}
+.field .rg{display:flex;align-items:center;gap:12px}
+.field input[type=range]{flex:1;accent-color:var(--accent);padding:0;border:0}
+.field output{font-family:var(--mono);min-width:72px;text-align:right}
+.emi{display:grid;gap:12px}
+.emi .big{font-family:var(--display);font-size:38px;font-weight:600;line-height:1;color:var(--accent)}
+.tracker{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:8px}
+.tracker li{display:grid;gap:6px;font-size:13px}
+.tracker .bar{height:6px;border-radius:999px;background:var(--surface-2)}
+.tracker li.done .bar{background:var(--accent)}
+.tracker li.now .bar{background:linear-gradient(90deg,var(--accent) 50%,var(--surface-2) 50%)}
+.tracker li.now{font-weight:600}
+.mgr{display:flex;gap:14px;align-items:center;flex-wrap:wrap}
+
+/* refer */
+.steps3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;counter-reset:s}
+.steps3 .card{display:grid;gap:8px;align-content:start}
+.steps3 .n{font-family:var(--mono);font-size:12px;color:var(--accent);font-weight:500}
+.form{display:grid;gap:12px}
+.form .two{display:grid;grid-template-columns:110px minmax(0,1fr);gap:8px}
+.form input,.form select{width:100%}
+.web{display:grid;grid-template-columns:76px minmax(0,1fr) auto;gap:14px;align-items:center;padding:14px 0;border-bottom:1px solid var(--line)}
+.web:last-child{border-bottom:0}
+.date{border:1px solid var(--line);border-radius:10px;text-align:center;padding:6px 0;background:var(--bg)}
+.date b{display:block;font-family:var(--display);font-size:24px;line-height:1}
+.date span{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}
+.tz{font-family:var(--mono);font-size:12px;color:var(--muted)}
+.linkbox{display:flex;gap:8px;align-items:center;background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:6px 6px 6px 12px}
+.linkbox code{font-family:var(--mono);font-size:13px;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;user-select:all}
+
+/* broker */
+.kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px}
+.kpi{display:grid;gap:4px}
+.kpi b{font-family:var(--display);font-size:28px;font-weight:600;line-height:1.1}
+.goal{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:18px;align-items:center;background:linear-gradient(120deg,var(--accent-soft),var(--gold-soft));border:1px solid var(--line);border-radius:var(--r);padding:20px}
+.pips{display:grid;grid-template-columns:repeat(10,minmax(0,1fr));gap:5px;margin-top:12px}
+.pips i{height:10px;border-radius:3px;background:var(--bg);border:1px solid var(--line)}
+.pips i.on{background:var(--accent);border-color:var(--accent)}
+.prizes{display:flex;gap:10px;flex-wrap:wrap}
+.prize{display:flex;align-items:center;gap:10px;background:var(--bg);border-radius:12px;padding:10px 14px;border:1px solid var(--line)}
+.prize svg{width:30px;height:30px;color:var(--gold)}
+.rank{font-family:var(--mono);font-weight:500;width:26px;height:26px;border-radius:50%;display:inline-grid;place-items:center;background:var(--surface-2);font-size:12px}
+.rank.r1{background:var(--gold);color:var(--gold-ink)}
+.cash{display:grid;gap:14px}
+.cash .big{font-family:var(--display);font-size:34px;font-weight:600;line-height:1}
+.methods{display:flex;gap:8px;flex-wrap:wrap}
+
+/* overlay + toast */
+.scrim{position:fixed;inset:0;z-index:50;background:rgb(6 14 11 / .5);display:grid;place-items:center;padding:16px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+.sheet{background:var(--bg);border:1px solid var(--line);border-radius:18px;max-width:460px;width:100%;max-height:90vh;overflow:auto;padding:22px;display:grid;gap:16px;box-shadow:var(--shadow)}
+.sheet .acts{display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap}
+.toast{position:fixed;left:50%;bottom:calc(84px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);z-index:60;background:var(--fg);color:var(--bg);padding:11px 16px;border-radius:12px;font-size:14px;max-width:min(92vw,520px);box-shadow:var(--shadow)}
+footer{border-top:1px solid var(--line);padding-block:20px;color:var(--muted);font-size:12.5px}
+
+/* home strip */
+.strip{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:22px;align-items:center}
+.strip .ring{width:104px;height:104px}
+.facts-inline{display:flex;flex-wrap:wrap;gap:4px 14px;color:var(--muted);margin-top:4px}
+.facts-inline span::before{content:"·";margin-right:6px;color:var(--faint)}
+.facts-inline span:first-child::before{content:none}
+
+/* guest funnel */
+body.guest .tabs{display:none}
+.gwrap{max-width:800px;margin:0 auto;width:100%;display:grid;gap:24px}
+.gprog{display:grid;gap:8px}
+.gsteps{display:flex;gap:4px}
+.gsteps i{flex:1;height:5px;border-radius:999px;background:var(--surface-2)}
+.gsteps i.on{background:var(--accent)}
+.gsteps i.cur{background:var(--gold)}
+.gprog .lbl{display:flex;justify-content:space-between;gap:10px;font-size:12px;color:var(--muted)}
+.invite{display:inline-flex;gap:10px;align-items:center;background:var(--surface);border:1px solid var(--line);border-radius:999px;padding:5px 14px 5px 5px;justify-self:start;font-size:13.5px;max-width:100%}
+.invite .avatar{width:32px;height:32px;font-size:12px}
+.ghead{display:grid;gap:10px}
+.ghead h1{font-size:clamp(30px,4.2vw,46px)}
+.player{position:relative;aspect-ratio:16/9;max-width:100%;border-radius:18px;overflow:hidden;background:#0A1712;color:#F2F6F3;isolation:isolate}
+.pl-bg{position:absolute;inset:0;background:radial-gradient(70% 90% at 78% 40%,#1F5A47 0%,#0E2C22 55%,#08140F 100%);z-index:-2}
+.pl-bg::after{content:"";position:absolute;inset:0;background:linear-gradient(90deg,rgb(8 20 15 / .85) 0%,rgb(8 20 15 / .2) 55%,transparent);}
+.pl-fig{position:absolute;right:6%;bottom:0;height:88%;z-index:-1;opacity:.9}
+.pl-host{position:absolute;left:18px;top:16px;display:flex;gap:10px;align-items:center}
+.pl-avatar{width:38px;height:38px;border-radius:50%;background:#D8AC58;color:#1A1205;display:grid;place-items:center;font-family:var(--display);font-weight:700;font-size:14px}
+.pl-host b{display:block;font-family:var(--display);font-size:15px;line-height:1.1}
+.pl-host small{font-size:12px;opacity:.75}
+.pl-tag{position:absolute;right:14px;top:14px;font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;background:rgb(216 172 88 / .2);color:#E8C47E;padding:3px 8px;border-radius:999px}
+.pl-cap{position:absolute;left:18px;right:40%;bottom:30px;display:grid;gap:4px}
+.pl-cap .bn{font-size:clamp(16px,2.4vw,24px);font-weight:600;line-height:1.3;text-wrap:balance}
+.pl-cap .en{font-size:13px;opacity:.75}
+.pl-play{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:66px;height:66px;border-radius:50%;border:0;background:#F2F6F3;color:#0A1712;display:grid;place-items:center;cursor:pointer;box-shadow:0 8px 30px rgb(0 0 0 / .35);transition:transform .15s}
+.pl-play:hover{transform:translate(-50%,-50%) scale(1.06)}
+.player.playing .pl-play{width:40px;height:40px;left:auto;right:14px;top:auto;bottom:16px;transform:none;opacity:.85}
+.pl-bar{position:absolute;left:0;right:0;bottom:0;height:4px;background:rgb(255 255 255 / .15)}
+.pl-bar i{display:block;height:100%;background:#D8AC58;width:0}
+.chapters{display:flex;gap:6px;flex-wrap:wrap}
+.gnav{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:center}
+.linkbtn{background:none;border:0;color:var(--muted);text-decoration:underline;cursor:pointer;font-size:14px;padding:6px}
+.points{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+.points .card{display:grid;gap:6px;align-content:start;background:var(--bg)}
+.ol-steps{list-style:none;margin:0;padding:0;display:grid;gap:10px;counter-reset:st}
+.ol-steps li{display:grid;grid-template-columns:32px minmax(0,1fr);gap:12px;align-items:start;counter-increment:st;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:12px 14px}
+.ol-steps li::before{content:counter(st);width:28px;height:28px;border-radius:50%;background:var(--accent);color:var(--accent-ink);display:grid;place-items:center;font-family:var(--mono);font-size:13px}
+.mini-tiers{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.mini-tiers .tier{padding:14px;gap:8px}
+.q{display:grid;gap:10px}
+.q h3{font-size:16px}
+.fit{display:grid;gap:10px}
+.fitshop{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px;align-items:center;background:var(--bg);border:1px solid var(--line);border-radius:12px;padding:12px 14px}
+.done-badge{width:56px;height:56px;border-radius:50%;background:var(--accent);color:var(--accent-ink);display:grid;place-items:center}
+
+/* funnel map */
+.lanes{display:grid}
+.lane{display:grid;grid-template-columns:230px minmax(0,1fr);gap:16px 24px;padding:20px 0;border-top:1px solid var(--line)}
+.lane:first-child{border-top:0}
+.lane .lk{display:flex;gap:10px;align-items:start}
+.lane .lt{font-family:var(--mono);font-size:12px;width:26px;height:26px;border-radius:7px;background:var(--surface-2);display:grid;place-items:center;flex:none}
+.lane.live .lt{background:var(--gold);color:var(--gold-ink)}
+.flow{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.flow .stg{background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:6px 10px;font-size:13px;line-height:1.3}
+.lane.live .flow .stg{border-color:color-mix(in srgb,var(--accent) 45%,var(--line))}
+.flow .arr{color:var(--faint);font-size:13px}
+.lane .meta{display:grid;grid-template-columns:auto minmax(0,1fr);gap:4px 12px;font-size:13px;margin-top:10px}
+.lane .meta dt{color:var(--muted)}
+.lane .meta dd{margin:0}
+.lane code{font-family:var(--mono);font-size:12.5px;background:var(--surface-2);padding:1px 6px;border-radius:5px;word-break:break-all}
+.rules{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
+.rules .card{display:grid;gap:6px;align-content:start}
+@media (max-width:780px){
+  .strip{grid-template-columns:auto minmax(0,1fr)}
+  .strip .btn{grid-column:1 / -1;justify-self:start}
+  .points,.rules,.mini-tiers{grid-template-columns:minmax(0,1fr)}
+  .lane{grid-template-columns:minmax(0,1fr)}
+  .pl-cap{right:18px;bottom:26px}
+  .pl-fig{opacity:.35}
+}
+
+
+/* reviews template */
+.rev-wrap{display:grid;gap:16px}
+.revs{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}
+.rev{display:grid;gap:12px;align-content:start;background:var(--bg);border:1.5px dashed var(--line);border-radius:var(--r);padding:16px;position:relative}
+.rev .tpl{position:absolute;top:10px;right:10px;font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--gold);background:var(--gold-soft);padding:2px 7px;border-radius:999px}
+.rev .vid{aspect-ratio:16/10;max-width:100%;border-radius:10px;background:linear-gradient(150deg,var(--surface-2),var(--surface));display:grid;place-items:center;color:var(--muted);font-size:12px;text-align:center;gap:6px;align-content:center}
+.rev .vid span.pb{width:40px;height:40px;border-radius:50%;background:var(--accent);color:var(--accent-ink);display:grid;place-items:center;margin:0 auto}
+.rev blockquote{margin:0;font-size:15px;line-height:1.5;color:var(--muted);font-style:italic}
+.rev .who{display:flex;gap:10px;align-items:center}
+.rev .who .avatar{width:36px;height:36px;font-size:12px;background:var(--surface-2);color:var(--muted)}
+.rev .who b{display:block;font-size:14px}
+.rev .badges{display:flex;gap:6px;flex-wrap:wrap}
+.rev .badges .pill{font-size:11px;background:var(--accent-soft);color:var(--accent)}
+.trustbar{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
+.trustbar div{display:grid;gap:2px;padding:12px 14px;border:1px solid var(--line);border-radius:12px;background:var(--surface)}
+.trustbar b{font-size:14px}
+.trustbar span{font-size:12px;color:var(--muted)}
+@media (max-width:780px){.revs,.trustbar{grid-template-columns:minmax(0,1fr)}}
+
+
+/* voice guide */
+.vg-fab{position:fixed;right:calc(18px + env(safe-area-inset-right,0px));bottom:calc(18px + env(safe-area-inset-bottom,0px));z-index:45;display:flex;align-items:center;gap:10px;border:0;cursor:pointer;background:var(--accent);color:var(--accent-ink);border-radius:999px;padding:8px 16px 8px 8px;box-shadow:0 10px 30px rgb(15 110 86 / .35);font-weight:600;font-size:14px}
+.vg-fab .orb{width:40px;height:40px;border-radius:50%;background:var(--gold);color:var(--gold-ink);display:grid;place-items:center;position:relative}
+.vg-fab .orb::after{content:"";position:absolute;inset:-4px;border-radius:50%;border:2px solid var(--gold);opacity:.6;animation:vgpulse 2.2s ease-out infinite}
+@keyframes vgpulse{0%{transform:scale(.9);opacity:.7}100%{transform:scale(1.35);opacity:0}}
+.vg-fab[aria-expanded="true"]{display:none}
+.vg{position:fixed;right:calc(16px + env(safe-area-inset-right,0px));bottom:calc(16px + env(safe-area-inset-bottom,0px));z-index:46;width:min(380px,calc(100vw - 32px));max-height:min(620px,calc(100vh - 120px));display:flex;flex-direction:column;background:var(--bg);border:1px solid var(--line);border-radius:20px;box-shadow:0 20px 60px rgb(0 0 0 / .22);overflow:hidden}
+.vg-head{display:flex;align-items:center;gap:10px;padding:12px 14px;background:var(--accent);color:var(--accent-ink)}
+.vg-head .orb{width:38px;height:38px;border-radius:50%;background:var(--gold);color:var(--gold-ink);display:grid;place-items:center;flex:none}
+.vg-head b{display:block;font-family:var(--display);font-size:16px;line-height:1.1}
+.vg-head small{font-size:12px;opacity:.85}
+.vg-head .sp{margin-left:auto;display:flex;gap:4px}
+.vg-ic{width:32px;height:32px;border-radius:8px;border:0;background:rgb(255 255 255 / .15);color:inherit;display:grid;place-items:center;cursor:pointer;font-size:12px;font-weight:700}
+.vg-ic[aria-pressed="true"]{background:rgb(255 255 255 / .32)}
+.vg-body{padding:14px;overflow:auto;display:grid;gap:12px;align-content:start;flex:1}
+.vg-say{display:grid;gap:6px;background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:12px 14px}
+.vg-say p{font-size:14.5px;line-height:1.5}
+.vg-say .sub{font-size:12.5px;color:var(--muted)}
+.vg-wave{display:flex;gap:3px;align-items:end;height:16px}
+.vg-wave i{width:3px;border-radius:2px;background:var(--accent);height:4px}
+.vg.speaking .vg-wave i{animation:vgw .9s ease-in-out infinite}
+.vg-wave i:nth-child(2){animation-delay:.1s}.vg-wave i:nth-child(3){animation-delay:.2s}.vg-wave i:nth-child(4){animation-delay:.3s}.vg-wave i:nth-child(5){animation-delay:.4s}
+@keyframes vgw{0%,100%{height:4px}50%{height:16px}}
+.vg-row{display:flex;gap:8px;flex-wrap:wrap}
+.vg-qs{display:flex;gap:6px;flex-wrap:wrap}
+.vg-qs .chip{font-size:12.5px;padding:5px 10px}
+.vg-ask{display:flex;gap:6px;padding:10px 12px;border-top:1px solid var(--line);background:var(--bg)}
+.vg-ask input{flex:1;min-width:0;border-radius:999px;padding:8px 14px}
+.vg-ask button{border-radius:999px}
+.vg-step{font-family:var(--mono);font-size:11.5px;color:var(--muted)}
+.vg-note{font-size:11.5px;color:var(--muted)}
+.spot{position:relative;z-index:5;outline:3px solid var(--gold)!important;outline-offset:4px;border-radius:12px;animation:spotp 1.4s ease-in-out infinite}
+@keyframes spotp{0%,100%{outline-offset:4px}50%{outline-offset:9px}}
+
+@media (max-width:1060px){
+  .shops-layout{grid-template-columns:160px minmax(0,1fr)}
+  .detail{grid-column:1 / -1;position:static}
+  .tiers{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .facts{grid-template-columns:repeat(3,minmax(0,1fr))}
+  .fact:nth-child(3){border-right:0}
+  .fact:nth-child(-n+3){border-bottom:1px solid var(--line)}
+  .kpis{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+@media (max-width:780px){
+  .hero,.prog,.grid2,.grid3,.contact,.steps3{grid-template-columns:minmax(0,1fr)}
+  .shops-layout{grid-template-columns:minmax(0,1fr)}
+  .fstack{grid-template-columns:repeat(3,minmax(0,1fr))}
+  .fbtn{grid-template-columns:auto minmax(0,1fr)}
+  .fbtn .fc{display:none}
+  .gallery{grid-template-columns:1fr 1fr;grid-template-rows:200px 130px 130px}
+  .shot:nth-child(1){grid-column:span 2;grid-row:auto}
+  .tracker{grid-template-columns:repeat(3,minmax(0,1fr))}
+  .goal{grid-template-columns:minmax(0,1fr)}
+  .summary{margin-left:0}
+}
+@media (max-width:480px){
+  .tiers,.kpis{grid-template-columns:minmax(0,1fr)}
+  .facts{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .fact{border-right:1px solid var(--line)!important;border-bottom:1px solid var(--line)}
+  .fact:nth-child(2n){border-right:0!important}
+  .web{grid-template-columns:64px minmax(0,1fr)}
+  .web .btn{grid-column:1 / -1}
+  .brand .bn{display:none}
+}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style>
+
+<header class="top">
+  <div class="wrap">
+    <div class="top-in">
+      <div class="brand"><span class="mark">WECON</span><b>Citizen Avenue Mall</b><span class="bn">সিটিজেন এভিনিউ · চট্টগ্রাম</span></div>
+      <span class="proto">Prototype</span>
+      <button class="btn sm" id="holds-btn" data-holds hidden>My holds <b class="num">0</b></button>
+      <div class="seg" role="group" aria-label="View as">
+        <button data-role="visitor" aria-pressed="true">Visitor</button>
+        <button data-role="customer" aria-pressed="false">Customer</button>
+        <button data-role="broker" aria-pressed="false">Broker</button>
+        <button data-role="guest" aria-pressed="false">Guest link</button>
+      </div>
+      <select id="cur" class="cur-sel" aria-label="Second currency">
+        <option value="BDT">BDT only</option><option value="AED" selected>+ AED</option><option value="SAR">+ SAR</option><option value="QAR">+ QAR</option><option value="KWD">+ KWD</option><option value="OMR">+ OMR</option>
+      </select>
+    </div>
+    <nav class="tabs" aria-label="Sections">
+      <button data-tab="home" aria-current="page">The Mall</button>
+      <button data-tab="shops">Shops &amp; Packages</button>
+      <button data-tab="unit">My Unit<svg class="lock" data-lock="customer" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg></button>
+      <button data-tab="loan">Bank Loan</button>
+      <button data-tab="refer">Learn &amp; Earn</button>
+      <button data-tab="broker">Broker Panel<svg class="lock" data-lock="broker" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg></button>
+      <button data-tab="funnels">Funnel map</button>
+    </nav>
+  </div>
+</header>
+
+<main class="wrap">
+
+<!-- HOME -->
+<section class="view" id="v-home">
+  <div class="hero">
+    <div class="hero-copy">
+      <span class="eyebrow">Chattogram · 9 floors · Under construction</span>
+      <h1>Own a shop back home, without flying home.</h1>
+      <p class="bn-line">দেখুন, বুকিং দিন, কিস্তি দিন — সব এক জায়গায়।</p>
+      <p class="lead">144 shops across 9 floors. Prices step up as construction moves. Book before the next milestone to keep today's rate.</p>
+      <div class="row">
+        <button class="btn primary" data-go="shops">See available shops</button>
+        <button class="btn" data-go="guest"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M7 4l14 8-14 8z"/></svg>Tour with Tariq Anam</button>
+      </div>
+    </div>
+    <div class="stack-wrap">
+      <div id="stack"></div>
+      <div class="legend"><span><i class="sw av"></i>Available</span><span><i class="sw hd"></i>On hold</span><span><i class="sw bk"></i>Booked</span></div>
+    </div>
+  </div>
+
+  <div class="alert-slot"></div>
+
+  <section>
+    <div class="sec-head">
+      <div><span class="eyebrow">Packages</span><h2>Pavilion, showroom, stall or kiosk</h2></div>
+    </div>
+    <div class="tiers" id="tiers"></div>
+  </section>
+
+  <section id="reviews-home"></section>
+
+  <section class="card strip">
+    <div id="ring-home"></div>
+    <div style="display:grid;gap:4px;min-width:0"><span class="eyebrow">Site progress</span><h3 id="now-ms"></h3><p class="muted small" id="next-ms"></p>
+      <p class="small facts-inline"><span>39.6 katha</span><span>5 lifts</span><span>5 escalator pairs</span><span>47 car + 6 bike parking</span></p></div>
+    <button class="btn sm" data-role-switch="customer" data-go="unit">Buyers: watch it live</button>
+  </section>
+
+  <section class="contact">
+    <div class="card"><span class="eyebrow">Sales hotline</span><span class="hotline">096 667 93266</span><span class="muted small" id="clock-line"></span><button class="btn sm" data-copy="09666793266" style="justify-self:start">Copy number</button></div>
+    <div class="card"><span class="eyebrow">WhatsApp agent</span><p>Chat in Bangla or English. Replies in your local hours.</p><button class="btn sm primary" style="justify-self:start" data-toast="Demo: this would open the WhatsApp agent line.">Open WhatsApp</button></div>
+    <div class="card"><span class="eyebrow">Visit or video call</span><p>Send family to the site, or take a video walkthrough at your local time.</p><button class="btn sm" style="justify-self:start" data-book-visit>Book a slot</button></div>
+  </section>
+</section>
+
+<!-- SHOPS -->
+<section class="view" id="v-shops" hidden>
+  <div class="alert-slot"></div>
+  <section>
+    <div class="sec-head"><div><span class="eyebrow">Inventory</span><h2>Choose a floor, then a shop</h2></div></div>
+    <div class="toolbar">
+      <div class="chips" id="tier-chips"></div>
+      <label class="toggle"><input type="checkbox" id="only-av"><span class="tr"></span>Available only</label>
+      <label class="toggle"><input type="checkbox" id="esc-only"><span class="tr"></span>Escalator-facing</label>
+      <div class="summary" id="summary"></div>
+    </div>
+    <div class="shops-layout">
+      <div class="fstack" id="fstack"></div>
+      <div class="card mapcard">
+        <div class="maphead"><h3 id="map-title"></h3><span class="muted small" id="map-sub"></span></div>
+        <div class="map-scroll"><div class="map" id="map"></div></div>
+        <div class="legend" style="justify-content:flex-start"><span><i class="sw av"></i>Available</span><span><i class="sw hd"></i>On hold (72h)</span><span><i class="sw bk"></i>Booked</span><span><i class="sw" style="background:var(--gold-soft);border:2px solid var(--gold)"></i>Your unit</span></div>
+      </div>
+      <div class="detail" id="detail"></div>
+    </div>
+  </section>
+</section>
+
+<!-- UNIT -->
+<section class="view" id="v-unit" hidden></section>
+
+<!-- LOAN -->
+<section class="view" id="v-loan" hidden></section>
+
+<!-- REFER -->
+<section class="view" id="v-refer" hidden></section>
+
+<!-- BROKER -->
+<section class="view" id="v-broker" hidden></section>
+<section class="view" id="v-guest" hidden></section>
+<section class="view" id="v-funnels" hidden></section>
+
+</main>
+<footer><div class="wrap">Prototype for WECON Properties. Prices, inventory, banks, broker names and progress are sample data for review, not offers. Price forecasts are estimates tied to the planned construction ladder.</div></footer>
+
+<div class="scrim" id="scrim" hidden><div class="sheet" role="dialog" aria-modal="true" id="sheet"></div></div>
+<button class="vg-fab" id="vg-fab" aria-expanded="false" aria-controls="vg"><span class="orb"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3z"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg></span>Ask Sathi</button>
+<section class="vg" id="vg" hidden aria-label="Sathi voice guide">
+  <div class="vg-head"><span class="orb"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3z"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg></span>
+    <div><b>Sathi · সাথী</b><small>Your guide to this website</small></div>
+    <div class="sp"><button class="vg-ic" data-vglang="bn" aria-pressed="true" aria-label="Bangla">বাং</button><button class="vg-ic" data-vglang="en" aria-pressed="false" aria-label="English">EN</button><button class="vg-ic" data-vg="mute" aria-pressed="false" aria-label="Mute voice"></button><button class="vg-ic" data-vg="close" aria-label="Close guide">✕</button></div></div>
+  <div class="vg-body" id="vg-body"></div>
+  <form class="vg-ask" id="vg-form"><input id="vg-in" placeholder="Ask anything… / প্রশ্ন লিখুন" aria-label="Ask Sathi" autocomplete="off"><button class="btn sm primary" type="submit">Ask</button></form>
+</section>
+<div class="toast" id="toast" role="status" hidden></div>
+
+<script>
+(function(){
+const $=(s,r=document)=>r.querySelector(s), $$=(s,r=document)=>[...r.querySelectorAll(s)];
+const store={get(k,d){try{const v=localStorage.getItem('cam_'+k);return v==null?d:JSON.parse(v)}catch(e){return d}},set(k,v){try{localStorage.setItem('cam_'+k,JSON.stringify(v))}catch(e){}}};
+
+/* ---------- data ---------- */
+const RATES={BDT:1,AED:33.2,SAR:32.5,QAR:33.5,KWD:397,OMR:317};
+const FLOORS=[
+ {label:'G',name:'Ground floor',use:'Flagship & kiosks',base:34000},
+ {label:'1',name:'Level 1',use:'Fashion & jewellery',base:29500},
+ {label:'2',name:'Level 2',use:'Showrooms',base:26500},
+ {label:'3',name:'Level 3',use:'Electronics & mobile',base:24500},
+ {label:'4',name:'Level 4',use:'Home & lifestyle',base:22500},
+ {label:'5',name:'Level 5',use:'Kids & sports',base:21000},
+ {label:'6',name:'Level 6',use:'Food court',base:20500},
+ {label:'7',name:'Level 7',use:'Commercial space',base:18500},
+ {label:'8',name:'Level 8',use:'Commercial space',base:17500}];
+const TIERS={
+ platinum:{name:'Platinum Pavilion',short:'Pavilion',fair:'Like a fair pavilion',mult:1.12,min:1000,max:3000,comm:100000,
+   perks:['1,000–3,000 sft corner frontage','Façade signage slot','2 reserved car parks','Priority fit-out window']},
+ luxury:{name:'Luxury Showroom',short:'Showroom',fair:'Like a fair showroom',mult:1.06,min:500,max:1200,comm:70000,
+   perks:['500–1,200 sft showroom','Atrium or corridor frontage','1 reserved car park']},
+ gold:{name:'Gold Stall',short:'Stall',fair:'Like a fair stall',mult:1,min:220,max:480,comm:40000,
+   perks:['220–480 sft stall','Fashion, mobile, accessories','36-month installment plan']},
+ silver:{name:'Silver Kiosk',short:'Kiosk',fair:'Like a fair kiosk',mult:1.03,min:100,max:200,comm:25000,
+   perks:['100–200 sft kiosk','Lowest entry ticket','Good first NRB investment']}};
+const TIER_KEYS=['platinum','luxury','gold','silver'];
+const LAYOUT=[[1,1,2,'platinum'],[3,1,1,'gold'],[4,1,1,'gold'],[5,1,2,'luxury'],
+ [1,2,1,'luxury'],[2,2,1,'gold'],[5,2,1,'gold'],[6,2,1,'luxury'],
+ [1,3,1,'gold'],[2,3,1,'silver'],[5,3,1,'silver'],[6,3,1,'gold'],
+ [1,4,2,'luxury'],[3,4,1,'silver'],[4,4,1,'silver'],[5,4,2,'platinum']];
+const ESC=new Set(['3,1','4,1','2,2','2,3','5,2','5,3','3,4','4,4']);
+const MS=[
+ {k:'Launch & first bookings',p:0,idx:100,date:'Jun 2026'},
+ {k:'Piling complete',p:15,idx:104,date:'Sep 2026'},
+ {k:'Basement & podium slab',p:30,idx:109,date:'Dec 2026'},
+ {k:'Structure to level 5',p:50,idx:115,date:'Jun 2027'},
+ {k:'Roof casting',p:70,idx:122,date:'Dec 2027'},
+ {k:'Finishing & MEP',p:90,idx:130,date:'Jun 2028'},
+ {k:'Handover',p:100,idx:138,date:'Dec 2028'}];
+const PROGRESS=18, CUR_MS=1, NEXT_REV=new Date('2026-12-15T00:00:00+06:00');
+
+function rng(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296}}
+const R=rng(20261019);
+const SHOPS=[];
+FLOORS.forEach((f,fi)=>LAYOUT.forEach(([c,r,cs,tier],i)=>{
+  const T=TIERS[tier], esc=ESC.has(c+','+r);
+  const sft=Math.round((T.min+R()*(T.max-T.min))/10)*10;
+  const psf=Math.round(f.base*T.mult*(esc?1.06:1)/100)*100;
+  const roll=R(), pb=Math.max(.16,.74-fi*.075);
+  const status=roll<pb?'booked':roll<pb+.08?'held':'available';
+  SHOPS.push({id:f.label+'-'+String(i+1).padStart(2,'0'),floor:fi,c,r,cs,tier,esc,sft,psf,total:sft*psf,status});
+}));
+const MYUNIT=SHOPS.find(s=>s.floor===2&&s.tier==='luxury');
+MYUNIT.status='yours';MYUNIT.sft=820;MYUNIT.total=MYUNIT.sft*MYUNIT.psf;
+const ME={name:'Mohammad Rafiq Uddin',init:'RU',city:'Dubai, UAE',phone:'+971 50 412 7781',passport:'BX0•••••41',income:'AED 14,500 / month',since:'12 Jun 2026'};
+
+const state={
+  role:'visitor',tab:'home',cur:store.get('cur','AED'),floor:2,sel:null,tier:'all',onlyAv:false,escOnly:false,
+  alertOn:store.get('alert',false),
+  loan:{bank:0,pct:50,yrs:10,stage:-1,shopId:null},
+  cam:0,
+  cash:{avail:145000,history:[{d:'02 Oct 2026',a:70000,m:'bKash',s:'Paid'},{d:'14 Sep 2026',a:40000,m:'Bank EFT',s:'Paid'}]},
+  refs:[{n:'Rashed Karim',c:'Abu Dhabi',s:'Attended webinar · gift dispatched'},{n:'Mitu Begum',c:'Jeddah',s:'Registered · invited to 22 Oct'}]
+};
+
+/* ---------- format ---------- */
+const nf=new Intl.NumberFormat('en-IN');
+const bdt=n=>'৳'+nf.format(Math.round(n));
+function compact(n){if(n>=1e7)return '৳'+(n/1e7).toFixed(2)+' cr';if(n>=1e5)return '৳'+(n/1e5).toFixed(1)+' lakh';return bdt(n)}
+function fx(n){if(state.cur==='BDT')return '';const v=n/RATES[state.cur];return state.cur+' '+new Intl.NumberFormat('en-US',{maximumFractionDigits:v<1000?1:0}).format(v)}
+function fxSpan(n){const f=fx(n);return f?`<span class="fx">≈ ${f}</span>`:''}
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+function daysTo(d){return Math.max(0,Math.ceil((d-new Date())/864e5))}
+function fmtTZ(d,tz,o){return new Intl.DateTimeFormat('en-GB',Object.assign({timeZone:tz},o)).format(d)}
+
+/* ---------- UI helpers ---------- */
+let toastT;
+function toast(m){const t=$('#toast');t.textContent=m;t.hidden=false;clearTimeout(toastT);toastT=setTimeout(()=>t.hidden=true,3400)}
+function sheet({title,body,ok='Confirm',okClass='primary',onOk,cancel='Cancel'}){
+  const s=$('#sheet');
+  s.innerHTML=`<h3 id="sh-t">${title}</h3><div>${body}</div><div class="acts">${cancel?`<button class="btn" data-x>${cancel}</button>`:''}<button class="btn ${okClass}" data-ok>${ok}</button></div>`;
+  s.setAttribute('aria-labelledby','sh-t');
+  $('#scrim').hidden=false;
+  const close=()=>{$('#scrim').hidden=true};
+  $('[data-x]',s)&&($('[data-x]',s).onclick=close);
+  $('[data-ok]',s).onclick=()=>{const r=onOk?onOk(s):true;if(r!==false)close()};
+  setTimeout(()=>($('input,select',s)||$('[data-ok]',s)).focus(),30);
+}
+$('#scrim').addEventListener('click',e=>{if(e.target.id==='scrim')closeSheet()});
+document.addEventListener('keydown',e=>{if(e.key==='Escape')closeSheet()});
+function copy(text,label){
+  const done=()=>toast((label||'Copied')+': '+text);
+  try{navigator.clipboard.writeText(text).then(done,()=>toast('Select and copy: '+text))}catch(e){toast('Select and copy: '+text)}
+}
+
+/* ---------- navigation ---------- */
+function syncSeg(){$$('.seg button').forEach(b=>b.setAttribute('aria-pressed',b.dataset.role===state.role));$$('.tabs .lock').forEach(l=>l.style.display=l.dataset.lock===state.role?'none':'')}
+function go(tab){
+  if(state.tab==='guest'&&tab!=='guest')stopPlayer();
+  if(tab==='guest')state.role='guest';else if(state.role==='guest')state.role='visitor';
+  syncSeg();
+  document.body.classList.toggle('guest',tab==='guest');
+  state.tab=tab;
+  $$('.tabs button').forEach(b=>b.setAttribute('aria-current',b.dataset.tab===tab?'page':'false'));
+  $$('.view').forEach(v=>v.hidden=v.id!=='v-'+tab);
+  try{history.replaceState(null,'','#'+(tab==='guest'?'r-'+state.g.ref:tab))}catch(e){}
+  render();
+  if(typeof vg!=='undefined'&&vg.open){vg.tour=null;spotOn(null);vgRender()}
+  window.scrollTo({top:0,behavior:'instant'in window?'instant':'auto'});
+}
+function setRole(r){
+  if(r==='guest'){state.g.step=0;go('guest');return}
+  state.role=r;syncSeg();
+  if(state.tab==='guest'){go('home');return}
+  render();
+}
+
+/* ---------- shared pieces ---------- */
+function alertHTML(){
+  const d=daysTo(NEXT_REV), nx=MS[CUR_MS+1], pct=((nx.idx/MS[CUR_MS].idx-1)*100).toFixed(1);
+  return `<div class="alert" role="region" aria-label="Price rise alert">
+   <div class="ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M3 17l6-6 4 4 8-8"/><path d="M15 7h6v6"/></svg></div>
+   <div class="txt"><b>Price rise alert: about +${pct}% at the next milestone.</b> When the ${nx.k.toLowerCase()} is done (est. ${nx.date}), every unsold shop moves to the next price step. Bookings made before then keep today's rate.</div>
+   <div class="cd"><span class="num">${d}</span><span class="muted small">days left (est.)</span></div>
+   <label class="toggle"><input type="checkbox" data-alert ${state.alertOn?'checked':''}><span class="tr"></span>Notify me</label>
+  </div>`;
+}
+function ringSVG(p,size=132){
+  const r=52,C=2*Math.PI*r,off=C*(1-p/100);
+  return `<svg class="ring" viewBox="0 0 132 132" width="${size}" height="${size}" role="img" aria-label="${p}% complete">
+   <circle cx="66" cy="66" r="${r}" fill="none" stroke="var(--surface-2)" stroke-width="12"/>
+   <circle cx="66" cy="66" r="${r}" fill="none" stroke="var(--accent)" stroke-width="12" stroke-linecap="round" stroke-dasharray="${C}" stroke-dashoffset="${off}" transform="rotate(-90 66 66)"/>
+   <text x="66" y="66" text-anchor="middle" font-family="Familjen Grotesk, sans-serif" font-size="30" font-weight="600" fill="var(--fg)">${p}%</text>
+   <text x="66" y="86" text-anchor="middle" font-size="11" fill="var(--muted)">built</text></svg>`;
+}
+function msHTML(){
+  return MS.map((m,i)=>{
+    const cls=i<=CUR_MS?'done':i===CUR_MS+1?'now':'';
+    const step=i===0?'Base price':`+${((m.idx/MS[i-1].idx-1)*100).toFixed(1)}% price`;
+    return `<li class="${cls}"><span class="mk"></span><div><b style="font-weight:600">${m.k}</b><div class="muted small">${m.p}% built · ${m.date}${i>CUR_MS?' (est.)':''}${cls==='now'?' · in progress':''}</div></div><div class="step"><b>${step}</b>index ${m.idx}</div></li>`;
+  }).join('');
+}
+function ladderSVG(psf){
+  const W=320,H=150,pad=22,bw=(W-pad*2)/MS.length;
+  const lo=90,hi=142, y=v=>H-24-(v-lo)/(hi-lo)*(H-50);
+  let g='';
+  MS.forEach((m,i)=>{
+    const v=m.idx, x=pad+i*bw+4, yy=y(v), cur=i===CUR_MS, past=i<CUR_MS;
+    const p=Math.round(psf*v/MS[CUR_MS].idx/100)/10;
+    g+=`<rect x="${x}" y="${yy}" width="${bw-8}" height="${H-24-yy}" rx="3" fill="${cur?'var(--gold)':past?'var(--surface-2)':'var(--accent)'}" opacity="${past?1:cur?1:.25+i*.1}"/>`;
+    g+=`<text x="${x+(bw-8)/2}" y="${yy-5}" text-anchor="middle" font-size="9.5" font-family="JetBrains Mono, monospace" fill="${cur?'var(--gold)':'var(--muted)'}">${p}k</text>`;
+    g+=`<text x="${x+(bw-8)/2}" y="${H-10}" text-anchor="middle" font-size="9.5" fill="var(--muted)">${m.p}%</text>`;
+  });
+  return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Estimated price per sft at each construction milestone"><line x1="${pad}" x2="${W-pad}" y1="${H-24}" y2="${H-24}" stroke="var(--line)"/>${g}</svg>`;
+}
+function tierCount(t){const s=SHOPS.filter(x=>x.tier===t);return{av:s.filter(x=>x.status==='available').length,hd:s.filter(x=>x.status==='held').length,bk:s.filter(x=>x.status==='booked'||x.status==='yours').length,all:s.length,from:Math.min(...s.filter(x=>x.status==='available').map(x=>x.total)),psf:Math.min(...s.map(x=>x.psf))}}
+
+/* ---------- HOME ---------- */
+function renderHome(){
+  $('#stack').innerHTML=stackSVG();
+  $('#reviews-home').innerHTML=reviewsHTML(false);
+  // tiers
+  $('#tiers').innerHTML=TIER_KEYS.map(k=>{const T=TIERS[k],c=tierCount(k);
+    return `<article class="tier t-${k}"><div><div class="fair">${T.fair}</div><div class="tname">${T.name}</div></div>
+     <ul>${T.perks.map(p=>`<li>${p}</li>`).join('')}</ul>
+     <div style="display:grid;gap:6px"><div class="avbar"><i style="width:${c.bk/c.all*100}%;background:var(--faint)"></i><i style="width:${c.hd/c.all*100}%;background:var(--held)"></i><i style="width:${c.av/c.all*100}%;background:var(--accent)"></i></div>
+     <span class="small"><b class="num">${c.av}</b> available · <span class="num">${c.bk}</span> booked · <span class="num">${c.hd}</span> on hold</span></div>
+     <div class="from"><span class="muted small">From</span><b>${isFinite(c.from)?compact(c.from):'Sold out'}</b>${isFinite(c.from)?fxSpan(c.from):''}</div>
+     <button class="btn sm" data-tier-go="${k}">View ${T.short.toLowerCase()}s</button></article>`}).join('');
+  $('#ring-home').innerHTML=ringSVG(PROGRESS);
+  $('#now-ms').textContent=MS[CUR_MS+1].k+' underway';
+  $('#next-ms').textContent=`${MS[CUR_MS].k} done. Next price step at ${MS[CUR_MS+1].p}% built, est. ${MS[CUR_MS+1].date}.`;
+}
+
+/* ---------- SHOPS ---------- */
+function matches(s){return (state.tier==='all'||s.tier===state.tier)&&(!state.onlyAv||s.status==='available')&&(!state.escOnly||s.esc)}
+function renderShops(){
+  $('#tier-chips').innerHTML=[['all','All packages']].concat(TIER_KEYS.map(k=>[k,TIERS[k].short])).map(([k,l])=>`<button class="chip ${k!=='all'?'t-'+k:''}" data-tier="${k}" aria-pressed="${state.tier===k}">${k!=='all'?'<i class="dot"></i>':''}${l}</button>`).join('');
+  $('#only-av').checked=state.onlyAv;$('#esc-only').checked=state.escOnly;
+  const all=SHOPS.filter(matches);
+  const av=SHOPS.filter(s=>s.status==='available').length, bk=SHOPS.filter(s=>s.status==='booked'||s.status==='yours').length, hd=SHOPS.filter(s=>s.status==='held').length;
+  $('#summary').innerHTML=`<span><b>${av}</b> available</span><span><b>${hd}</b> on hold</span><span><b>${bk}</b> booked</span><span><b>${SHOPS.length}</b> total</span>`;
+  $('#fstack').innerHTML=FLOORS.map((f,i)=>({f,i})).reverse().map(({f,i})=>{const n=SHOPS.filter(s=>s.floor===i&&s.status==='available'&&matches(s)).length;
+    return `<button class="fbtn" data-floor="${i}" aria-pressed="${state.floor===i}"><span class="fl">${f.label==='G'?'G':'L'+f.label}</span><span class="small">${f.use}</span><span class="fc">${n} open</span></button>`}).join('');
+  const f=FLOORS[state.floor];
+  $('#map-title').textContent=`${f.name} · ${f.use}`;
+  $('#map-sub').innerHTML=`Base <span class="num">${bdt(f.base)}</span>/sft today`;
+  let h='';
+  SHOPS.filter(s=>s.floor===state.floor).forEach(s=>{
+    const st=s.status==='yours'&&state.role!=='customer'?'booked':s.status;
+    const T=TIERS[s.tier];
+    h+=`<button class="cell ${st} t-${s.tier} ${matches(s)?'':'dim'}" style="grid-column:${s.c} / span ${s.cs};grid-row:${s.r}" data-shop="${s.id}" aria-pressed="${state.sel===s.id}" aria-label="${s.id}, ${T.name}, ${s.sft} sft, ${st}">
+      <span class="cid"><span>${s.id}</span>${s.esc?'<span title="Escalator-facing">⇅</span>':''}</span>
+      <span class="csz">${s.sft} sft<br>${st==='available'?compact(s.total):st==='yours'?'Your unit':st==='held'?'On hold':'Booked'}</span><i class="tbar"></i></button>`;
+  });
+  h+=`<div class="atrium"><div><svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 38h8l16-26h8"/><path d="M8 30h4l12-20" opacity=".4"/></svg>Atrium · escalators<br>2 lifts</div></div>`;
+  $('#map').innerHTML=h;
+  renderDetail();
+}
+function renderDetail(){
+  const el=$('#detail'), s=SHOPS.find(x=>x.id===state.sel);
+  if(!s){el.innerHTML=`<div class="empty"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 9l1-5h16l1 5"/><path d="M4 9v11h16V9"/><path d="M9 20v-6h6v6"/></svg>Pick a shop on the map to see its price, installments and the construction-linked price forecast.</div>`;return}
+  const T=TIERS[s.tier], st=s.status==='yours'&&state.role!=='customer'?'booked':s.status;
+  const book=s.total*.10, down=s.total*.20, inst=s.total*.70/30;
+  const nx=MS[CUR_MS+1], nextTotal=s.total*nx.idx/MS[CUR_MS].idx, hand=s.total*MS[6].idx/MS[CUR_MS].idx;
+  const label={available:'Available',held:'On hold',booked:'Booked',yours:'Your unit'}[st];
+  const pc={available:'var(--accent)',held:'var(--held)',booked:'var(--muted)',yours:'var(--gold)'}[st];
+  el.innerHTML=`<div class="card">
+   <div style="display:flex;justify-content:space-between;gap:10px;align-items:start"><div><span class="eyebrow">${FLOORS[s.floor].name}</span><h3 style="font-size:22px">Shop ${s.id}</h3></div><span class="pill" style="color:${pc}"><i class="dot"></i>${label}</span></div>
+   <div class="row"><span class="pill tier t-${s.tier}"><i class="dot"></i>${T.name}</span>${s.esc?'<span class="pill">Escalator-facing</span>':''}</div>
+   <div><span class="muted small">Price today</span><div class="price-big">${compact(s.total)}</div>${fxSpan(s.total)}<span class="fx">${s.sft} sft × ${bdt(s.psf)}/sft</span></div>
+   <dl class="kv"><dt>Booking money (10%)</dt><dd>${bdt(book)}</dd><dt>Down payment (20%)</dt><dd>${bdt(down)}</dd><dt>30 monthly installments</dt><dd>${bdt(inst)}</dd></dl>
+   <div class="ladder"><div style="display:flex;justify-content:space-between;gap:8px;align-items:baseline"><b class="small">Price per sft by milestone</b><span class="tz">est.</span></div>${ladderSVG(s.psf)}
+     <dl class="kv small"><dt>At ${nx.p}% built (${nx.date})</dt><dd>${compact(nextTotal)}</dd><dt>At handover (${MS[6].date})</dt><dd>${compact(hand)}</dd><dt>Estimated value gain if you book now</dt><dd style="color:var(--accent)">+${compact(hand-s.total)}</dd></dl>
+     <p class="note">Estimate based on WECON's planned price ladder. Not a guaranteed return.</p></div>
+   ${state.role==='broker'?`<div class="earn"><span>Your gift on this sale</span><b>${bdt(T.comm)}</b></div>`:''}
+   <div class="row">${st==='available'?`<button class="btn primary" data-book="${s.id}">Book this shop</button><button class="btn" data-hold="${s.id}">Hold 72h</button>`:st==='held'?`<button class="btn" data-waitlist="${s.id}">Join waitlist</button>`:st==='yours'?`<button class="btn primary" data-go="unit">Open my unit</button>`:`<button class="btn" data-similar="${s.id}">Show similar</button>`}
+   <button class="btn ghost" data-loan="${s.id}">Bank loan</button><button class="btn ghost" data-share="${s.id}">Share</button></div>
+  </div>`;
+}
+
+/* ---------- UNIT (customer) ---------- */
+function lockHTML(role,title,lines){
+  return `<div class="card lockp"><span class="eyebrow">${role==='customer'?'For buyers':'For brokers'}</span><h2>${title}</h2><ul>${lines.map(l=>`<li>${l}</li>`).join('')}</ul><div class="row"><button class="btn primary" data-role-switch="${role}">Preview as ${role}</button><button class="btn" data-go="shops">Browse shops</button></div></div>`;
+}
+function renderUnit(){
+  const v=$('#v-unit');
+  if(state.role!=='customer'){v.innerHTML=lockHTML('customer','Your shop, live from the site',['Watch the construction site on live cameras','See every installment, receipt and document','Track the price of your unit as milestones finish']);return}
+  const s=MYUNIT, T=TIERS[s.tier], paid=s.total*(.10+.20+ .70/30*3), hand=s.total*MS[6].idx/MS[CUR_MS].idx;
+  const inst=s.total*.70/30;
+  const rows=[['Booking money','12 Jun 2026',s.total*.1,'paid'],['Down payment','10 Jul 2026',s.total*.2,'paid'],['Installment 1 of 30','05 Aug 2026',inst,'paid'],['Installment 2 of 30','05 Sep 2026',inst,'paid'],['Installment 3 of 30','05 Oct 2026',inst,'paid'],['Installment 4 of 30','05 Nov 2026',inst,'due'],['Installment 5 of 30','05 Dec 2026',inst,'up'],['Installment 6 of 30','05 Jan 2027',inst,'up']];
+  v.innerHTML=`
+  <div class="grid2">
+    <div class="card" style="display:grid;gap:16px;align-content:start">
+      <div class="profile"><div class="avatar">${ME.init}</div><div><h3>${ME.name}</h3><span class="muted small">${ME.city} · ${ME.phone}</span></div></div>
+      <dl class="kv"><dt>Buyer since</dt><dd>${ME.since}</dd><dt>Passport</dt><dd class="num">${ME.passport}</dd><dt>Family representative</dt><dd>Abdul Karim (brother), Chattogram</dd><dt>Power of attorney</dt><dd><span class="st paid">Registered</span></dd></dl>
+    </div>
+    <div class="card" style="display:grid;gap:14px;align-content:start;background:var(--gold-soft)">
+      <div style="display:flex;justify-content:space-between;gap:10px"><div><span class="eyebrow">Your unit</span><h3 style="font-size:22px">Shop ${s.id} · ${FLOORS[s.floor].name}</h3></div><span class="pill tier t-${s.tier}"><i class="dot"></i>${T.name}</span></div>
+      <dl class="kv"><dt>Size</dt><dd>${s.sft} sft</dd><dt>Purchase price</dt><dd>${bdt(s.total)}</dd><dt>Paid so far</dt><dd>${bdt(paid)} (${Math.round(paid/s.total*100)}%)</dd><dt>Est. value at handover</dt><dd style="color:var(--accent)">${compact(hand)}</dd></dl>
+      <div class="avbar" style="height:8px"><i style="width:${paid/s.total*100}%;background:var(--accent)"></i></div>
+    </div>
+  </div>
+
+  <section>
+    <div class="sec-head"><div><span class="eyebrow">Construction</span><h2>Live from the site</h2></div><div class="camtabs">${['North gate','Crane top','Podium'].map((n,i)=>`<button class="chip" data-cam="${i}" aria-pressed="${state.cam===i}">${n}</button>`).join('')}</div></div>
+    <div class="prog">
+      <div class="cam"><canvas id="cam" aria-label="Simulated live construction camera"></canvas></div>
+      <div class="card" style="display:grid;gap:14px;align-content:start"><div class="ringbox">${ringSVG(PROGRESS,110)}<div><b>${MS[CUR_MS+1].k}</b><p class="muted small">Latest update 16 Oct: pile caps on grid C–F finished, podium shuttering started.</p></div></div><ol class="ms">${msHTML()}</ol></div>
+    </div>
+  </section>
+
+  <section class="grid2">
+    <div>
+      <div class="sec-head"><div><span class="eyebrow">Payments</span><h2>Installment schedule</h2></div><button class="btn primary sm" data-pay>Pay ${bdt(inst)}</button></div>
+      <div class="card" style="padding:6px 8px"><div class="tbl-scroll"><table><thead><tr><th>Item</th><th>Due</th><th class="r">Amount</th><th>Status</th></tr></thead><tbody>
+      ${rows.map(r=>`<tr><td>${r[0]}</td><td>${r[1]}</td><td class="r num">${bdt(r[2])}${state.cur!=='BDT'?`<br><span class="tz">${fx(r[2])}</span>`:''}</td><td><span class="st ${r[3]}">${{paid:'Paid',due:'Due in '+daysTo(new Date('2026-11-05T00:00:00+06:00'))+' days',up:'Upcoming'}[r[3]]}</span></td></tr>`).join('')}
+      </tbody></table></div><p class="note" style="padding:8px 10px">+ 24 more installments to Nov 2028. Paying from abroad through a bank or exchange house may qualify for the government remittance incentive.</p></div>
+    </div>
+    <div>
+      <div class="sec-head"><div><span class="eyebrow">Documents</span><h2>Your vault</h2></div></div>
+      <div class="docs">${[['Allotment letter','Issued 18 Jun 2026'],['Sale agreement (signed)','Registered 02 Jul 2026'],['Money receipts (5)','Latest 05 Oct 2026'],['CDA building approval','Copy from WECON'],['Power of attorney','Abdul Karim, registered']].map(d=>`<div class="doc"><span class="fi">PDF</span><div><b class="small">${d[0]}</b><small>${d[1]}</small></div><button class="btn sm" data-toast="Demo: ${esc(d[0])} would open here.">Open</button></div>`).join('')}</div>
+    </div>
+  </section>`;
+}
+
+/* ---------- LOAN ---------- */
+const BANKS=[{n:'Partner Bank 1',t:'Commercial space loan',rate:11.5,max:70,rl:'interest'},{n:'Partner Bank 2',t:'Islamic finance (Shariah)',rate:11.0,max:60,rl:'profit rate'},{n:'Partner Bank 3',t:'NRB remittance-linked',rate:10.75,max:50,rl:'interest'}];
+const STAGES=['Submitted','Manager assigned','Documents collected','Bank appraisal','Sanction letter','Disbursed to WECON'];
+function renderLoan(){
+  const v=$('#v-loan');
+  const sid=state.loan.shopId||(state.role==='customer'?MYUNIT.id:(state.sel||MYUNIT.id));
+  const s=SHOPS.find(x=>x.id===sid), B=BANKS[state.loan.bank];
+  const pct=Math.min(state.loan.pct,B.max), P=s.total*pct/100, r=B.rate/1200, n=state.loan.yrs*12;
+  const emi=P*r*Math.pow(1+r,n)/(Math.pow(1+r,n)-1);
+  const opts=SHOPS.filter(x=>x.status==='available'||x.id===sid||x.status==='yours').map(x=>`<option value="${x.id}" ${x.id===sid?'selected':''}>${x.id} · ${TIERS[x.tier].short} · ${x.sft} sft</option>`).join('');
+  v.innerHTML=`
+  <div class="sec-head"><div><span class="eyebrow">Bank loan</span><h2>One click to apply. One manager to handle it.</h2></div><p class="muted small">We send your profile to the bank you choose. A dedicated WECON loan manager collects papers, follows up and reports back to you on WhatsApp.</p></div>
+  <div class="grid2">
+    <div class="card" style="display:grid;gap:18px">
+      <div class="field"><label for="ln-shop">Shop</label><select id="ln-shop">${opts}</select></div>
+      <div class="banks" role="radiogroup" aria-label="Bank">${BANKS.map((b,i)=>`<label class="bank"><input type="radio" name="bank" value="${i}" ${i===state.loan.bank?'checked':''}><div><b>${b.n}</b><div class="muted small">${b.t} · up to ${b.max}%</div></div><span class="rate">${b.rate}%<br><span class="tz">${b.rl}</span></span></label>`).join('')}</div>
+      <div class="field"><label for="ln-pct">Loan amount</label><div class="rg"><input type="range" id="ln-pct" min="20" max="${B.max}" step="5" value="${pct}"><output>${pct}%</output></div></div>
+      <div class="field"><label for="ln-yrs">Tenure</label><div class="rg"><input type="range" id="ln-yrs" min="3" max="15" step="1" value="${state.loan.yrs}"><output>${state.loan.yrs} yrs</output></div></div>
+      <p class="note">Bank names, rates and limits are placeholders until partner agreements are signed. Final approval is the bank's decision.</p>
+    </div>
+    <div style="display:grid;gap:18px;align-content:start">
+      <div class="card emi">
+        <span class="muted small">Estimated monthly payment</span><div class="big">${bdt(emi)}</div>${fxSpan(emi)}
+        <dl class="kv"><dt>Shop price</dt><dd>${bdt(s.total)}</dd><dt>Loan (${pct}%)</dt><dd>${bdt(P)}</dd><dt>Your share</dt><dd>${bdt(s.total-P)}</dd><dt>Total repaid</dt><dd>${bdt(emi*n)}</dd></dl>
+        <button class="btn primary" data-apply ${state.loan.stage>=0?'disabled':''}>${state.loan.stage>=0?'Application in progress':'Apply in one click'}</button>
+      </div>
+      ${state.loan.stage>=0?`<div class="card" style="display:grid;gap:16px">
+        <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap"><b>Application WCL-26-0418 · ${B.n}</b><span class="tz">Shop ${s.id}</span></div>
+        <ol class="tracker">${STAGES.map((t,i)=>`<li class="${i<state.loan.stage?'done':i===state.loan.stage?'now':''}"><span class="bar"></span>${t}</li>`).join('')}</ol>
+        <div class="mgr"><div class="avatar" style="width:44px;height:44px;font-size:15px;background:var(--gold);color:var(--gold-ink)">TH</div><div style="flex:1;min-width:0"><b>Tanvir Hasan</b><div class="muted small">Your dedicated loan manager · replies 10am–8pm Dhaka</div></div><button class="btn sm" data-toast="Demo: WhatsApp chat with your loan manager.">Message</button></div>
+        <button class="btn sm ghost" data-advance style="justify-self:start" ${state.loan.stage>=STAGES.length-1?'disabled':''}>Demo: move to next step</button>
+      </div>`:''}
+    </div>
+  </div>`;
+}
+
+/* ---------- REFER ---------- */
+const WEBS=[
+ {t:Date.UTC(2026,9,22,15,30),title:'How an NRB owns a shop in Bangladesh',sub:'Ownership rights, POA, remittance and tax, in plain Bangla'},
+ {t:Date.UTC(2026,9,31,15,30),title:'Floor-by-floor tour of Citizen Avenue',sub:'Live walk with the site engineer and sales head'},
+ {t:Date.UTC(2026,10,13,10,0),title:'Reading rental yield before you buy',sub:'How to estimate rent, vacancy and payback for a shop'}];
+function renderRefer(){
+  const code=state.role==='broker'?'SABBIR26':state.role==='customer'?'RAFIQ26':'GUEST26';
+  $('#v-refer').innerHTML=`
+  <div class="sec-head"><div><span class="eyebrow">Learn &amp; Earn</span><h2>Bring a friend to a live session. They get a gift.</h2></div><p class="muted small">Every person you register gets a seat in a live webinar about owning a shop from abroad. Attending live earns a WECON product gift.</p></div>
+  <div class="steps3">
+    <div class="card"><span class="n">Step 1</span><h3>Register a friend</h3><p class="muted small">Add their name and phone, or send your link. They confirm with an OTP.</p></div>
+    <div class="card"><span class="n">Step 2</span><h3>They join a live webinar</h3><p class="muted small">Times show in Dhaka and Gulf time. A reminder goes out an hour before.</p></div>
+    <div class="card"><span class="n">Step 3</span><h3>Gift on attendance</h3><p class="muted small">Stay for the session and the product gift is sent. If they book a shop later, your referral is credited.</p></div>
+  </div>
+  <div class="grid2">
+    <div class="card" style="display:grid;gap:16px;align-content:start">
+      <h3>Register a referral</h3>
+      <form class="form" id="ref-form" novalidate>
+        <div class="field"><label for="rf-name">Full name</label><input id="rf-name" required placeholder="e.g. Shahidul Islam"></div>
+        <div class="field"><label for="rf-phone">Phone</label><div class="two"><select id="rf-cc"><option>+971</option><option>+966</option><option>+974</option><option>+965</option><option>+968</option><option>+973</option><option>+880</option></select><input id="rf-phone" inputmode="tel" required placeholder="50 123 4567"></div></div>
+        <div class="field"><label for="rf-web">Webinar</label><select id="rf-web">${WEBS.map((w,i)=>`<option value="${i}">${fmtTZ(new Date(w.t),'Asia/Dhaka',{day:'numeric',month:'short'})} · ${w.title}</option>`).join('')}</select></div>
+        <button class="btn primary" type="submit">Register and send invite</button>
+        <p class="note" id="rf-err" hidden></p>
+      </form>
+      <div class="field"><label>Your referral link</label><div class="linkbox"><code>wecon.com.bd/citizen/r/${code}</code><button class="btn sm" data-copy="https://wecon.com.bd/citizen/r/${code}">Copy</button><button class="btn sm" data-preview-ref="${code}">Preview</button></div></div>
+      <div><b class="small">Your referrals</b><div class="docs" style="margin-top:8px">${state.refs.map(r=>`<div class="doc"><div><b class="small">${esc(r.n)}</b><small>${esc(r.c)}</small></div><span class="st ${/gift/.test(r.s)?'paid':'due'}">${esc(r.s)}</span></div>`).join('')}</div></div>
+    </div>
+    <div class="card" style="align-content:start">
+      <h3>Upcoming live sessions</h3>
+      ${WEBS.map(w=>{const d=new Date(w.t);return `<div class="web"><div class="date"><span>${fmtTZ(d,'Asia/Dhaka',{month:'short'})}</span><b>${fmtTZ(d,'Asia/Dhaka',{day:'numeric'})}</b><span>${fmtTZ(d,'Asia/Dhaka',{weekday:'short'})}</span></div>
+        <div style="min-width:0"><b>${w.title}</b><div class="muted small">${w.sub}</div><div class="tz">${fmtTZ(d,'Asia/Dhaka',{hour:'numeric',minute:'2-digit'})} Dhaka · ${fmtTZ(d,'Asia/Dubai',{hour:'numeric',minute:'2-digit'})} Dubai · ${fmtTZ(d,'Asia/Riyadh',{hour:'numeric',minute:'2-digit'})} Riyadh/Doha</div></div>
+        <button class="btn sm" data-toast="Seat reserved. A reminder will go out an hour before.">Reserve seat</button></div>`}).join('')}
+      <div class="earn" style="margin-top:14px"><span>Gift for attending live</span><b>WECON product gift</b></div>
+    </div>
+  </div>`;
+  $('#ref-form').addEventListener('submit',e=>{e.preventDefault();
+    const n=$('#rf-name').value.trim(), p=$('#rf-phone').value.replace(/\D/g,''), err=$('#rf-err');
+    if(n.length<3||p.length<7){err.hidden=false;err.textContent='Add a full name and a phone number with at least 7 digits.';return}
+    const w=WEBS[+$('#rf-web').value];
+    state.refs.unshift({n,c:$('#rf-cc').value+' '+p,s:'Registered · invited to '+fmtTZ(new Date(w.t),'Asia/Dhaka',{day:'numeric',month:'short'})});
+    renderRefer();toast(n+' registered. Webinar invite sent by SMS and WhatsApp.');
+  });
+}
+
+/* ---------- BROKER ---------- */
+const BOARD=[['Nusrat Jahan','Dubai',14,1180000],['Kamrul Islam','Riyadh',11,905000],['Farhana Akter','Doha',9,690000],['Sabbir Ahmed','Chattogram',7,415000,1],['Imran Chowdhury','Muscat',6,380000],['Jahid Hasan','Kuwait City',4,215000],['Shirin Sultana','Jeddah',3,150000]];
+function renderBroker(){
+  const v=$('#v-broker');
+  if(state.role!=='broker'){v.innerHTML=lockHTML('broker','Sell Citizen Avenue. Earn up to ৳1 lakh per shop.',['Gift of ৳25,000 to ৳1,00,000 for every shop you sell','Sell 10 or more: a motorbike plus an Umrah package','Instant cashout to bKash, Nagad or your bank','See exactly what you earn on every available shop']);return}
+  const sales=7, avail=SHOPS.filter(s=>s.status==='available').sort((a,b)=>TIERS[b.tier].comm-TIERS[a.tier].comm||b.total-a.total);
+  v.innerHTML=`
+  <div class="sec-head"><div><span class="eyebrow">Broker panel · Sabbir Ahmed</span><h2>Your sales and gifts</h2></div><span class="pill">Broker ID WB-0217</span></div>
+  <div class="kpis">
+    <div class="card kpi"><span class="muted small">Shops sold</span><b>${sales}</b><span class="tz">since Jun 2026</span></div>
+    <div class="card kpi"><span class="muted small">Gifts earned</span><b>${compact(415000)}</b><span class="tz">${bdt(415000)}</span></div>
+    <div class="card kpi"><span class="muted small">Ready to cash out</span><b style="color:var(--accent)">${bdt(state.cash.avail)}</b><span class="tz">cleared bookings</span></div>
+    <div class="card kpi"><span class="muted small">Leaderboard</span><b>#4</b><span class="tz">of 62 brokers</span></div>
+  </div>
+  <div class="goal">
+    <div><b style="font-family:var(--display);font-size:20px">${10-sales} more sales to unlock the 10+ club</b><p class="muted small">Sell 10 shops in the launch season and win a motorbike and an Umrah package, on top of your per-shop gifts.</p>
+      <div class="pips">${Array.from({length:10},(_,i)=>`<i class="${i<sales?'on':''}"></i>`).join('')}</div></div>
+    <div class="prizes">
+      <div class="prize"><svg viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="2"><circle cx="7" cy="22" r="5"/><circle cx="25" cy="22" r="5"/><path d="M7 22l6-10h7l5 10M13 12l-2-4h-3M20 12l2-4h3"/></svg><div><b class="small">Motorbike</b><div class="tz">at 10 sales</div></div></div>
+      <div class="prize"><svg viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="2"><rect x="8" y="10" width="16" height="16"/><path d="M8 15h16M12 10V6h8v4"/></svg><div><b class="small">Umrah package</b><div class="tz">at 10 sales</div></div></div>
+    </div>
+  </div>
+  <div class="grid2">
+    <div class="card cash">
+      <span class="eyebrow">Instant cashout</span><div class="big">${bdt(state.cash.avail)}</div>
+      <div class="field"><label for="co-amt">Amount</label><input id="co-amt" inputmode="numeric" value="${state.cash.avail}"></div>
+      <div class="methods" role="radiogroup" aria-label="Cashout method">${['bKash','Nagad','Bank EFT'].map((m,i)=>`<button class="chip" data-method="${m}" aria-pressed="${i===0}">${m}</button>`).join('')}</div>
+      <button class="btn primary" data-cashout ${state.cash.avail<=0?'disabled':''}>Cash out now</button>
+      <div><b class="small">History</b><div class="tbl-scroll"><table><tbody>${state.cash.history.map(h=>`<tr><td>${h.d}</td><td>${h.m}</td><td class="r num">${bdt(h.a)}</td><td><span class="st ${h.s==='Paid'?'paid':'due'}">${h.s}</span></td></tr>`).join('')}</tbody></table></div></div>
+    </div>
+    <div class="card" style="padding:14px 8px 6px">
+      <h3 style="padding:0 10px 8px">Leaderboard · launch season</h3>
+      <div class="tbl-scroll"><table><thead><tr><th>#</th><th>Broker</th><th class="r">Sales</th><th class="r">Gifts</th></tr></thead><tbody>
+      ${BOARD.map((b,i)=>`<tr class="${b[4]?'me':''}"><td><span class="rank ${i===0?'r1':''}">${i+1}</span></td><td><b class="small">${b[0]}${b[4]?' (you)':''}</b><div class="tz">${b[1]}${b[2]>=10?' · 10+ club':''}</div></td><td class="r num">${b[2]}</td><td class="r num">${compact(b[3])}</td></tr>`).join('')}
+      </tbody></table></div>
+    </div>
+  </div>
+  <section>
+    <div class="sec-head"><div><span class="eyebrow">What you earn</span><h2>Gift per available shop</h2></div><p class="muted small">Gift is paid when the buyer's booking money clears. Share a shop to send its link with your broker code.</p></div>
+    <div class="card" style="padding:6px 8px"><div class="tbl-scroll"><table><thead><tr><th>Shop</th><th>Package</th><th class="r">Size</th><th class="r">Price</th><th class="r">You earn</th><th></th></tr></thead><tbody>
+    ${avail.slice(0,12).map(s=>`<tr><td class="num">${s.id}</td><td><span class="pill tier t-${s.tier}"><i class="dot"></i>${TIERS[s.tier].short}</span></td><td class="r num">${s.sft} sft</td><td class="r num">${compact(s.total)}</td><td class="r num" style="color:var(--gold);font-weight:500">${bdt(TIERS[s.tier].comm)}</td><td><button class="btn sm" data-share="${s.id}">Share</button></td></tr>`).join('')}
+    </tbody></table></div><p class="note" style="padding:8px 10px">Showing 12 of ${avail.length} available shops, highest gift first.</p></div>
+  </section>`;
+}
+
+
+/* ---------- referral guest funnel ---------- */
+const REFERRERS={SABBIR26:{n:'Sabbir Ahmed',init:'SA',r:'WECON broker'},RAFIQ26:{n:'Mohammad Rafiq Uddin',init:'RU',r:'Citizen Avenue buyer, Dubai'},GUEST26:{n:'A friend',init:'W',r:'Citizen Avenue'}};
+const TOUR=[
+ {label:'Welcome',lines:[
+   {bn:'প্রবাসের প্রতিটা দিন আপনি পরিবারের জন্য কাটান।',en:'Every day abroad, you work for your family.'},
+   {bn:'এবার দেশে নিজের একটা ঠিকানা গড়ুন — নিজের দোকান।',en:'Now build something of your own at home: your own shop.'},
+   {bn:'চট্টগ্রামের সিটিজেন এভিনিউ মল। চলুন, আমি নিজে ঘুরিয়ে দেখাই।',en:"Citizen Avenue Mall, Chattogram. Come, I'll show you around myself."}]},
+ {label:'Chapter 1 · Why Chattogram',lines:[
+   {bn:'চট্টগ্রাম দেশের প্রধান বন্দরনগরী, ব্যবসার শহর।',en:"Chattogram is the country's main port city, a city of trade."},
+   {bn:'আপনার পরিবার কাছেই থাকবে — দোকান দেখবে, চালাবে বা ভাড়া দেবে।',en:'Your family stays close by to visit, run or rent out the shop.'}]},
+ {label:'Chapter 2 · Walk the building',lines:[
+   {bn:'নয় তলা, পাঁচটা লিফট, পাঁচ জোড়া এসকেলেটর।',en:'Nine floors, five lifts, five pairs of escalators.'},
+   {bn:'সবুজ মানে খালি, ধূসর মানে বিক্রি হয়ে গেছে। চলুন ফ্লোর ধরে দেখি।',en:"Green is open, grey is sold. Let's go floor by floor."}]},
+ {label:'Chapter 3 · Pick your size',lines:[
+   {bn:'কিয়স্ক থেকে প্যাভিলিয়ন — মেলার মতোই চার রকম দোকান।',en:'From kiosk to pavilion: four kinds of shop, like a fair ground.'},
+   {bn:'আপনার বাজেট আর পরিকল্পনা মিলিয়ে বেছে নিন।',en:'Choose by your budget and your plan.'}]},
+ {label:'Chapter 4 · Price moves with progress',lines:[
+   {bn:'যত কাজ এগোবে, দামও ধাপে ধাপে বাড়বে।',en:'As construction moves forward, the price steps up.'},
+   {bn:'আজ বুকিং দিলে আজকের দাম — পরের ধাপের আগেই।',en:"Book today and pay today's price, before the next step."}]},
+ {label:'Chapter 5 · Buy from abroad',lines:[
+   {bn:'দুবাই, রিয়াদ বা দোহা থেকেই বুকিং, কিস্তি, কাগজপত্র।',en:'Booking, installments and papers, all from Dubai, Riyadh or Doha.'},
+   {bn:'দেশে আপনার হয়ে কাজ করবে আপনার পরিবারের প্রতিনিধি।',en:'A family representative handles things at home for you.'}]}];
+const STEP_NAMES=['Welcome','Why Chattogram','The building','Packages','Price','Buy from abroad','Your fit','Your gift'];
+const BUDGETS=[{l:'Up to ৳50 lakh',min:0,max:5e6},{l:'৳50 lakh – 1 crore',min:5e6,max:1e7},{l:'৳1 – 2.5 crore',min:1e7,max:2.5e7},{l:'৳2.5 crore +',min:2.5e7,max:Infinity}];
+const GOALS=['Rental income','Run my own business','An asset for my family'];
+const COUNTRIES=[['UAE','AED'],['Saudi Arabia','SAR'],['Qatar','QAR'],['Kuwait','KWD'],['Oman','OMR'],['Other','BDT']];
+state.g={ref:'SABBIR26',step:0,t:0,playing:false,quiz:{budget:null,goal:null,country:null},done:false,lead:null};
+let ptimer=null;
+const LINE_S=4;
+
+function stackSVG(){
+  const W=320,fh=34,top=52,H=top+FLOORS.length*fh+30;
+  let g=`<rect x="48" y="${top+FLOORS.length*fh}" width="228" height="6" fill="var(--line)"/>`;
+  g+=`<g stroke="var(--gold)" stroke-width="2" fill="none"><path d="M236 ${top} V12 M236 12 H120 M236 12 l30 0 M236 12 L206 30"/><path d="M150 12 v26" stroke-dasharray="2 3"/></g><rect x="264" y="10" width="12" height="8" fill="var(--gold)"/>`;
+  FLOORS.slice().reverse().forEach((f,ri)=>{
+    const fi=FLOORS.length-1-ri, y=top+ri*fh, s=SHOPS.filter(x=>x.floor===fi);
+    const av=s.filter(x=>x.status==='available').length, hd=s.filter(x=>x.status==='held').length;
+    const bw=200, x0=62, wAv=bw*av/s.length, wHd=bw*hd/s.length, wBk=bw-wAv-wHd;
+    g+=`<g class="stack-floor" tabindex="0" role="button" aria-label="${f.name}: ${av} available" data-floor="${fi}">
+      <rect class="sf-base" x="56" y="${y+3}" width="212" height="${fh-6}" rx="5" fill="var(--bg)" stroke="var(--line)"/>
+      <rect x="${x0}" y="${y+8}" width="${wBk}" height="${fh-16}" rx="2" fill="var(--surface-2)"/>
+      <rect x="${x0+wBk}" y="${y+8}" width="${wHd}" height="${fh-16}" fill="var(--held)"/>
+      <rect x="${x0+wBk+wHd}" y="${y+8}" width="${wAv}" height="${fh-16}" rx="2" fill="var(--accent)"/>
+      <text x="40" y="${y+fh/2+4}" text-anchor="end" font-family="Familjen Grotesk, sans-serif" font-weight="600" font-size="13" fill="var(--fg)">${f.label==='G'?'G':'L'+f.label}</text>
+      <text x="278" y="${y+fh/2+4}" font-family="JetBrains Mono, monospace" font-size="11" fill="${av?'var(--accent)':'var(--muted)'}">${av} open</text></g>`;
+  });
+  return `<svg viewBox="0 0 ${W} ${H}">${g}<text x="162" y="${H-6}" text-anchor="middle" font-size="11" fill="var(--muted)">Tap a floor to open its map</text></svg>`;
+}
+
+const FIG=`<svg class="pl-fig" viewBox="0 0 200 260" aria-hidden="true"><defs><linearGradient id="fg" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="#2E6B57"/><stop offset="1" stop-color="#0F2A21"/></linearGradient></defs><circle cx="100" cy="70" r="40" fill="url(#fg)"/><path d="M20 260c0-70 36-110 80-110s80 40 80 110z" fill="url(#fg)"/><path d="M84 150l16 40 16-40" fill="none" stroke="#D8AC58" stroke-width="3"/></svg>`;
+function playerHTML(){
+  const T=TOUR[state.g.step], lines=T.lines, dur=lines.length*LINE_S, i=Math.min(lines.length-1,Math.floor(state.g.t/LINE_S));
+  return `<div class="player ${state.g.playing?'playing':''}" id="player">
+    <div class="pl-bg"></div>${FIG}
+    <div class="pl-host"><span class="pl-avatar">TA</span><div><b>Tariq Anam Khan</b><small>${T.label}</small></div></div>
+    <span class="pl-tag">Draft script · video to be filmed</span>
+    <div class="pl-cap"><span class="bn">${lines[i].bn}</span><span class="en">${lines[i].en}</span></div>
+    <button class="pl-play" data-play aria-label="${state.g.playing?'Pause':'Play'}">${state.g.playing?'<svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="5" width="4" height="14"/><rect x="14" y="5" width="4" height="14"/></svg>':'<svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5l12 7-12 7z"/></svg>'}</button>
+    <div class="pl-bar"><i style="width:${state.g.t/dur*100}%"></i></div></div>`;
+}
+function updatePlayer(){const p=$('#player');if(!p)return;p.outerHTML=playerHTML()}
+function stopPlayer(){clearInterval(ptimer);state.g.playing=false;state.g.t=0}
+function togglePlay(){
+  const g=state.g, dur=TOUR[g.step].lines.length*LINE_S;
+  if(g.playing){clearInterval(ptimer);g.playing=false;updatePlayer();return}
+  if(g.t>=dur)g.t=0;
+  g.playing=true;
+  ptimer=setInterval(()=>{g.t+=.25;if(g.t>=dur){g.t=dur;g.playing=false;clearInterval(ptimer)}updatePlayer()},250);
+  updatePlayer();
+}
+function gStep(n){stopPlayer();state.g.step=Math.max(0,Math.min(7,n));renderGuest();window.scrollTo({top:0})}
+
+function fitMatches(){
+  const q=state.g.quiz;if(q.budget==null)return[];
+  const B=BUDGETS[q.budget];
+  let list=SHOPS.filter(s=>s.status==='available'&&s.total>=B.min&&s.total<B.max);
+  if(q.goal===0)list.sort((a,b)=>(b.esc-a.esc)||(a.floor-b.floor));
+  else if(q.goal===1)list.sort((a,b)=>b.sft-a.sft);
+  else list.sort((a,b)=>a.total-b.total);
+  return list.slice(0,3);
+}
+
+function renderGuest(){
+  const g=state.g, R=REFERRERS[g.ref]||{n:'A friend',init:'W',r:'Citizen Avenue'}, v=$('#v-guest');
+  const prog=`<div class="gprog"><div class="gsteps">${STEP_NAMES.map((n,i)=>`<i class="${i<g.step?'on':i===g.step?'cur':''}" title="${n}"></i>`).join('')}</div><div class="lbl"><span>${g.step===0?'Start':g.step<=5?'Tour with Tariq Anam':g.step===6?'Find your shop':'Claim your gift'}</span><span>${STEP_NAMES[g.step]} · ${g.step+1} of 8</span></div></div>`;
+  let body='';
+  if(g.step===0){
+    body=`<div class="ghead"><span class="invite"><span class="avatar">${R.init}</span><span><b>${R.n}</b> invited you · ${R.r}</span></span>
+      <h1>A shop of your own back home, bought from where you work.</h1>
+      <p class="bn-line">আপনার দোকান, আপনার দেশে।</p></div>
+      ${playerHTML()}
+      <div class="gnav"><button class="btn primary" data-gstep="1">Start the 4-minute tour</button><button class="linkbtn" data-gstep="6">Skip to shops in my budget</button></div>
+      <p class="note">Attend one live session after the tour and get a WECON product gift. ${R.n} stays your contact.</p>`;
+  } else if(g.step<=5){
+    let vis='';
+    if(g.step===1)vis=`<div class="points"><div class="card"><b>Main seaport</b><p class="muted small">Most of the country's sea trade moves through Chattogram, which keeps shops in demand.</p></div><div class="card"><b>Family close by</b><p class="muted small">Your family can visit, run or rent out the shop while you're abroad.</p></div><div class="card"><b>Location</b><p class="muted small">[Confirm address and nearby landmarks before launch.]</p></div></div>`;
+    if(g.step===2)vis=`<div class="grid2"><div class="stack-wrap">${stackSVG()}<div class="legend"><span><i class="sw av"></i>Available</span><span><i class="sw hd"></i>On hold</span><span><i class="sw bk"></i>Booked</span></div></div><div class="card" style="display:grid;gap:10px;align-content:start"><dl class="kv"><dt>Land</dt><dd>39.6 katha</dd><dt>Floors</dt><dd>9</dd><dt>Lifts</dt><dd>5</dd><dt>Escalators</dt><dd>5 pairs</dd><dt>Parking</dt><dd>47 cars, 6 bikes</dd><dt>Shops open now</dt><dd>${SHOPS.filter(s=>s.status==='available').length} of ${SHOPS.length}</dd></dl></div></div>`;
+    if(g.step===3)vis=`<div class="mini-tiers">${TIER_KEYS.map(k=>{const T=TIERS[k],c=tierCount(k);return `<div class="tier t-${k}"><div class="fair">${T.fair}</div><div class="tname" style="font-size:18px">${T.name}</div><span class="small muted">${T.min.toLocaleString('en-IN')}–${T.max.toLocaleString('en-IN')} sft · ${c.av} open</span><div class="from"><span class="muted small">From</span><b style="font-size:19px">${isFinite(c.from)?compact(c.from):'Sold out'}</b>${isFinite(c.from)?fxSpan(c.from):''}</div></div>`}).join('')}</div>`;
+    if(g.step===4){const s=SHOPS.find(x=>x.floor===2&&x.tier==='gold');vis=`<div class="card ladder" style="display:grid;gap:10px"><b class="small">Example: a Gold Stall on Level 2, price per sft by milestone (est.)</b>${ladderSVG(s.psf)}<p class="note">Estimates from WECON's planned price ladder, not a guaranteed return.</p></div>${alertHTML()}`;}
+    if(g.step===5)vis=`<ol class="ol-steps"><li><div><b>Hold a shop for 72 hours</b><div class="muted small">Free. No payment needed.</div></div></li><li><div><b>Pay 10% booking money</b><div class="muted small">By bank wire (SWIFT) or exchange house. Price locks when it clears.</div></div></li><li><div><b>Pay in 30 monthly installments</b><div class="muted small">Reminders in your own time zone, receipts in the app.</div></div></li><li><div><b>Name a family representative</b><div class="muted small">Power of attorney lets them visit and collect papers for you.</div></div></li><li><div><b>Optional bank loan</b><div class="muted small">One-click application, handled by a WECON loan manager.</div></div></li></ol>${reviewsHTML(true)}`;
+    body=`${playerHTML()}<div class="chapters">${TOUR.slice(1).map((t,i)=>`<button class="chip" data-gstep="${i+1}" aria-pressed="${g.step===i+1}">${i+1}. ${STEP_NAMES[i+1]}</button>`).join('')}</div>${vis}
+      <div class="gnav"><button class="btn" data-gstep="${g.step-1}">Back</button><div class="row"><button class="linkbtn" data-gstep="6">Skip tour</button><button class="btn primary" data-gstep="${g.step+1}">${g.step<5?'Next chapter':'Find my shop'}</button></div></div>`;
+  } else if(g.step===6){
+    const q=g.quiz, chips=(key,arr,lab)=>`<div class="q"><h3>${lab}</h3><div class="chips">${arr.map((a,i)=>`<button class="chip" data-q="${key}" data-v="${i}" aria-pressed="${q[key]===i}">${Array.isArray(a)?a[0]:a.l||a}</button>`).join('')}</div></div>`;
+    const ready=q.budget!=null&&q.goal!=null&&q.country!=null, m=ready?fitMatches():[];
+    body=`<div class="ghead"><span class="eyebrow">Find your shop</span><h2>Three quick questions</h2></div>
+      <div class="card" style="display:grid;gap:20px">${chips('budget',BUDGETS,'Your budget')}${chips('goal',GOALS,'What is the shop for?')}${chips('country',COUNTRIES,'Where do you live?')}</div>
+      ${ready?(m.length?`<div class="fit"><h3>${m.length} open shops that fit · best match: ${TIERS[m[0].tier].name}</h3>${m.map(s=>`<div class="fitshop"><div style="min-width:0"><div class="row"><b class="num">${s.id}</b><span class="pill tier t-${s.tier}"><i class="dot"></i>${TIERS[s.tier].short}</span>${s.esc?'<span class="pill">Escalator-facing</span>':''}</div><div class="muted small">${FLOORS[s.floor].name} · ${s.sft} sft · ${compact(s.total)}${state.cur!=='BDT'?' · ≈ '+fx(s.total):''}</div></div><button class="btn sm" data-hold="${s.id}">Hold 72h</button></div>`).join('')}</div>`:`<div class="empty">No open shop in that budget right now. Try the next budget up, or ask ${R.n} to put you on the waitlist.</div>`):''}
+      <div class="gnav"><button class="btn" data-gstep="5">Back to tour</button><button class="btn primary" data-gstep="7" ${ready?'':'disabled'}>Next: claim your gift</button></div>`;
+  } else {
+    if(!g.done){
+      body=`<div class="ghead"><span class="eyebrow">Learn &amp; Earn</span><h2>Join a live session. Get a WECON gift.</h2><p class="muted">Pick a session. Stay till the end and the gift is yours. We'll send the link and a reminder on WhatsApp.</p></div>
+      <form class="card form" id="g-form" novalidate>
+        <div class="field"><label for="g-name">Full name</label><input id="g-name" autocomplete="name" placeholder="e.g. Shahidul Islam"></div>
+        <div class="field"><label for="g-phone">WhatsApp number</label><div class="two"><select id="g-cc">${['+971','+966','+974','+965','+968','+973','+880'].map((c,i)=>`<option ${i===[0,1,2,3,4,6][g.quiz.country??0]?'selected':''}>${c}</option>`).join('')}</select><input id="g-phone" inputmode="tel" placeholder="50 123 4567"></div></div>
+        <div class="field"><label for="g-web">Session</label><select id="g-web">${WEBS.map((w,i)=>{const d=new Date(w.t);return `<option value="${i}">${fmtTZ(d,'Asia/Dhaka',{weekday:'short',day:'numeric',month:'short'})} · ${fmtTZ(d,'Asia/Dubai',{hour:'numeric',minute:'2-digit'})} Dubai · ${w.title}</option>`}).join('')}</select></div>
+        <button class="btn primary" type="submit">Reserve my seat</button><p class="note" id="g-err" hidden></p>
+      </form><div class="gnav"><button class="btn" data-gstep="6">Back</button></div>`;
+    } else {
+      const w=WEBS[g.lead.web], d=new Date(w.t);
+      body=`<div class="card" style="display:grid;gap:14px;justify-items:start"><span class="done-badge"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6"><path d="M5 12l5 5 9-10"/></svg></span>
+        <h2>Seat confirmed, ${esc(g.lead.name.split(' ')[0])}.</h2>
+        <p class="muted">${w.title} · ${fmtTZ(d,'Asia/Dhaka',{weekday:'long',day:'numeric',month:'long',hour:'numeric',minute:'2-digit'})} Dhaka (${fmtTZ(d,'Asia/Dubai',{hour:'numeric',minute:'2-digit'})} Dubai). The link and a reminder are on their way to ${esc(g.lead.phone)}.</p>
+        <div class="invite"><span class="avatar">${R.init}</span><span><b>${R.n}</b> is your contact for any question</span></div></div>
+      <div class="ghead"><span class="eyebrow">When you're ready</span><h3>Take the next step</h3></div>
+      <div class="grid3"><div class="card" style="display:grid;gap:8px;align-content:start"><b>Video call with an expert</b><p class="muted small">Walk the floor plans at your local time.</p><button class="btn sm primary" style="justify-self:start" data-book-visit>Book a call</button></div>
+        <div class="card" style="display:grid;gap:8px;align-content:start"><b>Hold a shop for 72h</b><p class="muted small">Keep a shop off the market, free.</p><button class="btn sm" style="justify-self:start" data-go="shops">Open the floor map</button></div>
+        <div class="card" style="display:grid;gap:8px;align-content:start"><b>Check a bank loan</b><p class="muted small">See your monthly payment in a minute.</p><button class="btn sm" style="justify-self:start" data-go="loan">Loan calculator</button></div></div>`;
+    }
+  }
+  v.innerHTML=`<div class="gwrap">${prog}${body}</div>`;
+  const f=$('#g-form');
+  if(f)f.addEventListener('submit',e=>{e.preventDefault();
+    const n=$('#g-name').value.trim(),p=$('#g-phone').value.replace(/\D/g,''),err=$('#g-err');
+    if(n.length<3||p.length<7){err.hidden=false;err.textContent='Add your full name and a WhatsApp number with at least 7 digits.';return}
+    g.lead={name:n,phone:$('#g-cc').value+' '+p,web:+$('#g-web').value};g.done=true;
+    if(g.ref==='SABBIR26'||g.ref==='RAFIQ26')state.refs.unshift({n,c:g.lead.phone,s:'Registered via link · seat '+fmtTZ(new Date(WEBS[g.lead.web].t),'Asia/Dhaka',{day:'numeric',month:'short'})});
+    renderGuest();toast('Seat reserved. '+R.n+' has been notified.');
+  });
+}
+
+/* ---------- funnel map ---------- */
+const FUNNELS=[
+ {k:'A',live:true,name:'Referral guest',who:'Friends invited by a buyer or broker',entry:'wecon.com.bd/citizen/r/CODE',
+  stages:['Welcome video by Tariq Anam','Guided tour, 5 chapters','Find your fit, 3 questions','Webinar seat + gift','Expert video call','Hold 72h','Booking'],
+  measure:'Link opened → tour started → tour finished → quiz done → seat booked → attended → hold → booking',owner:'Referrer stays the contact; WEPRO call center follows up within 24h'},
+ {k:'B',name:'Paid ads, cold NRB audience',who:'Meta, TikTok and YouTube in UAE, KSA, Qatar, Kuwait, Oman',entry:'wecon.com.bd/citizen?src=meta (same welcome page, no "invited by")',
+  stages:['15-sec Tariq Anam cut-down','Welcome video','WhatsApp number asked before chapter 3','Tour + fit quiz','Agent WhatsApp within 15 min','Video call','Hold → booking'],
+  measure:'Cost per lead, tour completion, WhatsApp reply rate, cost per hold, cost per booking',owner:'Performance team + WEPRO agents'},
+ {k:'C',name:'Ground-breaking event and fair',who:'Visitors at the event and Gulf roadshows',entry:'QR on each pavilion → wecon.com.bd/citizen/fair',
+  stages:['QR scan at the stall','Live floor map on the phone','Hold on the spot','Booking desk','On-site loan desk','Event-day price lock'],
+  measure:'Scans, holds per hour, same-day bookings, booking money collected',owner:'Event sales team'},
+ {k:'D',name:'Broker recruitment',who:'Community leaders, agents and existing buyers in the Gulf',entry:'wecon.com.bd/citizen/broker',
+  stages:['Earn up to ৳1 lakh per shop','Register + passport/NID check','Training webinar','Broker panel + share kit','First sale','10+ club: bike + Umrah'],
+  measure:'Sign-ups, trained, active brokers (1+ lead a week), sales per broker',owner:'Channel sales manager'},
+ {k:'E',name:'Buyer to advocate',who:'People who already booked',entry:'My Unit → Learn & Earn',
+  stages:['Installment paid on time','Milestone update + live camera','Invite friends to a session','Referral credited','Second unit or upgrade'],
+  measure:'Referrals per buyer, on-time payment rate, repeat purchases',owner:'Customer care'},
+ {k:'F',name:'Win-back before a price step',who:'Leads who went quiet',entry:'WhatsApp + email, triggered by the construction milestone',
+  stages:['Day 0: tour recap','Day 3: shops in your budget','Day 7: session invite','14 days before price step: alert','Expert call offer'],
+  measure:'Reactivation rate, holds from the alert, unsubscribes',owner:'WEPRO automation + call center'}];
+function renderFunnels(){
+  $('#v-funnels').innerHTML=`
+  <div class="sec-head"><div><span class="eyebrow">For the WECON team</span><h2>Funnel map</h2></div><p class="muted small">Six funnels, one rule: every screen has one main action. Funnel A is built in this prototype. Tap Preview to walk it as a guest.</p></div>
+  <div class="card lanes">${FUNNELS.map(f=>`<div class="lane ${f.live?'live':''}"><div class="lk"><span class="lt">${f.k}</span><div><b>${f.name}</b><div class="muted small">${f.who}</div>${f.live?'<button class="btn sm primary" style="margin-top:10px" data-go="guest">Preview as guest</button>':'<span class="pill" style="margin-top:8px">Planned</span>'}</div></div>
+    <div style="min-width:0"><div class="flow">${f.stages.map((s,i)=>`${i?'<span class="arr">→</span>':''}<span class="stg">${s}</span>`).join('')}</div>
+    <dl class="meta"><dt>Lands on</dt><dd><code>${f.entry}</code></dd><dt>Measure</dt><dd>${f.measure}</dd><dt>Owner</dt><dd>${f.owner}</dd></dl></div></div>`).join('')}</div>
+  <section><div class="sec-head"><div><span class="eyebrow">Rules for every funnel</span><h2>What stays the same</h2></div></div>
+  <div class="rules">
+    <div class="card"><b>Tariq Anam opens, the product closes</b><p class="muted small">He appears on the welcome and the 5 tour chapters. Prices, maps and forms carry the rest, so the ambassador never makes a price or return claim.</p></div>
+    <div class="card"><b>Referral credit</b><p class="muted small">Proposed: the code in the link is saved for 90 days and the first referrer gets credit, even if the guest comes back through an ad later.</p></div>
+    <div class="card"><b>Verified holds only</b><p class="muted small">A hold works like a cart, but only after a WhatsApp or SMS one-time code. Limits: 2 active holds per number, 3 code tries then a 15-minute lock, codes expire in 5 minutes.</p></div>
+    <div class="card"><b>One follow-up owner</b><p class="muted small">Every lead lands in WEPRO with its funnel letter, last step reached and referrer, so the call center knows where to pick up.</p></div>
+  </div></section>`;
+}
+
+
+/* ---------- probashi voices (template, real reviews only) ---------- */
+const REV_SLOTS=[
+ {kind:'video',who:'[Buyer name]',where:'[City, country, e.g. Dubai, UAE]',q:'[In their own words: why they chose Citizen Avenue and how booking from abroad felt]',badges:['Verified buyer','Unit [ID]','Booked [month]']},
+ {kind:'quote',who:'[Family representative]',where:'[Relation, Chattogram]',q:'[What they saw on their site visit and how WECON handled the papers]',badges:['Site visit [date]','Buyer consent on file']},
+ {kind:'quote',who:'[Owner from a completed WECON project]',where:'[Project name, handed over year]',q:'[How handover went: on time, as promised, what they would tell a first-time buyer]',badges:['Handed over [year]','Ownership checked']}];
+function reviewsHTML(compact){
+  return `<div class="rev-wrap">
+   ${compact?'<h3>People like you</h3>':'<div class="sec-head" style="margin-bottom:0"><div><span class="eyebrow">Probashi voices</span><h2>Hear it from people who bought from abroad</h2></div><p class="muted small">Template slots. Fill only with real, verified reviews recorded with written consent.</p></div>'}
+   <div class="revs">${REV_SLOTS.slice(0,compact?2:3).map(r=>`<article class="rev"><span class="tpl">Template</span>
+     ${r.kind==='video'?`<div class="vid"><span class="pb"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5l12 7-12 7z"/></svg></span>[40–60 sec phone video]</div>`:''}
+     <blockquote>${r.q}</blockquote>
+     <div class="who"><span class="avatar">?</span><div><b>${r.who}</b><span class="muted small">${r.where}</span></div></div>
+     <div class="badges">${r.badges.map(b=>`<span class="pill">${b}</span>`).join('')}</div></article>`).join('')}</div>
+   ${compact?'':`<div class="trustbar"><div><b>CDA approval</b><span>Document viewable in the app</span></div><div><b>[N] projects handed over</b><span>WECON track record [fill]</span></div><div><b>Live site camera</b><span>Open to every buyer</span></div><div><b>Partner banks</b><span>[Names once signed]</span></div></div>
+   <p class="note">Verification rule: each review shows the buyer's unit and booking month, is recorded with written consent, and is only trimmed, never rewritten.</p>`}
+  </div>`;
+}
+
+
+/* ---------- verified hold (cart) ---------- */
+const HOLD_MAX=2, OTP_TTL=300, OTP_TRIES=3, RESEND_S=30, HOLD_H=72;
+state.auth={verified:false,name:'',phone:'',channel:'WhatsApp'};
+state.holds=[];
+let otp=null, otpTimer=null;
+const mask=p=>p.replace(/\d(?=\d{3})/g,(d,i)=>i<p.length-7?d:'•');
+function newCode(){const a=new Uint32Array(1);(window.crypto||{getRandomValues:x=>{x[0]=Math.random()*4e9;return x}}).getRandomValues(a);return String(a[0]%1e6).padStart(6,'0')}
+function raw(html){$('#sheet').innerHTML=html;$('#scrim').hidden=false;$('[data-x]',$('#sheet'))&&($('[data-x]',$('#sheet')).onclick=closeSheet)}
+function closeSheet(){$('#scrim').hidden=true;clearInterval(otpTimer)}
+function fmtLeft(s){return Math.floor(s/60)+':'+String(s%60).padStart(2,'0')}
+
+function requireVerified(purpose,then){
+  if(state.auth.verified){then();return}
+  const pre=state.role==='customer'?{n:ME.name,cc:'+971',p:'504127781'}:(state.g&&state.g.lead?{n:state.g.lead.name,cc:state.g.lead.phone.split(' ')[0],p:state.g.lead.phone.split(' ')[1]}:{n:'',cc:'+971',p:''});
+  raw(`<h3>Verify it's you</h3>
+   <p class="muted small">${purpose} We confirm every request with a one-time code, so no one can block shops with fake or automated requests.</p>
+   <form class="form" id="vf" novalidate>
+    <div class="field"><label for="vf-n">Full name (as on passport)</label><input id="vf-n" autocomplete="name" value="${esc(pre.n)}"></div>
+    <div class="field"><label for="vf-p">Mobile number</label><div class="two"><select id="vf-cc">${['+971','+966','+974','+965','+968','+973','+880'].map(c=>`<option ${c===pre.cc?'selected':''}>${c}</option>`).join('')}</select><input id="vf-p" inputmode="tel" autocomplete="tel-national" placeholder="50 123 4567" value="${esc(pre.p||'')}"></div></div>
+    <div class="field"><label>Send the code by</label><div class="chips">${['WhatsApp','SMS'].map((c,i)=>`<button type="button" class="chip" data-ch="${c}" aria-pressed="${i===0}">${c}</button>`).join('')}</div></div>
+    <label class="small" style="display:flex;gap:8px;align-items:start"><input type="checkbox" id="vf-ok" style="margin-top:4px">I agree that WECON may contact me on this number about this request.</label>
+    <input type="text" id="vf-web" name="website" tabindex="-1" autocomplete="off" aria-hidden="true" style="position:absolute;left:-9999px;width:1px;height:1px">
+    <p class="note" id="vf-err" hidden></p>
+    <div class="acts"><button type="button" class="btn" data-x>Cancel</button><button class="btn primary" type="submit">Send code</button></div>
+   </form>`);
+  let ch='WhatsApp';
+  $$('[data-ch]').forEach(b=>b.onclick=()=>{ch=b.dataset.ch;$$('[data-ch]').forEach(x=>x.setAttribute('aria-pressed',x===b))});
+  $('#vf-n').focus();
+  $('#vf').onsubmit=e=>{e.preventDefault();
+    const n=$('#vf-n').value.trim(), p=$('#vf-p').value.replace(/\D/g,''), err=$('#vf-err');
+    const fail=m=>{err.hidden=false;err.style.color='var(--bad)';err.textContent=m};
+    if($('#vf-web').value)return fail('Request blocked.');                 // honeypot: bots fill hidden fields
+    if(n.length<3||!/\s/.test(n))return fail('Enter your full name, first and last.');
+    if(p.length<7||p.length>12)return fail('Enter a valid mobile number without the country code.');
+    if(!$('#vf-ok').checked)return fail('Tick the box so we can send you the code.');
+    state.auth.name=n;state.auth.phone=$('#vf-cc').value+' '+p;state.auth.channel=ch;
+    otpStep(then);
+  };
+}
+function otpStep(then){
+  otp={code:newCode(),exp:Date.now()+OTP_TTL*1000,tries:OTP_TRIES,resendAt:Date.now()+RESEND_S*1000,lockedUntil:0};
+  const A=state.auth;
+  raw(`<h3>Enter the 6-digit code</h3>
+   <p class="muted small">Sent by ${A.channel} to <span class="num">${mask(A.phone)}</span>.</p>
+   <input id="otp" class="num" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="••••••" style="font-size:28px;letter-spacing:.4em;text-align:center;padding:12px">
+   <div class="row small" style="justify-content:space-between"><span class="muted">Expires in <b id="otp-left" class="num">5:00</b></span><button type="button" class="linkbtn" id="otp-resend" disabled>Resend in <span id="rs">30</span>s</button></div>
+   <p class="note" id="otp-err" hidden></p>
+   <p class="note" id="otp-demo" style="background:var(--gold-soft);padding:8px 10px;border-radius:8px">Prototype only: no message is sent. Your demo code is <b class="num">${otp.code}</b>.</p>
+   <div class="acts"><button type="button" class="btn" data-back>Change number</button><button type="button" class="btn primary" id="otp-go">Verify</button></div>`);
+  const input=$('#otp'), err=$('#otp-err'); input.focus();
+  const tick=()=>{const now=Date.now(),left=Math.max(0,Math.round((otp.exp-now)/1000)),rs=Math.max(0,Math.round((otp.resendAt-now)/1000));
+    const L=$('#otp-left');if(!L){clearInterval(otpTimer);return}
+    L.textContent=fmtLeft(left);const b=$('#otp-resend');b.disabled=rs>0;b.innerHTML=rs>0?`Resend in <span id="rs">${rs}</span>s`:'Resend code';
+    if(left===0){err.hidden=false;err.style.color='var(--bad)';err.textContent='This code has expired. Tap Resend code.'}};
+  clearInterval(otpTimer);otpTimer=setInterval(tick,500);tick();
+  input.oninput=()=>{input.value=input.value.replace(/\D/g,'').slice(0,6);if(input.value.length===6)$('#otp-go').click()};
+  $('[data-back]').onclick=()=>{clearInterval(otpTimer);requireVerified('Change your number.',then)};
+  $('#otp-resend').onclick=()=>{otp.code=newCode();otp.exp=Date.now()+OTP_TTL*1000;otp.resendAt=Date.now()+RESEND_S*2*1000;otp.tries=OTP_TRIES;$('#otp-demo b').textContent=otp.code;err.hidden=true;input.value='';input.focus();toast('New code sent. The old one no longer works.')};
+  $('#otp-go').onclick=()=>{
+    if(Date.now()<otp.lockedUntil)return;
+    if(Date.now()>otp.exp)return;
+    if(input.value===otp.code){clearInterval(otpTimer);state.auth.verified=true;otp=null;then();return}
+    otp.tries--;err.hidden=false;err.style.color='var(--bad)';
+    if(otp.tries<=0){otp.lockedUntil=Date.now()+15*60000;input.disabled=true;$('#otp-go').disabled=true;err.textContent='Too many wrong codes. For your safety this number is locked for 15 minutes. Call 096 667 93266 if you need help now.';return}
+    err.textContent=`That code is not right. ${otp.tries} ${otp.tries===1?'try':'tries'} left.`;input.value='';input.focus();
+  };
+}
+function holdFlow(id){
+  const s=SHOPS.find(x=>x.id===id);
+  if(!s||s.status!=='available'){toast('This shop was just taken. Pick another one.');return}
+  if(state.holds.length>=HOLD_MAX){sheet({title:'You already hold 2 shops',body:`<p class="muted">To keep it fair for everyone, one person can hold up to ${HOLD_MAX} shops at a time. Book one or release one to hold ${s.id}.</p>`,ok:'See my holds',cancel:'Close',onOk(){setTimeout(holdsSheet,0)}});return}
+  requireVerified(`Holding ${s.id} keeps it off the market for ${HOLD_H} hours, free.`,()=>{
+    if(s.status!=='available'){closeSheet();toast('Sorry, this shop was taken while you verified.');return}
+    const until=new Date(Date.now()+HOLD_H*36e5), hid='H-'+newCode().slice(0,5);
+    s.status='held';state.holds.push({id:s.id,until,hid});updateHoldsBtn();
+    raw(`<span class="done-badge"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6"><path d="M5 12l5 5 9-10"/></svg></span>
+     <h3>Shop ${s.id} is held for you</h3>
+     <dl class="kv"><dt>Hold ID</dt><dd class="num">${hid}</dd><dt>Held until</dt><dd>${fmtTZ(until,'Asia/Dhaka',{weekday:'short',day:'numeric',month:'short',hour:'numeric',minute:'2-digit'})} Dhaka</dd><dt>Verified for</dt><dd>${esc(state.auth.name)}</dd><dt>Price locked</dt><dd>${bdt(s.total)}</dd></dl>
+     <p class="muted small">A WECON agent will message you on ${state.auth.channel} within one working hour to confirm. Pay the booking money before the hold ends to keep the shop.</p>
+     <div class="acts"><button class="btn" data-x>Done</button><button class="btn primary" id="hb">Book now</button></div>`);
+    $('#hb').onclick=()=>{closeSheet();bookSheet(s.id)};
+    if(state.tab==='shops')renderShops();if(state.tab==='guest')renderGuest();if(state.tab==='home')renderHome();
+  });
+}
+function bookSheet(id){
+  const s=SHOPS.find(x=>x.id===id);
+  requireVerified(`Booking ${s.id} reserves it in your name.`,()=>{
+    sheet({title:`Book shop ${s.id}`,body:`<dl class="kv" style="margin-bottom:14px"><dt>Buyer (verified)</dt><dd>${esc(state.auth.name)}</dd><dt>Shop price</dt><dd>${bdt(s.total)}</dd><dt>Booking money now (10%)</dt><dd><b>${bdt(s.total*.1)}</b></dd>${state.cur!=='BDT'?`<dt>In ${state.cur}</dt><dd>${fx(s.total*.1)}</dd>`:''}</dl>
+      <div class="field"><label for="bk-m">Pay from abroad by</label><select id="bk-m"><option>Bank wire (SWIFT)</option><option>Exchange house</option><option>Card</option><option>bKash / Nagad via remittance</option></select></div>
+      <p class="note" style="margin-top:10px">Prototype: no payment is taken. WECON's bank details are only sent from the official number and shown in this app. Never pay to a personal account.</p>`,ok:'Send booking request',onOk(sh){toast(`Booking request for ${s.id} sent. Payment details for ${$('#bk-m',sh).value} are in your app and WhatsApp.`)}});
+  });
+}
+function updateHoldsBtn(){const b=$('#holds-btn');if(!b)return;b.hidden=!state.holds.length;b.querySelector('b').textContent=state.holds.length}
+function holdsSheet(){
+  if(!state.holds.length){toast('You have no holds right now.');return}
+  raw(`<h3>My holds</h3><p class="muted small">Up to ${HOLD_MAX} shops at a time. Each hold ends after ${HOLD_H} hours unless you book.</p>
+   <div class="docs">${state.holds.map(h=>{const s=SHOPS.find(x=>x.id===h.id),left=Math.max(0,h.until-Date.now()),hh=Math.floor(left/36e5);return `<div class="doc"><div><b class="small">${s.id} · ${TIERS[s.tier].short} · ${s.sft} sft</b><small>${bdt(s.total)} · ${hh}h left · ${h.hid}</small></div><button class="btn sm" data-rel="${h.id}">Release</button><button class="btn sm primary" data-bk="${h.id}">Book</button></div>`}).join('')}</div>
+   <div class="acts"><button class="btn" data-x>Close</button></div>`);
+  $$('[data-rel]').forEach(b=>b.onclick=()=>{const id=b.dataset.rel;SHOPS.find(x=>x.id===id).status='available';state.holds=state.holds.filter(h=>h.id!==id);updateHoldsBtn();render();toast(id+' released.');state.holds.length?holdsSheet():closeSheet()});
+  $$('[data-bk]').forEach(b=>b.onclick=()=>{closeSheet();bookSheet(b.dataset.bk)});
+}
+
+
+/* ---------- voice guide "Sathi" ---------- */
+const VG_TOURS={
+ home:[
+  ['[data-go="shops"]','এখান থেকে শুরু করুন। "দোকান দেখুন" চাপলে পুরো ফ্লোর ম্যাপ খুলবে।','Start here. "See available shops" opens the full floor map.'],
+  ['.alert-slot','এই হলুদ বার্তায় দেখবেন পরের দাম বাড়ার আর কত দিন বাকি। "Notify me" চালু করলে আগেই জানিয়ে দেব।','This yellow alert shows how many days are left before the next price step. Turn on "Notify me" and we will tell you in advance.'],
+  ['#stack','বিল্ডিংয়ের ছবিতে প্রতিটা তলা। সবুজ মানে খালি দোকান। যেকোনো তলায় চাপুন।','Each band is a floor. Green means open shops. Tap any floor to open it.'],
+  ['#tiers','চার রকম প্যাকেজ: প্যাভিলিয়ন, শোরুম, স্টল আর কিয়স্ক। প্রতিটার শুরুর দাম এখানে।','Four packages: pavilion, showroom, stall and kiosk, each with its starting price.'],
+  ['.contact','মানুষের সাথে কথা বলতে চাইলে হটলাইন, হোয়াটসঅ্যাপ বা ভিডিও কল এখানে।','To talk to a person, use the hotline, WhatsApp or a video call from here.']],
+ shops:[
+  ['#tier-chips','প্রথমে প্যাকেজ বেছে নিন। "Available only" চালু করলে শুধু খালি দোকান দেখাবে।','First pick a package. Turn on "Available only" to hide sold shops.'],
+  ['#fstack','বাম দিকে তলা বেছে নিন। পাশে লেখা থাকে কয়টা দোকান খালি।','Choose a floor on the left. It shows how many shops are open.'],
+  ['#map','ম্যাপে সবুজ দোকানে চাপুন। ধূসর দোকান বিক্রি হয়ে গেছে, হলুদগুলো হোল্ডে আছে।','Tap a green shop on the map. Grey is sold, yellow is on hold.'],
+  ['#detail','এখানে দাম, কিস্তি আর নির্মাণের সাথে দাম কীভাবে বাড়বে তা দেখবেন। "Hold 72h" চাপলে ফোনে কোড যাবে, যাচাই করলেই দোকান আপনার জন্য রাখা হবে।','Here you see price, installments and how the price rises with construction. "Hold 72h" sends a code to your phone; verify and the shop is kept for you.']],
+ unit:[
+  ['.profile','এটা আপনার প্রোফাইল আর পরিবারের প্রতিনিধির তথ্য।','This is your profile and your family representative.'],
+  ['.cam','নির্মাণস্থলের লাইভ ক্যামেরা। উপরে ক্যামেরা বদলাতে পারবেন।','The live site camera. Switch cameras with the buttons above it.'],
+  ['[data-pay]','পরের কিস্তি দিতে এখানে চাপুন।','Tap here to pay your next installment.'],
+  ['.docs','আপনার সব কাগজ: অ্যালটমেন্ট লেটার, চুক্তি, রসিদ।','All your papers: allotment letter, agreement, receipts.']],
+ loan:[
+  ['.banks','প্রথমে ব্যাংক বেছে নিন।','First choose a bank.'],
+  ['#ln-pct','কত শতাংশ লোন আর কত বছরে শোধ করবেন, এখানে ঠিক করুন।','Set the loan percentage and the number of years here.'],
+  ['[data-apply]','মাসিক কিস্তি দেখে "Apply in one click" চাপুন। একজন লোন ম্যানেজার সব করবেন।','Check the monthly payment, then tap "Apply in one click". A loan manager handles the rest.']],
+ refer:[
+  ['#ref-form','বন্ধুর নাম আর নম্বর দিয়ে রেজিস্টার করুন। তাকে লাইভ সেশনের দাওয়াত পাঠানো হবে।','Register a friend with their name and number. They get a live session invite.'],
+  ['.linkbox','অথবা আপনার লিংক কপি করে শেয়ার করুন।','Or copy your link and share it.']],
+ broker:[
+  ['.kpis','আপনার বিক্রি, উপহার আর ক্যাশআউটের টাকা এক নজরে।','Your sales, gifts and cash ready to withdraw, at a glance.'],
+  ['.goal','দশটা বিক্রি করলে বাইক আর উমরাহ প্যাকেজ।','Ten sales unlocks a motorbike and an Umrah package.'],
+  ['.cash','বিকাশ, নগদ বা ব্যাংকে সাথে সাথে টাকা তুলুন।','Cash out instantly to bKash, Nagad or your bank.']],
+ guest:[
+  ['#player','তারিক আনাম খান আপনাকে ঘুরিয়ে দেখাবেন। প্লে চাপুন।','Tariq Anam Khan will show you around. Tap play.'],
+  ['.gnav','শেষ হলে "পরের অধ্যায়" চাপুন, অথবা সরাসরি বাজেটের দোকান দেখুন।','Then tap next chapter, or skip straight to shops in your budget.']],
+ funnels:[['.lanes','এখানে সব ফানেলের ধাপ আর মাপকাঠি।','Every funnel with its steps and what to measure.']]};
+const VG_FAQ=[
+ {q:['How do I hold a shop?','দোকান হোল্ড করব কীভাবে?'],bn:'দোকানে চাপুন, তারপর "Hold 72h"। নাম আর মোবাইল নম্বর দিন, হোয়াটসঅ্যাপে ছয় সংখ্যার কোড যাবে। কোড দিলেই দোকান ৭২ ঘণ্টা আপনার জন্য রাখা থাকবে, কোনো টাকা লাগবে না।',en:'Tap a shop, then "Hold 72h". Enter your name and mobile, and a 6-digit code arrives on WhatsApp. Enter it and the shop is kept for you for 72 hours, free.',go:'shops',spot:'#map',k:/hold|cart|reserve|হোল্ড/i},
+ {q:['Why does the price go up?','দাম বাড়ে কেন?'],bn:'নির্মাণের প্রতিটা ধাপ শেষ হলে দাম এক ধাপ বাড়ে। আজ বুকিং দিলে আজকের দামেই থাকবেন। এটা পরিকল্পিত হিসাব, লাভের নিশ্চয়তা নয়।',en:'Each construction milestone adds a planned price step. Book today and you keep today\'s price. It is a planned ladder, not a guaranteed return.',go:'home',spot:'.alert-slot',k:/price|rise|দাম/i},
+ {q:['How do I pay from abroad?','বিদেশ থেকে টাকা দেব কীভাবে?'],bn:'ব্যাংক ওয়্যার, এক্সচেঞ্জ হাউস বা কার্ডে বুকিং মানি দিন। WECON-এর ব্যাংক তথ্য শুধু অফিসিয়াল নম্বর আর এই অ্যাপেই পাবেন। কখনো ব্যক্তিগত অ্যাকাউন্টে টাকা পাঠাবেন না।',en:'Pay booking money by bank wire, exchange house or card. WECON\'s bank details come only from the official number and this app. Never pay into a personal account.',k:/pay|remit|wire|টাকা|পেমেন্ট/i},
+ {q:['Can I get a bank loan?','ব্যাংক লোন পাব?'],bn:'হ্যাঁ। ব্যাংক লোন পেজে ব্যাংক আর মেয়াদ বেছে মাসিক কিস্তি দেখুন, তারপর এক ক্লিকে আবেদন করুন।',en:'Yes. On the Bank Loan page, pick a bank and tenure to see the monthly payment, then apply in one click.',go:'loan',spot:'.banks',k:/loan|bank|emi|লোন/i},
+ {q:['Talk to a person','মানুষের সাথে কথা বলব'],bn:'হটলাইন ০৯৬৬৬ ৭৯৩২৬৬, অথবা হোয়াটসঅ্যাপ এজেন্ট। নিচে ভিডিও কলও বুক করতে পারেন।',en:'Call 096 667 93266, or message the WhatsApp agent. You can also book a video call below.',go:'home',spot:'.contact',k:/human|person|call|agent|talk|কথা|ফোন/i}];
+const vg={open:false,lang:'bn',mute:false,tour:null,i:0,said:null,busy:false};
+const hasTTS='speechSynthesis' in window;
+function vgVoice(){if(!hasTTS)return null;const vs=speechSynthesis.getVoices();return vg.lang==='bn'?vs.find(v=>/^bn/i.test(v.lang)):(vs.find(v=>/en-(GB|IN)/i.test(v.lang))||vs.find(v=>/^en/i.test(v.lang)))}
+function speak(bn,en){
+  vg.said={bn,en};vgRender();
+  if(vg.mute||!hasTTS)return;
+  try{speechSynthesis.cancel();const v=vgVoice();const text=(vg.lang==='bn'&&v)?bn:en;const u=new SpeechSynthesisUtterance(text);
+    if(v){u.voice=v;u.lang=v.lang}else u.lang='en-US';u.rate=.98;
+    u.onstart=()=>$('#vg')&&$('#vg').classList.add('speaking');u.onend=u.onerror=()=>$('#vg')&&$('#vg').classList.remove('speaking');
+    speechSynthesis.speak(u)}catch(e){}
+}
+function spotOn(sel){$$('.spot').forEach(e=>e.classList.remove('spot'));if(!sel)return;const el=$(sel);if(!el||!el.offsetParent)return;el.classList.add('spot');el.scrollIntoView&&el.scrollIntoView({behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth',block:'center'});clearTimeout(vg.st);vg.st=setTimeout(()=>el.classList.remove('spot'),6000)}
+function vgTourStep(){const T=VG_TOURS[state.tab]||[];const s=T[vg.i];if(!s){vg.tour=null;spotOn(null);speak('এই পাতার সব দেখানো শেষ। আর কিছু জানতে চাইলে নিচে প্রশ্ন করুন।','That is everything on this page. Ask me anything below.');return}spotOn(s[0]);speak(s[1],s[2])}
+function vgGreet(){const names={home:['হোম পেজ','the home page'],shops:['দোকানের ম্যাপ','the shop map'],unit:['আপনার ইউনিট','your unit page'],loan:['ব্যাংক লোন','the bank loan page'],refer:['লার্ন অ্যান্ড আর্ন','Learn & Earn'],broker:['ব্রোকার প্যানেল','the broker panel'],guest:['গাইডেড ট্যুর','the guided tour'],funnels:['ফানেল ম্যাপ','the funnel map']}[state.tab]||['এই পাতা','this page'];
+  speak(`আসসালামু আলাইকুম! আমি সাথী, আপনার গাইড। আপনি এখন ${names[0]}-তে আছেন। চাইলে আমি ধাপে ধাপে দেখিয়ে দিই।`,`Assalamu alaikum! I'm Sathi, your guide. You're on ${names[1]}. I can walk you through it step by step.`)}
+function vgRender(){
+  const box=$('#vg-body');if(!box)return;const T=VG_TOURS[state.tab]||[], s=vg.said;
+  const L=vg.lang==='bn'?1:0;
+  box.innerHTML=`${s?`<div class="vg-say"><div class="vg-wave" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></div><p>${vg.lang==='bn'?s.bn:s.en}</p><p class="sub">${vg.lang==='bn'?s.en:s.bn}</p></div>`:''}
+   ${vg.tour?`<div class="vg-row" style="justify-content:space-between;align-items:center"><span class="vg-step">Step ${vg.i+1} of ${T.length}</span><div class="vg-row"><button class="btn sm" data-vg="prev" ${vg.i?'':'disabled'}>Back</button><button class="btn sm" data-vg="stop">Stop</button><button class="btn sm primary" data-vg="next">${vg.i<T.length-1?'Next':'Finish'}</button></div></div>`
+     :`<div class="vg-row"><button class="btn sm primary" data-vg="tour" ${T.length?'':'disabled'}>${vg.lang==='bn'?'এই পাতা দেখিয়ে দাও':'Walk me through this page'}</button><button class="btn sm" data-vg="repeat">${vg.lang==='bn'?'আবার বলো':'Repeat'}</button></div>`}
+   <div class="vg-qs">${VG_FAQ.map((f,i)=>`<button class="chip" data-vgq="${i}">${f.q[L]}</button>`).join('')}</div>
+   ${hasTTS?(vg.lang==='bn'&&!vgVoice()?'<p class="vg-note">This device has no Bangla voice, so Sathi reads aloud in English and shows Bangla text.</p>':''):'<p class="vg-note">Voice is not supported in this browser. Sathi will guide you in text.</p>'}
+   <p class="vg-note">Preview uses your browser's voice. On the live website this button opens the ElevenLabs voice agent you can talk to.</p>`;
+  $$('[data-vglang]').forEach(b=>b.setAttribute('aria-pressed',b.dataset.vglang===vg.lang));
+  const m=$('[data-vg="mute"]');if(m){m.setAttribute('aria-pressed',vg.mute);m.innerHTML=vg.mute?'<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 5L6 9H2v6h4l5 4zM23 9l-6 6M17 9l6 6"/></svg>':'<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 5L6 9H2v6h4l5 4zM15.5 8.5a5 5 0 0 1 0 7M19 5a10 10 0 0 1 0 14"/></svg>'}
+}
+function vgOpen(on){vg.open=on;$('#vg').hidden=!on;$('#vg-fab').setAttribute('aria-expanded',on);if(on){if(!vg.said)vgGreet();else vgRender();$('#vg-in').focus()}else{hasTTS&&speechSynthesis.cancel();spotOn(null);vg.tour=null}}
+function vgAnswer(f){if(f.go&&state.tab!==f.go&&!(state.tab==='guest'))go(f.go);setTimeout(()=>spotOn(f.spot),120);speak(f.bn,f.en)}
+async function vgAsk(text){
+  const t=text.trim();if(!t||vg.busy)return;
+  const f=VG_FAQ.find(x=>x.k.test(t));
+  let sample=null;try{sample=await (window.claude&&window.claude.use?window.claude.use('sample'):null)}catch(e){}
+  if(!sample){if(f)vgAnswer(f);else speak('এটার উত্তর আমার কাছে নেই। হটলাইন ০৯৬৬৬ ৭৯৩২৬৬-এ কল করুন, আমাদের টিম সাহায্য করবে।','I don\'t have that answer. Please call 096 667 93266 and our team will help.');return}
+  vg.busy=true;speak('এক মুহূর্ত, দেখছি…','One moment, checking…');
+  try{
+    const r=await sample.json(`You are Sathi, the voice guide on the WECON Citizen Avenue Mall web app (a 9-floor shopping mall under construction in Chattogram, Bangladesh, sold to Bangladeshis working in the Gulf).
+Answer the visitor in 1-3 short spoken sentences. Explain how to use the website. Never promise returns, never quote figures that are not given here, and never give bank account numbers. For anything you are unsure of, point to the hotline 096 667 93266.
+Website facts: tabs are The Mall, Shops & Packages (floor map; tap a green shop; Hold 72h needs name + mobile + a one-time code by WhatsApp or SMS; max 2 holds; Book sends booking request for 10% booking money), My Unit (buyers: live camera, installments, documents), Bank Loan (pick bank, percent, years, apply in one click, a dedicated loan manager follows up), Learn & Earn (register a friend, live webinars, product gift for attending), Broker Panel (gift up to 1 lakh taka per sale, 10+ sales earns a motorbike and Umrah package, instant cashout to bKash, Nagad or bank). Packages: Platinum Pavilion 1,000-3,000 sft, Luxury Showroom 500-1,200, Gold Stall 220-480, Silver Kiosk 100-200. Prices rise in planned steps at construction milestones; today's price holds for bookings before the next step. Payments from abroad: bank wire, exchange house, card; only pay to WECON official accounts shown in the app.
+Visitor is on: ${state.tab}. Visitor asked: """${t.slice(0,400)}"""
+Reply as JSON: {"bn":"answer in Bangla","en":"same answer in English","tab":"one of home|shops|unit|loan|refer|broker or empty"}`,{modelTier:'quick'});
+    if(r&&r.bn){if(r.tab&&VG_TOURS[r.tab]&&r.tab!==state.tab&&state.tab!=='guest')go(r.tab);speak(String(r.bn),String(r.en||''))}else if(f)vgAnswer(f);
+  }catch(e){if(f)vgAnswer(f);else speak('এখন উত্তর দিতে পারছি না। হটলাইন ০৯৬৬৬ ৭৯৩২৬৬-এ কল করুন।','I can\'t answer right now. Please call 096 667 93266.')}
+  vg.busy=false;
+}
+document.addEventListener('click',e=>{
+  const b=e.target.closest('[data-vg],[data-vgq],[data-vglang],#vg-fab');if(!b)return;
+  if(b.id==='vg-fab'){vgOpen(true);return}
+  if(b.dataset.vglang){vg.lang=b.dataset.vglang;vg.said&&speak(vg.said.bn,vg.said.en);vgRender();return}
+  if(b.dataset.vgq!==undefined){vg.tour=null;vgAnswer(VG_FAQ[+b.dataset.vgq]);return}
+  const a=b.dataset.vg;
+  if(a==='close')vgOpen(false);
+  if(a==='mute'){vg.mute=!vg.mute;if(vg.mute&&hasTTS)speechSynthesis.cancel();vgRender()}
+  if(a==='tour'){vg.tour=state.tab;vg.i=0;vgTourStep()}
+  if(a==='next'){vg.i++;vgTourStep()}
+  if(a==='prev'){vg.i=Math.max(0,vg.i-1);vgTourStep()}
+  if(a==='stop'){vg.tour=null;spotOn(null);hasTTS&&speechSynthesis.cancel();vgRender()}
+  if(a==='repeat'){vg.said?speak(vg.said.bn,vg.said.en):vgGreet()}
+});
+document.addEventListener('submit',e=>{if(e.target.id==='vg-form'){e.preventDefault();const i=$('#vg-in');vgAsk(i.value);i.value=''}});
+if(hasTTS)speechSynthesis.onvoiceschanged=()=>vg.open&&vgRender();
+
+/* ---------- camera ---------- */
+let raf=0;
+function camLoop(t){
+  const cv=$('#cam');
+  if(cv&&cv.offsetParent){
+    const dpr=Math.min(2,window.devicePixelRatio||1), w=cv.clientWidth, h=cv.clientHeight;
+    if(cv.width!==Math.round(w*dpr)){cv.width=Math.round(w*dpr);cv.height=Math.round(h*dpr)}
+    const x=cv.getContext('2d');x.setTransform(dpr,0,0,dpr,0,0);
+    const reduce=matchMedia('(prefers-reduced-motion: reduce)').matches, tt=reduce?0:t/1000;
+    const view=state.cam;
+    const sky=x.createLinearGradient(0,0,0,h);sky.addColorStop(0,view===1?'#7FA9C7':'#9CB9CF');sky.addColorStop(1,'#E6D7BC');x.fillStyle=sky;x.fillRect(0,0,w,h);
+    // clouds
+    x.fillStyle='rgba(255,255,255,.55)';for(let i=0;i<3;i++){const cx=((tt*8+i*180)%(w+160))-80,cy=30+i*22;x.beginPath();x.ellipse(cx,cy,48,12,0,0,7);x.ellipse(cx+30,cy-6,30,10,0,0,7);x.fill()}
+    // city skyline
+    x.fillStyle='#8A9AA3';for(let i=0;i<14;i++){const bw=w/14,bh=30+((i*37)%50);x.fillRect(i*bw,h*.55-bh,bw-3,bh)}
+    const gy=view===1?h*.8:h*.72;
+    x.fillStyle='#8C7356';x.fillRect(0,gy,w,h-gy);
+    // excavation pit
+    const px=w*.18,pw=w*(view===2?.7:.55);x.fillStyle='#6D5640';x.fillRect(px,gy,pw,(h-gy)*.6);
+    // piles / pile caps
+    x.fillStyle='#B8B2A6';for(let i=0;i<9;i++){x.fillRect(px+10+i*(pw-20)/8-5,gy+4,10,(h-gy)*.5)}
+    // podium slab partial
+    x.fillStyle='#C9C3B7';x.fillRect(px,gy-8,pw*.62,8);
+    // columns with rebar
+    x.strokeStyle='#5E4A3A';x.lineWidth=1;
+    for(let i=0;i<6;i++){const cx=px+12+i*(pw*.6)/5;x.fillStyle='#BDB6A8';x.fillRect(cx-4,gy-38,8,30);x.beginPath();for(let k=-2;k<=2;k+=2){x.moveTo(cx+k,gy-38);x.lineTo(cx+k,gy-52)}x.stroke()}
+    // scaffolding
+    x.strokeStyle='rgba(60,60,60,.6)';x.beginPath();const sx=px+pw*.64;for(let i=0;i<=4;i++){x.moveTo(sx+i*14,gy);x.lineTo(sx+i*14,gy-48)}for(let j=0;j<=3;j++){x.moveTo(sx,gy-j*16);x.lineTo(sx+56,gy-j*16)}x.stroke();
+    // hoarding
+    x.fillStyle='#0F6E56';x.fillRect(0,gy-2,px-6,22);x.fillRect(px+pw+6,gy-2,w-px-pw,22);
+    x.fillStyle='#fff';x.font='600 11px "Familjen Grotesk",sans-serif';x.fillText('WECON · CITIZEN AVENUE',8,gy+13);
+    // tower crane
+    const mx=w*.7, mt=h*.12;x.strokeStyle='#E0A53A';x.lineWidth=3;x.beginPath();x.moveTo(mx,gy);x.lineTo(mx,mt);x.stroke();
+    x.lineWidth=1;for(let y=gy;y>mt;y-=10){x.beginPath();x.moveTo(mx-4,y);x.lineTo(mx+4,y-10);x.stroke()}
+    const sw=Math.cos(tt*.25), L=w*.42*sw;x.lineWidth=3;x.beginPath();x.moveTo(mx-w*.12*sw,mt);x.lineTo(mx+L,mt);x.stroke();
+    x.fillStyle='#555';x.fillRect(mx-w*.12*sw-(sw>0?12:0),mt-2,12,10);
+    const hx=mx+L*.7, hy=mt+40+Math.sin(tt*.6)*16;x.strokeStyle='#333';x.lineWidth=1;x.beginPath();x.moveTo(hx,mt);x.lineTo(hx,hy);x.stroke();x.fillStyle='#777';x.fillRect(hx-10,hy,20,8);
+    // workers
+    x.fillStyle='#F2C230';for(let i=0;i<5;i++){const wx=px+30+i*45+Math.sin(tt*.8+i)*6;x.beginPath();x.arc(wx,gy-14,2.6,0,7);x.fill();x.fillRect(wx-2,gy-12,4,8)}
+    // overlay
+    x.fillStyle='rgba(0,0,0,.45)';x.fillRect(0,0,w,26);
+    x.fillStyle=(Math.floor(tt*1.2)%2&&!reduce)?'#ff4d4d':'#d33';x.beginPath();x.arc(14,13,4.5,0,7);x.fill();
+    x.fillStyle='#fff';x.font='500 11px "JetBrains Mono",monospace';
+    const now=new Date();x.fillText('LIVE · CAM-0'+(view+1)+' '+['NORTH GATE','CRANE TOP','PODIUM'][view],24,17);
+    const ts=fmtTZ(now,'Asia/Dhaka',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false})+' BST';
+    x.fillText(ts,w-x.measureText(ts).width-10,17);
+    x.fillStyle='rgba(0,0,0,.45)';x.fillRect(0,h-22,w,22);x.fillStyle='#fff';x.fillText('Simulated feed for prototype',10,h-7);
+  }
+  raf=requestAnimationFrame(camLoop);
+}
+
+/* ---------- render ---------- */
+function render(){
+  $$('.alert-slot').forEach(s=>s.innerHTML=alertHTML());
+  const t=state.tab;
+  if(t==='home')renderHome();
+  if(t==='shops')renderShops();
+  if(t==='unit')renderUnit();
+  if(t==='loan')renderLoan();
+  if(t==='refer')renderRefer();
+  if(t==='broker')renderBroker();
+  if(t==='guest')renderGuest();
+  if(t==='funnels')renderFunnels();
+  const cl=$('#clock-line'); if(cl){const n=new Date();cl.textContent=`Dhaka ${fmtTZ(n,'Asia/Dhaka',{hour:'numeric',minute:'2-digit'})} · Dubai ${fmtTZ(n,'Asia/Dubai',{hour:'numeric',minute:'2-digit'})} · Riyadh ${fmtTZ(n,'Asia/Riyadh',{hour:'numeric',minute:'2-digit'})}`}
+}
+
+/* ---------- events ---------- */
+document.addEventListener('click',e=>{
+  const b=e.target.closest('button,[data-floor]');if(!b)return;
+  const d=b.dataset;
+  if(d.role){setRole(d.role);return}
+  if(d.tab){go(d.tab);return}
+  if(d.roleSwitch){setRole(d.roleSwitch);if(!d.go){render()}}
+  if(d.go){if(d.go==='guest')state.g.step=0;go(d.go);return}
+  if(d.previewRef){state.g.ref=d.previewRef;state.g.step=0;go('guest');return}
+  if(d.play!==undefined){togglePlay();return}
+  if(d.gstep!==undefined){gStep(+d.gstep);return}
+  if(d.q){const g=state.g;g.quiz[d.q]=+d.v;if(d.q==='country'){state.cur=COUNTRIES[+d.v][1];$('#cur').value=state.cur}renderGuest();return}
+  if(d.floor!==undefined){state.floor=+d.floor;state.sel=null;if(state.tab!=='shops')go('shops');else renderShops();return}
+  if(d.tier){state.tier=d.tier;renderShops();return}
+  if(d.tierGo){state.tier=d.tierGo;state.onlyAv=true;const f=SHOPS.find(s=>s.tier===d.tierGo&&s.status==='available');if(f)state.floor=f.floor;state.sel=f?f.id:null;go('shops');return}
+  if(d.shop){state.sel=d.shop;renderShops();if(innerWidth<1060)$('#detail').scrollIntoView({behavior:'smooth',block:'start'});return}
+  if(d.copy){copy(d.copy);return}
+  if(d.toast){toast(d.toast);return}
+  if(d.cam){state.cam=+d.cam;$$('[data-cam]').forEach(c=>c.setAttribute('aria-pressed',c.dataset.cam===d.cam));return}
+  if(d.hold){holdFlow(d.hold);return}
+  if(d.book){bookSheet(d.book);return}
+  if(d.holds!==undefined){holdsSheet();return}
+  if(d.waitlist){toast(`You're on the waitlist for ${d.waitlist}. We'll alert you if the hold expires.`);return}
+  if(d.similar){const s=SHOPS.find(x=>x.id===d.similar);state.tier=s.tier;state.onlyAv=true;renderShops();toast('Showing available '+TIERS[s.tier].short.toLowerCase()+'s');return}
+  if(d.loan){state.loan.shopId=d.loan;go('loan');return}
+  if(d.share){const s=SHOPS.find(x=>x.id===d.share);const ref=state.role==='broker'?'?ref=WB-0217':'';copy(`Shop ${s.id}, ${TIERS[s.tier].name}, ${s.sft} sft at Citizen Avenue Mall, Chattogram. ${compact(s.total)} today, price rises at the next milestone. wecon.com.bd/citizen/${s.id}${ref}`,'Shop link copied');return}
+  if(d.apply!==undefined){
+    sheet({title:'Apply in one click',body:`<p class="muted small" style="margin-bottom:12px">${state.role==='customer'?'Pulled from your buyer profile. Check and send.':'Pre-filled sample profile. Edit before sending.'}</p>
+      <div class="form"><div class="field"><label for="ap-n">Name</label><input id="ap-n" value="${ME.name}"></div><div class="field"><label for="ap-p">Phone</label><input id="ap-p" value="${ME.phone}"></div><div class="field"><label for="ap-i">Monthly income</label><input id="ap-i" value="${ME.income}"></div></div>
+      <p class="note" style="margin-top:10px">Sending to ${BANKS[state.loan.bank].n}. A WECON loan manager calls you within one working day.</p>`,ok:'Send application',onOk(){state.loan.stage=1;renderLoan();toast('Application sent. Tanvir Hasan is your loan manager.')}});return}
+  if(d.advance!==undefined){state.loan.stage=Math.min(STAGES.length-1,state.loan.stage+1);renderLoan();return}
+  if(d.method){$$('[data-method]').forEach(c=>c.setAttribute('aria-pressed',c===b));return}
+  if(d.cashout!==undefined){
+    const amt=Math.round(+($('#co-amt').value||'').replace(/[^\d]/g,'')), m=($('[data-method][aria-pressed="true"]')||{}).dataset?.method||'bKash';
+    if(!amt||amt<500||amt>state.cash.avail){toast(`Enter an amount between ৳500 and ${bdt(state.cash.avail)}.`);return}
+    sheet({title:'Confirm cashout',body:`<dl class="kv"><dt>Amount</dt><dd><b>${bdt(amt)}</b></dd><dt>To</dt><dd>${m} ${m==='Bank EFT'?'· DBBL ••4410':'· 01711-•••-382'}</dd><dt>Fee</dt><dd>৳0</dd></dl><p class="note" style="margin-top:10px">Prototype: no money moves.</p>`,ok:'Cash out',onOk(){
+      state.cash.avail-=amt;const row={d:fmtTZ(new Date(),'Asia/Dhaka',{day:'2-digit',month:'short',year:'numeric'}),a:amt,m,s:'Processing'};state.cash.history.unshift(row);renderBroker();toast(`${bdt(amt)} on its way to your ${m}.`);
+      setTimeout(()=>{row.s='Paid';if(state.tab==='broker')renderBroker()},2500)}});return}
+  if(d.pay!==undefined){const a=MYUNIT.total*.7/30;sheet({title:'Pay installment 4',body:`<dl class="kv" style="margin-bottom:12px"><dt>Amount</dt><dd><b>${bdt(a)}</b></dd>${state.cur!=='BDT'?`<dt>≈ ${state.cur}</dt><dd>${fx(a)}</dd>`:''}<dt>Due</dt><dd>05 Nov 2026</dd></dl><div class="field"><label for="py-m">Method</label><select id="py-m"><option>Bank wire (SWIFT)</option><option>Exchange house</option><option>Card</option></select></div><p class="note" style="margin-top:10px">Prototype: no payment is taken.</p>`,ok:'Continue to payment',onOk(){toast('Payment instructions sent to your WhatsApp and email.')}});return}
+  if(d.bookVisit!==undefined){sheet({title:'Book a visit or video call',body:`<div class="form"><div class="field"><label for="bv-t">Type</label><select id="bv-t"><option>Video walkthrough (you, from abroad)</option><option>Site visit (family representative)</option></select></div><div class="field"><label for="bv-s">Slot</label><select id="bv-s"><option>Fri 23 Oct · 8:00 PM Dhaka / 6:00 PM Dubai</option><option>Sat 24 Oct · 9:30 PM Dhaka / 7:30 PM Dubai</option><option>Sun 25 Oct · 11:00 AM Dhaka (site visit)</option></select></div></div>`,ok:'Book slot',onOk(sh){toast('Booked: '+$('#bv-s',sh).value)}});return}
+});
+document.addEventListener('keydown',e=>{if((e.key==='Enter'||e.key===' ')&&e.target.matches('g[data-floor]')){e.preventDefault();e.target.dispatchEvent(new MouseEvent('click',{bubbles:true}))}});
+document.addEventListener('change',e=>{
+  const t=e.target;
+  if(t.matches('[data-alert]')){state.alertOn=t.checked;store.set('alert',t.checked);$$('[data-alert]').forEach(x=>x.checked=t.checked);toast(t.checked?'We will WhatsApp you 14 days before the next price step.':'Price alerts off.');return}
+  if(t.id==='only-av'){state.onlyAv=t.checked;renderShops();return}
+  if(t.id==='esc-only'){state.escOnly=t.checked;renderShops();return}
+  if(t.id==='cur'){state.cur=t.value;store.set('cur',t.value);render();return}
+  if(t.name==='bank'){state.loan.bank=+t.value;renderLoan();return}
+  if(t.id==='ln-shop'){state.loan.shopId=t.value;renderLoan();return}
+});
+document.addEventListener('input',e=>{
+  const t=e.target;
+  if(t.id==='ln-pct'){state.loan.pct=+t.value;renderLoan();$('#ln-pct').focus();return}
+  if(t.id==='ln-yrs'){state.loan.yrs=+t.value;renderLoan();$('#ln-yrs').focus();return}
+});
+
+/* ---------- boot ---------- */
+$('#cur').value=state.cur;
+$$('.tabs .lock').forEach(l=>l.style.display=l.dataset.lock===state.role?'none':'');
+const h=(location.hash||'').slice(1);
+if(/^r-[A-Za-z0-9]+$/.test(h)){state.g.ref=h.slice(2).toUpperCase();go('guest')}
+else go(['home','shops','unit','loan','refer','broker','funnels'].includes(h)?h:'home');
+raf=requestAnimationFrame(camLoop);
+setInterval(()=>{const cl=$('#clock-line');if(cl&&state.tab==='home')render()},60000);
+})();
+</script>
+
+</body></html>

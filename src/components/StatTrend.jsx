@@ -1,8 +1,18 @@
 import Mi from './Mi.jsx';
-import { DollarSign, TrendingUp, TrendingDown, RefreshCw, Users, Wallet, Trophy } from 'lucide-react';
+import { TrendingUp, TrendingDown, RefreshCw, Users, Wallet, Trophy } from 'lucide-react';
 
 // thin line icons, top right (the reference uses lucide-style strokes)
-const ICONS = { dollar: DollarSign, up: TrendingUp, down: TrendingDown, refresh: RefreshCw, users: Users, wallet: Wallet, trophy: Trophy };
+// Bangladeshi Taka, drawn as text in the same size and colour as the lucide
+// icons beside it (lucide has no Taka sign). Revenue is in BDT, not dollars.
+function TakaSign({ size = 18, className }) {
+  return (
+    <svg className={className} width={size} height={size} viewBox="0 0 24 24" aria-hidden="true">
+      <text x="12" y="18.5" textAnchor="middle" fontSize="21" fontWeight="400" fill="currentColor" fontFamily="'Hind Siliguri', 'Noto Sans Bengali', 'Nirmala UI', sans-serif">৳</text>
+    </svg>
+  );
+}
+
+const ICONS = { dollar: TakaSign, taka: TakaSign, up: TrendingUp, down: TrendingDown, refresh: RefreshCw, users: Users, wallet: Wallet, trophy: Trophy };
 
 // KPI card: title with a thin icon on the right, the big value, a one-line
 // note under it (the delta, or `sub`), and a small visual on the right side:
@@ -11,7 +21,7 @@ const ICONS = { dollar: DollarSign, up: TrendingUp, down: TrendingDown, refresh:
 //   kind 'dots'  — a dot-matrix bar chart of `points`
 //   kind 'pill'  — a capsule filled to `pct` (0–100)
 // With no kind, 'area' when there are points, else no visual.
-export default function StatTrend({ label, value, delta, sub, points, pct, kind, color = '#FB8849', icon, gid, onClick }) {
+export default function StatTrend({ label, value, delta, sub, points, pct, kind, color = 'var(--bk-gold)', icon, gid, onClick }) {
   const Icon = ICONS[icon];
   const hasGraph = Array.isArray(points) && points.length > 1;
   const up = (delta ?? 0) >= 0;

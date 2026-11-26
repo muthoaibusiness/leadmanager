@@ -76,7 +76,7 @@ export default function ForwardModal() {
   // The same route rules the Lead Panel uses to decide whether the single
   // "Forward to Agent" button shows; inside the modal they decide which
   // destination options are offered.
-  const teamRoute = user.role !== ROLES.MA && status && !['NEGOTIATING', 'DEAL_CLOSED_WON', 'DEAL_CLOSED_LOST', 'NOT_INTERESTED'].includes(status) && lead?.assignedTo === user.id;
+  const teamRoute = status && !['NEGOTIATING', 'DEAL_CLOSED_WON', 'DEAL_CLOSED_LOST', 'NOT_INTERESTED'].includes(status) && lead?.assignedTo === user.id;
   const tlRoute = status === 'SITE_VISIT_DONE';
   const selfRoute = canSelfForward(user) && lead?.assignedTo !== user.id;
 
@@ -122,7 +122,7 @@ export default function ForwardModal() {
     // Team Lead — Executives work leads as agents too (see effectiveRole), so
     // they are valid recipients. The Team Lead destination is a closing
     // hand-off (SITE_VISIT_DONE) that still requires an offer.
-    const roleQ = dest === 'tl' ? `role=eq.${ROLES.TL}` : `role=in.(${ROLES.AGENT},${ROLES.EXEC},${ROLES.TL})`;
+    const roleQ = dest === 'tl' ? `role=eq.${ROLES.TL}` : `role=in.(${ROLES.AGENT},${ROLES.MA},${ROLES.EXEC},${ROLES.TL})`;
     // An account with extra_forward_user_ids also sees those agents in the plain hand-off list.
     const extra = dest === 'agent' ? extraUsersFilter(extraUsers) : null;
     Promise.all([

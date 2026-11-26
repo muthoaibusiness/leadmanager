@@ -1,18 +1,23 @@
 import { useState, useEffect, useRef, Suspense } from 'react';
+import { createPortal } from 'react-dom';
 import { useApp } from './context/AppContext.jsx';
-import { getDB, getUnreadCount, getSession, hasSessionId, saveDBDeferred, checkFollowUpReminders, getProperties, expireHolds, migrateTenancy, mergeDB, purgeDemoSeed, dedupeLeads, reconcileDeletions, applyRealtimeEvent, clearLocalDB, cacheBelongsTo } from './lib/db.js';
+import { getDB, getUnreadCount, markOneRead, getSession, hasSessionId, saveDBDeferred, checkFollowUpReminders, getProperties, expireHolds, migrateTenancy, mergeDB, purgeDemoSeed, dedupeLeads, reconcileDeletions, applyRealtimeEvent, clearLocalDB, cacheBelongsTo } from './lib/db.js';
 import { signIn as authSignIn, restoreSession, consumeAuthRedirect, mustSetPassword, openedFromAuthLink } from './lib/auth.js';
 import SetPasswordCard from './components/SetPasswordCard.jsx';
 import { seedDB, SEED_PROPERTIES, DEMO_PROPERTIES } from './lib/seed.js';
 import { sbLoad, sbSubscribeAll } from './lib/supabase.js';
 import { hasFollowupTable } from './lib/followups.js';
+import { syncCompanyDesign } from './lib/companyDesign.js';
 import { waLoadSettings } from './lib/wa.js';
 import { pushUnreadSummary, requestNotifyPermission } from './lib/pushNotify.js';
+import { syncPush } from './lib/webPush.js';
+import { onPushClick, takePushClick } from './lib/pwa.js';
 import { kbd } from './lib/helpers.js';
 import { ROLES, canSee, effectiveRole, DRAWER_MQ } from './lib/constants.js';
 import { VIEW_TITLES, homeView } from './lib/navHistory.js';
 import { matchPublicRoute, isPortfolioRoute } from './lib/publicProjects.js';
 import useMediaQuery from './hooks/useMediaQuery.js';
+import useIsPhone from './hooks/useIsPhone.js';
 import lazyChunk from './lib/lazyChunk.js';
 
 import Mi from './components/Mi.jsx';
@@ -25,6 +30,7 @@ import ThemeToggle from './components/ThemeToggle.jsx';
 import NotifBell from './components/NotifBell.jsx';
 import UserMenu from './components/UserMenu.jsx';
 import Toast from './components/Toast.jsx';
+import UpdateBar from './components/UpdateBar.jsx';
 import DateRangePicker from './components/DateRangePicker.jsx';
 import { HeaderSearch, AiMenu } from './components/HeaderTools.jsx';
 import BackButton from './components/BackButton.jsx';
@@ -61,12 +67,13 @@ const PAGES = {
   PipelineView: () => import('./components/views/PipelineView.jsx'),
   ClientsView: () => import('./components/views/ClientsView.jsx'),
   ReportsView: () => import('./components/views/ReportsView.jsx'),
-  AgentPerformanceView: () => import('./components/views/AgentPerformanceView.jsx'),
+  AnalyticsView: () => import('./components/views/AnalyticsView.jsx'),
   PerfReportsView: () => import('./components/views/PerfReportsView.jsx'),
   FbLeadsView: () => import('./components/views/FbLeadsView.jsx'),
   InventoryView: () => import('./components/views/InventoryView.jsx'),
   ConversationsView: () => import('./components/views/ConversationsView.jsx'),
   PublicProjectAdmin: () => import('./components/project/PublicProjectAdmin.jsx'),
+  ShopBookingView: () => import('./components/booking/ShopBookingView.jsx'),
 };
 const OVERLAYS = {
   LeadPanel: () => import('./components/LeadPanel.jsx'),
@@ -90,6 +97,8 @@ const OVERLAYS = {
   ProjectConsole: () => import('./components/project/ProjectConsole.jsx'),
   FloorPlanEditor: () => import('./components/project/FloorPlanEditor.jsx'),
   PropertyFormModal: () => import('./components/modals/PropertyFormModal.jsx'),
+  AddPropertyWizard: () => import('./components/project/AddPropertyWizard.jsx'),
+  EditProjectModal: () => import('./components/project/EditProjectModal.jsx'),
   UnitBookingModal: () => import('./components/modals/UnitBookingModal.jsx'),
   BookingModal: () => import('./components/modals/BookingModal.jsx'),
   TransferLeadModal: () => import('./components/modals/TransferLeadModal.jsx'),
@@ -99,7 +108,7 @@ const OVERLAYS = {
 
 const lazyAll = (loaders) => Object.fromEntries(Object.entries(loaders).map(([k, f]) => [k, lazyChunk(f)]));
 
-const { AgentDash, TeamLeadDash, ManagementDash, MasterDash, LeadsView, CalendarView, TeamView, AccountsView, AiTrainerView, MetaCapiView, RequestsView, ProfileView, PropertiesView, AvailableUnitsView, BookingsView, PipelineView, ClientsView, ReportsView, AgentPerformanceView, PerfReportsView, FbLeadsView, InventoryView, ConversationsView, PublicProjectAdmin } = lazyAll(PAGES);
+const { AgentDash, TeamLeadDash, ManagementDash, MasterDash, LeadsView, CalendarView, TeamView, AccountsView, AiTrainerView, MetaCapiView, RequestsView, ProfileView, PropertiesView, AvailableUnitsView, BookingsView, PipelineView, ClientsView, ReportsView, AnalyticsView, PerfReportsView, FbLeadsView, InventoryView, ConversationsView, PublicProjectAdmin, ShopBookingView } = lazyAll(PAGES);
 const OVERLAY_COMPONENTS = Object.entries(lazyAll(OVERLAYS));
 const LandingPage = lazyChunk(() => import('./components/LandingPage.jsx'));
 const PublicProjectView = lazyChunk(() => import('./components/project/PublicProjectView.jsx'));
@@ -217,14 +226,35 @@ function LoginPage({ onLogin, onBack, initialError = '' }) {
   );
 }
 
+// Pages that bring their own phone header (Back, title, an action) in place of
+// the header bar: both Projects tabs (which also drop the hero and bottom bar)
+// and Prospects (which keeps its hero actions and the bottom bar).
+const OWN_PHONE_HEADER = new Set(['properties', 'leads', 'metacapi']);
+
 // ── Thin chrome bar ─────────────────────────────────────────────────────────
 // `shown`: the sidebar is on screen. `showBtnRef`: the show button, which the
 // shell moves focus onto when the sidebar hides with focus inside it.
 function PageHeader({ shown, showBtnRef }) {
   const { setSidebarShown, navTrail, view, user } = useApp();
-  // Any page but the account's home: phones (CSS) hide the account, tools and
-  // bell there and show only a round Back button.
+  const phone = useIsPhone();
+  // Any page but the account's home: phones (CSS) hide the account, tools and bell.
   const sub = view !== homeView(user);
+  // Phones: Projects, Prospects and Meta CAPI carry their own header (.fpv-ph), so this one never mounts there.
+  if (phone && OWN_PHONE_HEADER.has(view)) return null;
+  // Phones, every other page: the Prospects header, as is (LeadsView): Back,
+  // the page name, the hero's action at the end (PageHero portals it
+  // into the slot). Same markup and classes, so the same positions.
+  if (phone && sub) {
+    return (
+      <div className="fpv-ph lv-ph">
+        <div className="fpv-ph-top">
+          <BackButton />
+          <h1>{VIEW_TITLES[view] || view}</h1>
+          <div className="hd-acts" id="hd-acts" />
+        </div>
+      </div>
+    );
+  }
   return (
     <header className={`pg-head${sub ? ' pg-head-sub' : ''}`}>
       {/* Show-sidebar button, same glyph as the sidebar's hide button: always
@@ -234,6 +264,10 @@ function PageHeader({ shown, showBtnRef }) {
         aria-label="Show sidebar" aria-controls="app-sidebar" aria-expanded={shown}
         title={`Show sidebar (${kbd('\\')})`}>
         <SidebarGlyph />
+        {/* Phones (CSS): three bars, the top right-aligned, the middle full, the bottom left-aligned */}
+        <svg className="ham-bars" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true" focusable="false">
+          <path d="M10 7h10M4 12h16M4 17h10" />
+        </svg>
       </button>
       {/* Back (the previous page; none on home), then where this page sits:
           the breadcrumb takes all the room the controls leave. */}
@@ -244,13 +278,16 @@ function PageHeader({ shown, showBtnRef }) {
           There, search → AI → date filter share one pill (.hd-grp); on wider
           screens the group is display: contents and search/AI are hidden. */}
       <ThemeToggle />
+      {/* Phones (CSS): one rounded-square box holding AI, the bell and the
+          account face; search and the date filter stay hidden there. Wider
+          screens: display: contents, so each keeps its own place. */}
       <div className="hd-grp">
         <HeaderSearch />
         <AiMenu />
         <DateRangePicker />
+        <NotifBell />
+        <UserMenu />
       </div>
-      <NotifBell />
-      <UserMenu />
     </header>
   );
 }
@@ -259,6 +296,15 @@ function PageHeader({ shown, showBtnRef }) {
 function PageHero() {
   const { user, view, agentFilter, teamFilter, openModal, setCreateUserRoles, leadCounts, projTab, setProjTab, planSel, pageRefresh } = useApp();
   const pnav = useProjectNav();
+  const phone = useIsPhone();
+  const phoneLeads = phone && (view === 'leads' || view === 'metacapi'); // pages with the Prospects header of their own
+  // Phone sub-pages: the header bar names the page and holds the actions, so
+  // the hero's own title and subtitle give way; the actions render into the
+  // header's slot (same elements and handlers, moved).
+  const phoneSub = !!user && phone && !phoneLeads && view !== homeView(user);
+  // The slot is a sibling rendered before this hero, so it is in the DOM by
+  // the time this renders (read, not stored: no effect, no extra render).
+  const actsSlot = phoneSub ? document.getElementById('hd-acts') : null;
 
   // The Customers count is NOT computed here. It has to agree with the table
   // underneath it, and the table's query is built from filters this component
@@ -269,6 +315,10 @@ function PageHero() {
   // Every dashboard now has its own greeting header — skip the generic hero.
   if (view === 'dashboard') return null;
   if (view === 'conversations') return null; // chat ships its own compact bar
+  // Phones: the Projects pages' own header replaces the hero. Prospects keeps
+  // its hero actions (Add Customer, Import) under its own header; the title
+  // and subtitle give way to that header.
+  if (phone && view === 'properties') return null;
   if (user.role === ROLES.MASTER && view === 'companies') return null;
   const db = getDB();
 
@@ -286,13 +336,13 @@ function PageHero() {
   // Titles come from VIEW_TITLES, which also labels the Back link to each page.
   const META = {
     dashboard: { sub: '' },
-    leads: { sub: leadCounts?.total == null ? 'Counting…' : `${leadCounts.total} prospects ·${leadCounts.active ?? 0} active` },
+    leads: { sub: leadCounts?.total == null ? 'Counting…' : `${leadCounts.total} leads · ${leadCounts.active ?? 0} active` },
     calendar: { sub: 'Your scheduled meetings' },
     pipeline: { sub: 'Drag deals across stages' },
     clients: { sub: '360° customer view' },
     properties: { sub: `${props.length} project${props.length === 1 ? '' : 's'} · ${propAvail} unit${propAvail === 1 ? '' : 's'} available` },
     reports: { sub: 'Live sales analytics' },
-    agentperf: { sub: 'Per-role scorecards & funnels' },
+    agentperf: { sub: 'Agent scorecards, project leaderboard, Facebook & Meta' },
     perfreports: { sub: '' },
     fbleads: { sub: 'Lead Ads forms → CRM' },
     bookings: { sub: 'Payments, instalments & dues' },
@@ -305,7 +355,7 @@ function PageHero() {
     metacapi: { sub: 'Lead events reported to Meta' },
   };
   for (const k in META) META[k].title = VIEW_TITLES[k];
-  let { title, sub } = META[view] || { title: view, sub: '' };
+  let { title, sub } = META[view] || { title: VIEW_TITLES[view] || view, sub: '' };
   if (user.role === ROLES.MASTER) ({ title, sub } = META.companies); // master only ever sees the company overview
   if (drilled) {
     title = agentFilter && agentName ? agentName : (tlUser?.name || 'Team') + "'s Team";
@@ -324,10 +374,10 @@ function PageHero() {
   // actions
   let actions = [];
   // Customers: re-fetch the list, for every role that can open the view.
-  if (view === 'leads') actions.push(<RefreshButton key="refresh" />);
+  if (view === 'leads' && !phoneLeads) actions.push(<RefreshButton key="refresh" />); // phones: in the page's own header
   // Meta CAPI: the same button, reloading that page's own data (pageRefresh).
-  if (view === 'metacapi' && pageRefresh) actions.push(<RefreshButton key="refresh" onClick={pageRefresh.run} busy={pageRefresh.busy} label="Refresh Meta CAPI" />);
-  if (view === 'leads' && canSee(user, 'add_customer')) {
+  if (view === 'metacapi' && pageRefresh && !phoneLeads) actions.push(<RefreshButton key="refresh" onClick={pageRefresh.run} busy={pageRefresh.busy} label="Refresh Meta CAPI" />); // phones: in the page's own header
+  if (view === 'leads' && canSee(user, 'add_customer') && !phoneLeads) { // phones: in the page's tab row
     actions.push(<button key="add-lead" className="btn btn-p" onClick={() => openModal('add-lead')}><Mi>add</Mi>Add Customer</button>);
     actions.push(<button key="import" className="btn btn-g" onClick={() => openModal('import')}><Mi>upload</Mi>Import</button>);
   }
@@ -360,12 +410,12 @@ function PageHero() {
   }
 
   return (
-    <div className={`hero${view === 'pipeline' ? ' hero-compact' : ''}`}>
-      <div className="hero-main">
+    <div className={`hero${view === 'pipeline' ? ' hero-compact' : ''}${phoneLeads || phoneSub ? ' hero-acts-only' : ''}`}>
+      {!phoneLeads && !phoneSub && <div className="hero-main">
         <h1 className="hero-title">{title}</h1>
         {sub && <div className="hero-sub">{sub}</div>}
-      </div>
-      {actions.length > 0 && <div className="hero-acts">{actions}</div>}
+      </div>}
+      {actions.length > 0 && (phoneSub ? (actsSlot && createPortal(<>{actions}</>, actsSlot)) : <div className="hero-acts">{actions}</div>)}
     </div>
   );
 }
@@ -390,9 +440,10 @@ function PageBody() {
   if (view === 'pipeline') return <PipelineView />;
   if (view === 'clients') return <ClientsView />;
   if (view === 'properties') return projTab === 'units' ? <AvailableUnitsView /> : <PropertiesView />;
+  if (view === 'booking') return <ShopBookingView />;
   if (view === 'bookings') return <BookingsView />;
   if (view === 'reports') return <ReportsView />;
-  if (view === 'agentperf') return <AgentPerformanceView />;
+  if (view === 'agentperf') return <AnalyticsView />;
   if (view === 'perfreports') return <PerfReportsView />;
   if (view === 'fbleads') return <FbLeadsView />;
   if (view === 'team') return <TeamView />;
@@ -408,8 +459,9 @@ function PageBody() {
 
 // ── App shell ───────────────────────────────────────────────────────────────
 function AppShell() {
-  const { view, sidebarOpen, sidebarCollapsed, pageId } = useApp();
+  const { view, projTab, sidebarOpen, sidebarCollapsed, pageId } = useApp();
   const wide = view === 'pipeline' || view === 'conversations'; // kanban + chat need the full canvas
+  const fit = view === 'booking' || view === 'requests'; // the floor plan is sized to the screen: the page itself never scrolls
   // Below 1024px the sidebar is a drawer over the page; from 1024px it is docked
   // and may be collapsed. `shown` is "on screen" in whichever layout applies.
   const drawer = useMediaQuery(DRAWER_MQ);
@@ -459,18 +511,18 @@ function AppShell() {
       if (drawer || a === showBtnRef.current) hideBtnRef.current?.focus({ preventScroll: true });
     } else if (document.getElementById('app-sidebar')?.contains(a)
       || (a === document.body && lastFocus.current && !lastFocus.current.isConnected)) {
-      // Phones hide the show button; the bottom bar's More tab opens the drawer there.
-      const back = showBtnRef.current?.getClientRects().length ? showBtnRef.current : document.querySelector('.bnav-more');
+      // The header's show button (the phone menu tile too) is the drawer's opener everywhere now.
+      const back = showBtnRef.current?.getClientRects().length ? showBtnRef.current : null;
       back?.focus({ preventScroll: true });
     }
   }, [shown, drawer]);
 
   return (
-    <div id="app" className={sidebarCollapsed ? 'sb-collapsed' : undefined}>
+    <div id="app" className={[sidebarCollapsed && 'sb-collapsed', view === 'properties' && 'is-projects', view === 'properties' && projTab === 'units' && 'is-units'].filter(Boolean).join(' ') || undefined}>
       <Sidebar hideBtnRef={hideBtnRef} />
       <div className="page" inert={drawerOpen}>
         <PageHeader shown={shown} showBtnRef={showBtnRef} />
-        <main className="pg-body"><div className={`pg-inner${wide ? ' pg-wide' : ''}`}><PageHero /><Suspense fallback={null}><PageBody key={pageId} /></Suspense></div></main>
+        <main className="pg-body"><div className={`pg-inner${wide ? ' pg-wide' : ''}${fit ? ' pg-fit' : ''}`}><PageHero /><Suspense fallback={null}><PageBody key={pageId} /></Suspense></div></main>
       </div>
       <BottomNav inert={drawerOpen} />
       {/* goey-toast host for every tab but Projects, which renders its own:
@@ -533,6 +585,7 @@ export default function App() {
     // Load from Supabase, then MERGE with local so records created locally but
     // not yet synced (e.g. a fresh import) survive the reload instead of being
     // clobbered by the cloud snapshot. Fall back to local/seed if cloud empty.
+    syncCompanyDesign(forUser); // the company's chosen design; never blocks the load
     const sbData = await sbLoad(forUser);
     const local = getDB();
     let freshDB;
@@ -589,7 +642,9 @@ export default function App() {
   const signIn = (u) => {
     setUser(u);
     if (u.role === ROLES.MASTER) setView('companies');
-    requestNotifyPermission(); // ask for browser push permission on login
+    // Ask for browser push permission on login; the installed app then
+    // registers this phone (no-op in a browser tab, or without permission).
+    requestNotifyPermission().then(() => syncPush());
   };
 
   // The app's only browser push: one summary of everything still unread, sent
@@ -719,6 +774,23 @@ export default function App() {
     return () => window.removeEventListener('keydown', onKey);
   }, [user, modal, panLead, notifOpen, sidebarOpen, searchRef, closeModal, setPanLead, setSearch, setSidebarOpen, toggleSidebar]);
 
+  // A tapped push notification (installed app): open its lead, or the bell when
+  // it has none. The tap can arrive before sign-in has finished, so it is held
+  // in pwa.js and taken here once there is a user.
+  useEffect(() => {
+    if (!user) return;
+    const act = () => {
+      const c = takePushClick();
+      if (!c) return;
+      if (c.id) { markOneRead(c.id, user.id); refreshDB(); }
+      if (c.leadId) setPanLead(c.leadId);
+      else setNotifOpen(true);
+    };
+    const off = onPushClick(act);
+    const t = setTimeout(act, 0); // one that arrived before this effect
+    return () => { off(); clearTimeout(t); };
+  }, [user, setPanLead, setNotifOpen, refreshDB]);
+
   useEffect(() => {
     if (initialized.current) return;
     initialized.current = true;
@@ -745,7 +817,7 @@ export default function App() {
       // `user` from the same read). The token is re-verified first; a session
       // the server no longer honours (expired, revoked, account deactivated)
       // signs out instead of carrying on from the cache.
-      requestNotifyPermission();
+      requestNotifyPermission().then(() => syncPush());
       (async () => {
         const u = await restoreSession();
         if (u && u.offline) return; // server unreachable: keep the cached shell, the session stays
@@ -806,6 +878,7 @@ export default function App() {
       {entering && <PostLoginLoader />}
       <Overlays />
       <Toast />
+      <UpdateBar />
     </>
   );
 }

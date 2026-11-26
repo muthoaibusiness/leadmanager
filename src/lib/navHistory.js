@@ -2,21 +2,22 @@
 // screen is `view` (plus a few sub-page fields) in AppContext. useNavHistory
 // mirrors that state into window.history so Back/Forward, a reload and a
 // pasted #/view URL all land where they should. This file holds the pure parts.
-import { ROLES, canSee, FEATURE_KEYS } from './constants.js';
+import { ROLES, canSee, FEATURE_KEYS, DATA_KEYS } from './constants.js';
 import { getSession } from './db.js';
 
 // One title per page — the hero heading and the label of a Back link to it.
 export const VIEW_TITLES = {
   publicproject: 'Public Project',
   dashboard: 'Dashboard',
-  leads: 'Prospects',
+  leads: 'Leads',
   conversations: 'Conversations',
   calendar: 'Calendar',
   pipeline: 'Pipeline',
   clients: 'Contacts',
   properties: 'Projects',
+  booking: 'Booking',
   reports: 'Reports',
-  agentperf: 'Performance',
+  agentperf: 'Analytics',
   perfreports: 'Reports',
   fbleads: 'Facebook Leads',
   bookings: 'Sales Activity',
@@ -34,40 +35,42 @@ export const VIEW_TITLES = {
 // and the drill-down decide which PAGE is on screen (a change pushes an entry);
 // the rest are that page's tabs and filters (a change only updates the entry).
 export const DEFAULT_SNAP = {
-  view: 'dashboard', projTab: 'list', agentFilter: null, teamFilter: null,
+  view: 'dashboard', projTab: 'list', bookProj: null, agentFilter: null, teamFilter: null,
   tab: 0, statusFilter: 'ALL', sortBy: 'updated', search: '',
 };
 
 const drilled = (s) => !!(s.agentFilter || s.teamFilter);
 
-// Two snapshots on the same key are the same page.
-export const pageKey = (s) => `${s.view}|${s.view === 'properties' ? s.projTab : ''}|${drilled(s) ? 'drill' : ''}`;
+// Two snapshots on the same key are the same page. In Booking each project is a page of its own
+// (bookProj), so Back from a project returns to the project list.
+export const pageKey = (s) => `${s.view}|${s.view === 'properties' ? s.projTab : s.view === 'booking' ? s.bookProj || '' : ''}|${drilled(s) ? 'drill' : ''}`;
 
 // #/leads, #/properties/units. Filters stay out of the URL: a reload restores
 // them from history.state, and a pasted link opens the page with its defaults.
-export const toHash = (s) => `#/${s.view}${s.view === 'properties' && s.projTab === 'units' ? '/units' : ''}`;
+export const toHash = (s) => `#/${s.view}${s.view === 'properties' && s.projTab === 'units' ? '/units' : ''}${s.view === 'booking' && s.bookProj ? '/' + s.bookProj : ''}`;
 
 export function parseHash(hash) {
-  const m = /^#\/([a-z]+)(?:\/(units))?$/.exec(hash || '');
+  const m = /^#\/([a-z]+)(?:\/([\w-]+))?$/.exec(hash || '');
   if (!m || !VIEW_TITLES[m[1]]) return null; // the landing page's #anchors land here too
-  return { view: m[1], projTab: m[1] === 'properties' && m[2] ? 'units' : 'list' };
+  return { view: m[1], projTab: m[1] === 'properties' && m[2] === 'units' ? 'units' : 'list', bookProj: m[1] === 'booking' && m[2] ? m[2] : null };
 }
 
 // Where a signed-in account starts: the same choice the role redirect in App.jsx makes.
 export function homeView(user) {
   if (!user) return 'dashboard';
   if (user.role === ROLES.MASTER) return 'companies';
-  return FEATURE_KEYS.find(k => k !== 'add_customer' && canSee(user, k)) || 'profile';
+  return FEATURE_KEYS.find(k => k !== 'add_customer' && !DATA_KEYS.includes(k) && canSee(user, k)) || 'profile';
 }
 
 // What the Back link calls a page.
 export function pageLabel(s, db) {
-  if (s.agentFilter) return db?.users?.find(u => u.id === s.agentFilter)?.name || 'Prospects';
+  if (s.agentFilter) return db?.users?.find(u => u.id === s.agentFilter)?.name || 'Leads';
   if (s.teamFilter) {
     const tl = db?.users?.find(u => u.role === ROLES.TL && u.teamId === s.teamFilter);
     return `${tl?.name || 'Team'}'s Team`;
   }
   if (s.view === 'properties' && s.projTab === 'units') return 'Available Units';
+  if (s.view === 'booking' && s.bookProj) return db?.properties?.find(p => p.id === s.bookProj)?.name || 'Project';
   return VIEW_TITLES[s.view] || 'Back';
 }
 
@@ -77,6 +80,7 @@ export function pageLabel(s, db) {
 export function parentOf(s, user) {
   if (drilled(s)) return { ...s, agentFilter: null, teamFilter: null, tab: 0, statusFilter: 'ALL', search: '' };
   if (s.view === 'properties' && s.projTab === 'units') return { ...s, projTab: 'list' };
+  if (s.view === 'booking' && s.bookProj) return { ...s, bookProj: null };
   const home = homeView(user);
   if (s.view === home) return null;
   return { ...DEFAULT_SNAP, view: home, sortBy: s.sortBy };
@@ -94,6 +98,7 @@ export function trailOf(s, user, db) {
   if (s.view !== home) items.push({ id: s.view, label: VIEW_TITLES[s.view] || s.view, snap: { ...base, view: s.view } });
   if (drilled(s)) items.push({ id: 'drill', label: pageLabel(s, db), snap: s });
   else if (s.view === 'properties' && s.projTab === 'units') items.push({ id: 'units', label: pageLabel(s, db), snap: s });
+  else if (s.view === 'booking' && s.bookProj) items.push({ id: 'bookproj', label: pageLabel(s, db), snap: s });
   return items;
 }
 

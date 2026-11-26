@@ -61,16 +61,16 @@ export default function ChatList({ conversations, activeId, onSelect, connState,
           {q && <button className="wa-search-x" onClick={() => setQ('')}><Mi>close</Mi></button>}
         </div>
         <div className="wa-filters">
-          <button className={`ftab${!onlyUnread ? ' on' : ''}`} onClick={() => setOnlyUnread(false)}>All</button>
-          <button className={`ftab${onlyUnread ? ' on' : ''}`} onClick={() => setOnlyUnread(true)}>
+          <button className="bk-chip" aria-pressed={!onlyUnread} onClick={() => setOnlyUnread(false)}>All</button>
+          <button className="bk-chip" aria-pressed={onlyUnread} onClick={() => setOnlyUnread(true)}>
             Unread{totalUnread > 0 ? ` (${totalUnread})` : ''}
           </button>
         </div>
         {accounts.length > 1 && (
           <div className="wa-filters" role="group" aria-label="WhatsApp number">
-            <button className={`ftab${account === 'all' ? ' on' : ''}`} onClick={() => setAccount('all')}>Both ({conversations.length})</button>
+            <button className="bk-chip" aria-pressed={account === 'all'} onClick={() => setAccount('all')}>Both ({conversations.length})</button>
             {accounts.map(a => (
-              <button key={a} className={`ftab${account === a ? ' on' : ''}`} onClick={() => setAccount(a)}>
+              <button key={a} className="bk-chip" aria-pressed={account === a} onClick={() => setAccount(a)}>
                 {(WA_ACCOUNT_LABEL[a] || a).replace(' WhatsApp', '')} ({accountCounts[a]})
               </button>
             ))}

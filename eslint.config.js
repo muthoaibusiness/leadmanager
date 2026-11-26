@@ -9,7 +9,8 @@ export default defineConfig([
   // return), are not part of the app, and do not parse as modules.
   // .gate-harness/ is the UI-gate diagnostic scaffold (built dist/, inline
   // harness pages, stubs), not production source.
-  globalIgnores(['dist', 'config', '.gate-harness']),
+  // mobile/ is the React Native app: its own project, not browser code.
+  globalIgnores(['dist', 'config', '.gate-harness', 'mobile']),
   {
     files: ['**/*.{js,jsx}'],
     extends: [

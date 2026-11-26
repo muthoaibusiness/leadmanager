@@ -52,7 +52,7 @@ export default function PropertyViewModal() {
     { ico: 'meeting_room', l: 'Saleable units', v: totalUnits || null },
   ].filter(q => q.v);
 
-  const handleEdit = () => { setPropEdit(p); openModal('property-form'); };
+  const handleEdit = () => { setPropEdit(p); openModal('property-edit'); };
   const handleDelete = () => {
     if (!window.confirm(`Delete "${p.name}"?`)) return;
     deletePropertyFn(p.id);

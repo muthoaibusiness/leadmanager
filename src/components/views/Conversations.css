@@ -1,0 +1,186 @@
+/* Conversations (ConversationsView.jsx and the chat pieces) in the Booking page's look.
+   Everything is scoped to .cvx, so the same chat pieces inside the lead pop-up keep their own look.
+   Tokens come from .bk in booking/ShopBooking.css. Px values are one-off layout sizes. */
+/* ds-allow-hardcode:start */
+.wa-wrap.cvx { flex: none; display: flex; flex-direction: column; gap: 14px; }
+.cvx .wa-bar { align-items: center; }
+.cvx .wa-bar-t { font-family: var(--bk-display); font-size: 26px; font-weight: 600; text-transform: none; letter-spacing: -.015em; }
+.cvx .wa-bar-sub { color: var(--bk-muted); font-size: 14px; }
+.cvx .wa-offline { color: var(--bk-held); font-size: 14px; }
+.cvx .wa-err { background: color-mix(in srgb, var(--bk-bad) 12%, transparent); border: 1px solid color-mix(in srgb, var(--bk-bad) 55%, var(--bk-line)); color: var(--bk-bad); border-radius: var(--bk-r); }
+.cvx .wa-warn { background: color-mix(in srgb, var(--bk-held) 14%, transparent); border: 1px solid color-mix(in srgb, var(--bk-held) 55%, var(--bk-line)); color: var(--bk-held); border-radius: var(--bk-r); }
+.cvx .wa-grid { gap: 14px; grid-template-columns: 340px minmax(0, 1fr) 320px; }
+.cvx .wa-grid.wa-grid-2 { grid-template-columns: 340px minmax(0, 1fr); }
+
+/* buttons inside the page */
+.cvx .btn { font-family: inherit; font-size: 15px; font-weight: 500; border-radius: var(--rad-10, 10px); padding: 8px 14px; display: inline-flex; align-items: center; gap: 6px; cursor: pointer; border: 1px solid var(--bk-line); background: var(--bk-bg); color: var(--bk-fg); box-shadow: none; }
+.cvx .btn:hover:not(:disabled) { border-color: var(--bk-accent); color: var(--bk-accent); }
+.cvx .btn.btn-p { background: var(--bk-accent); border-color: var(--bk-accent); color: var(--bk-accent-ink); }
+.cvx .btn.btn-p:hover:not(:disabled) { filter: brightness(1.08); color: var(--bk-accent-ink); }
+.cvx .btn.btn-sm { padding: 6px 11px; font-size: 14px; }
+.cvx .btn:disabled { opacity: .5; cursor: default; }
+.cvx .btn .mi { font-size: 19px; }
+
+/* the rail */
+.cvx .wa-list, .cvx .wa-main, .cvx .wa-pane { background: var(--bk-surface); border: 1px solid var(--bk-line); border-radius: var(--bk-r); box-shadow: var(--bk-shadow); }
+.cvx .wa-list-head { padding: 14px 14px 10px; border-bottom: 1px solid var(--bk-line); }
+.cvx .wa-list-title { font-family: var(--bk-display); font-size: 19px; font-weight: 600; letter-spacing: -.01em; }
+.cvx .wa-list-title .mi { color: var(--bk-accent); font-size: 21px; }
+.cvx .wa-badge, .cvx .wa-ci-badge { background: var(--bk-accent); color: var(--bk-accent-ink); font-family: var(--bk-mono); font-size: 12px; font-weight: 600; }
+.cvx .wa-conn-online { background: var(--bk-accent); box-shadow: 0 0 0 3px var(--bk-accent-soft); }
+.cvx .wa-conn-connecting { background: var(--bk-held); box-shadow: 0 0 0 3px color-mix(in srgb, var(--bk-held) 22%, transparent); }
+.cvx .wa-conn-offline, .cvx .wa-conn-error { background: var(--bk-bad); box-shadow: 0 0 0 3px color-mix(in srgb, var(--bk-bad) 22%, transparent); }
+.cvx .wa-search { background: var(--bk-bg); border: 1px solid var(--bk-line); border-radius: var(--rad-10, 10px); padding: 0 11px; }
+.cvx .wa-search:focus-within { border-color: var(--bk-accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--bk-accent) 22%, transparent); }
+.cvx .wa-search .mi { color: var(--bk-muted); font-size: 20px; }
+.cvx .wa-search input { color: var(--bk-fg); font-size: 15.5px; padding: 9px 0; }
+.cvx .wa-search input::placeholder { color: var(--bk-muted); }
+.cvx .wa-search-x { color: var(--bk-muted); }
+.cvx .wa-filters { gap: 6px; flex-wrap: wrap; }
+.cvx .wa-filters .bk-chip { padding: 6px 12px; font-size: 14px; }
+.cvx .wa-ci { padding: 12px 14px; border-bottom: 1px solid var(--bk-line); transition: background .12s; }
+.cvx .wa-ci:hover { background: var(--bk-surface2); }
+.cvx .wa-ci.on { background: var(--bk-accent-soft); box-shadow: inset 3px 0 0 var(--bk-accent); }
+.cvx .wa-ci-av { width: 44px; height: 44px; font-family: var(--bk-display); font-size: 15px; }
+.cvx .wa-ci-name { font-size: 15.5px; font-weight: 600; color: var(--bk-fg); }
+.cvx .wa-ci.unread .wa-ci-name { font-weight: 700; }
+.cvx .wa-ci-when { font-size: 12.5px; color: var(--bk-muted); font-family: var(--bk-mono); }
+.cvx .wa-ci.unread .wa-ci-when { color: var(--bk-accent); }
+.cvx .wa-ci-prev { font-size: 14px; color: var(--bk-muted); }
+.cvx .wa-ci.unread .wa-ci-prev { color: var(--bk-fg); }
+.cvx .wa-src-chip { color: var(--bk-held); background: color-mix(in srgb, var(--bk-held) 14%, transparent); border: 1px solid color-mix(in srgb, var(--bk-held) 45%, var(--bk-line)); font-size: 12px; font-weight: 600; text-transform: none; letter-spacing: 0; }
+.cvx .wa-skel-av, .cvx .wa-skel-tx span { background: var(--bk-surface2); }
+.cvx .wa-list > .btn { margin: 10px 14px 12px; justify-content: center; }
+.cvx .wa-empty-sm, .cvx .wa-empty, .cvx .wa-gate { color: var(--bk-muted); }
+.cvx .wa-empty-sm .mi, .cvx .wa-empty .mi, .cvx .wa-gate .mi { color: var(--bk-accent); opacity: .7; }
+.cvx .wa-empty h3, .cvx .wa-gate h3 { font-family: var(--bk-display); font-size: 22px; font-weight: 600; color: var(--bk-fg); }
+.cvx .wa-empty p, .cvx .wa-gate p { font-size: 15px; }
+.cvx .wa-empty-sm p { font-size: 15px; font-weight: 600; color: var(--bk-fg); }
+.cvx .wa-empty-sm span { font-size: 13.5px; }
+
+/* the open thread */
+.cvx .wa-head { padding: 12px 18px; border-bottom: 1px solid var(--bk-line); background: var(--bk-surface); }
+.cvx .wa-head-name { font-family: var(--bk-display); font-size: 20px; font-weight: 600; letter-spacing: -.01em; }
+.cvx .wa-head-sub { font-size: 14px; color: var(--bk-muted); font-family: var(--bk-mono); }
+.cvx .wa-head-sub .wa-src-chip { margin-top: 0; font-family: inherit; }
+.cvx .wa-link-chip { color: var(--bk-accent); background: var(--bk-accent-soft); border: 1px solid color-mix(in srgb, var(--bk-accent) 45%, var(--bk-line)); font-size: 12.5px; font-weight: 600; font-family: var(--bk-body, inherit); }
+.cvx .wa-back { color: var(--bk-fg); }
+.cvx .wa-thread { background: var(--bk-bg); padding: 18px 20px 10px; scrollbar-width: thin; scrollbar-color: var(--bk-line) transparent; }
+.cvx .wa-day span { font-size: 12px; font-weight: 600; letter-spacing: .08em; color: var(--bk-muted); background: var(--bk-surface); border: 1px solid var(--bk-line); font-family: var(--bk-mono); }
+.cvx .wa-bub { background: var(--bk-surface); border: 1px solid var(--bk-line); border-radius: var(--rad-14, 14px) var(--rad-14, 14px) var(--rad-14, 14px) var(--rad-4, 4px); padding: 9px 13px 6px; }
+.cvx .wa-bub.out { background: var(--bk-accent-soft); border-color: color-mix(in srgb, var(--bk-accent) 45%, var(--bk-line)); border-radius: var(--rad-14, 14px) var(--rad-14, 14px) var(--rad-4, 4px) var(--rad-14, 14px); }
+.cvx .wa-bub.failed { background: color-mix(in srgb, var(--bk-bad) 12%, transparent); border-color: var(--bk-bad); }
+.cvx .wa-txt { font-size: 15.5px; line-height: 1.5; color: var(--bk-fg); }
+.cvx .wa-time { font-size: 12px; color: var(--bk-muted); font-family: var(--bk-mono); }
+.cvx .wa-tk-pend, .cvx .wa-tk-sent { color: var(--bk-muted); }
+.cvx .wa-tk-read { color: var(--bk-accent); }
+.cvx .wa-tk-fail, .cvx .wa-retry { color: var(--bk-bad); }
+.cvx .wa-quote { background: color-mix(in srgb, var(--bk-fg) 6%, transparent); color: var(--bk-muted); border-left: 3px solid var(--bk-accent); font-size: 13.5px; }
+.cvx .wa-quote .wa-quote-ico { color: var(--bk-accent); }
+.cvx .wa-doc { background: var(--bk-bg); border: 1px solid var(--bk-line); border-radius: var(--rad-10, 10px); }
+.cvx .wa-doc:hover { border-color: var(--bk-accent); }
+.cvx .wa-doc-ico, .cvx .wa-att-ico { background: var(--bk-accent-soft); }
+.cvx .wa-doc-ico .mi, .cvx .wa-att-ico .mi { color: var(--bk-accent); }
+.cvx .wa-doc-name { font-size: 14.5px; }
+.cvx .wa-doc-sub, .cvx .wa-att-sub { font-size: 12px; color: var(--bk-muted); font-family: var(--bk-mono); }
+.cvx .wa-media-dead { border: 1px dashed var(--bk-line); color: var(--bk-muted); border-radius: var(--rad-10, 10px); }
+.cvx .wa-jump { background: var(--bk-accent); color: var(--bk-accent-ink); box-shadow: var(--bk-shadow); }
+.cvx .wa-spin { border-color: var(--bk-line); border-top-color: var(--bk-accent); }
+.cvx .wa-thread-load { color: var(--bk-muted); font-size: 15px; }
+
+/* the composer */
+.cvx .wa-comp { border-top: 1px solid var(--bk-line); background: var(--bk-surface); padding: 12px 14px; }
+.cvx .wa-comp-off { color: var(--bk-muted); font-size: 14.5px; }
+.cvx .wa-comp-err { background: color-mix(in srgb, var(--bk-bad) 12%, transparent); color: var(--bk-bad); border-radius: var(--rad-10, 10px); font-size: 14px; }
+.cvx .wa-comp-err button { color: var(--bk-bad); }
+.cvx .wa-ta { background: var(--bk-bg); color: var(--bk-fg); border: 1px solid var(--bk-line); border-radius: var(--rad-12, 12px); font-size: 16px; padding: 10px 14px; }
+.cvx .wa-ta:focus { border-color: var(--bk-accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--bk-accent) 22%, transparent); }
+.cvx .wa-ta::placeholder { color: var(--bk-muted); }
+.cvx .wa-cbtn { width: 40px; height: 40px; border-radius: 50%; background: var(--bk-bg); border: 1px solid var(--bk-line); color: var(--bk-fg); }
+.cvx .wa-cbtn:hover:not(:disabled) { color: var(--bk-accent); border-color: var(--bk-accent); }
+.cvx .wa-cbtn.on { color: var(--bk-accent); border-color: var(--bk-accent); background: var(--bk-accent-soft); }
+.cvx .wa-send { width: 42px; height: 42px; background: var(--bk-accent); color: var(--bk-accent-ink); }
+.cvx .wa-att { background: var(--bk-bg); border: 1px solid var(--bk-line); border-radius: var(--rad-10, 10px); }
+.cvx .wa-att-name { font-size: 14.5px; }
+.cvx .wa-att-bar { background: var(--bk-line); }
+.cvx .wa-att-bar span { background: var(--bk-accent); }
+
+/* the customer pane */
+.cvx .wa-pane { padding: 16px; gap: 12px; }
+.cvx .wa-pane-id { border-bottom: 1px solid var(--bk-line); }
+.cvx .wa-pane-av { width: 64px; height: 64px; font-family: var(--bk-display); font-size: 20px; }
+.cvx .wa-pane-name { font-family: var(--bk-display); font-size: 20px; font-weight: 600; }
+.cvx .wa-pane-phone { color: var(--bk-muted); font-family: var(--bk-mono); font-size: 14px; }
+.cvx .wa-pane-phone:hover { color: var(--bk-accent); }
+.cvx .wa-src { background: var(--bk-bg); border: 1px solid var(--bk-line); border-radius: var(--bk-r); padding: 12px 14px; }
+.cvx .wa-src-ad { border-color: color-mix(in srgb, var(--bk-held) 45%, var(--bk-line)); }
+.cvx .wa-src-head { font-size: 12px; font-weight: 600; letter-spacing: .1em; color: var(--bk-muted); }
+.cvx .wa-src-ad .wa-src-head { color: var(--bk-held); }
+.cvx .wa-src-tag { font-size: 15.5px; color: var(--bk-fg); }
+.cvx .wa-src-note { font-size: 13.5px; color: var(--bk-muted); }
+.cvx .wa-ad-title { font-size: 15px; }
+.cvx .wa-ad-desc, .cvx .wa-ad-greet-tx { font-size: 13.5px; color: var(--bk-muted); background: var(--bk-surface); }
+.cvx .wa-ad-greet-tx { border-left-color: var(--bk-held); }
+.cvx .wa-ad-body { font-size: 13.5px; color: var(--bk-muted); background: var(--bk-surface); }
+.cvx .wa-ad-kv { border-top: 1px solid var(--bk-line); font-size: 14px; }
+.cvx .wa-ad-k { color: var(--bk-muted); }
+.cvx .wa-ad-v { color: var(--bk-fg); font-weight: 500; }
+.cvx .wa-ad-link { color: var(--bk-accent); }
+.cvx .wa-nolead p { font-size: 14px; color: var(--bk-muted); }
+.cvx .wa-score { font-family: var(--bk-mono); font-size: 12px; }
+.cvx .wa-lead-top .bdg { font-size: 12.5px; font-weight: 600; border-radius: var(--rad-pill, 999px); padding: 3px 10px; }
+.cvx .wa-fullbtn { justify-content: center; }
+@media (max-width: 1180px) { .cvx .wa-grid { grid-template-columns: 320px minmax(0, 1fr); } }
+@media (max-width: 860px) { .cvx .wa-grid, .cvx .wa-grid.wa-grid-2 { grid-template-columns: minmax(0, 1fr); } }
+/* ds-allow-hardcode:end */
+
+/* ds-allow-hardcode:start */
+/* Phones: smaller type across Conversations (the chat list, filters and an open chat), so more
+   chats and messages fit. The message box keeps 16px, below which iPhones zoom into the field. */
+@media (max-width: 720px) {
+  .cvx .btn { font-size: 13px; padding: 6px 11px; }
+  .cvx .btn .mi { font-size: 17px; }
+  .cvx .wa-list-title { font-size: 16px; }
+  .cvx .wa-list-title .mi { font-size: 18px; }
+  .cvx .wa-badge, .cvx .wa-ci-badge { font-size: 10.5px; }
+  .cvx .wa-search .mi { font-size: 17px; }
+  .cvx .wa-search input { font-size: 14px; padding: 6px 0; }
+  .cvx .wa-filters .bk-chip { padding: 4px 10px; font-size: 12.5px; }
+  .cvx .wa-ci-av { width: 36px; height: 36px; font-size: 12.5px; }
+  .cvx .wa-ci-name { font-size: 14px; }
+  .cvx .wa-ci-when { font-size: 11px; }
+  .cvx .wa-ci-prev { font-size: 12.5px; }
+  .cvx .wa-head-name { font-size: 16px; }
+  .cvx .wa-head-sub { font-size: 12px; }
+  .cvx .wa-day span { font-size: 10.5px; }
+  .cvx .wa-txt { font-size: 14px; line-height: 1.45; }
+  .cvx .wa-time { font-size: 10.5px; }
+  .cvx .wa-quote { font-size: 12.5px; }
+  .cvx .wa-doc-name, .cvx .wa-att-name { font-size: 13px; }
+  .cvx .wa-doc-sub, .cvx .wa-att-sub { font-size: 11px; }
+  .cvx .wa-comp-off, .cvx .wa-comp-err { font-size: 13px; }
+  .cvx .wa-empty h3, .cvx .wa-gate h3 { font-size: 18px; }
+  .cvx .wa-empty p, .cvx .wa-gate p, .cvx .wa-empty-sm p { font-size: 13.5px; }
+  .cvx .wa-empty-sm span { font-size: 12px; }
+
+  /* At least 6 chats on one phone screen: the title and search share a line, both filter groups
+     (All / Unread and Both / Dubai / Eyad) share the next, and each chat row is shorter. */
+  .cvx .wa-list-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 8px 10px; }
+  .cvx .wa-list-head > .wa-list-title { flex: none; gap: 5px; }
+  .cvx .wa-list-head > .wa-search { flex: 1 1 150px; min-width: 0; margin: 0; }
+  .cvx .wa-list-head > .wa-filters { flex: none; flex-wrap: nowrap; margin: 0; gap: 4px; }
+  .cvx .wa-filters .bk-chip { padding: 3px 6px; font-size: 11px; }
+  .cvx .wa-search input { padding: 5px 0; font-size: 13px; }
+  .cvx .wa-ci { padding: 7px 12px; gap: 9px; }
+  .cvx .wa-ci-av { width: 34px; height: 34px; }
+  /* Reload and Chat Settings move up into the phone's top bar (its right side is empty), as round
+     icon buttons, so the chat list starts right under that bar. The page title is already there. */
+  .wa-wrap.cvx { position: relative; }
+  .cvx > .wa-bar { position: fixed; top: calc(env(safe-area-inset-top, 0px) + 18px); right: 14px; z-index: 50; margin: 0; gap: 6px; }
+  .cvx > .wa-bar .wa-bar-l { display: none; }
+  .cvx > .wa-bar .btn { width: 40px; height: 40px; padding: 0; justify-content: center; border-radius: 50%; font-size: 0; }
+  .cvx > .wa-bar .btn .mi { font-size: 19px; }
+  .cvx > .wa-bar .wa-offline { font-size: 0; }
+  .cvx > .wa-bar .wa-offline .mi { font-size: 18px; }
+}
+/* ds-allow-hardcode:end */

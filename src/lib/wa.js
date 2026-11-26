@@ -347,6 +347,40 @@ export async function waFindOrCreateConversation(lead, user) {
   }
 }
 
+// The thread to answer a lead on, from the number the lead is already talking
+// to: a lead that came in through Eyad's WhatsApp gets Eyad's number, one that
+// came in through Dubai's gets Dubai's. Only a lead with no thread yet falls
+// back to the team rule (waFindOrCreateConversation).
+async function waFindThread(lead) {
+  const digits = normalizePhone(lead?.phone);
+  if (!digits) return null;
+  const tail = digits.slice(-9);
+  try {
+    const rows = await sbGet(`wa_conversations?phone=like.*${encodeURIComponent(tail)}&archived=is.false&order=last_message_at.desc.nullslast&limit=10`);
+    const hits = (rows || []).map(rToConv).filter(c => (normalizePhone(c.phone) || '').slice(-9) === tail);
+    return hits.find(c => c.leadId && c.leadId === lead.id) || hits[0] || null;
+  } catch (e) {
+    console.warn('[wa] origin lookup error, using the team rule', e);
+    return null;
+  }
+}
+
+// Which number a lead is answered from, without creating anything.
+export async function waAccountFor(lead, user) {
+  const hit = await waFindThread(lead);
+  return hit ? hit.account : waAccountForUser(user, lead);
+}
+
+export async function waConversationForLead(lead, user) {
+  if (!normalizePhone(lead?.phone)) return { ok: false, error: 'This customer has no valid phone number.' };
+  const hit = await waFindThread(lead);
+  if (hit) {
+    if (!hit.leadId && lead.id) { waLinkLead(hit.id, lead.id); hit.leadId = lead.id; }
+    return { ok: true, conversation: hit, created: false };
+  }
+  return waFindOrCreateConversation(lead, user);
+}
+
 // Upload an outbound attachment to Supabase Storage and return its public URL.
 export async function waUploadMedia(file, onProgress) {
   const safe = (file.name || 'file').replace(/[^\w.-]/g, '_');

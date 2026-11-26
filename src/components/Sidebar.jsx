@@ -5,14 +5,15 @@ import { useApp } from '../context/AppContext.jsx';
 import { getHoldRequests } from '../lib/db.js';
 import { kbd } from '../lib/helpers.js';
 import { canSee } from '../lib/constants.js';
-import { NAV_META } from '../lib/navMeta.js';
+import { NAV_META, HIDDEN_NAV } from '../lib/navMeta.js';
+import { useLayout } from '../lib/theme.js';
 
 // Grouped, role-scoped navigation (Muthoclo admin pattern).
 // Sections render a label + their visible items; a group renders a header that
 // opens/closes its child pages. Visibility is driven by canSee(user, key).
 const SECTIONS = [
-  { label: null, keys: ['dashboard', 'companies', 'reports', 'agentperf', 'perfreports', 'requests'] },
-  { label: 'Sales Team', keys: ['leadsGroup', 'conversations', 'calendar', 'properties'] },
+  { label: null, keys: ['dashboard', 'companies', 'reports', 'agentperf', 'requests'] },
+  { label: 'Sales Team', keys: ['leads', 'conversations', 'calendar', 'properties', 'booking'] },
   { label: 'Admin', keys: ['inventory', 'team', 'accounts', 'aitrainer', 'fbleads', 'metacapi', 'publicproject'] },
 ];
 
@@ -35,13 +36,16 @@ export default function Sidebar({ hideBtnRef }) {
   const { user, view, nav, sidebarOpen, setSidebarOpen, setSidebarShown, chatOk, waUnread } = useApp();
   // Groups start open; this holds the ones the user has closed.
   const [closed, setClosed] = useState({});
+  // Rail, Topbar and Dock (layouts.css) show a group's pages as a flyout or inline, so there a
+  // group cannot be closed; the open/closed choice belongs to the Sidebar layout only.
+  const layout = useLayout();
 
   if (!user) return null;
   const role = user.role;
 
   // Conversations is gated by the chat allow-list rather than NAV_SCOPES; a
   // group shows when the user may see at least one of its pages.
-  const visible = (k) => (GROUPS[k] ? GROUPS[k].kids.some(c => canSee(user, c.key))
+  const visible = (k) => !HIDDEN_NAV.includes(k) && (GROUPS[k] ? GROUPS[k].kids.some(c => canSee(user, c.key))
     : k === 'conversations' ? chatOk : canSee(user, k));
 
   const pendingHolds = role === 'MANAGEMENT' ? getHoldRequests().filter(r => r.status === 'pending').length : 0;
@@ -53,16 +57,16 @@ export default function Sidebar({ hideBtnRef }) {
     const g = GROUPS[k];
     if (g) {
       const kids = g.kids.filter(c => canSee(user, c.key));
-      const open = !closed[k];
+      const open = layout !== 'sidebar' || !closed[k];
       // Subtle "holds the current page" state; the strong one is the child's.
       const childOn = kids.some(c => c.key === view);
       const toggle = () => setClosed(c => ({ ...c, [k]: !c[k] }));
       const subId = `sb-sub-${k}`;
       return (
-        <div key={k}>
-          <div className={`sb-it sb-grp${childOn ? ' has-on' : ''}`} role="button" tabIndex={0}
+        <div key={k} className="sb-grpw">
+          <div className={`sb-it sb-grp${childOn ? ' has-on' : ''}`} role="button" tabIndex={0} data-tip={g.lbl}
             aria-expanded={open} aria-controls={subId} onClick={toggle} onKeyDown={onActivate(toggle)}>
-            <Mi aria-hidden="true">{g.ico}</Mi>{g.lbl}
+            <Mi aria-hidden="true">{g.ico}</Mi><span className="sb-tx">{g.lbl}</span>
             <Mi className="sb-chev" aria-hidden="true">expand_more</Mi>
           </div>
           {open && (
@@ -85,10 +89,10 @@ export default function Sidebar({ hideBtnRef }) {
     if (k === 'conversations' && waUnread > 0) badge = waUnread;
     return (
       <div key={k}>
-        <div className={`sb-it${view === k ? ' on' : ''}`} role="button" tabIndex={0}
+        <div className={`sb-it${view === k ? ' on' : ''}`} role="button" tabIndex={0} data-tip={m.lbl}
           aria-current={view === k ? 'page' : undefined}
           onClick={() => nav(k)} onKeyDown={onActivate(() => nav(k))}>
-          <Mi aria-hidden="true">{m.ico}</Mi>{m.lbl}
+          <Mi aria-hidden="true">{m.ico}</Mi><span className="sb-tx">{m.lbl}</span>
           {badge > 0 && <span className="sb-badge">{badge}</span>}
         </div>
       </div>

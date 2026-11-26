@@ -2,13 +2,20 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useApp } from '../../context/AppContext.jsx';
 import { queryLeads, countLeads, fetchLeadProjects, fetchLastFollowups } from '../../lib/db.js';
 import { selfInvolved } from '../../lib/leadQuery.js';
-import { STATUS_LABELS, ROLES } from '../../lib/constants.js';
+import { STATUS_LABELS, ROLES, canSee } from '../../lib/constants.js';
 import { rlabel } from '../../lib/helpers.js';
 import LeadTable, { PAGE_SIZE } from '../LeadTable.jsx';
-import SearchBox from '../SearchBox.jsx';
-import { ActionSwapCascadeButton } from '../ui/action-swap-cascade.jsx';
+
+import BkSelect from '../booking/BkSelect.jsx';
+import '../booking/ShopBooking.css';
+import '../LeadTable.css';
 import useChanged from '../../hooks/useChanged.js';
 import useNavState from '../../hooks/useNavState.js';
+import { loadLeadPage, storeLeadPage } from '../../lib/deviceCache.js';
+import useIsPhone from '../../hooks/useIsPhone.js';
+import Mi from '../Mi.jsx';
+import BackButton from '../BackButton.jsx';
+import RefreshButton from '../RefreshButton.jsx';
 
 // Order the admin's people picker groups the way the pipeline runs, so the
 // dropdown reads top-down rather than alphabetically across mixed roles.
@@ -22,8 +29,17 @@ export default function LeadsView() {
   const {
     user, search, statusFilter, setStatusFilter,
     teamFilter, setTeamFilter, agentFilter: drillAgent, dbVersion, dateRange, db, sortBy,
-    setLeadCounts,
+    setLeadCounts, openModal, setSearch, searchRef,
   } = useApp();
+  const searchEl = useRef(null);
+  // the page's search box takes the keyboard shortcut that focuses search
+  useEffect(() => {
+    if (searchRef) searchRef.current = searchEl.current;
+    return () => { if (searchRef) searchRef.current = null; };
+  }, [searchRef]);
+  const phone = useIsPhone();
+  const canAdd = canSee(user, 'add_customer'); // the hero's Add Customer / Import gate
+  const pageSize = PAGE_SIZE; // 10 leads a page on every screen
 
   // Agents get a My Leads ↔ Forwarded toggle.
   const isAgent = user.role === ROLES.AGENT;
@@ -48,7 +64,8 @@ export default function LeadsView() {
 
   // Changing tab/team can retire the chosen project; fall back rather than leave
   // the select rendering blank on a value that is no longer an option.
-  const activeProject = projectOptions.includes(projectFilter) ? projectFilter : 'ALL';
+  // Case-blind: Available Units' See more passes the project's own spelling.
+  const activeProject = projectOptions.find(p => p.toLowerCase() === String(projectFilter).toLowerCase()) || 'ALL';
 
   // A Team Lead picks between their own hand-off queue (the default), one team
   // member, or the whole team book. The roster comes from db.users, which for a
@@ -123,17 +140,40 @@ export default function LeadsView() {
   // The fetch. `seq` guards against out-of-order responses: typing in the search
   // box fires several, and a slow early one must not overwrite a fast later one.
   const seq = useRef(0);
+  // Which page the rows on screen answer. The last answer for a page is kept on
+  // the device (deviceCache.js) and shown while the fresh one loads, so a list
+  // that was looked at before opens at once. `loading` stays true meanwhile:
+  // the table shows its busy bar and the header publishes no count yet.
+  const shownPage = useRef(null);
   useEffect(() => {
     const mine = ++seq.current;
-    queryLeads(query, { page, size: PAGE_SIZE, sort: sortBy })
+    const pageKey = `${qKey}|${page}|${pageSize}|${sortBy}`;
+    let answered = false;
+    // Only for a page that is not on screen already: a data change (dbVersion)
+    // refetches the same page, and its stored copy is what is showing.
+    if (shownPage.current !== pageKey) {
+      loadLeadPage(pageKey).then(hit => {
+        if (!hit || answered || mine !== seq.current) return;
+        shownPage.current = pageKey;
+        setResult(hit);
+      });
+    }
+    queryLeads(query, { page, size: pageSize, sort: sortBy })
       .then(res => {
         if (mine !== seq.current) return;
+        answered = true;
         // null = the request failed. Keep whatever is on screen rather than
         // blanking the table and claiming there are no customers.
-        if (res) setResult(res);
+        if (res) {
+          shownPage.current = pageKey;
+          setResult(res);
+          // A search is typed letter by letter; keeping each step would push
+          // the pages worth keeping out of the store.
+          if (!query.search) storeLeadPage(pageKey, res);
+        }
         setDoneKey(fetchKey);
       });
-  }, [fetchKey, qKey, page, sortBy, dbVersion, query]);
+  }, [fetchKey, qKey, page, pageSize, sortBy, dbVersion, query]);
 
   // The Last Follow-up column: the newest FOLLOW_UP and Add Note for the rows on
   // screen, fetched for this page's ids once its rows land. A separate request,
@@ -193,74 +233,71 @@ export default function LeadsView() {
     return () => { alive = false; };
   }, [isAgent, user, dbVersion]);
 
+  const statusOpts = [
+    { value: 'ALL', label: 'All status' }, { value: 'FOLLOW_UP', label: 'Follow-up' }, { value: 'FORWARDED', label: 'Forwarded' },
+    ...Object.entries(STATUS_LABELS).map(([k, l]) => ({ value: k, label: l })),
+  ];
+
   return (
-    <>
-      {isAgent && !drillAgent && (
-        // Two beui ActionSwap (cascade) pills. A tab is one item, so clicking
-        // selects it instead of cycling; the Forwarded item's id carries the
-        // count, so a new count rolls in letter by letter.
-        <div className="lv-tabs" role="tablist" aria-label="Customer lists">
-          <ActionSwapCascadeButton role="tab" aria-selected={tab === 'mine'} cycle={false}
-            variant={tab === 'mine' ? 'primary' : 'secondary'}
-            items={[{ id: 'mine', label: 'My Leads' }]} onClick={() => setTab('mine')} />
-          <ActionSwapCascadeButton role="tab" aria-selected={tab === 'fwd'} cycle={false}
-            variant={tab === 'fwd' ? 'primary' : 'secondary'}
-            items={[{ id: `fwd-${fwdCount ?? ''}`, label: fwdCount == null ? 'Forwarded' : `Forwarded (${fwdCount})` }]}
-            onClick={() => setTab('fwd')} />
+    <div className="bk lvx">
+      <div className="lvx-wrap">
+        {/* Phones, every role: the Projects pages' header (AvailableUnitsTab.css
+            .fpv-ph): Back, the page name, Refresh at the end. The hero,
+            header bar and bottom bar do not mount here (App.jsx, BottomNav). */}
+        {phone && (
+          <div className="fpv-ph lv-ph">
+            <div className="fpv-ph-top">
+              <BackButton />
+              <h1>Leads</h1>
+              <RefreshButton />
+            </div>
+          </div>
+        )}
+        {/* One row: the agent's two tabs, then (phones) Import and Add, which the hero carries on wider screens. */}
+        {((isAgent && !drillAgent) || (phone && canAdd)) && (
+          <div className="lvx-tabs" role="tablist" aria-label="Lead lists">
+            {isAgent && !drillAgent && (
+              <>
+                <button type="button" role="tab" className="bk-chip" aria-selected={tab === 'mine'} aria-pressed={tab === 'mine'} onClick={() => setTab('mine')}>My leads</button>
+                <button type="button" role="tab" className="bk-chip" aria-selected={tab === 'fwd'} aria-pressed={tab === 'fwd'} onClick={() => setTab('fwd')}>
+                  Forwarded{fwdCount != null ? <i>{fwdCount}</i> : null}
+                </button>
+              </>
+            )}
+            {phone && canAdd && (
+              <>
+                <button type="button" className="bk-btn" onClick={() => openModal('import')}><Mi aria-hidden="true">upload</Mi>Import</button>
+                <button type="button" className="bk-btn primary" onClick={() => openModal('add-lead')} aria-label="Add lead"><Mi aria-hidden="true">person_add</Mi>Add</button>
+              </>
+            )}
+          </div>
+        )}
+        {/* Everything applies live, no apply button. */}
+        <div className="rqx-bar">
+          <label className="bk-search rqx-search">
+            <Mi>search</Mi>
+            <input ref={searchEl} value={search} onChange={e => setSearch(e.target.value)} onKeyDown={e => { if (e.key === 'Escape') { setSearch(''); e.currentTarget.blur(); } }}
+              placeholder="Search name, phone or project" aria-label="Search leads" />
+            {search && <button type="button" className="bk-close" aria-label="Clear search" onClick={() => setSearch('')}><Mi>close</Mi></button>}
+          </label>
+          <div className="rqx-sels">
+            <BkSelect label="Status" value={statusFilter} onChange={setStatusFilter} options={statusOpts} />
+            {projectOptions.length > 0 && (
+              <BkSelect label="Project" value={activeProject} onChange={setProjectFilter} options={[{ value: 'ALL', label: 'All projects' }, ...projectOptions.map(p => ({ value: p, label: p }))]} />
+            )}
+            {isMgmt && (
+              <BkSelect label="User" value={activeUser} onChange={v => { setUserFilter(v); if (teamFilter) setTeamFilter(null); }}
+                options={[{ value: 'ALL', label: 'All users' }, ...ROLE_ORDER.flatMap(r => mgmtUsers.filter(u => u.role === r).map(u => ({ value: u.id, label: `${u.id === user.id ? `${u.name} (me)` : u.name} · ${rlabel(r)}` })))]} />
+            )}
+            {isTL && (
+              <BkSelect label="Agent" value={activeAgent} onChange={setAgentFilter}
+                options={[{ value: user.id, label: user.name }, { value: 'ALL', label: 'All agents' }, ...teamUsers.map(u => ({ value: u.id, label: u.name }))]} />
+            )}
+          </div>
         </div>
-      )}
-      {/* Compact pill filter bar — everything applies live, no apply button. */}
-      <div className="fbar">
-        {/* Grows into the room the pills leave (.sbox: flex 1 1 240px). */}
-        <SearchBox placeholder="Search name, phone or project" />
-        <select className="fsel" value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
-          <option value="ALL">All status</option>
-          <option value="FOLLOW_UP">Follow-up</option>
-          <option value="FORWARDED">Forwarded</option>
-          {Object.entries(STATUS_LABELS).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
-        </select>
-        {projectOptions.length > 0 && (
-          <select
-            className="fsel"
-            value={activeProject}
-            onChange={e => setProjectFilter(e.target.value)}
-            title="Show leads interested in a specific project"
-          >
-            <option value="ALL">All projects</option>
-            {projectOptions.map(p => <option key={p} value={p}>{p}</option>)}
-          </select>
-        )}
-        {isMgmt && (
-          <select
-            className="fsel fsel-team"
-            value={activeUser}
-            onChange={e => { setUserFilter(e.target.value); if (teamFilter) setTeamFilter(null); }}
-            title="Show leads for a specific user"
-          >
-            <option value="ALL">All users</option>
-            {ROLE_ORDER.map(r => {
-              const list = mgmtUsers.filter(u => u.role === r);
-              if (!list.length) return null;
-              return (
-                <optgroup key={r} label={rlabel(r)}>
-                  {list.map(u => (
-                    <option key={u.id} value={u.id}>{u.id === user.id ? `${u.name} (me)` : u.name}</option>
-                  ))}
-                </optgroup>
-              );
-            })}
-          </select>
-        )}
-        {isTL && (
-          <select className="fsel fsel-team" value={activeAgent} onChange={e => setAgentFilter(e.target.value)} title="Show leads for a specific agent">
-            <option value={user.id}>{user.name}</option>
-            <option value="ALL">All agents</option>
-            {teamUsers.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
-          </select>
-        )}
+        <LeadTable leads={result.rows} total={result.total} page={page} onPage={setPage} pageSize={pageSize} loading={loading}
+          lastFu={fu.map} fuPending={fu.rows !== result.rows} />
       </div>
-      <LeadTable leads={result.rows} total={result.total} page={page} onPage={setPage} loading={loading}
-        lastFu={fu.map} fuPending={fu.rows !== result.rows} />
-    </>
+    </div>
   );
 }

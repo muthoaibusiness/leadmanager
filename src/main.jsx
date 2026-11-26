@@ -2,11 +2,19 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import './index.css';
 import './fixes.css';
+import './theme.css';
+import './designs.css';
+import './layouts.css';
 import App from './App.jsx';
 import { AppProvider } from './context/AppContext.jsx';
-import { applyStoredTheme } from './lib/theme.js';
+import { registerServiceWorker } from './lib/pwa.js';
+import { applyStoredTheme, applyStoredDesign, applyStoredLayout } from './lib/theme.js';
 
 applyStoredTheme(); // set data-theme before first paint to avoid a flash
+applyStoredDesign(); // and data-design (the admin-chosen look, see lib/theme.js)
+applyStoredLayout(); // and data-layout (the admin-chosen page layout)
+
+registerServiceWorker(); // installed app: offline shell, pictures, push (production builds only)
 
 // iOS Safari zooms the page into any focused field under 16px and never zooms
 // back out, which leaves the header (account face included) enlarged and pushed

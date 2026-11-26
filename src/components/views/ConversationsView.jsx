@@ -14,6 +14,8 @@ import {
   waSubscribe, matchLead, mergeStatus, isChatAdmin, waSeesAllChats, isLeadAssignedOrForwardedTo, waAiState,
 } from '../../lib/wa.js';
 import { groupByNumber, mergeThreads } from '../../lib/waGroup.js';
+import '../booking/ShopBooking.css';
+import './Conversations.css';
 
 // How many missing avatars to backfill right after the list loads, enough to
 // cover what's on screen without hammering the relay (Wasender is rate-limited).
@@ -287,7 +289,7 @@ export default function ConversationsView() {
       : '';
 
   return (
-    <div className="wa-wrap">
+    <div className="wa-wrap bk cvx">
       <div className="wa-bar">
         <div className="wa-bar-l">
           <h2 className="wa-bar-t">Conversations</h2>
@@ -302,9 +304,9 @@ export default function ConversationsView() {
                 : 'Reconnecting…'}
             </span>
           )}
-          <button className="btn btn-g" onClick={reload} title="Reload"><Mi>refresh</Mi></button>
+          <button className="btn btn-g" onClick={reload} title="Reload" aria-label="Reload"><Mi>refresh</Mi></button>
           {isChatAdmin(user) && (
-            <button className="btn btn-g" onClick={() => openModal('chat-settings')}><Mi>settings</Mi>Chat Settings</button>
+            <button className="btn btn-g" onClick={() => openModal('chat-settings')} title="Chat Settings"><Mi>settings</Mi>Chat Settings</button>
           )}
         </div>
       </div>

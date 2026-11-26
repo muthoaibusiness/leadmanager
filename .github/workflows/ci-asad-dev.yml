@@ -26,6 +26,7 @@ jobs:
           npx vite-node --config .gate-harness/vite.config.mjs scripts/forward.test.mjs
           node scripts/test-0049.mjs
           node scripts/test-0059.mjs
+          node scripts/test-0060.mjs
           node --test src/lib/publicProjects.test.js
       # Sign-in, session and permission rules (CR-001 D1): stubbed GoTrue and
       # PostgREST, nothing leaves the runner.

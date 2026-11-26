@@ -14,6 +14,7 @@ import FloorPlanCanvas from './FloorPlanCanvas.jsx';
 import UnitStatusPanel from './UnitStatusPanel.jsx';
 import { Select, SelectLabel, SelectTrigger, SelectValue, SelectPopover, SelectListBox, SelectItem } from '../ui/select.jsx';
 import { useProjectToast } from './projectToast.js';
+import { canUnitStatus } from '../../lib/constants.js';
 import './FloorPlan.css';
 import './FloorPlanEditor.css';
 
@@ -71,6 +72,7 @@ const snapshot = (d) => JSON.stringify({ ...d, pending: d.pending ? d.pending.pr
 
 function Editor({ projectId, planId }) {
   const { user, dbVersion, refreshDB, closeModal, setPlanEdit, setPlanSel } = useApp();
+  const mayStatus = canUnitStatus(user); // changing a unit's status is its own grant
   void dbVersion; // statuses come from the live store
   const toast = useProjectToast();
   const proj = getProjectById(projectId);
@@ -300,7 +302,7 @@ function Editor({ projectId, planId }) {
     setErr('');
     // Status changes (draft units' `status`), by box: the box keeps its id through
     // the save, so the saved plan says which code each one ended up with.
-    const statusEdits = draft.plan.boxes.map(b => ({ boxId: b.id, info: pickInfo(draft.units[b.unitKey]?.status) })).filter(x => x.info?.status);
+    const statusEdits = !mayStatus ? [] : draft.plan.boxes.map(b => ({ boxId: b.id, info: pickInfo(draft.units[b.unitKey]?.status) })).filter(x => x.info?.status);
     const res = await saveFloorPlan({
       projectId, companyId: proj.companyId || user?.companyId, user,
       // The stored image lives beside the plan in the draft, not on it.
@@ -542,7 +544,7 @@ function Editor({ projectId, planId }) {
                         The project's custom statuses are picked here too; Management
                         makes and edits those in the panel below, saved straight away. */}
                     <div className="fpe-status">
-                      <Select className="fpe-stsel" value={entry.status || livePick} name="unit-status"
+                      <Select className="fpe-stsel" value={entry.status || livePick} name="unit-status" disabled={!mayStatus}
                         onChange={v => (v === '__new' ? setStEdit('new') : setField('status', v === livePick ? undefined : v))}>
                         <SelectLabel>Status</SelectLabel>
                         <SelectTrigger><SelectValue /></SelectTrigger>
@@ -556,6 +558,7 @@ function Editor({ projectId, planId }) {
                       </Select>
                       {entry.status && entry.status !== livePick
                         ? <em>was {(pickInfo(livePick)?.label || '').toLowerCase()} · applies on Save</em>
+                        : !mayStatus ? <em>your account cannot change unit status</em>
                         : !entry.orig && <em>new units start available</em>}
                       {customs.length > 0 && !stEdit && <button type="button" className="fpe-link" onClick={() => setStEdit('list')}>Manage statuses ({customs.length})</button>}
                     </div>

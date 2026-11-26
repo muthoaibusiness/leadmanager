@@ -6,6 +6,7 @@ import { readBoot } from '../lib/navHistory.js';
 import useNavHistory, { replaceNextPage } from '../hooks/useNavHistory.js';
 import { waCanChat } from '../lib/wa.js';
 import { claimLead, isQuotaLimited } from '../lib/leadQuota.js';
+import { PHONE_MQ } from '../hooks/useIsPhone.js';
 
 const AppContext = createContext(null);
 
@@ -45,6 +46,7 @@ export function AppProvider({ children }) {
   // ({ projectId, planId } — planId null for a new plan).
   const [projTab, setProjTab] = useState(boot.snap.projTab); // 'list' | 'units'
   const [planSel, setPlanSel] = useState({ projectId: null, planId: null });
+  const [bookProj, setBookProj] = useState(boot.snap.bookProj || null); // Booking: the open project (null = the project list)
   const [planEdit, setPlanEdit] = useState(null);
   const [bookSel, setBookSel] = useState(null);    // booking id for detail modal
   const [createUserRoles, setCreateUserRoles] = useState([]);
@@ -69,7 +71,6 @@ export function AppProvider({ children }) {
   const [dateRange, setDateRange] = useState({ preset: 'allTime', range: null });
   const [impersonator, setImpersonator] = useState(null); // the real admin while viewing as another account
   const [consoleAdmin, setConsoleAdmin] = useState(false); // open the project console straight into Admin catalog
-  const [consoleUnit, setConsoleUnit] = useState(null); // { projectId, variantId, unitId } the console opens with already picked (Available Units → Continue)
   // WhatsApp chat config (wa_settings row) — loaded once on login. Null until then.
   const [waSettings, setWaSettings] = useState(null);
   const [waUnread, setWaUnread] = useState(0); // total unread across chat threads
@@ -159,8 +160,11 @@ export function AppProvider({ children }) {
 
   const nav = useCallback((v) => {
     setView(v);
-    setProjTab('list'); // the sidebar's Projects opens the project list
+    // Projects from the nav opens Available Units on desktop, the project list
+    // on phones (a project's row or card opens its units: useProjectNav.openUnits).
+    setProjTab(v === 'properties' && !window.matchMedia(PHONE_MQ).matches ? 'units' : 'list');
     setTab(0);
+    setBookProj(null); // Booking from the menu always opens the project list
     setStatusFilter('ALL');
     setSearch('');
     setAgentFilter(null);
@@ -176,6 +180,7 @@ export function AppProvider({ children }) {
   const applySnap = useCallback((s) => {
     setView(s.view);
     setProjTab(s.projTab);
+    setBookProj(s.bookProj || null);
     setAgentFilter(s.agentFilter);
     setTeamFilter(s.teamFilter);
     setTab(s.tab);
@@ -191,11 +196,19 @@ export function AppProvider({ children }) {
     setSidebarOpen(false);
   }, []);
   const closeNotif = useCallback(() => setNotifOpen(false), []);
+  // Back on a page opened from the drawer puts the drawer back over that page
+  // (useNavHistory); only where the drawer is the layout, so the docked sidebar
+  // is never touched. Returns whether it opened.
+  const openMenu = useCallback(() => {
+    const drawer = window.matchMedia(DRAWER_MQ).matches;
+    if (drawer) setSidebarOpen(true);
+    return drawer;
+  }, []);
 
   const db = getDB();
   const { pageId, back: navBack, trail: navTrail } = useNavHistory({
-    boot, user, db, apply: applySnap, closeAll, closeNotif,
-    snap: { view, projTab, agentFilter, teamFilter, tab, statusFilter, sortBy, search },
+    boot, user, db, apply: applySnap, closeAll, closeNotif, openMenu,
+    snap: { view, projTab, bookProj, agentFilter, teamFilter, tab, statusFilter, sortBy, search },
     overlays: { modal, panLead, notifOpen, sidebarOpen },
   });
   // Whether the signed-in account may see the Conversations section at all.
@@ -221,6 +234,7 @@ export function AppProvider({ children }) {
     propEdit, setPropEdit,
     propDraft, setPropDraft,
     projTab, setProjTab,
+    bookProj, setBookProj,
     planSel, setPlanSel,
     planEdit, setPlanEdit,
     bookSel, setBookSel,
@@ -237,7 +251,6 @@ export function AppProvider({ children }) {
     dateRange, setDateRange,
     impersonator, impersonate, stopImpersonate,
     consoleAdmin, setConsoleAdmin,
-    consoleUnit, setConsoleUnit,
     waSettings, setWaSettings, chatOk,
     waUnread, setWaUnread,
     chatTarget, setChatTarget,

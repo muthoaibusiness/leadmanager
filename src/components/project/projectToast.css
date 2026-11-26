@@ -41,7 +41,7 @@
 .wp-gt-confirm.gooey-wrapper[data-theme] .gooey-description { overflow: visible; } /* keeps the buttons' focus ring */
 .wp-gt-confirm-msg { margin: 0; }
 .wp-gt-confirm-acts { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 12px; }
-.wp-gt-btn { padding: 8px 16px; border: 0; border-radius: 999px; font: 600 12px/1.2 var(--font-display); letter-spacing: .06em; text-transform: uppercase; cursor: pointer; transition: background var(--tr), filter var(--tr); }
+.wp-gt-btn { padding: 8px 16px; border: 0; border-radius: var(--rad-pill, 999px); font: 600 12px/1.2 var(--font-display); letter-spacing: .06em; text-transform: uppercase; cursor: pointer; transition: background var(--tr), filter var(--tr); }
 .wp-gt-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .wp-gt-cancel { background: var(--bd); color: var(--t1); }
 .wp-gt-cancel:hover { background: var(--bd2); }

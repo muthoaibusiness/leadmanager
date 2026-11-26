@@ -1,0 +1,54 @@
+/* Lead details drawer (LeadPanel.jsx) in the Booking page's look. The drawer's own rules read the app's
+   colour, radius and font variables, so they are re-pointed here at the Booking tokens (see .bk in
+   booking/ShopBooking.css) for everything inside #pan; the markup and behaviour are unchanged. */
+/* ds-allow-hardcode:start */
+#pan {
+  --bk-display: "Familjen Grotesk", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --bk-body: "Hind Siliguri", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --bk-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --bk-bg: #0C1411; --bk-surface: #121D19; --bk-surface2: #192722; --bk-line: #25362F;
+  --bk-fg: #E6EEE9; --bk-muted: #97A99F; --bk-faint: #6E8077;
+  --bk-accent: #3DB38F; --bk-accent-ink: #04130D; --bk-accent-soft: #14302A;
+  --bk-ok: #4BC27E; --bk-bad: #E2806A; --bk-held: #DDA83F;
+  --bk-shadow: 0 1px 2px rgb(0 0 0 / .3), 0 8px 24px rgb(0 0 0 / .25);
+  --surf: var(--bk-surface); --surf2: var(--bk-bg); --bd: var(--bk-line); --bd2: var(--bk-line);
+  --t1: var(--bk-fg); --t2: var(--bk-muted); --t3: var(--bk-faint);
+  --accent: var(--bk-accent); --on-accent: var(--bk-accent-ink); --blue-l: var(--bk-accent-soft); --blue-b: var(--bk-accent);
+  --red: var(--bk-bad); --red-l: color-mix(in srgb, var(--bk-bad) 14%, transparent);
+  --green: var(--bk-ok); --green-l: color-mix(in srgb, var(--bk-ok) 14%, transparent);
+  --orange: var(--bk-held); --orange-l: color-mix(in srgb, var(--bk-held) 16%, transparent);
+  --r: 12px; --r-lg: 14px; --r-sm: 10px; --sh: var(--bk-shadow);
+  --font-display: var(--bk-display);
+  font-family: var(--bk-body); font-size: 16px; color: var(--bk-fg);
+  border-left: 1px solid var(--bk-line); box-shadow: -8px 0 40px rgb(0 0 0 / .35);
+}
+:root[data-theme="light"] #pan {
+  --bk-bg: #FFFFFF; --bk-surface: #F4F8F6; --bk-surface2: #E8F0EC; --bk-line: #D9E4DE;
+  --bk-fg: #11201A; --bk-muted: #5A6C64; --bk-faint: #8C9C94;
+  --bk-accent: #0F6E56; --bk-accent-ink: #FFFFFF; --bk-accent-soft: #E2F1EA;
+  --bk-ok: #1C8248; --bk-bad: #B4442F; --bk-held: #B98316;
+  --bk-shadow: 0 1px 2px rgb(17 32 26 / .06), 0 8px 24px rgb(17 32 26 / .06);
+}
+#pan .p-hd { background: var(--bk-surface); border-bottom: 1px solid var(--bk-line); padding: 16px 20px; }
+#pan .p-ttl { font-family: var(--bk-display); font-size: 22px; font-weight: 600; letter-spacing: -.015em; }
+#pan .p-body { background: var(--bk-bg); scrollbar-width: thin; scrollbar-color: var(--bk-line) transparent; }
+#pan .ld-card, #pan .score-card, #pan .act-card, #pan .offer-card, #pan .tl { background: var(--bk-surface); border: 1px solid var(--bk-line); border-radius: var(--rad-14, 14px); box-shadow: var(--bk-shadow); }
+#pan .ld-hero::before { background: radial-gradient(circle, color-mix(in srgb, var(--bk-accent) 20%, transparent), transparent 68%); }
+#pan .ld-name { font-family: var(--bk-display); font-weight: 600; letter-spacing: -.02em; }
+#pan .ld-eyebrow, #pan .act-ttl, #pan .tl-ttl, #pan .ld-spec-k, #pan .ld-ag-l, #pan .ld-stat-l { font-size: 12.5px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: var(--bk-muted); }
+#pan .ld-spec-k, #pan .ld-spec-v, #pan .ld-crow, #pan .ld-ag-v { font-size: 15px; }
+#pan .ld-stat-v, #pan .score-num { font-family: var(--bk-display); font-weight: 600; }
+#pan .ld-spec { border-color: var(--bk-line); }
+#pan .btn { font-family: inherit; font-size: 15px; font-weight: 500; border-radius: var(--rad-10, 10px); border: 1px solid var(--bk-line); background: var(--bk-bg); color: var(--bk-fg); box-shadow: none; }
+#pan .btn:hover:not(:disabled) { border-color: var(--bk-accent); color: var(--bk-accent); }
+#pan .btn.btn-success, #pan .btn.btn-teal, #pan .btn.btn-p { background: var(--bk-accent); border-color: var(--bk-accent); color: var(--bk-accent-ink); }
+#pan .btn.btn-success:hover:not(:disabled), #pan .btn.btn-teal:hover:not(:disabled), #pan .btn.btn-p:hover:not(:disabled) { color: var(--bk-accent-ink); filter: brightness(1.08); }
+#pan .btn.btn-neutral { background: var(--bk-surface2); }
+#pan .btn .mi { font-size: 19px; }
+#pan .bdg { border-radius: var(--rad-pill, 999px); font-weight: 600; font-size: 13px; }
+#pan .score-bar-track { background: var(--bk-line); }
+#pan .p-back { color: var(--bk-fg); border-radius: 50%; }
+#pan .p-back:hover { background: var(--bk-surface2); }
+/* ds-allow-hardcode:end */
+/* icons keep the icon font wherever the skin sets a font */
+#pan .mi, #pan .material-symbols-rounded, #pan .material-icons { font-family: "Material Symbols Rounded" !important; }

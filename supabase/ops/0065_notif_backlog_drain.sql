@@ -26,16 +26,18 @@ select jobname, schedule from cron.job where jobname = 'notif-retention';  -- ex
 alter publication supabase_realtime drop table public.notifications;
 
 -- STEP 3 — remove legacy duplicate reminders, keeping the newest per (user, lead).
-set statement_timeout = '15min';
-delete from public.notifications n
-using (
+-- In batches of 50,000 so each run finishes well inside the SQL editor's time
+-- limit. RUN THIS SAME STEP AGAIN until it reports 0 rows (about 15 runs).
+-- ('rem-' rows are the server's reminders from 0067, never copies.)
+delete from public.notifications
+where id in (
   select id from (
     select id, row_number() over (partition by user_id, lead_id order by created_at desc, id desc) as rn
     from public.notifications
-    where type = 'FOLLOW_UP' and id not like 'fu-%'
+    where type = 'FOLLOW_UP' and id not like 'fu-%' and id not like 'rem-%'
   ) d where d.rn > 1
-) dup
-where n.id = dup.id;
+  limit 50000
+);
 
 -- STEP 4 — apply the 30/90-day rule now instead of waiting for the nightly job.
 -- Re-run until budget_hit is false and all three counts are 0.

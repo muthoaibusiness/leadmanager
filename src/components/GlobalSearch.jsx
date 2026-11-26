@@ -110,7 +110,7 @@ function SearchSheet({ onClose }) {
         {leadSec && (
           <section className="gs-sec">
             <div className="gs-hd">
-              <span>Prospects</span>
+              <span>Leads</span>
               {leads.total > leadRows.length && leadRows.length > 0 && (
                 <button type="button" className="gs-all" onClick={allLeads}>See all {leads.total} ›</button>
               )}

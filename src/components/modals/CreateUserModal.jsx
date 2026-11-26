@@ -7,6 +7,10 @@ import { rlabel } from '../../lib/helpers.js';
 import { ROLES } from '../../lib/constants.js';
 import useDiscardGuard from '../../hooks/useDiscardGuard.js';
 import useChanged from '../../hooks/useChanged.js';
+import BkSelect from '../booking/BkSelect.jsx';
+import '../booking/ShopBooking.css';
+import '../project/AddPropertyWizard.css';
+import '../views/AccountsView.css';
 
 export default function CreateUserModal() {
   const { modal, closeModal, user, createUserRoles, refreshDB, showToast, setCredInfo, openModal } = useApp();
@@ -19,7 +23,7 @@ export default function CreateUserModal() {
   const phoneRef = useRef();
   const emailRef = useRef();
   const passRef = useRef();
-  const roleRef = useRef();
+  const [role, setRole] = useState('');
   const baselineRef = useRef('');
 
   // Everything the form holds, as one string; the copy taken on open is the
@@ -27,12 +31,13 @@ export default function CreateUserModal() {
   // so its value then is the baseline, not the first role.
   const formKey = () => JSON.stringify([
     nameRef.current?.value.trim() || '', phoneRef.current?.value.trim() || '',
-    emailRef.current?.value.trim() || '', passRef.current?.value || '', roleRef.current?.value || '',
+    emailRef.current?.value.trim() || '', passRef.current?.value || '', role,
   ]);
 
   if (useChanged(isOpen) && isOpen) {
     setErr('');
     setShowPw(false);
+    setRole('');
   }
   // The fields are uncontrolled, so clearing them is DOM work for after commit.
   useEffect(() => {
@@ -43,7 +48,7 @@ export default function CreateUserModal() {
       if (phoneRef.current) phoneRef.current.value = '';
       baselineRef.current = formKey();
     }
-  }, [isOpen]);
+  }, [isOpen]); // eslint-disable-line react-hooks/exhaustive-deps -- formKey only reads refs and state at call time
 
   // ✕, Cancel, the backdrop and Esc close through the guard: an untouched form
   // just closes, one with input asks first (Projects → Add Property's structure).
@@ -52,12 +57,13 @@ export default function CreateUserModal() {
     ask: { title: 'Exit without creating?', description: 'This new account will be lost.' },
   });
 
+  const pickedRole = role && createUserRoles.includes(role) ? role : createUserRoles[0];
   const submit = async () => {
     const name = nameRef.current.value.trim();
     const email = emailRef.current.value.trim();
     const pass = passRef.current.value;
     const phone = phoneRef.current.value.trim();
-    const role = roleRef.current?.value || createUserRoles[0];
+    const role = pickedRole;
     const db = getDB();
 
     if (!name || !email || !pass) { setErr('Name, email and password required.'); return; }
@@ -87,39 +93,39 @@ export default function CreateUserModal() {
     showToast('User created', 'ok');
   };
 
+  if (!isOpen) return null;
   return (
-    <div className={`mov${isOpen ? ' on' : ''}`} {...guard.backdropProps}>
-      <div className="modal" {...guard.modalProps}>
-        <div className="m-hd">
-          <div className="m-ttl">Create Account</div>
-          <button className="m-x" onClick={guard.requestClose}><Mi>close</Mi></button>
-        </div>
-        <div className="m-body">
+    <div className="pw-scrim" {...guard.backdropProps}>
+      <div className="bk acx-modal" role="dialog" aria-modal="true" aria-labelledby={`${uid}t`} {...guard.modalProps}>
+        <header className="pw-head">
+          <div className="acx-mt"><span className="bk-eyebrow">New account</span><h3 id={`${uid}t`}>Create account</h3></div>
+          <button type="button" className="bk-close" aria-label="Close" onClick={guard.requestClose}><Mi>close</Mi></button>
+        </header>
+        <div className="pw-body">
           {createUserRoles.length > 1 && (
-            <div className="fg"><label htmlFor={`${uid}role`}>Role</label>
-              <select id={`${uid}role`} className="fi" ref={roleRef}>
-                {createUserRoles.map(r => <option key={r} value={r}>{rlabel(r)}</option>)}
-              </select>
-            </div>
+            <div className="pw-f"><span className="bk-cap">Role</span>
+              <BkSelect label="Role" value={pickedRole} onChange={setRole} options={createUserRoles.map(r => ({ value: r, label: rlabel(r) }))} /></div>
           )}
-          {createUserRoles.length === 1 && <input type="hidden" ref={roleRef} value={createUserRoles[0]} />}
-          <div className="fg-row">
-            <div className="fg"><label htmlFor={`${uid}name`}>Full Name *</label><input id={`${uid}name`} className="fi" ref={nameRef} type="text" placeholder="e.g. Masud Rahman" /></div>
-            <div className="fg"><label htmlFor={`${uid}phone`}>Phone</label><input id={`${uid}phone`} className="fi" ref={phoneRef} type="tel" placeholder="+880 1711 000000" /></div>
+          <div className="pw-grid">
+            <label className="pw-f" htmlFor={`${uid}name`}><span className="bk-cap">Full name *</span><input id={`${uid}name`} ref={nameRef} type="text" placeholder="e.g. Masud Rahman" /></label>
+            <label className="pw-f" htmlFor={`${uid}phone`}><span className="bk-cap">Phone</span><input id={`${uid}phone`} ref={phoneRef} type="tel" placeholder="+880 1711 000000" /></label>
           </div>
-          <div className="fg"><label htmlFor={`${uid}email`}>Email *</label><input id={`${uid}email`} className="fi" ref={emailRef} type="email" placeholder="user@company.com" /></div>
-          <div className="fg"><label htmlFor={`${uid}pass`}>Password *</label>
-            <div className="pw-w">
-              <input id={`${uid}pass`} className="fi" ref={passRef} type={showPw ? 'text' : 'password'} placeholder="Set a password" />
-              <button className="pw-e" onClick={() => setShowPw(v => !v)}><Mi>{showPw ? 'visibility_off' : 'visibility'}</Mi></button>
+          <label className="pw-f" htmlFor={`${uid}email`}><span className="bk-cap">Email *</span><input id={`${uid}email`} ref={emailRef} type="email" placeholder="user@company.com" /></label>
+          <div className="pw-f"><label className="bk-cap" htmlFor={`${uid}pass`}>Password * (10 characters or more)</label>
+            <div className="acx-pw">
+              <input id={`${uid}pass`} ref={passRef} type={showPw ? 'text' : 'password'} placeholder="Set a password" />
+              <button type="button" className="bk-close" aria-label={showPw ? 'Hide password' : 'Show password'} onClick={() => setShowPw(v => !v)}><Mi>{showPw ? 'visibility_off' : 'visibility'}</Mi></button>
             </div>
           </div>
-          {err && <div style={{ color: 'var(--red)', fontSize: '12px', marginTop: '4px' }}>{err}</div>}
+          {err && <div className="pw-warn" role="alert"><Mi>error</Mi>{err}</div>}
         </div>
-        <div className="m-ft">
-          <button className="btn btn-g" onClick={guard.requestClose}>Cancel</button>
-          <button className="btn btn-p" onClick={submit}><Mi>person_add</Mi>Create</button>
-        </div>
+        <footer className="pw-foot">
+          <span className="bk-cap">The login details are shown once, after it is created.</span>
+          <div className="pw-acts">
+            <button type="button" className="bk-btn" onClick={guard.requestClose}>Cancel</button>
+            <button type="button" className="bk-btn primary" onClick={submit}><Mi>person_add</Mi>Create</button>
+          </div>
+        </footer>
       </div>
     </div>
   );

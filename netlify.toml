@@ -8,7 +8,9 @@
   # SQL string concatenation; that equals VITE_SUPABASE_URL (a publishable client
   # value, not a secret), so the scanner false-positives on it. Omit only this
   # file — the rest of the repo stays scanned.
-  SECRETS_SCAN_OMIT_PATHS = "supabase/migrations/0052_meta_capi_retention_and_scheduler.sql"
+  # .gate-harness/, .refarence/ and docs/plans/demo/ are dev-only fixtures and
+  # backups that embed the same project URL; none of them ship in dist.
+  SECRETS_SCAN_OMIT_PATHS = "supabase/migrations/0052_meta_capi_retention_and_scheduler.sql,.gate-harness/,.refarence/,docs/plans/demo/"
 
 # The pdf.js worker (floor plan PDF upload) is an .mjs module worker, which
 # browsers only start when it is served as JavaScript.

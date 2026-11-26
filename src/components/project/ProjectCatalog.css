@@ -1,6 +1,8 @@
 /* PROPERTY DETAILS header: the required PROJECT TYPE select sits on its right
    (ui/color-emotion-select.jsx). */
 .pcat-hd-type { flex-wrap: wrap; row-gap: 12px; }
+/* phones: Add floor plan beside the project type (ProjectConsole passes it there only) */
+.pcat-addplan { margin-left: auto; text-transform: none; letter-spacing: 0; font-weight: 600; }
 .pcat-ptype { margin-left: auto; }
 
 /* Full-screen console (≤820px): the type takes its own row under the title,

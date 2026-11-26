@@ -59,7 +59,8 @@ function BudgetList({ api, onOpen }) {
         <button type="button" className="btn btn-p" onClick={() => setForm(true)}><Mi>add</Mi>New budget</button>
       </div>
       <BulkBar sel={sel} noun="budget" onAction={archiveSelected} busy={busy} actionLabel="Archive" actionIcon="inventory_2" />
-      <div className="fin-card">
+      {/* Phones: the toolbar stays put and the list scrolls (index.css .tab-scroll). */}
+      <div className="tab-scroll"><div className="fin-card">
         {rows.length === 0 ? <div className="fin-empty">{fin.budgets.length ? 'No budgets match.' : 'No budgets yet. Create the first one.'}</div> : (
           <div className="fin-scroll"><table className="fin-tbl">
             <thead><tr><SelectAll sel={sel} label="Select all budgets" /><th>Budget</th><th>Projects</th><th>Team</th><th className="r">Amount</th><th className="r">Committed</th><th className="r">Spent</th><th className="r">Remaining</th></tr></thead>
@@ -75,7 +76,7 @@ function BudgetList({ api, onOpen }) {
               </tr>); })}</tbody>
           </table></div>
         )}
-      </div>
+      </div></div>
       {form && <BudgetForm onClose={() => setForm(false)} onSave={async (b) => { const r = await act('budget.save', { budget: b }); toast.success('Budget created', `${r.budget.title} is ready to use.`); onOpen(r.budget.id); }} />}
     </>
   );

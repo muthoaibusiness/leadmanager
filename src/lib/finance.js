@@ -103,6 +103,13 @@ export function useFinance(user) {
 }
 
 // ── derived, display only (every money figure comes from the function) ──
+// The rows of `page` (0-based) when the list is paged by `size`, else every row.
+// A page past the end (a filter shortened the list) falls back to the last one.
+export function pageOf(rows, page, size) {
+  if (!size) return { page: 0, rows };
+  const p = Math.min(Math.max(0, page), Math.max(0, Math.ceil(rows.length / size) - 1));
+  return { page: p, rows: rows.slice(p * size, (p + 1) * size) };
+}
 export const byId = (rows, id) => (rows || []).find(r => r.id === id) || null;
 export const approvalsOf = (fin, budgetId) => (fin?.approvals || []).filter(a => a.budgetId === budgetId).sort((a, b) => String(b.decidedAt).localeCompare(String(a.decidedAt)));
 export const expensesOf = (fin, budgetId) => (fin?.expenses || []).filter(e => e.budgetId === budgetId);

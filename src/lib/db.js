@@ -1,5 +1,6 @@
 import { ROLES, normRole, isNiHandler, canSelfForward, STATUS_LABELS, SRC_LABELS, PAST_CONTACT, OFFER_MAX } from './constants.js';
 import { pruneNotifList } from './notifRetention.js';
+import { clearDeviceData } from './deviceCache.js';
 import { setOfferResolver } from './offerRegistry.js';
 import { uid, now_, fmtBDT, fmtDT, curMonth, startOfMonth, rlabel } from './helpers.js';
 import { leadFilterParam, ORDER } from './leadQuery.js';
@@ -148,7 +149,14 @@ export function mergeDB(remote, local) {
       };
     }),
     bookings: mergeArr(r.bookings, l.bookings),
-    holdRequests: mergeArr(r.holdRequests, l.holdRequests),
+    // Hold requests: cloud-authoritative, like leads. createHoldRequest inserts
+    // and decideHoldRequest updates the cloud row directly, so a request the
+    // cloud no longer has was deleted there and must not be kept (or pushed
+    // back up) from this cache. Only one created in the last 15 minutes and not
+    // yet on the cloud (its insert still in flight) is kept.
+    holdRequests: r.holdRequests === undefined
+      ? (l.holdRequests || [])
+      : mergeCloudFirst(r.holdRequests, (l.holdRequests || []).filter(x => nowMs - new Date(x?.createdAt || 0).getTime() < 15 * 60 * 1000)),
     activities: mergeActs(r.activities, l.activities),
     notifications: mergeNotifs(r.notifications, l.notifications),
   };
@@ -502,6 +510,7 @@ export function clearLocalDB() {
   _DB = null;
   resetActCache();
   resetLeadCache();
+  clearDeviceData(); // lead-list pages and pictures kept for this account
 }
 
 export function clearSession() {

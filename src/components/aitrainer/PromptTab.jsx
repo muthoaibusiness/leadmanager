@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import Loader from '../ui/loader.jsx';
 import Mi from '../Mi.jsx';
 import { BOTS } from '../wa/relayBots.js';
 import { Menu, MenuRadio, MenuRadioGroup } from '../ui/menu.jsx';
@@ -33,7 +34,7 @@ export default function PromptTab({ api, showToast }) {
   useEffect(() => { load(); }, [load]);
 
   if (err) return <div className="ait-err" role="alert">Could not load the System Prompt: {err} <button className="btn btn-g btn-sm" onClick={load}><Mi>refresh</Mi>Retry</button></div>;
-  if (!data) return <div className="ea-count">Loading…</div>;
+  if (!data) return <Loader className="ldr-page" title="Loading System Prompt…" subtitle="Fetching the prompt and its history" />;
 
   const name = BOTS.find((b) => b.bot === bot)?.name || bot;
   const base = data.draft?.body ?? data.published?.body ?? '';

@@ -15,6 +15,8 @@ export const NAV_SCOPES = {
   meeting: ['AGENT', 'MEETING_AGENT', 'TEAM_LEAD'],
   pipeline: ALL_ROLES,
   properties: ALL_ROLES,
+  // Booking: pick a floor, then a shop, on a text floor plan (prototype).
+  booking: ALL_ROLES,
   // Management's Reports charts now live on their Home dashboard — the
   // standalone page is Team Lead only.
   reports: ['TEAM_LEAD'],
@@ -38,6 +40,12 @@ export const NAV_SCOPES = {
   // checks the same rule (role, or a saved 'metacapi' grant) on every call.
   metacapi: ['MANAGEMENT', 'MASTER'],
   companies: ['MASTER'],   // master-admin company-wise overview
+  // Booking data grants (not pages). Customer data: buyers' and holders' names, phones and
+  // dates. Pricing: list prices, offers and deal values. Unit status: changing a unit's
+  // status directly (unhold, sell, landowner); a hold *request* from Booking needs none.
+  data_customers: ['TEAM_LEAD', 'MANAGEMENT'],
+  data_prices: ALL_ROLES,
+  data_status: ['MANAGEMENT'],
   profile: [...ALL_ROLES, 'MASTER'],
 };
 
@@ -49,7 +57,14 @@ export const NAV_SCOPES = {
 // people created (without it, only their own) and add corrections to finance
 // history. Checked again server-side by the finance Edge Function, which reads
 // the same allowed_features column.
-export const FEATURE_KEYS = ['dashboard', 'leads', 'add_customer', 'conversations', 'calendar', 'meeting', 'pipeline', 'properties', 'reports', 'agentperf', 'perfreports', 'fbleads', 'requests', 'inventory', 'finance_approve', 'team', 'accounts', 'relay', 'aitrainer', 'metacapi', 'publicproject', 'self_forward'];
+export const FEATURE_KEYS = ['dashboard', 'leads', 'add_customer', 'conversations', 'calendar', 'meeting', 'pipeline', 'properties', 'booking', 'reports', 'agentperf', 'perfreports', 'fbleads', 'requests', 'inventory', 'finance_approve', 'team', 'accounts', 'relay', 'aitrainer', 'metacapi', 'publicproject', 'self_forward', 'data_customers', 'data_prices', 'data_status'];
+
+// The booking data grants. A list saved before they existed names none of them, so for
+// such a list they still follow the role (else saving it once would have stripped every
+// agent's prices). The 'data_set' marker, written with every list saved since, makes the
+// list decide them too.
+export const DATA_KEYS = ['data_customers', 'data_prices', 'data_status'];
+export const DATA_MARKER = 'data_set';
 
 // Default features for a standard role (from NAV_SCOPES). Executive resolves to none.
 export const defaultFeatures = (role) => FEATURE_KEYS.filter(k => (NAV_SCOPES[k] || []).includes(role));
@@ -68,6 +83,9 @@ export function hasFeature(u, key) {
   // for it by a saved feature list, so an admin cannot lock itself out.
   if (key === 'accounts' && u.role === 'MANAGEMENT') return true;
   const af = featuresOf(u);
+  if (af && DATA_KEYS.includes(key) && !af.includes(DATA_MARKER) && !af.some((k) => DATA_KEYS.includes(k))) {
+    return (NAV_SCOPES[key] || []).includes(u.role);
+  }
   if (af) {
     // A grant saved before Users merged into Accounts still opens the merged page.
     if (key === 'accounts' && af.includes('users')) return true;
