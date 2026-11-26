@@ -17,7 +17,12 @@
       "bundleIdentifier": "com.wepro.crm",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
-        "LSApplicationQueriesSchemes": ["tel", "sms", "mailto", "whatsapp"]
+        "LSApplicationQueriesSchemes": [
+          "tel",
+          "sms",
+          "mailto",
+          "whatsapp"
+        ]
       }
     },
     "android": {
@@ -44,6 +49,12 @@
           "defaultChannel": "default"
         }
       ]
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "3da89335-c91b-4ac0-866f-9909af9fcb20"
+      }
+    },
+    "owner": "muthoai"
   }
 }

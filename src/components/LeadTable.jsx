@@ -9,9 +9,10 @@ import { useApp } from '../context/AppContext.jsx';
 import { bulkDeleteLeads, lastFollowupFor, getDB } from '../lib/db.js';
 import TransferLeadModal from './modals/TransferLeadModal.jsx';
 import useChanged from '../hooks/useChanged.js';
+import useFitRows from '../hooks/useFitRows.js';
 import './LeadTable.css';
 
-export const PAGE_SIZE = 15;
+export const PAGE_SIZE = 10; // a page fills the screen with no scrolling (useFitRows), on computers and phones
 
 
 // One list for the three header copies (loading, empty, rows), so they cannot drift.
@@ -132,6 +133,8 @@ export default function LeadTable({ leads, total = null, page: pageProp, onPage,
   }
 
   const slice = server ? sorted : sorted.slice(page * pageSize, (page + 1) * pageSize);
+  const cardRef = useRef(null);
+  useFitRows(cardRef, pageSize, [slice.length, loading]);
 
   // select-all applies to the CURRENT page only
   const allSelected = slice.length > 0 && slice.every(l => selected.has(l.id));
@@ -195,7 +198,7 @@ export default function LeadTable({ leads, total = null, page: pageProp, onPage,
           onDone={() => setSelected(new Set())}
         />
       )}
-      <section className={`rqx-card lt-card${loading ? ' lt-busy' : ''}`} aria-label="Leads" aria-busy={loading}>
+      <section ref={cardRef} className={`rqx-card lt-card${loading ? ' lt-busy' : ''}`} aria-label="Leads" aria-busy={loading}>
         {loading && <span className="lt-bar" aria-hidden="true" />}
         {!leads.length ? (
           <>

@@ -6,7 +6,6 @@ import { STATUS_LABELS, ROLES, canSee } from '../../lib/constants.js';
 import { rlabel } from '../../lib/helpers.js';
 import LeadTable, { PAGE_SIZE } from '../LeadTable.jsx';
 
-const PHONE_PAGE_SIZE = 10; // a phone screen holds about ten rows
 import BkSelect from '../booking/BkSelect.jsx';
 import '../booking/ShopBooking.css';
 import '../LeadTable.css';
@@ -40,7 +39,7 @@ export default function LeadsView() {
   }, [searchRef]);
   const phone = useIsPhone();
   const canAdd = canSee(user, 'add_customer'); // the hero's Add Customer / Import gate
-  const pageSize = phone ? PHONE_PAGE_SIZE : PAGE_SIZE; // phones: 10 leads a page
+  const pageSize = PAGE_SIZE; // 10 leads a page on every screen
 
   // Agents get a My Leads ↔ Forwarded toggle.
   const isAgent = user.role === ROLES.AGENT;
