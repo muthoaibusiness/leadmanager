@@ -7,7 +7,7 @@ import { countLeads, getHoldRequests, getLead, ensureLead } from '../../lib/db.j
 import { seedNextPage, usePageOverlay } from '../../hooks/useNavHistory.js';
 import useIsPhone from '../../hooks/useIsPhone.js';
 import { hasColumn } from '../../lib/supabase.js';
-import { planProjects, findUnit, unitSize, unitPrice, placedUnitIds, deleteFloorPlan } from '../../lib/projects.js';
+import { planProjects, findUnit, unitSize, unitPrice, placedUnitIds, deleteFloorPlan, projectKey } from '../../lib/projects.js';
 import { toPx, byCode, STATUS, taka, statusLook } from '../../lib/floorPlan.js';
 import { Menu, MenuItem, MenuSep } from '../ui/menu.jsx';
 import { Select, SelectTrigger, SelectPopover, SelectListBox, SelectItem } from '../ui/select.jsx';
@@ -131,7 +131,7 @@ export default function AvailableUnitsView() {
     if (!peopleKey) return;
     let live = true;
     // The same set the Prospects list shows with this project picked (leadWhere `project`).
-    countLeads({ user, involved: true, project: proj.name }).then(n => { if (live) setPeople({ key: peopleKey, total: n }); });
+    countLeads({ user, involved: true, project: projectKey(proj.name) }).then(n => { if (live) setPeople({ key: peopleKey, total: n }); });
     return () => { live = false; };
   }, [peopleKey]); // eslint-disable-line react-hooks/exhaustive-deps -- proj/user are read through the key
   const peopleReady = people.key === peopleKey;

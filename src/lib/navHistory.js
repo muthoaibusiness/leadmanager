@@ -2,7 +2,7 @@
 // screen is `view` (plus a few sub-page fields) in AppContext. useNavHistory
 // mirrors that state into window.history so Back/Forward, a reload and a
 // pasted #/view URL all land where they should. This file holds the pure parts.
-import { ROLES, canSee, FEATURE_KEYS } from './constants.js';
+import { ROLES, canSee, FEATURE_KEYS, DATA_KEYS } from './constants.js';
 import { getSession } from './db.js';
 
 // One title per page — the hero heading and the label of a Back link to it.
@@ -59,7 +59,7 @@ export function parseHash(hash) {
 export function homeView(user) {
   if (!user) return 'dashboard';
   if (user.role === ROLES.MASTER) return 'companies';
-  return FEATURE_KEYS.find(k => k !== 'add_customer' && canSee(user, k)) || 'profile';
+  return FEATURE_KEYS.find(k => k !== 'add_customer' && !DATA_KEYS.includes(k) && canSee(user, k)) || 'profile';
 }
 
 // What the Back link calls a page.

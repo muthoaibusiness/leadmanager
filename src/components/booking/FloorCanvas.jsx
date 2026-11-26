@@ -37,7 +37,7 @@ export default function FloorCanvas({ floor, lm, zoom = 1, shopCode = null, onPi
               {s.shape && <svg className="bk-shape" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true"><polygon points={s.shape.map(([x, y]) => `${x * 100},${y * 100}`).join(' ')} /></svg>}
               <span className="bk-cell-id">{shortCode(s.code)}</span>
               {hw >= 0.05 && <span className="bk-cell-m">{s.size}{s.w >= 0.075 ? " sft" : ""}</span>}
-              {hw >= 0.085 && s.w >= 0.085 && <span className="bk-cell-p">{s.status === 'available' ? takaShort(s.price) : s.look.label}</span>}
+              {hw >= 0.085 && s.w >= 0.085 && <span className="bk-cell-p">{s.status === 'available' ? (takaShort(s.price) || (s.size ? `${s.size} sft` : '')) : s.look.label}</span>}
             </button>
           );
         })}

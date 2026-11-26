@@ -14,6 +14,7 @@ export const ACCESS_URL = `${SB_URL}/functions/v1/access-admin`;
 // skipped (the UI's canManageUser gate still applies). Delete this once
 // access-admin is live — after 0054 the PATCH is refused anyway.
 const MARKERS = ['ni_only'];
+const DATA_MARKER = 'data_set';
 const USER_SEL = 'id,name,email,phone,role,team_id,company_id,is_active,avatar,projects,allowed_features';
 function directPatch(action, p) {
   switch (action) {
@@ -70,7 +71,8 @@ const saved = async (action, payload) => {
 };
 
 // null = back to role defaults; [] = nothing; otherwise the full list.
-export const setFeatures = (userId, features) => saved('features.set', { userId, features });
+// Every saved list carries the data marker, so from then on it decides the booking data grants too.
+export const setFeatures = (userId, features) => saved('features.set', { userId, features: features === null ? null : [...new Set([...features, DATA_MARKER])] });
 export const setRole = (userId, role) => saved('role.set', { userId, role });
 export const setActive = (userId, active) => saved('active.set', { userId, active });
 export const setProjects = (userId, projects) => saved('projects.set', { userId, projects });

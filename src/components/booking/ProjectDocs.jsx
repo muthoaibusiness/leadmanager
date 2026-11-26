@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import Mi from '../Mi.jsx';
 import { useApp } from '../../context/AppContext.jsx';
 import { loadProjectDocLog, DOCS } from '../../lib/shopDocs.js';
+import { canCustomers } from '../../lib/constants.js';
 
 // Booking › a project › Documents: every document sent for this project, and to whom.
 // Rows come from the send log the unit card's Documents tab writes (shop_doc_log).
@@ -21,6 +22,7 @@ export default function ProjectDocs({ project }) {
     return () => { live = false; };
   }, [user?.companyId, project.id]);
 
+  if (!canCustomers(user)) return <div className="pov"><p className="pov-none">Who documents were sent to is customer data, which your account does not have access to.</p></div>;
   const needle = q.trim().toLowerCase();
   const rows = state.log.filter(r => !needle || [r.client, r.unitId, r.by, ...r.docs.map(docName)].some(v => String(v || '').toLowerCase().includes(needle)));
   const clients = new Set(state.log.map(r => r.client).filter(Boolean)).size;

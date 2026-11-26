@@ -17,8 +17,8 @@ export const normRole = (r) => (LEGACY_AGENT_ROLES.includes(r) ? ROLES.AGENT : r
 
 // Role-scoped navigation and feature grants live in one file shared with the
 // Edge Functions, so the server checks the same rule the browser shows.
-import { NAV_SCOPES, FEATURE_KEYS, defaultFeatures, hasFeature, canManageUser, assignableRoles } from '../../supabase/functions/_shared/access-rules.js';
-export { NAV_SCOPES, FEATURE_KEYS, defaultFeatures, canManageUser, assignableRoles };
+import { NAV_SCOPES, FEATURE_KEYS, DATA_KEYS, defaultFeatures, hasFeature, canManageUser, assignableRoles } from '../../supabase/functions/_shared/access-rules.js';
+export { NAV_SCOPES, FEATURE_KEYS, DATA_KEYS, defaultFeatures, canManageUser, assignableRoles };
 // Access check. If an admin has saved a custom `allowedFeatures` list on the user,
 // that list fully dictates access (overrides role defaults). Otherwise fall back to
 // the strict role-based NAV_SCOPES. Profile is always available (logout/account).
@@ -52,18 +52,30 @@ export const isNiHandler = (user) => !!user && Array.isArray(user.allowedFeature
 // FEATURE_KEYS (the grantable features, in display order) is in access-rules.js.
 // The checklist's starting state: the saved list, else the role's defaults
 // (none for Executive).
-export const initialFeatures = (u) =>
-  new Set(Array.isArray(u?.allowedFeatures) ? u.allowedFeatures : (u?.role === ROLES.EXEC ? [] : defaultFeatures(u?.role)));
+export const initialFeatures = (u) => {
+  const s = new Set(Array.isArray(u?.allowedFeatures) ? u.allowedFeatures.filter(k => FEATURE_KEYS.includes(k)) : (u?.role === ROLES.EXEC ? [] : defaultFeatures(u?.role)));
+  // a list saved before the booking data grants existed: show what the role gives
+  DATA_KEYS.forEach(k => { if (u && canSee(u, k)) s.add(k); else s.delete(k); });
+  return s;
+};
+// Booking data: who sees customers and prices, and who changes a unit's status.
+export const canCustomers = (user) => canSee(user, 'data_customers');
+export const canPrices = (user) => canSee(user, 'data_prices');
+export const canUnitStatus = (user) => canSee(user, 'data_status');
 export const FEATURE_LABELS = {
   dashboard: 'Home', leads: 'Leads', add_customer: 'Add Customer', conversations: 'Conversations', calendar: 'Calendar', meeting: 'Meeting', pipeline: 'Pipeline', properties: 'Projects', booking: 'Booking',
   reports: 'Reports', agentperf: 'Performance', perfreports: 'Performance Reports', fbleads: 'Facebook Leads', requests: 'Requests', inventory: 'Inventory', finance_approve: 'Manage all budgets', team: 'Team',
   accounts: 'Users & Accounts', relay: 'WhatsApp Relay', aitrainer: 'AI Trainer', metacapi: 'Meta CAPI', publicproject: 'Public Project', self_forward: 'Self-forward leads',
+  data_customers: 'Customer data', data_prices: 'Pricing data', data_status: 'Unit status changes',
 };
 // What a grant does when its label alone doesn't say it.
 export const FEATURE_HINTS = {
   finance_approve: 'Manage all budgets: can edit, archive and restore budgets other people created, and add corrections to finance history. Without it, Inventory users change only their own budgets.',
   self_forward: 'Can forward a lead to themselves from the lead panel, without going through a Team Lead or Management. Meeting Agents always have this; grant it to anyone else who should too.',
   publicproject: 'Admin only: manage the public, shareable project page and preview what customers see.',
+  data_customers: 'See who bought or holds a unit: customer names, phones, booking and payment dates, and who documents were sent to.',
+  data_prices: 'See unit prices, customer offers and deal values. Without it a unit shows its size, not its price.',
+  data_status: 'Change a unit’s status directly: unhold, mark sold or landowner. Requesting a hold from Booking does not need it.',
 };
 // Meeting Agent always has this, role-wise — same reasoning as effectiveRole()
 // folding it back to AGENT everywhere else. 'self_forward' in FEATURE_KEYS is

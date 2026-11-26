@@ -1,4 +1,5 @@
 import { useMemo } from 'react';
+import { projectKey } from '../../lib/projects.js';
 import Mi from '../Mi.jsx';
 import BkSelect from '../booking/BkSelect.jsx';
 import useNavState from '../../hooks/useNavState.js';
@@ -14,7 +15,7 @@ import { fmtBDT, ini, avc, rlabel } from '../../lib/helpers.js';
 // Ranked by deals won, then revenue, visits done, meetings set and leads sourced.
 
 const MEDAL = ['#E0B84A', '#B8C0CC', '#C98A5A'];
-const same = (a, b) => String(a || '').trim().toLowerCase() === String(b || '').trim().toLowerCase();
+const same = (a, b) => projectKey(a) === projectKey(b); // "WECON CITIZEN AVENUE" is "CITIZEN AVENUE MALL"
 
 export default function ProjectLeaderboard() {
   useLeadBook(); // this view reduces over every lead; leads are not in the boot load

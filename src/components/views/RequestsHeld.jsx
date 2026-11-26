@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import Mi from '../Mi.jsx';
 import BkSelect from '../booking/BkSelect.jsx';
-import { listProjects, unitSize, setUnitStatus } from '../../lib/projects.js';
+import { listProjects, unitSize, setUnitStatus, maskProject } from '../../lib/projects.js';
 import { decideHoldRequest } from '../../lib/db.js';
 
 // Requests › Held units: every unit on hold in every project, however it got there (an approved
@@ -15,8 +15,8 @@ const stamp = () => Date.now();
 const KINDS = [['', 'All holds'], ['admin', 'Admin holds'], ['agent', 'Agent holds']];
 
 // All held units, newest request first per unit, soonest to expire first.
-function heldUnits(requests, now) {
-  return listProjects().flatMap(p => (p.variants || []).flatMap(v => (v.units || []).filter(u => u.status === 'hold').map(u => {
+function heldUnits(requests, now, access) {
+  return listProjects().map(p => maskProject(p, access)).flatMap(p => (p.variants || []).flatMap(v => (v.units || []).filter(u => u.status === 'hold').map(u => {
     const req = requests.filter(r => r.propertyId === p.id && r.unitId === u.id && r.status !== 'rejected')
       .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)))[0] || null;
     const start = u.at || req?.decidedAt || req?.createdAt || null;
@@ -24,20 +24,20 @@ function heldUnits(requests, now) {
     return {
       key: `${p.id}:${u.id}`, projectId: p.id, project: p.name, variantId: v.id, type: v.name, unitId: u.id, size: unitSize(u, v),
       admin: !!u.adminHold, by: u.adminHold ? 'Management' : (u.heldByName || req?.agentName || '—'),
-      client: u.clientName || req?.clientName || '', phone: u.clientPhone || req?.clientPhone || '', note: u.note || '',
+      client: u.clientName || req?.clientName || (access.customers === false ? 'Hidden' : ''), phone: u.clientPhone || req?.clientPhone || '', note: u.note || '',
       start, left: end == null ? null : end - now, req,
     };
   }))).sort((a, b) => (a.left ?? Infinity) - (b.left ?? Infinity) || a.project.localeCompare(b.project) || String(a.unitId).localeCompare(String(b.unitId), undefined, { numeric: true }));
 }
 
-export default function RequestsHeld({ all, user, refreshDB, showToast, onOpen }) {
+export default function RequestsHeld({ all, user, refreshDB, showToast, onOpen, access = {}, mayStatus = true }) {
   const [now] = useState(stamp);
   const [q, setQ] = useState('');
   const [project, setProject] = useState('');
   const [kind, setKind] = useState('');
   const [ask, setAsk] = useState(null); // the row whose Unhold is waiting for a confirm
 
-  const held = heldUnits(all, now);
+  const held = heldUnits(all, now, access);
   const projects = [...new Set(held.map(h => h.project))].sort();
   const needle = q.trim().toLowerCase();
   const rows = held
@@ -105,7 +105,7 @@ export default function RequestsHeld({ all, user, refreshDB, showToast, onOpen }
                       {h.left == null ? (h.admin ? <span className="rqh-lock"><Mi>lock</Mi>No end</span> : '—') : h.left < 0 ? `${span(h.left)} over` : span(h.left)}
                     </td>
                     <td className="rqx-acts" onClick={e => e.stopPropagation()}>
-                      {ask === h.key ? (
+                      {!mayStatus ? null : ask === h.key ? (
                         <>
                           <button type="button" className="bk-btn rqx-b" onClick={() => setAsk(null)}><Mi>undo</Mi>Keep</button>
                           <button type="button" className="bk-btn primary rqx-b" onClick={() => unhold(h)}><Mi>lock_open</Mi>Confirm</button>

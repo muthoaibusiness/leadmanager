@@ -3,6 +3,7 @@ import Mi from '../Mi.jsx';
 import { useApp } from '../../context/AppContext.jsx';
 import { setUnitStatus } from '../../lib/projects.js';
 import { createHoldRequest } from '../../lib/db.js';
+import { canCustomers } from '../../lib/constants.js';
 
 // Quick customer-price steps below the list price.
 const STEPS = [0, 2, 5, 10];
@@ -33,7 +34,7 @@ export default function BookPanel({ project, shop, client, onDone }) {
           <Mi>{shop.status === 'hold' ? 'hourglass_top' : shop.look?.color ? 'real_estate_agent' : 'verified'}</Mi>
           <div>
             <b>{shop.look?.label || (shop.status === 'hold' ? 'On hold' : 'Sold')}</b>
-            <span>{rows.length ? (sold ? 'Sold to' : 'Held for') + ' ' + (shop.clientName || 'a customer') : 'No customer recorded'}</span>
+            <span>{!canCustomers(user) ? 'Customer details are hidden for your account' : rows.length ? (sold ? 'Sold to' : 'Held for') + ' ' + (shop.clientName || 'a customer') : 'No customer recorded'}</span>
           </div>
         </div>
         {rows.length > 0 && (

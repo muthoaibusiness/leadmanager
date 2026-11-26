@@ -3,7 +3,8 @@ import { useApp } from '../../context/AppContext.jsx';
 import useNavState from '../../hooks/useNavState.js';
 import useLeadBook from '../../hooks/useLeadBook.js';
 import useMediaQuery from '../../hooks/useMediaQuery.js';
-import { planProjects } from '../../lib/projects.js';
+import { planProjects, maskProject } from '../../lib/projects.js';
+import { canCustomers, canPrices } from '../../lib/constants.js';
 import { byCode } from '../../lib/floorPlan.js';
 import { textFloor, landmarks, floorCode } from '../../lib/floorText.js';
 import ShopCard from './ShopCard.jsx';
@@ -39,9 +40,11 @@ const sortPlans = (plans) => [...plans].sort((a, b) => (b.order ?? 0) - (a.order
 const PTABS = [['overview', 'Overview', 'insights'], ['booking', 'Booking', 'event_seat'], ['docs', 'Documents', 'description']];
 
 export default function ShopBookingView() {
-  const { bookProj, setBookProj } = useApp();
+  const { bookProj, setBookProj, user } = useApp();
   const [ptab, setPtab] = useNavState('booking.ptab', 'booking');
-  const allProjects = planProjects();
+  // customers and prices the account may not see never reach the booking screens
+  const access = { customers: canCustomers(user), prices: canPrices(user) };
+  const allProjects = planProjects().map(p => maskProject(p, access));
   const project = allProjects.find(p => p.id === bookProj) || null;
   if (!project) return <ProjectList projects={allProjects} onPick={(id) => setBookProj(id)} />;
   return (

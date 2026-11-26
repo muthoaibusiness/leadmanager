@@ -2,7 +2,9 @@ import { useEffect } from 'react';
 import Mi from '../Mi.jsx';
 import FloorCanvas from '../booking/FloorCanvas.jsx';
 import { StackTable } from '../booking/StackGrid.jsx';
-import { getProjectById } from '../../lib/projects.js';
+import { getProjectById, maskProject } from '../../lib/projects.js';
+import { useApp } from '../../context/AppContext.jsx';
+import { canCustomers, canPrices } from '../../lib/constants.js';
 import { textFloor, landmarks, shopLabel, stackOf } from '../../lib/floorText.js';
 import { fmtBDT, fmtAgo } from '../../lib/helpers.js';
 import '../booking/ShopBooking.css';
@@ -23,7 +25,9 @@ export default function RequestUnitModal({ r, onClose, onDecide, onOpenBooking, 
     return () => window.removeEventListener('keydown', onKey);
   }, [onClose]);
 
-  const proj = getProjectById(r.propertyId);
+  const { user } = useApp();
+  const seeCust = canCustomers(user), seePrice = canPrices(user);
+  const proj = maskProject(getProjectById(r.propertyId), { customers: seeCust, prices: seePrice });
   const plan = (proj?.floorPlans || []).find(p => (p.boxes || []).some(b => b.unitId === r.unitId)) || null;
   const floor = proj && plan ? textFloor(proj, plan) : null;
   const lm = plan ? landmarks(plan) : null;
@@ -39,7 +43,7 @@ export default function RequestUnitModal({ r, onClose, onDecide, onOpenBooking, 
             <span className="bk-eyebrow">{r.propertyName}{plan ? ` · ${plan.name}` : ''}</span>
             <h3 id="rqm-t">{shopLabel(r.unitId)}</h3>
           </div>
-          <span className={`bk-pill rqx-st-${r.status}`}><i className="bk-dot" />{r.status === 'held' ? 'On hold' : r.status}</span>
+          <span className={`bk-pill rqx-st-${r.state || r.status}`}><i className="bk-dot" />{({ held: 'On hold', approved: 'On hold', sold: 'Sold', released: 'Released' })[r.state || r.status] || r.status}</span>
           <button type="button" className="bk-close" aria-label="Close" onClick={onClose}><Mi>close</Mi></button>
         </header>
 

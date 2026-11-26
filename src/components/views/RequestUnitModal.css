@@ -41,3 +41,10 @@
 .rqh-lock { display: inline-flex; align-items: center; gap: 4px; }
 .rqh-lock .mi, .rqh-lock span { font-size: 16px; }
 /* ds-allow-hardcode:end */
+/* ds-allow-hardcode:start */
+/* an approved request read from its unit now: sold, or released (unheld / expired) */
+.rqx-st-sold .bk-dot { background: var(--bk-accent); }
+.rqx-st-released .bk-dot { background: var(--bk-faint); }
+.rqx-st-held .bk-dot { background: var(--bk-held); }
+.rqx-released td { opacity: .78; }
+/* ds-allow-hardcode:end */

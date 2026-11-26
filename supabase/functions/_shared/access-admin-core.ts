@@ -29,7 +29,7 @@ const fail = (status: number, error: string): Res => ({ status, body: { ok: fals
 const ROLES = ["AGENT", "MEETING_AGENT", "TEAM_LEAD", "MANAGEMENT", "EXECUTIVE", "MASTER"];
 // Not a page: the "Not Interested" handler flag. The editor never shows it,
 // so it is carried over from the stored list unless the caller names it.
-const MARKERS = ["ni_only"];
+const MARKERS = ["ni_only", "data_set"];
 const MIN_PASSWORD = 10;
 const PUBLIC_COLS = ["id", "name", "email", "phone", "role", "team_id", "company_id", "is_active", "avatar", "projects", "allowed_features"];
 const shown = (u: Row) => Object.fromEntries(PUBLIC_COLS.map((k) => [k, u[k] ?? null]));

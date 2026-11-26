@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react';
 import Mi from '../Mi.jsx';
 import { useApp } from '../../context/AppContext.jsx';
 import { countLeads, getHoldRequests } from '../../lib/db.js';
-import { unitSize, unitPrice } from '../../lib/projects.js';
+import { unitSize, unitPrice, projectKey, maskRequest } from '../../lib/projects.js';
+import { canCustomers, canPrices } from '../../lib/constants.js';
 import { loadProjectDocLog } from '../../lib/shopDocs.js';
 import { fmtBDT } from '../../lib/helpers.js';
 
@@ -23,7 +24,7 @@ export default function ProjectOverview({ project }) {
 
   useEffect(() => {
     let live = true;
-    countLeads({ user, involved: true, project: project.name }).then(n => { if (live) setLeads(n); });
+    countLeads({ user, involved: true, project: projectKey(project.name) }).then(n => { if (live) setLeads(n); });
     loadProjectDocLog(user?.companyId, project.id).then(r => { if (live) setDocs(r.log.length); }).catch(() => { if (live) setDocs(0); });
     return () => { live = false; };
   }, [user, project.id, project.name]);
@@ -33,7 +34,8 @@ export default function ProjectOverview({ project }) {
   const sold = units.filter(u => u.status === 'sold' && u.tag !== 'st-landowner');
   const held = units.filter(u => u.status === 'hold');
   const open = units.filter(u => u.status === 'available');
-  const reqs = getHoldRequests().filter(r => r.propertyId === project.id);
+  const seeCust = canCustomers(user), seePrice = canPrices(user);
+  const reqs = getHoldRequests().filter(r => r.propertyId === project.id).map(r => maskRequest(r, { customers: seeCust, prices: seePrice }));
   const top = reqs.filter(r => r.offerRate > 0).sort((a, b) => b.offerRate - a.offerRate)[0];
   const soldSft = sold.reduce((s, u) => s + (u.size || 0), 0);
 
@@ -50,7 +52,7 @@ export default function ProjectOverview({ project }) {
     ['On hold', held.length, 'gold'],
     ['Sold', sold.length, '', soldSft ? `${soldSft.toLocaleString('en-IN')} sft` : ''],
     ['Landowner', land.length, 'pl'],
-    ['Top offer', top ? `৳${Math.round(top.offerRate).toLocaleString('en-IN')}` : '—', 'gold', top ? `${top.clientName} · ${top.unitId}` : 'per sft'],
+    ...(seePrice ? [['Top offer', top ? `৳${Math.round(top.offerRate).toLocaleString('en-IN')}` : '—', 'gold', top ? `${seeCust ? top.clientName + ' · ' : ''}${top.unitId}` : 'per sft']] : []),
     ['Docs sent', docs == null ? '…' : docs, ''],
   ];
 
@@ -60,11 +62,11 @@ export default function ProjectOverview({ project }) {
         {k.map(([l, v, tone, sub]) => <div key={l}><span>{l}</span><b className={tone}>{v}</b>{sub && <em>{sub}</em>}</div>)}
       </div>
 
-      <section className="pov-sec">
+      {seeCust && <section className="pov-sec">
         <h3>Customers <i>{sold.length}</i></h3>
         {sold.length === 0 ? <p className="pov-none">No unit sold yet.</p> : (
           <div className="pov-scroll"><table className="pov-t">
-            <thead><tr><th>Unit</th><th>Customer</th><th>Contact</th><th>Booked</th><th>Paid</th><th className="r">Size</th><th className="r">Price</th></tr></thead>
+            <thead><tr><th>Unit</th><th>Customer</th><th>Contact</th><th>Booked</th><th>Paid</th><th className="r">Size</th>{seePrice && <th className="r">Price</th>}</tr></thead>
             <tbody>
               {sold.map(u => (
                 <tr key={u.id}>
@@ -74,24 +76,24 @@ export default function ProjectOverview({ project }) {
                   <td className="mono pov-mu">{day(u.bookingDate || u.sheet?.bookingDate)}</td>
                   <td className="mono pov-mu">{day(u.paymentDate || u.sheet?.paymentDate)}</td>
                   <td className="mono r">{u.size ? u.size.toLocaleString('en-IN') : '—'}</td>
-                  <td className="mono r">{u.price ? fmtBDT(u.price) : '—'}</td>
+                  {seePrice && <td className="mono r">{u.price ? fmtBDT(u.price) : '—'}</td>}
                 </tr>
               ))}
             </tbody>
           </table></div>
         )}
-      </section>
+      </section>}
 
       <section className="pov-sec">
         <h3>On hold <i>{held.length}</i><small>agent holds end after 28 h · admin holds stay</small></h3>
         {holds.length === 0 ? <p className="pov-none">No unit is on hold.</p> : (
           <div className="pov-scroll"><table className="pov-t">
-            <thead><tr><th>Unit</th><th>Customer</th><th>Held by</th><th>Since</th><th>Left</th></tr></thead>
+            <thead><tr><th>Unit</th>{seeCust && <th>Customer</th>}<th>Held by</th><th>Since</th><th>Left</th></tr></thead>
             <tbody>
               {holds.map(h => (
                 <tr key={h.id}>
                   <td><span className="pov-u">{h.id}</span></td>
-                  <td>{h.client || <span className="pov-mu">—</span>}</td>
+                  {seeCust && <td>{h.client || <span className="pov-mu">—</span>}</td>}
                   <td>{h.by}{h.adminHold && <span className="pov-tag">Admin</span>}</td>
                   <td className="mono pov-mu">{day(h.start)}</td>
                   <td className={`mono ${h.left == null ? 'pov-mu' : h.left < 4 * 3600000 ? 'bad' : 'ok'}`}>

@@ -86,6 +86,11 @@ export const unitPrice = (u, v) => (u?.price > 0 ? u.price : (v?.listRate || 0) 
 // its code and type must not change under them.
 export const isUnitLocked = (u) => !!u && u.status !== 'available';
 
+// The part of a project's name that leads carry. Leads name a project loosely: "WECON CITIZEN
+// AVENUE", "Wecon Citizen Avenue" and "CITIZEN AVENUE MALL" are one project. Drop a leading
+// "Wecon" and a trailing "Mall", ignore case and spacing. Used to match and count leads per project.
+export const projectKey = (name) => String(name || '').trim().toLowerCase().replace(/\s+/g, ' ').replace(/^wecon /, '').replace(/ (shopping )?mall$/, '');
+
 // The unit with this code anywhere in the project. Codes are unique project-wide.
 export function findUnit(project, unitId) {
   for (const v of project?.variants || []) {
@@ -460,4 +465,36 @@ export function addMedia(id, kind, item) {
 export function removeMedia(id, kind, index) {
   const p = getProjectById(id); if (!p) return;
   updateProject(id, { media: { ...p.media, [kind]: (p.media[kind] || []).filter((_, i) => i !== index) } });
+}
+
+// ── booking data access ──────────────────────────────────────────────────────
+// A copy of the project with what the viewer may not see taken out, for the booking
+// screens to draw from: without customer data, the buyer/holder fields; without pricing,
+// unit prices and the types' rates (a unit's price falls back to rate × size). The
+// sheet row carries both, so it goes with either. The stored project is untouched.
+const CUSTOMER_FIELDS = ['clientName', 'clientPhone', 'clientId', 'bookingDate', 'paymentDate'];
+export function maskProject(project, { customers = true, prices = true } = {}) {
+  if (!project || (customers && prices)) return project;
+  const unit = (u) => {
+    const o = { ...u };
+    if (!customers) CUSTOMER_FIELDS.forEach(k => { delete o[k]; });
+    if (!prices) delete o.price;
+    if (!customers || !prices) delete o.sheet;
+    return o;
+  };
+  return {
+    ...project,
+    variants: (project.variants || []).map(v => ({ ...v, ...(prices ? {} : { listRate: 0, floorRate: 0 }), units: (v.units || []).map(unit) })),
+    units: (project.units || []).map(u => (customers ? u : { ...u, clientName: '', clientId: null })),
+  };
+}
+
+// The same for a hold request: who it is for, and what was offered.
+export function maskRequest(r, { customers = true, prices = true } = {}) {
+  if (!r || (customers && prices)) return r;
+  return {
+    ...r,
+    ...(customers ? {} : { clientName: 'Hidden', clientPhone: '', clientId: null }),
+    ...(prices ? {} : { dealTotal: 0, offerRate: 0 }),
+  };
 }

@@ -141,3 +141,10 @@
   .acx-bulk-ft .bk-btn { flex: 1 1 auto; justify-content: center; }
 }
 /* ds-allow-hardcode:end */
+/* ds-allow-hardcode:start */
+/* Feature access: the booking data grants above the page list */
+.feat-sub { display: block; margin: 10px 0 2px; }
+.feat-sub:first-child { margin-top: 0; }
+.feat-hints { margin: 6px 0 4px; padding-left: 18px; display: grid; gap: 3px; font-size: 13px; color: var(--bk-muted, inherit); }
+.feat-hints b { color: var(--bk-fg, inherit); font-weight: 600; }
+/* ds-allow-hardcode:end */

@@ -6,6 +6,8 @@ import { STATUS, taka } from '../../lib/floorPlan.js';
 import { shopLabel } from '../../lib/floorText.js';
 import { DOCS, docReady } from '../../lib/shopDocs.js';
 import BookPanel from './BookPanel.jsx';
+import { useApp } from '../../context/AppContext.jsx';
+import { canPrices } from '../../lib/constants.js';
 import CustomerField from './CustomerField.jsx';
 import { DocsTab, HistoryTab } from './ShopDocs.jsx';
 
@@ -16,6 +18,8 @@ import { DocsTab, HistoryTab } from './ShopDocs.jsx';
 // `bare`: the phone sheet already shows the shop's name and price, so only the
 // customer and the tabs are drawn; `onDone` runs after a booking is sent.
 export default function ShopCard({ project, plan, shop, onClose, bare = false, onDone }) {
+  const { user } = useApp();
+  const seePrice = canPrices(user);
   const [client, setClient] = useState(null);
   const [tab, setTab] = useNavState('booking.tab', 'book');
   const store = useShopDocs(project.id, shop.code, project);
@@ -40,7 +44,7 @@ export default function ShopCard({ project, plan, shop, onClose, bare = false, o
       </div>
 
       <div className="bk-sd-price">
-        <div className="bk-price">{shop.price ? taka(shop.price) : 'Price on request'}</div>
+        <div className="bk-price">{!seePrice ? (shop.size ? `${shop.size.toLocaleString('en-IN')} sq ft` : '—') : shop.price ? taka(shop.price) : 'Price on request'}</div>
         <span className="bk-fx">{[shop.rate > 0 ? `${taka(shop.rate)} / sq ft` : '', ...facts].filter(Boolean).join(' · ')}</span>
       </div>
 
