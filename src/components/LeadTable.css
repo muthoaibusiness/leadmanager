@@ -253,3 +253,32 @@ img.lt-av { display: block; }
   :root[data-layout="dock"] #root .bk .lt-card .lt-table { border-spacing: 0 3px; }
 }
 /* ds-allow-hardcode:end */
+
+/* ── Larger type: a page holds 10 leads now, so each row has room for it (all layouts) ── */
+@media (min-width: 721px) {
+  #root .lvx .lt-card .lt-table td { font-size: 14.5px; }
+  #root .lvx .lt-card .lt-table th { font-size: 13px; }
+  #root .lvx .lt-card .lt-pn b { font-size: 16px; }
+  #root .lvx .lt-card .lt-pn .rqx-mono { font-size: 13.5px; }
+  #root .lvx .lt-card .lt-src { font-size: 14.5px; }
+  #root .lvx .lt-card .lt-st { font-size: 13px; padding: 1px 9px; }
+  #root .lvx .lt-card :is(.lt-two .lt-date, .lt-created) { font-size: 14px; }
+  #root .lvx .lt-card .lt-av { width: 32px; height: 32px; font-size: 12.5px; }
+}
+@media (max-width: 720px) {
+  #root .lvx .lt-card .lt-table .lt-pn b { font-size: 16px; }
+  #root .lvx .lt-card .lt-table .lt-pn .rqx-mono { font-size: 13px; }
+  #root .lvx .lt-card .lt-table td.lt-c-prop, #root .lvx .lt-card .lt-table .lt-two .lt-date { font-size: 13.5px; }
+  #root .lvx .lt-card .lt-table .lt-st { font-size: 12.5px; }
+}
+
+/* ── A bigger search box ── */
+#root .lvx .rqx-search { flex: 1 1 360px; max-width: 620px; min-height: 46px; padding: 0 14px; gap: 10px; }
+#root .lvx .rqx-search .mi { font-size: 22px; }
+#root .lvx .rqx-search input { font-size: 16px; padding: 11px 0; }
+@media (max-width: 720px) {
+  #root .lvx .rqx-search { flex-basis: 100%; max-width: none; min-height: 44px; }
+  #root .lvx .rqx-search input { font-size: 16px; padding: 9px 0; }
+}
+/* the larger status pill ("Visit Scheduled") needs a wider Status column on a laptop */
+@media (min-width: 721px) and (max-width: 1500px) { #root .lvx .lt-h3 { width: 140px; } #root .lvx .lt-h1 { width: 70px; } }
