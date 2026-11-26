@@ -30,6 +30,7 @@ import ThemeToggle from './components/ThemeToggle.jsx';
 import NotifBell from './components/NotifBell.jsx';
 import UserMenu from './components/UserMenu.jsx';
 import Toast from './components/Toast.jsx';
+import UpdateBar from './components/UpdateBar.jsx';
 import DateRangePicker from './components/DateRangePicker.jsx';
 import { HeaderSearch, AiMenu } from './components/HeaderTools.jsx';
 import BackButton from './components/BackButton.jsx';
@@ -877,6 +878,7 @@ export default function App() {
       {entering && <PostLoginLoader />}
       <Overlays />
       <Toast />
+      <UpdateBar />
     </>
   );
 }

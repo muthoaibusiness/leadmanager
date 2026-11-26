@@ -14891,3 +14891,48 @@ input[type="time"]::-webkit-calendar-picker-indicator { opacity: .9; cursor: poi
   .mh-pair .mh-btn-lg { height: 28px; }
 }
 /* ds-allow-hardcode:end */
+
+/* ── NEW VERSION BAR (components/UpdateBar.jsx) ── */
+.upd-bar {
+  position: fixed;
+  bottom: calc(18px + var(--bnav, 0px));
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 9998;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: calc(100vw - 32px);
+  padding: 8px 8px 8px 14px;
+  background: var(--surf);
+  color: var(--t1);
+  border: 1px solid var(--bd);
+  border-radius: var(--rad-pill, 999px);
+  box-shadow: var(--sh-lg);
+  font-size: 13px;
+  font-weight: 500;
+}
+.upd-bar > .mi { font-size: 18px; color: var(--accent, var(--t2)); }
+.upd-bar .upd-go {
+  border: 0;
+  border-radius: var(--rad-pill, 999px);
+  padding: 6px 14px;
+  background: var(--accent, var(--t1));
+  color: var(--on-accent, #fff);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+.upd-bar .upd-go:disabled { opacity: .7; cursor: default; }
+.upd-bar .upd-x {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: var(--rad-pill, 999px);
+  background: transparent;
+  color: var(--t3);
+  cursor: pointer;
+}
+.upd-bar .upd-x .mi { font-size: 17px; }

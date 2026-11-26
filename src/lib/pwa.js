@@ -2,8 +2,9 @@
 // updates, and what the user tapped in a push notification.
 //
 // Updates: a new version is downloaded in the background and waits. It is
-// switched to only at launch, before anything was touched; after that it waits
-// for the next launch. The page is never reloaded under a half-typed form.
+// switched to on its own only at launch, before anything was touched. After
+// that the app is told (onUpdateReady) and offers a Reload button; the page is
+// never reloaded under a half-typed form without the user asking.
 
 // Opened from the home screen (Android, desktop install) or iOS "Add to Home Screen".
 export function isStandalone() {
@@ -27,6 +28,15 @@ export function takePushClick() { const c = _click; _click = null; return c; }
 
 const APPLY_WINDOW_MS = 8000;
 
+// A downloaded version the launch window missed, waiting for the user's Reload.
+let _waiting = null;
+let _switch = null;
+const _updSubs = new Set();
+export function onUpdateReady(fn) { _updSubs.add(fn); return () => _updSubs.delete(fn); }
+export const updateReady = () => !!_waiting;
+// Switch to the waiting version now; the page reloads once it takes over.
+export function applyUpdate() { if (_waiting && _switch) _switch(_waiting); }
+
 export function registerServiceWorker() {
   // Not in dev: a service worker there would serve stale modules over Vite's.
   if (!import.meta.env.PROD || typeof navigator === 'undefined' || !('serviceWorker' in navigator)) return;
@@ -47,11 +57,16 @@ export function registerServiceWorker() {
   // also changes the controller).
   let asked = false;
   sw.addEventListener('controllerchange', () => { if (asked) window.location.reload(); });
+  const take = (worker) => { asked = true; worker.postMessage({ type: 'SKIP_WAITING' }); };
+  _switch = take;
   const apply = (worker) => {
     if (asked || !worker || !sw.controller) return;
-    if (touched || Date.now() - startedAt > APPLY_WINDOW_MS) return;
-    asked = true;
-    worker.postMessage({ type: 'SKIP_WAITING' });
+    if (touched || Date.now() - startedAt > APPLY_WINDOW_MS) {
+      _waiting = worker;
+      _updSubs.forEach((fn) => fn());
+      return;
+    }
+    take(worker);
   };
 
   const start = async () => {
