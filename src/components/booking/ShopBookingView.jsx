@@ -33,7 +33,10 @@ const customStatuses = (shops) => {
   return [...seen.values()];
 };
 
-const ZOOMS = [1, 1.5, 2, 3]; // plan width as a multiple of its box; 1 = the whole floor fits
+const ZOOMS = [1, 1.5, 2, 3, 4]; // the +/- steps: plan width as a multiple of its box; 1 = the whole floor fits
+const ZMAX = ZOOMS[ZOOMS.length - 1];
+// the mouse wheel zooms smoothly in between the steps
+const clampZoom = (z) => Math.min(ZMAX, Math.max(1, Math.round(z * 100) / 100));
 const sortPlans = (plans) => [...plans].sort((a, b) => (b.order ?? 0) - (a.order ?? 0) || byCode(a.name || '', b.name || ''));
 
 // A project opens on three tabs: Overview (figures, customers, holds), Booking (the plan) and Documents.
@@ -101,7 +104,10 @@ function ProjectBooking({ project, onBack }) {
       onBack={backToProjects} pickFloor={pickFloor} shopCode={shopCode} setShopCode={setShopCode} />;
   }
 
-  const zi = Math.max(0, ZOOMS.indexOf(zoom));
+  const zoomOut = () => setZoom([...ZOOMS].reverse().find(z => z < zoom - 0.01) ?? 1);
+  const zoomIn = () => setZoom(ZOOMS.find(z => z > zoom + 0.01) ?? ZMAX);
+  // The floor list leaves out floors with no units; the floor on screen always stays in it.
+  const listed = plans.filter(p => p.id === plan.id || hasShops(p));
   // One card width for every floor: sized for the widest floor's drawing, so
   // switching floors never moves the columns. Each plan sits centred inside it.
   const frameAsp = Math.max(...plans.map(p => textFloor(project, p).aspect));
@@ -110,7 +116,7 @@ function ProjectBooking({ project, onBack }) {
     <div className="bk">
       <div className="bk-layout" style={{ '--asp': frameAsp }}>
         <nav className="bk-floors" aria-label="Floors">
-          {plans.map(p => {
+          {listed.map(p => {
             const counts = textFloor(project, p).counts;
             return (
               <button key={p.id} type="button" className="bk-floor"
@@ -128,9 +134,9 @@ function ProjectBooking({ project, onBack }) {
             <h3>{plan.name}</h3>
             <button type="button" className="bk-chip bk-back" onClick={backToProjects} title="Back to all projects"><Mi>arrow_back</Mi>{project.name}</button>
             <div className="bk-zoom" role="group" aria-label="Zoom the plan">
-              <button type="button" className="bk-zbtn" aria-label="Zoom out" disabled={zi === 0} onClick={() => setZoom(ZOOMS[zi - 1])}>−</button>
+              <button type="button" className="bk-zbtn" aria-label="Zoom out" disabled={zoom <= 1} onClick={zoomOut}>−</button>
               <button type="button" className="bk-zbtn wide" onClick={() => setZoom(1)} aria-label="Fit the whole floor">{zoom === 1 ? 'Fit' : `${Math.round(zoom * 100)}%`}</button>
-              <button type="button" className="bk-zbtn" aria-label="Zoom in" disabled={zi === ZOOMS.length - 1} onClick={() => setZoom(ZOOMS[zi + 1])}>+</button>
+              <button type="button" className="bk-zbtn" aria-label="Zoom in" disabled={zoom >= ZMAX} onClick={zoomIn}>+</button>
             </div>
           </div>
           <div className="bk-legend">
@@ -143,7 +149,7 @@ function ProjectBooking({ project, onBack }) {
               </>
             ) : <span>{plan.note || 'No units for sale on this floor.'}</span>}
           </div>
-          <FloorCanvas floor={floor} lm={lm} zoom={zoom} shopCode={shopCode} onPick={setShopCode} />
+          <FloorCanvas floor={floor} lm={lm} zoom={zoom} onZoom={(z) => setZoom(clampZoom(z))} shopCode={shopCode} onPick={setShopCode} />
         </section>
 
         <aside className={`bk-detail${shop ? ' has-shop' : ''}`} aria-live="polite">

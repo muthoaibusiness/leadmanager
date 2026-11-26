@@ -3,6 +3,9 @@ import Mi from '../Mi.jsx';
 import { useApp } from '../../context/AppContext.jsx';
 import { loadProjectDocLog, DOCS } from '../../lib/shopDocs.js';
 import { canCustomers } from '../../lib/constants.js';
+import { shortCode } from '../../lib/floorText.js';
+import Pager from './Pager.jsx';
+import usePage from '../../hooks/usePage.js';
 
 // Booking › a project › Documents: every document sent for this project, and to whom.
 // Rows come from the send log the unit card's Documents tab writes (shop_doc_log).
@@ -22,9 +25,10 @@ export default function ProjectDocs({ project }) {
     return () => { live = false; };
   }, [user?.companyId, project.id]);
 
-  if (!canCustomers(user)) return <div className="pov"><p className="pov-none">Who documents were sent to is customer data, which your account does not have access to.</p></div>;
   const needle = q.trim().toLowerCase();
   const rows = state.log.filter(r => !needle || [r.client, r.unitId, r.by, ...r.docs.map(docName)].some(v => String(v || '').toLowerCase().includes(needle)));
+  const pg = usePage(rows, q);
+  if (!canCustomers(user)) return <div className="pov"><p className="pov-none">Who documents were sent to is customer data, which your account does not have access to.</p></div>;
   const clients = new Set(state.log.map(r => r.client).filter(Boolean)).size;
 
   return (
@@ -42,10 +46,10 @@ export default function ProjectDocs({ project }) {
             <div className="pov-scroll"><table className="pov-t">
               <thead><tr><th>Client</th><th>Unit</th><th>Documents</th><th>By</th><th>Via</th><th>When</th></tr></thead>
               <tbody>
-                {rows.map(r => (
+                {pg.rows.map(r => (
                   <tr key={r.id}>
                     <td>{r.client || '—'}{r.contact && <div className="mono pov-mu pov-sm">{r.contact}</div>}</td>
-                    <td><span className="pov-u">{r.unitId}</span></td>
+                    <td><span className="pov-u" title={r.unitId}>{shortCode(r.unitId)}</span></td>
                     <td className="pov-docs">{r.docs.map((d, i) => <span key={i} className="pov-dc">{docName(d)}</span>)}</td>
                     <td>{r.by || '—'}</td>
                     <td className="pov-mu">{r.channel || '—'}</td>
@@ -54,6 +58,7 @@ export default function ProjectDocs({ project }) {
                 ))}
               </tbody>
             </table></div>
+            <Pager pg={pg} />
           </section>
         )}
     </div>

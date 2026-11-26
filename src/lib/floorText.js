@@ -25,6 +25,17 @@ export function floorCode(name) {
 // Short shop number for a tile: SHOP-115 → S-115, SUPERSHOP-01 → SS-01,
 // GOLDSOUK-04 → GS-04; short prefixes (ATM) stay as they are.
 const SHORT = { SHOP: 'S', SUPERSHOP: 'SS', GOLDSOUK: 'GS', SHOWROOM: 'SR', OFFICE: 'OF' };
+const SHORT_NAME = { SHOP: 'Shop', SUPERSHOP: 'Super shop', GOLDSOUK: 'Gold souk', SHOWROOM: 'Showroom', OFFICE: 'Office' };
+
+// The key to the short codes a floor's tiles use (S-01 = Shop 01, SR-01 = Showroom 01),
+// in SHORT's order; [] for a floor with none (a residential floor's A1, B5).
+export function codeKey(codes) {
+  const used = new Set();
+  // a code may be stored long (SHOP-14) or already short (S-14)
+  const LONG = Object.fromEntries(Object.entries(SHORT).map(([k, v]) => [v, k]));
+  codes.forEach(c => { const m = /^([A-Za-z]+)[-\s]?\d/.exec(String(c || '')); if (!m) return; const p = m[1].toUpperCase(); const k = SHORT[p] ? p : LONG[p]; if (k) used.add(k); });
+  return Object.keys(SHORT).filter(p => used.has(p)).map(p => ({ code: SHORT[p], name: SHORT_NAME[p] }));
+}
 export function shortCode(code) {
   const m = /^([A-Za-z]+)[-\s]?(.*)$/.exec(String(code || ''));
   if (!m) return String(code || '');
@@ -561,7 +572,8 @@ export function textFloor(project, plan) {
 
 // The rows and columns of a tower, and every unit with its floor.
 export function stackOf(project, plans) {
-  const rows = plans.filter(p => p.grid).map(p => ({ plan: p, shops: textFloor(project, p).shops }));
+  // a floor with no units (parking, a lobby) is left out of the building view
+  const rows = plans.filter(p => p.grid).map(p => ({ plan: p, shops: textFloor(project, p).shops })).filter(r => r.shops.length);
   const used = new Set(rows.flatMap(r => r.shops.map(s => s.variantId)));
   const cols = (project.variants || []).filter(v => used.has(v.id));
   const all = rows.flatMap(r => r.shops.map(s => ({ ...s, plan: r.plan })));

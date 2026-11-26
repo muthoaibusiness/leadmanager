@@ -2,7 +2,7 @@ import { useState } from 'react';
 import Mi from '../Mi.jsx';
 import useNavState from '../../hooks/useNavState.js';
 import { byCode, taka } from '../../lib/floorPlan.js';
-import { textFloor, floorCode, shortCode, shopLabel } from '../../lib/floorText.js';
+import { textFloor, floorCode, shortCode, shopLabel, codeKey } from '../../lib/floorText.js';
 import ShopCard from './ShopCard.jsx';
 
 // Booking on a phone: no floor plan, a grid of shop cells, five per row, in
@@ -81,6 +81,7 @@ export default function ShopGrid({ project, plans, plan, floor, onBack, pickFloo
               <span><i className="bk-sw s-hold" />Held</span>
               <span><i className="bk-sw s-sold" />Sold</span>
               {customStatuses(floor.shops).map(c => <span key={c.label}><i className="bk-sw" style={{ background: c.color }} />{c.label}</span>)}
+              {codeKey(floor.shops.map(s => s.code)).map(k => <span key={k.code} className="bk-ck"><b>{k.code}</b>= {k.name}</span>)}
             </div>
             <div className="bkm-grid" role="list">
               {shown.map(s => (
@@ -106,7 +107,7 @@ export default function ShopGrid({ project, plans, plan, floor, onBack, pickFloo
             <div className="bkm-sheet-h">
               <div>
                 <h3>{shopLabel(shop.code)}</h3>
-                <div className="bkm-sheet-p"><b>{shop.price ? taka(shop.price) : 'Price on request'}</b>{shop.size ? <span> · {shop.size} sq ft</span> : null}{shop.beds ? <span> · {shop.beds} bed{shop.beds > 1 ? 's' : ''}</span> : null}</div>
+                <div className="bkm-sheet-p">{shop.status === 'sold' ? <b>{shop.size ? `${shop.size} sq ft` : shop.look.label}</b> : <><b>{shop.price ? taka(shop.price) : 'Price on request'}</b>{shop.size ? <span> · {shop.size} sq ft</span> : null}</>}{shop.beds ? <span> · {shop.beds} bed{shop.beds > 1 ? 's' : ''}</span> : null}</div>
               </div>
               <button type="button" className="bk-x" aria-label="Close" onClick={close}><Mi>close</Mi></button>
             </div>

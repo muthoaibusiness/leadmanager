@@ -44,8 +44,8 @@ export default function ShopCard({ project, plan, shop, onClose, bare = false, o
       </div>
 
       <div className="bk-sd-price">
-        <div className="bk-price">{!seePrice ? (shop.size ? `${shop.size.toLocaleString('en-IN')} sq ft` : '—') : shop.price ? taka(shop.price) : 'Price on request'}</div>
-        <span className="bk-fx">{[shop.rate > 0 ? `${taka(shop.rate)} / sq ft` : '', ...facts].filter(Boolean).join(' · ')}</span>
+        <div className="bk-price">{!seePrice || shop.status === 'sold' ? (shop.size ? `${shop.size.toLocaleString('en-IN')} sq ft` : '—') : shop.price ? taka(shop.price) : 'Price on request'}</div>
+        <span className="bk-fx">{[shop.rate > 0 && shop.status !== 'sold' ? `${taka(shop.rate)} / sq ft` : '', ...facts].filter(Boolean).join(' · ')}</span>
       </div>
 
         </>

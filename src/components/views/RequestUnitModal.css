@@ -4,7 +4,7 @@
 .rqm-body { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(300px, 1fr); gap: 18px; padding: 18px 22px; overflow: auto; min-height: 0; align-items: start; }
 .rqm-map { display: grid; gap: 8px; min-width: 0; }
 .rqm-stage { height: min(58vh, 560px); display: flex; flex-direction: column; min-height: 320px; }
-.rqm-stage > .bk-stage { flex: 1; }
+.rqm-stage > .bk-stagewrap { flex: 1; }
 .rqm-side { display: grid; gap: 14px; align-content: start; min-width: 0; }
 .rqm-side .acx-dgrid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .rqm-sub { font-style: normal; font-size: 13px; color: var(--bk-muted); font-family: var(--bk-mono); }

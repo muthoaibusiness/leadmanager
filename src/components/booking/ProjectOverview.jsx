@@ -5,7 +5,9 @@ import { countLeads, getHoldRequests } from '../../lib/db.js';
 import { unitSize, unitPrice, projectKey, maskRequest } from '../../lib/projects.js';
 import { canCustomers, canPrices } from '../../lib/constants.js';
 import { loadProjectDocLog } from '../../lib/shopDocs.js';
-import { fmtBDT } from '../../lib/helpers.js';
+import { shortCode } from '../../lib/floorText.js';
+import Pager from './Pager.jsx';
+import usePage from '../../hooks/usePage.js';
 
 // Booking › a project › Overview: the project at a glance. Figures on top, then who bought the
 // sold units, and the units on hold with how long each has left. Compact on purpose.
@@ -48,14 +50,21 @@ export default function ProjectOverview({ project }) {
 
   const k = [
     ['Leads', leads == null ? '…' : leads, ''],
-    ['Available', open.length, 'ok'],
-    ['On hold', held.length, 'gold'],
-    ['Sold', sold.length, '', soldSft ? `${soldSft.toLocaleString('en-IN')} sft` : ''],
-    ['Landowner', land.length, 'pl'],
+    ['Available Units', open.length, 'ok'],
+    ['On Hold Units', held.length, 'gold'],
+    ['Sold Units', sold.length, '', soldSft ? `${soldSft.toLocaleString('en-IN')} sft` : ''],
+    ['Landowner Units', land.length, 'pl'],
     ...(seePrice ? [['Top offer', top ? `৳${Math.round(top.offerRate).toLocaleString('en-IN')}` : '—', 'gold', top ? `${seeCust ? top.clientName + ' · ' : ''}${top.unitId}` : 'per sft']] : []),
     ['Docs sent', docs == null ? '…' : docs, ''],
   ];
 
+  return <OverviewBody k={k} sold={sold} held={held} holds={holds} seeCust={seeCust} />;
+}
+
+// The figures and the two tables, each table 10 rows a page.
+function OverviewBody({ k, sold, held, holds, seeCust }) {
+  const soldPg = usePage(sold);
+  const holdPg = usePage(holds);
   return (
     <div className="pov">
       <div className="pov-k">
@@ -66,22 +75,22 @@ export default function ProjectOverview({ project }) {
         <h3>Customers <i>{sold.length}</i></h3>
         {sold.length === 0 ? <p className="pov-none">No unit sold yet.</p> : (
           <div className="pov-scroll"><table className="pov-t">
-            <thead><tr><th>Unit</th><th>Customer</th><th>Contact</th><th>Booked</th><th>Paid</th><th className="r">Size</th>{seePrice && <th className="r">Price</th>}</tr></thead>
+            <thead><tr><th>Unit</th><th>Customer</th><th>Contact</th><th>Booked</th><th>Paid</th><th className="r">Size</th></tr></thead>
             <tbody>
-              {sold.map(u => (
+              {soldPg.rows.map(u => (
                 <tr key={u.id}>
-                  <td><span className="pov-u">{u.id}</span></td>
+                  <td><span className="pov-u" title={u.id}>{shortCode(u.id)}</span></td>
                   <td>{u.clientName || <span className="pov-mu">Not recorded</span>}</td>
                   <td className="mono">{u.clientPhone || u.sheet?.phone || '—'}</td>
                   <td className="mono pov-mu">{day(u.bookingDate || u.sheet?.bookingDate)}</td>
                   <td className="mono pov-mu">{day(u.paymentDate || u.sheet?.paymentDate)}</td>
                   <td className="mono r">{u.size ? u.size.toLocaleString('en-IN') : '—'}</td>
-                  {seePrice && <td className="mono r">{u.price ? fmtBDT(u.price) : '—'}</td>}
                 </tr>
               ))}
             </tbody>
           </table></div>
         )}
+        <Pager pg={soldPg} />
       </section>}
 
       <section className="pov-sec">
@@ -90,9 +99,9 @@ export default function ProjectOverview({ project }) {
           <div className="pov-scroll"><table className="pov-t">
             <thead><tr><th>Unit</th>{seeCust && <th>Customer</th>}<th>Held by</th><th>Since</th><th>Left</th></tr></thead>
             <tbody>
-              {holds.map(h => (
+              {holdPg.rows.map(h => (
                 <tr key={h.id}>
-                  <td><span className="pov-u">{h.id}</span></td>
+                  <td><span className="pov-u" title={h.id}>{shortCode(h.id)}</span></td>
                   {seeCust && <td>{h.client || <span className="pov-mu">—</span>}</td>}
                   <td>{h.by}{h.adminHold && <span className="pov-tag">Admin</span>}</td>
                   <td className="mono pov-mu">{day(h.start)}</td>
@@ -104,6 +113,7 @@ export default function ProjectOverview({ project }) {
             </tbody>
           </table></div>
         )}
+        <Pager pg={holdPg} />
       </section>
     </div>
   );

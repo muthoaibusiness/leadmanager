@@ -1,4 +1,5 @@
-import { shortCode, takaShort } from '../../lib/floorText.js';
+import { useEffect, useLayoutEffect, useRef } from 'react';
+import { shortCode, takaShort, codeKey } from '../../lib/floorText.js';
 
 // The floor plan, redrawn in CSS: every unit a tile at its own position and size, with the lifts,
 // stairs and the rest of the building drawn around them. Shared by the Booking page and the
@@ -12,12 +13,80 @@ const codeFit = (s) => {
 };
 
 
-export default function FloorCanvas({ floor, lm, zoom = 1, shopCode = null, onPick, focus = null }) {
+// With `onZoom`, the mouse zooms the plan: the wheel zooms about the pointer, and a
+// zoomed plan is moved by dragging it. A drag never picks the tile it ends on.
+function useMouseZoom(stageRef, planRef, zoom, onZoom) {
+  const anchor = useRef(null);   // the plan point under the pointer, kept there across a zoom
+  const live = useRef({ zoom, onZoom });
+  useEffect(() => { live.current = { zoom, onZoom }; });
+
+  useEffect(() => {
+    const stage = stageRef.current;
+    if (!stage || !onZoom) return undefined;
+    const wheel = (e) => {
+      if (e.deltaY === 0) return;
+      e.preventDefault();
+      const plan = planRef.current.getBoundingClientRect();
+      anchor.current = { fx: (e.clientX - plan.left) / plan.width, fy: (e.clientY - plan.top) / plan.height, cx: e.clientX, cy: e.clientY };
+      const step = Math.exp(-Math.max(-120, Math.min(120, e.deltaY)) * 0.0025);
+      live.current.onZoom(live.current.zoom * step);
+    };
+    let drag = null;
+    const down = (e) => {
+      if (e.button !== 0 || live.current.zoom <= 1) return;
+      drag = { x: e.clientX, y: e.clientY, sl: stage.scrollLeft, st: stage.scrollTop, moved: false };
+    };
+    const move = (e) => {
+      if (!drag) return;
+      const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+      if (!drag.moved && Math.hypot(dx, dy) < 5) return;
+      if (!drag.moved) { drag.moved = true; stage.classList.add('panning'); }
+      stage.scrollLeft = drag.sl - dx; stage.scrollTop = drag.st - dy;
+    };
+    const up = () => {
+      if (drag?.moved) {
+        // swallow the click that ends a drag
+        const stop = (ev) => { ev.stopPropagation(); ev.preventDefault(); };
+        stage.addEventListener('click', stop, { capture: true, once: true });
+        setTimeout(() => stage.removeEventListener('click', stop, { capture: true }), 0);
+      }
+      stage.classList.remove('panning');
+      drag = null;
+    };
+    stage.addEventListener('wheel', wheel, { passive: false });
+    stage.addEventListener('pointerdown', down);
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+    return () => {
+      stage.removeEventListener('wheel', wheel);
+      stage.removeEventListener('pointerdown', down);
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+    };
+  }, [stageRef, planRef, onZoom ? 1 : 0]); // eslint-disable-line react-hooks/exhaustive-deps -- handlers read the live zoom from a ref
+
+  // after the plan has its new size, scroll so the point under the pointer stays put
+  useLayoutEffect(() => {
+    const a = anchor.current, stage = stageRef.current, plan = planRef.current;
+    if (!a || !stage || !plan) return;
+    anchor.current = null;
+    const r = plan.getBoundingClientRect();
+    stage.scrollLeft += r.left + a.fx * r.width - a.cx;
+    stage.scrollTop += r.top + a.fy * r.height - a.cy;
+  }, [zoom, stageRef, planRef]);
+}
+
+export default function FloorCanvas({ floor, lm, zoom = 1, onZoom = null, shopCode = null, onPick, focus = null }) {
+  const stageRef = useRef(null);
+  const planRef = useRef(null);
+  useMouseZoom(stageRef, planRef, zoom, onZoom);
+  const key = codeKey(floor.shops.map(s => s.code));
   return (
-    <div className="bk-stage">
+    <div className="bk-stagewrap">
+    <div ref={stageRef} className={`bk-stage${onZoom && zoom > 1 ? ' can-pan' : ''}`} title={onZoom ? 'Scroll to zoom, drag to move' : undefined}>
       {/* The plan keeps the drawing's shape; every tile sits at its box's
           own position and size, as a percentage of it. */}
-      <div className={`bk-plan${focus ? ' has-focus' : ''}`} style={{ '--asp': floor.aspect, '--z': zoom }}>
+      <div ref={planRef} className={`bk-plan${focus ? ' has-focus' : ''}`} style={{ '--asp': floor.aspect, '--z': zoom }}>
         {lm.hull && <div className="bk-hull-wrap" aria-hidden="true"><div className="bk-hull" style={{ clipPath: lm.hull }} /></div>}
         {lm.marks.map((m, i) => (
           <div key={i} className={`bk-mark k-${m.kind}`} aria-hidden="true"
@@ -42,6 +111,13 @@ export default function FloorCanvas({ floor, lm, zoom = 1, shopCode = null, onPi
           );
         })}
       </div>
+    </div>
+    {/* what the short unit codes on the tiles stand for; stays in the corner while the plan zooms and scrolls */}
+    {key.length > 0 && (
+      <dl className="bk-codekey" aria-label="Unit codes">
+        {key.map(k => <div key={k.code}><dt>{k.code}</dt><dd>= {k.name}</dd></div>)}
+      </dl>
+    )}
     </div>
   );
 }
