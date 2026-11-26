@@ -6,7 +6,7 @@
 .ces-trigger {
   display: inline-flex; align-items: center; justify-content: space-between; gap: 10px;
   min-width: 190px; min-height: 40px; padding: 0 12px 0 14px;
-  border: 1px solid var(--bd2); border-radius: 10px;
+  border: 1px solid var(--bd2); border-radius: var(--rad-10, 10px);
   background: var(--surf2); color: var(--t1);
   font: 800 13.5px/1.2 var(--font-display); cursor: pointer;
   transition: border-color var(--tr), background var(--tr), box-shadow var(--tr);
@@ -26,14 +26,14 @@
 /* The list renders in a portal above everything, modals included (.mov: 500). */
 .ces-content {
   z-index: 1000; min-width: var(--radix-select-trigger-width);
-  padding: 6px; border: 1px solid var(--bd2); border-radius: 12px;
+  padding: 6px; border: 1px solid var(--bd2); border-radius: var(--rad-12, 12px);
   background: var(--surf2); color: var(--t1); font-family: var(--font-display);
   box-shadow: 0 16px 40px rgba(0, 0, 0, .35), 0 2px 8px rgba(0, 0, 0, .25);
 }
 .ces-viewport { display: flex; flex-direction: column; gap: 2px; }
 .ces-item {
   display: flex; align-items: center; gap: 10px; min-height: 40px; padding: 0 10px;
-  border-radius: 8px; font-size: 13.5px; font-weight: 700; cursor: pointer; outline: none; user-select: none;
+  border-radius: var(--rad-8, 8px); font-size: 13.5px; font-weight: 700; cursor: pointer; outline: none; user-select: none;
 }
 .ces-item[data-highlighted] { background: var(--bd); background: color-mix(in srgb, var(--ces-color) 18%, transparent); }
 .ces-item[data-state="checked"] { font-weight: 800; }

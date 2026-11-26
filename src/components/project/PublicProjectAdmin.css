@@ -4,7 +4,7 @@
 /* ds-allow-hardcode:start */
 .ppa { max-width: 900px; }
 .ppa-intro { color: var(--t2); font-size: 14px; margin: 0 0 18px; }
-.ppa-intro code { background: var(--surf2); padding: 1px 6px; border-radius: 6px; }
+.ppa-intro code { background: var(--surf2); padding: 1px 6px; border-radius: var(--rad-6, 6px); }
 
 .ppa-list { display: flex; flex-direction: column; gap: 10px; }
 .ppa-muted { color: var(--t3); }
@@ -17,7 +17,7 @@
 
 .ppa-sw { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; }
 .ppa-sw input { position: absolute; opacity: 0; width: 0; height: 0; }
-.ppa-sw-track { width: 40px; height: 22px; border-radius: 999px; background: var(--bd); position: relative; transition: background .15s; flex-shrink: 0; }
+.ppa-sw-track { width: 40px; height: 22px; border-radius: var(--rad-pill, 999px); background: var(--bd); position: relative; transition: background .15s; flex-shrink: 0; }
 .ppa-sw-track span { position: absolute; top: 3px; left: 3px; width: 16px; height: 16px; border-radius: 50%; background: var(--surf2-solid); transition: transform .15s; }
 .ppa-sw input:checked + .ppa-sw-track { background: var(--accent); }
 .ppa-sw input:checked + .ppa-sw-track span { transform: translateX(18px); }

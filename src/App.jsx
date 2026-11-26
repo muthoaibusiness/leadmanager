@@ -1,14 +1,17 @@
 import { useState, useEffect, useRef, Suspense } from 'react';
 import { createPortal } from 'react-dom';
 import { useApp } from './context/AppContext.jsx';
-import { getDB, getUnreadCount, getSession, hasSessionId, saveDBDeferred, checkFollowUpReminders, getProperties, expireHolds, migrateTenancy, mergeDB, purgeDemoSeed, dedupeLeads, reconcileDeletions, applyRealtimeEvent, clearLocalDB, cacheBelongsTo } from './lib/db.js';
+import { getDB, getUnreadCount, markOneRead, getSession, hasSessionId, saveDBDeferred, checkFollowUpReminders, getProperties, expireHolds, migrateTenancy, mergeDB, purgeDemoSeed, dedupeLeads, reconcileDeletions, applyRealtimeEvent, clearLocalDB, cacheBelongsTo } from './lib/db.js';
 import { signIn as authSignIn, restoreSession, consumeAuthRedirect, mustSetPassword, openedFromAuthLink } from './lib/auth.js';
 import SetPasswordCard from './components/SetPasswordCard.jsx';
 import { seedDB, SEED_PROPERTIES, DEMO_PROPERTIES } from './lib/seed.js';
 import { sbLoad, sbSubscribeAll } from './lib/supabase.js';
 import { hasFollowupTable } from './lib/followups.js';
+import { syncCompanyDesign } from './lib/companyDesign.js';
 import { waLoadSettings } from './lib/wa.js';
 import { pushUnreadSummary, requestNotifyPermission } from './lib/pushNotify.js';
+import { syncPush } from './lib/webPush.js';
+import { onPushClick, takePushClick } from './lib/pwa.js';
 import { kbd } from './lib/helpers.js';
 import { ROLES, canSee, effectiveRole, DRAWER_MQ } from './lib/constants.js';
 import { VIEW_TITLES, homeView } from './lib/navHistory.js';
@@ -581,6 +584,7 @@ export default function App() {
     // Load from Supabase, then MERGE with local so records created locally but
     // not yet synced (e.g. a fresh import) survive the reload instead of being
     // clobbered by the cloud snapshot. Fall back to local/seed if cloud empty.
+    syncCompanyDesign(forUser); // the company's chosen design; never blocks the load
     const sbData = await sbLoad(forUser);
     const local = getDB();
     let freshDB;
@@ -637,7 +641,9 @@ export default function App() {
   const signIn = (u) => {
     setUser(u);
     if (u.role === ROLES.MASTER) setView('companies');
-    requestNotifyPermission(); // ask for browser push permission on login
+    // Ask for browser push permission on login; the installed app then
+    // registers this phone (no-op in a browser tab, or without permission).
+    requestNotifyPermission().then(() => syncPush());
   };
 
   // The app's only browser push: one summary of everything still unread, sent
@@ -767,6 +773,23 @@ export default function App() {
     return () => window.removeEventListener('keydown', onKey);
   }, [user, modal, panLead, notifOpen, sidebarOpen, searchRef, closeModal, setPanLead, setSearch, setSidebarOpen, toggleSidebar]);
 
+  // A tapped push notification (installed app): open its lead, or the bell when
+  // it has none. The tap can arrive before sign-in has finished, so it is held
+  // in pwa.js and taken here once there is a user.
+  useEffect(() => {
+    if (!user) return;
+    const act = () => {
+      const c = takePushClick();
+      if (!c) return;
+      if (c.id) { markOneRead(c.id, user.id); refreshDB(); }
+      if (c.leadId) setPanLead(c.leadId);
+      else setNotifOpen(true);
+    };
+    const off = onPushClick(act);
+    const t = setTimeout(act, 0); // one that arrived before this effect
+    return () => { off(); clearTimeout(t); };
+  }, [user, setPanLead, setNotifOpen, refreshDB]);
+
   useEffect(() => {
     if (initialized.current) return;
     initialized.current = true;
@@ -793,7 +816,7 @@ export default function App() {
       // `user` from the same read). The token is re-verified first; a session
       // the server no longer honours (expired, revoked, account deactivated)
       // signs out instead of carrying on from the cache.
-      requestNotifyPermission();
+      requestNotifyPermission().then(() => syncPush());
       (async () => {
         const u = await restoreSession();
         if (u && u.offline) return; // server unreachable: keep the cached shell, the session stays

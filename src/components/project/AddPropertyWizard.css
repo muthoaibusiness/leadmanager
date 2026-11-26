@@ -2,7 +2,7 @@
    booking/ShopBooking.css. Px values are one-off layout sizes. */
 /* ds-allow-hardcode:start */
 .pw-scrim { position: fixed; inset: 0; z-index: 300; background: rgb(6 14 11 / .55); display: grid; place-items: center; padding: 16px; }
-.bk.pw { flex: none; width: min(1040px, 100%); height: min(720px, 100%); display: grid; grid-template-columns: 250px minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); background: var(--bk-bg); border: 1px solid var(--bk-line); border-radius: 18px; box-shadow: 0 20px 60px rgb(0 0 0 / .35); overflow: hidden; }
+.bk.pw { flex: none; width: min(1040px, 100%); height: min(720px, 100%); display: grid; grid-template-columns: 250px minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); background: var(--bk-bg); border: 1px solid var(--bk-line); border-radius: var(--rad-18, 18px); box-shadow: 0 20px 60px rgb(0 0 0 / .35); overflow: hidden; }
 .pw-rail { background: var(--bk-surface); border-right: 1px solid var(--bk-line); padding: 18px 12px; display: grid; align-content: start; gap: 14px; overflow: auto; }
 .pw-rail-h { display: grid; gap: 2px; padding: 0 6px; min-width: 0; }
 .pw-rail-h b { font-family: var(--bk-display); font-size: 19px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -24,7 +24,7 @@
 .pw-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 14px; }
 .pw-grid4 { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
 .pw-f { display: grid; gap: 6px; min-width: 0; }
-.pw-f input, .pw-type-n { width: 100%; box-sizing: border-box; background: var(--bk-surface); color: var(--bk-fg); border: 1px solid var(--bk-line); border-radius: 10px; padding: 10px 12px; font: inherit; font-size: 16px; }
+.pw-f input, .pw-type-n { width: 100%; box-sizing: border-box; background: var(--bk-surface); color: var(--bk-fg); border: 1px solid var(--bk-line); border-radius: var(--rad-10, 10px); padding: 10px 12px; font: inherit; font-size: 16px; }
 .pw-f input.pw-big { font-family: var(--bk-display); font-size: 22px; font-weight: 600; padding: 12px 14px; }
 .pw-f input:focus, .pw-type-n:focus { outline: none; border-color: var(--bk-accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--bk-accent) 22%, transparent); }
 .pw-f input::-webkit-outer-spin-button, .pw-f input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
@@ -49,18 +49,18 @@
 .pw-drop b { color: var(--bk-fg); font-size: 16px; font-weight: 600; }
 .pw-drop span { font-size: 13.5px; }
 .pw-thumbs { display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 10px; }
-.pw-thumb { position: relative; aspect-ratio: 4 / 3; border-radius: 10px; overflow: hidden; border: 1px solid var(--bk-line); background: var(--bk-surface2); }
+.pw-thumb { position: relative; aspect-ratio: 4 / 3; border-radius: var(--rad-10, 10px); overflow: hidden; border: 1px solid var(--bk-line); background: var(--bk-surface2); }
 .pw-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .pw-thumb button { position: absolute; top: 4px; right: 4px; width: 26px; height: 26px; border-radius: 50%; border: 0; background: rgb(0 0 0 / .6); color: #fff; display: grid; place-items: center; cursor: pointer; }
 .pw-thumb button .mi { font-size: 16px; }
-.pw-cover { position: absolute; left: 6px; bottom: 6px; font-size: 12px; font-weight: 600; background: var(--bk-accent); color: var(--bk-accent-ink); padding: 1px 8px; border-radius: 999px; }
-.pw-item { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border: 1px solid var(--bk-line); border-radius: 10px; background: var(--bk-surface); }
+.pw-cover { position: absolute; left: 6px; bottom: 6px; font-size: 12px; font-weight: 600; background: var(--bk-accent); color: var(--bk-accent-ink); padding: 1px 8px; border-radius: var(--rad-pill, 999px); }
+.pw-item { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border: 1px solid var(--bk-line); border-radius: var(--rad-10, 10px); background: var(--bk-surface); }
 .pw-item .mi { color: var(--bk-muted); }
 .pw-item span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.pw-review { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1px; background: var(--bk-line); border: 1px solid var(--bk-line); border-radius: 12px; overflow: hidden; }
+.pw-review { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1px; background: var(--bk-line); border: 1px solid var(--bk-line); border-radius: var(--rad-12, 12px); overflow: hidden; }
 .pw-review div { background: var(--bk-surface); padding: 10px 14px; display: grid; gap: 2px; min-width: 0; }
 .pw-review b { font-family: var(--bk-display); font-size: 17px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.pw-warn { display: flex; gap: 8px; align-items: center; font-size: 14.5px; padding: 9px 12px; border-radius: 10px; background: color-mix(in srgb, var(--bk-bad) 12%, transparent); color: var(--bk-bad); }
+.pw-warn { display: flex; gap: 8px; align-items: center; font-size: 14.5px; padding: 9px 12px; border-radius: var(--rad-10, 10px); background: color-mix(in srgb, var(--bk-bad) 12%, transparent); color: var(--bk-bad); }
 .pw-done { display: grid; justify-items: center; text-align: center; gap: 8px; padding: 40px 10px; }
 .pw-done h4 { margin: 0; font-family: var(--bk-display); font-size: 26px; font-weight: 600; }
 .pw-done p { margin: 0 0 8px; max-width: 46ch; color: var(--bk-muted); }
@@ -86,4 +86,4 @@
 /* ds-allow-hardcode:end */
 
 /* Edit project: make a photo the cover */
-.pw-mk { position: absolute; left: 6px; bottom: 6px; top: auto !important; right: auto !important; width: auto !important; height: auto !important; border-radius: 999px !important; font-size: 12px; padding: 1px 8px; background: rgb(0 0 0 / .65) !important; }
+.pw-mk { position: absolute; left: 6px; bottom: 6px; top: auto !important; right: auto !important; width: auto !important; height: auto !important; border-radius: var(--rad-pill, 999px) !important; font-size: 12px; padding: 1px 8px; background: rgb(0 0 0 / .65) !important; }

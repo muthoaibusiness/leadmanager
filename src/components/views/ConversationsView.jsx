@@ -306,7 +306,7 @@ export default function ConversationsView() {
           )}
           <button className="btn btn-g" onClick={reload} title="Reload" aria-label="Reload"><Mi>refresh</Mi></button>
           {isChatAdmin(user) && (
-            <button className="btn btn-g" onClick={() => openModal('chat-settings')}><Mi>settings</Mi>Chat Settings</button>
+            <button className="btn btn-g" onClick={() => openModal('chat-settings')} title="Chat Settings"><Mi>settings</Mi>Chat Settings</button>
           )}
         </div>
       </div>

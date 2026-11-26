@@ -2,7 +2,7 @@ import { useState } from 'react';
 import Mi from '../Mi.jsx';
 import useNavState from '../../hooks/useNavState.js';
 import { byCode, taka } from '../../lib/floorPlan.js';
-import { textFloor, floorCode, shortCode, shopLabel, takaShort } from '../../lib/floorText.js';
+import { textFloor, floorCode, shortCode, shopLabel } from '../../lib/floorText.js';
 import ShopCard from './ShopCard.jsx';
 
 // Booking on a phone: no floor plan, a grid of shop cells, five per row, in
@@ -26,7 +26,8 @@ const customStatuses = (shops) => {
 
 export default function ShopGrid({ project, plans, plan, floor, onBack, pickFloor, shopCode, setShopCode }) {
   const [filter, setFilter] = useNavState('booking.filter', 'open');
-  const [sheet, setSheet] = useState(false);
+  // A unit already picked (a link to it, or Back) opens straight in its panel.
+  const [sheet, setSheet] = useState(() => !!shopCode);
 
   const shops = [...floor.shops].sort((a, b) => byCode(a.code, b.code));
   const test = (FILTERS.find(f => f[0] === filter) || FILTERS[0])[2];
@@ -34,15 +35,19 @@ export default function ShopGrid({ project, plans, plan, floor, onBack, pickFloo
   const shop = shops.find(s => s.code === shopCode) || null;
   const noShops = floor.counts.total === 0;
 
-  const pick = (s) => { setShopCode(s.code); setSheet(false); };
-  const close = () => { setSheet(false); };
+  // One tap opens the unit's booking panel, as in a tower's building view; closing it clears the pick.
+  const pick = (s) => { setShopCode(s.code); setSheet(true); };
+  const close = () => { setSheet(false); setShopCode(null); };
+  // The floor list leaves out floors with no shops (roof, ground with only a lobby…). The floor on
+  // screen always stays in it, and a project with no shops anywhere still lists every floor.
+  const floorsWithShops = plans.map(p => ({ p, c: textFloor(project, p).counts })).filter(({ p, c }) => c.total > 0 || p.id === plan.id);
+  const railFloors = floorsWithShops.length ? floorsWithShops : plans.map(p => ({ p, c: textFloor(project, p).counts }));
   const done = () => { setSheet(false); setShopCode(null); };
 
   return (
     <div className={`bkm${shop ? ' has-dock' : ''}`}>
-      <nav className="bkm-rail" aria-label="Floors">
-        {plans.map(p => {
-          const c = textFloor(project, p).counts;
+      <nav className="bkm-rail" aria-label="Floors" style={{ '--fls': railFloors.length }}>
+        {railFloors.map(({ p, c }) => {
           return (
             <button key={p.id} type="button" className="bkm-fl" aria-pressed={plan.id === p.id}
               aria-label={`${p.name}, ${c.total ? `${c.available} open` : 'no shops'}`}
@@ -79,7 +84,7 @@ export default function ShopGrid({ project, plans, plan, floor, onBack, pickFloo
             </div>
             <div className="bkm-grid" role="list">
               {shown.map(s => (
-                <button key={s.code} type="button" role="listitem" className={`bkm-tile s-${s.status}`}
+                <button key={s.code} type="button" role="listitem" className={`bkm-tile s-${s.status}${shortCode(s.code).length > 6 ? ' wide' : ''}`}
                   style={s.look.color ? { '--bk-c': s.look.color } : undefined}
                   aria-pressed={shopCode === s.code} onClick={() => pick(s)}
                   aria-label={`${shopLabel(s.code)}, ${s.size} sq ft, ${s.look.label}`}>
@@ -92,25 +97,6 @@ export default function ShopGrid({ project, plans, plan, floor, onBack, pickFloo
           </>
         )}
       </div>
-
-      {shop && !sheet && (
-        <div className="bkm-dock" role="region" aria-label="Selected shop">
-          <div className="bkm-dock-t">
-            <div>
-              <span className="bkm-dock-c">{shortCode(shop.code)}</span>
-              <span className={`bk-pill s-${shop.status}`} style={shop.look.color ? { '--bk-c': shop.look.color } : undefined}><i className="bk-dot" />{shop.look.label}</span>
-            </div>
-            <div className="bkm-dock-m">
-              <span className="bkm-dock-p">{shop.price ? takaShort(shop.price) : '—'}</span>
-              <span>{shop.size ? `${shop.size} sq ft` : ''}</span>
-            </div>
-          </div>
-          {shop.status === 'available'
-            ? <button type="button" className="bk-btn primary" onClick={() => setSheet(true)}>Book</button>
-            : <button type="button" className="bk-btn" onClick={() => setSheet(true)}>View</button>}
-          <button type="button" className="bkm-dock-x" aria-label="Clear" onClick={() => setShopCode(null)}><Mi>close</Mi></button>
-        </div>
-      )}
 
       {shop && sheet && (
         <>

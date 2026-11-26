@@ -38,7 +38,7 @@
 .lt-h4, .lt-c-agent { text-overflow: clip; }
 
 /* ── cells ── */
-.lt-chk { border: 0; background: none; color: var(--bk-muted); cursor: pointer; display: grid; place-items: center; padding: 2px; border-radius: 6px; }
+.lt-chk { border: 0; background: none; color: var(--bk-muted); cursor: pointer; display: grid; place-items: center; padding: 2px; border-radius: var(--rad-6, 6px); }
 .lt-chk .mi { font-size: 22px; }
 .lt-chk:hover, .lt-chk.on { color: var(--bk-accent); }
 .lt-person { display: inline-flex; align-items: center; gap: 8px; min-width: 0; max-width: 100%; }
@@ -54,7 +54,7 @@ img.lt-av { display: block; }
 .lt-wa:hover { color: var(--bk-accent); border-color: var(--bk-accent); }
 .lt-card .lt-table tr:hover .lt-wa { display: grid; }
 .lt-src { font-size: 14px; color: var(--bk-muted); }
-.lt-st { display: inline-flex; align-items: center; gap: 6px; padding: 0 8px; border-radius: 999px; font-size: 12px; font-weight: 600; line-height: 1.6; }
+.lt-st { display: inline-flex; align-items: center; gap: 6px; padding: 0 8px; border-radius: var(--rad-pill, 999px); font-size: 12px; font-weight: 600; line-height: 1.6; }
 .lt-st .bk-dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; flex: none; }
 .lt-two { min-width: 0; }
 .lt-two .lt-date, .lt-created { font-size: 13px; }
@@ -75,7 +75,7 @@ img.lt-av { display: block; }
 .lt-danger:hover { border-color: var(--bk-bad); }
 
 /* ── the agent card shown on hover (rendered in <body>, so it reads the app-wide tokens) ── */
-.lt-agent-card { position: fixed; z-index: 400; width: 290px; padding: 14px; border-radius: 14px; background: var(--bk-bg); color: var(--bk-fg); border: 1px solid var(--bk-line); box-shadow: 0 14px 40px rgb(0 0 0 / .4); pointer-events: none; font-family: var(--bk-body); }
+.lt-agent-card { position: fixed; z-index: 400; width: 290px; padding: 14px; border-radius: var(--rad-14, 14px); background: var(--bk-bg); color: var(--bk-fg); border: 1px solid var(--bk-line); box-shadow: 0 14px 40px rgb(0 0 0 / .4); pointer-events: none; font-family: var(--bk-body); }
 .lt-agent-hd { display: flex; align-items: center; gap: 10px; padding-bottom: 10px; border-bottom: 1px solid var(--bk-line); margin-bottom: 8px; }
 .lt-agent-hd div { display: grid; min-width: 0; }
 .lt-agent-hd b { font-size: 16px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

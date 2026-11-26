@@ -16,7 +16,7 @@
 .fbx .fbl-fld { font-size: 14px; color: var(--bk-muted); }
 .fbx .fbl-fld > span { font-size: 12.5px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; }
 .fbx .fbl-fld small { text-transform: none; letter-spacing: 0; }
-.fbx .fbl-fld input:not([type]), .fbx .fbl-fld input[type="text"], .fbx .fbl-map input { background: var(--bk-bg); color: var(--bk-fg); border: 1px solid var(--bk-line); border-radius: 10px; padding: 10px 12px; font: inherit; font-size: 16px; }
+.fbx .fbl-fld input:not([type]), .fbx .fbl-fld input[type="text"], .fbx .fbl-map input { background: var(--bk-bg); color: var(--bk-fg); border: 1px solid var(--bk-line); border-radius: var(--rad-10, 10px); padding: 10px 12px; font: inherit; font-size: 16px; }
 .fbx .fbl-fld input:focus, .fbx .fbl-map input:focus { outline: none; border-color: var(--bk-accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--bk-accent) 22%, transparent); }
 .fbx .fbl-map em { font-size: 13px; color: var(--bk-muted); }
 .fbx .fbl-check { color: var(--bk-fg); font-size: 15px; }
@@ -28,7 +28,7 @@
 .fbx .fbl-steps code, .fbx .fbl-secrets code, .fbx .fbl-note code { background: var(--bk-surface2); border: 1px solid var(--bk-line); font-family: var(--bk-mono); }
 .fbx .fbl-secrets li { border: 1px solid var(--bk-line); border-radius: var(--bk-r); background: var(--bk-bg); }
 .fbx .fbl-secrets small { color: var(--bk-muted); font-size: 13px; }
-.fbx .fbl-btn { border: 1px solid var(--bk-line); background: var(--bk-bg); color: var(--bk-fg); font: 500 15px/1 inherit; padding: 9px 15px; border-radius: 10px; }
+.fbx .fbl-btn { border: 1px solid var(--bk-line); background: var(--bk-bg); color: var(--bk-fg); font: 500 15px/1 inherit; padding: 9px 15px; border-radius: var(--rad-10, 10px); }
 .fbx .fbl-btn:hover:not(:disabled) { border-color: var(--bk-accent); color: var(--bk-accent); }
 .fbx .fbl-btn.solid { background: var(--bk-accent); border-color: var(--bk-accent); color: var(--bk-accent-ink); }
 .fbx .fbl-btn.solid:hover:not(:disabled) { color: var(--bk-accent-ink); filter: brightness(1.08); }

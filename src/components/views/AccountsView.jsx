@@ -13,6 +13,7 @@ import useLeadCounts from '../../hooks/useLeadCounts.js';
 import useOpenUserLeads from '../../hooks/useOpenUserLeads.js';
 import { eq } from '../../lib/leadQuery.js';
 import AccessPanel from '../AccessPanel.jsx';
+import DesignPicker from '../DesignPicker.jsx';
 import '../booking/ShopBooking.css';
 import '../project/AddPropertyWizard.css';
 import './AccountsView.css';
@@ -329,7 +330,9 @@ export default function AccountsView() {
     );
   };
 
-  const TABS = [['users', 'Users', 'group', coUsers.length], ['access', 'Access', 'shield', null]];
+  // Appearance (the company's app design) is for the admins themselves, not for an account that was only granted this page.
+  const isAdmin = user.role === ROLES.MGMT || user.role === ROLES.MASTER;
+  const TABS = [['users', 'Users', 'group', coUsers.length], ['access', 'Access', 'shield', null], ...(isAdmin ? [['design', 'Appearance', 'tune', null]] : [])];
   const tabBar = (
     <div className="rqx-tabs" role="tablist" aria-label="Users and access">
       {TABS.map(([k, l, ic, n]) => (
@@ -340,6 +343,7 @@ export default function AccountsView() {
     </div>
   );
   if (tab === 'access') return <div className="bk acx"><div className="rqx-wrap acx-wrap">{tabBar}<AccessPanel users={coUsers} /></div></div>;
+  if (tab === 'design' && isAdmin) return <div className="bk acx"><div className="rqx-wrap acx-wrap">{tabBar}<DesignPicker /></div></div>;
 
   const kpis = [
     ['group', 'Total accounts', counts.total, counts.inactive ? `${counts.inactive} inactive` : 'all active'],

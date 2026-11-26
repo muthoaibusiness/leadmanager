@@ -86,7 +86,7 @@ export default function ManagementDash() {
                       {bars.map(([lbl, v]) => (
                         <span key={lbl} className="mh-proj-col">
                           <span className="mh-proj-v">{v}</span>
-                          <span className={`mh-proj-bar${lbl === 'Sold' && v > 0 ? ' hi' : ''}`} style={{ height: Math.max(6, Math.round(v / top * 64)) + 'px' }} />
+                          <span className={`mh-proj-bar${lbl === 'Sold' && v > 0 ? ' hi' : ''}`} style={{ height: Math.max(5, Math.round(v / top * 40)) + 'px' }} />
                           <span className="mh-proj-l">{lbl}</span>
                         </span>
                       ))}

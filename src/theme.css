@@ -92,7 +92,7 @@ body { font-family: var(--bk-body); background: var(--bg); background-image: non
 .sec-t { font-size: 18px; font-weight: 600; letter-spacing: -.01em; text-transform: none; }
 
 /* ── Buttons: the Booking button (10px radius, sentence case). */
-.btn { padding: 9px 15px; border-radius: 10px; font-size: 14.5px; font-weight: 500; letter-spacing: 0; text-transform: none; border: 1px solid var(--bd); line-height: 1.3; }
+.btn { padding: 9px 15px; border-radius: var(--rad-10, 10px); font-size: 14.5px; font-weight: 500; letter-spacing: 0; text-transform: none; border: 1px solid var(--bd); line-height: 1.3; }
 .btn .mi { font-size: 18px; }
 .btn-sm { padding: 6px 11px; font-size: 13.5px; }
 .btn-sm .mi { font-size: 16px; }
@@ -108,7 +108,7 @@ body { font-family: var(--bk-body); background: var(--bg); background-image: non
 
 /* ── Fields. */
 .fi, .finp, .fsel, .sbox, textarea.fi, .fg input, .fg select, .fg textarea, .fl input.finp, .fl select.finp, .fl textarea.finp {
-  border-radius: 10px; border: 1px solid var(--bd); background-color: var(--bk-bg); color: var(--bk-fg); font-family: var(--bk-body); font-size: 15.5px;
+  border-radius: var(--rad-10, 10px); border: 1px solid var(--bd); background-color: var(--bk-bg); color: var(--bk-fg); font-family: var(--bk-body); font-size: 15.5px;
 }
 .finp { padding: 11px 13px; }
 .fi { padding: 10px 12px; }
@@ -121,35 +121,35 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--bk-accent); }
 
 /* ── Cards, tables, badges, tabs. */
 .card, .mc, .sc-card, .kpi-tile, .tc, .agc, .tmcard, .lt, .fbar, .rep-card, .alert-card, .prop-card, .cl-card, .cal-card, .acc-card, .acc-kpi, .uct-card {
-  border-radius: 14px; border: 1px solid var(--bd); background: var(--bk-surface); box-shadow: var(--bk-shadow);
+  border-radius: var(--rad-14, 14px); border: 1px solid var(--bd); background: var(--bk-surface); box-shadow: var(--bk-shadow);
 }
 .lt-hdr { background: color-mix(in srgb, var(--bk-accent) 12%, var(--bk-surface)); color: var(--bk-fg); font-size: 12px; letter-spacing: .08em; border-bottom: 2px solid var(--bk-accent); font-family: var(--bk-body); }
 .lt-row { border-color: var(--bd); }
 .lt-row:hover { background: color-mix(in srgb, var(--bk-accent) 7%, transparent); }
-.bdg { padding: 3px 11px; border-radius: 999px; font-size: 12.5px; font-weight: 600; letter-spacing: .01em; text-transform: none; font-family: var(--bk-body); border: 1px solid color-mix(in srgb, currentColor 35%, transparent); }
+.bdg { padding: 3px 11px; border-radius: var(--rad-pill, 999px); font-size: 12.5px; font-weight: 600; letter-spacing: .01em; text-transform: none; font-family: var(--bk-body); border: 1px solid color-mix(in srgb, currentColor 35%, transparent); }
 .pill-tabs, :root[data-theme="light"] .pill-tabs { background: transparent; border: 0; padding: 0; gap: 6px; box-shadow: none; display: flex; flex-wrap: wrap; }
-.pill-tabs > button { border: 1px solid var(--bd); background: var(--bk-bg); color: var(--bk-fg); border-radius: 999px; padding: 7px 14px; font-size: 14px; font-weight: 500; letter-spacing: 0; text-transform: none; font-family: var(--bk-body); display: inline-flex; align-items: center; gap: 6px; box-shadow: none; }
+.pill-tabs > button { border: 1px solid var(--bd); background: var(--bk-bg); color: var(--bk-fg); border-radius: var(--rad-pill, 999px); padding: 7px 14px; font-size: 14px; font-weight: 500; letter-spacing: 0; text-transform: none; font-family: var(--bk-body); display: inline-flex; align-items: center; gap: 6px; box-shadow: none; }
 .pill-tabs > button.on, .pill-tabs > button[aria-selected="true"] { background: var(--bk-fg); color: var(--bk-bg); border-color: var(--bk-fg); }
-.ftab { border: 1px solid var(--bd); background: var(--bk-bg); color: var(--bk-fg); border-radius: 999px; padding: 6px 13px; font-size: 14px; font-weight: 500; text-transform: none; letter-spacing: 0; }
+.ftab { border: 1px solid var(--bd); background: var(--bk-bg); color: var(--bk-fg); border-radius: var(--rad-pill, 999px); padding: 6px 13px; font-size: 14px; font-weight: 500; text-transform: none; letter-spacing: 0; }
 .ftab.on { background: var(--bk-fg); color: var(--bk-bg); border-color: var(--bk-fg); }
-.seg { background: var(--bk-bg); border: 1px solid var(--bd); border-radius: 12px; padding: 4px; }
-.seg-b { border-radius: 9px; font-size: 14px; font-weight: 500; text-transform: none; letter-spacing: 0; }
+.seg { background: var(--bk-bg); border: 1px solid var(--bd); border-radius: var(--rad-12, 12px); padding: 4px; }
+.seg-b { border-radius: var(--rad-9, 9px); font-size: 14px; font-weight: 500; text-transform: none; letter-spacing: 0; }
 .seg-b.on { background: var(--bk-surface2); color: var(--bk-fg); box-shadow: var(--sh); }
 .empty { color: var(--bk-muted); }
 .empty .mi { color: var(--bk-accent); opacity: .7; }
 
 /* ── Modals and the dialogs that share their frame. */
 .mov { background: rgb(6 14 11 / .58); }
-.modal { background: var(--bk-bg); border: 1px solid var(--bd); border-radius: 18px; box-shadow: 0 20px 60px rgb(0 0 0 / .4); }
+.modal { background: var(--bk-bg); border: 1px solid var(--bd); border-radius: var(--rad-18, 18px); box-shadow: 0 20px 60px rgb(0 0 0 / .4); }
 .m-hd { padding: 16px 20px; border-bottom: 1px solid var(--bd); }
 .m-body { padding: 18px 20px; }
-.m-ft { padding: 12px 20px; border-top: 1px solid var(--bd); background: var(--bk-surface); border-radius: 0 0 18px 18px; }
+.m-ft { padding: 12px 20px; border-top: 1px solid var(--bd); background: var(--bk-surface); border-radius: 0 0 var(--rad-18, 18px) var(--rad-18, 18px); }
 .m-x { width: 34px; height: 34px; border-radius: 50%; border: 1px solid var(--bd); background: var(--bk-bg); color: var(--bk-fg); display: grid; place-items: center; }
 .m-x:hover { border-color: var(--bk-accent); color: var(--bk-accent); }
-.m-hint { background: var(--bk-accent-soft); color: var(--bk-fg); border: 1px solid color-mix(in srgb, var(--bk-accent) 35%, var(--bd)); border-radius: 12px; font-size: 14.5px; }
+.m-hint { background: var(--bk-accent-soft); color: var(--bk-fg); border: 1px solid color-mix(in srgb, var(--bk-accent) 35%, var(--bd)); border-radius: var(--rad-12, 12px); font-size: 14.5px; }
 
 /* ── Sidebar and the header bar. */
-.sb-it { font-size: 15px; font-weight: 500; letter-spacing: 0; text-transform: none; border-radius: 10px; padding: 9px 12px; color: var(--bk-muted); border: 1px solid transparent; }
+.sb-it { font-size: 15px; font-weight: 500; letter-spacing: 0; text-transform: none; border-radius: var(--rad-10, 10px); padding: 9px 12px; color: var(--bk-muted); border: 1px solid transparent; }
 .sb-it:hover { background: var(--bk-surface); color: var(--bk-fg); }
 .sb-it.on { background: var(--bk-surface); border-color: var(--bk-line); color: var(--bk-fg); font-weight: 600; box-shadow: inset 3px 0 0 var(--bk-accent); }
 .sb-it.on::before { display: none; }
@@ -163,7 +163,7 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--bk-accent); }
 /* ── Small screens, every page: nothing may be wider than the screen, and tap targets stay reachable. */
 @media (max-width: 767px) {
   .pg-title { font-size: 22px; }
-  .modal { max-width: 100%; max-height: 100dvh; border-radius: 18px 18px 0 0; }
+  .modal { max-width: 100%; max-height: 100dvh; border-radius: var(--rad-18, 18px) var(--rad-18, 18px) 0 0; }
   .mov { align-items: flex-end; padding: 0; }
   .m-ft { border-radius: 0; position: sticky; bottom: 0; }
   .m-ft .btn { flex: 1; justify-content: center; }
@@ -181,7 +181,7 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--bk-accent); }
 /* ── KPI cards on the dashboards (StatTrend): the Booking surface in both themes, not a fixed black. */
 .st-card {
   --st-accent: var(--bk-gold); --st-ink: var(--bk-fg); --st-title: var(--bk-muted); --st-mute: var(--bk-muted); --st-icon: var(--bk-faint); --st-track: var(--bk-line);
-  background: var(--bk-surface); border: 1px solid var(--bk-line); border-top-color: var(--bk-line); border-radius: 14px; box-shadow: var(--bk-shadow);
+  background: var(--bk-surface); border: 1px solid var(--bk-line); border-top-color: var(--bk-line); border-radius: var(--rad-14, 14px); box-shadow: var(--bk-shadow);
 }
 .rep-card { --rep-accent: var(--bk-accent); }
 .rep-hd { font-size: 16px; font-weight: 600; letter-spacing: 0; text-transform: none; }
@@ -238,7 +238,7 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--bk-accent); }
   #root .cvx .wa-bar { justify-content: flex-end; }
   /* dialogs fill the screen */
   #root .pw-scrim { padding: 0; align-items: end; }
-  #root .bk.acx-modal, #root .acx-dcard { width: 100%; max-height: 100dvh; border-radius: 18px 18px 0 0; }
+  #root .bk.acx-modal, #root .acx-dcard { width: 100%; max-height: 100dvh; border-radius: var(--rad-18, 18px) var(--rad-18, 18px) 0 0; }
   #root .acx-dft .bk-btn, #root .acx-modal .pw-acts .bk-btn { flex: 1 1 auto; justify-content: center; }
   #pan { width: 100vw; }
 }
