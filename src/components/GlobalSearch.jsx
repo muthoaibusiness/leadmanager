@@ -5,7 +5,7 @@ import { useApp } from '../context/AppContext.jsx';
 import { canSee, STATUS_LABELS } from '../lib/constants.js';
 import { NAV_META } from '../lib/navMeta.js';
 import { queryLeads } from '../lib/db.js';
-import { listProjects } from '../lib/projects.js';
+import { planProjects, projectsFor } from '../lib/projects.js';
 import { usePageOverlay } from '../hooks/useNavHistory.js';
 import useProjectNav from '../hooks/useProjectNav.js';
 
@@ -62,7 +62,7 @@ function SearchSheet({ onClose }) {
 
   const projects = useMemo(() => {
     if (!lc || !canSee(user, 'properties')) return [];
-    return listProjects()
+    return projectsFor(user, planProjects())
       .filter(p => [p.name, p.location, p.developer].some(s => String(s || '').toLowerCase().includes(lc)))
       .slice(0, PROJECT_LIMIT);
   }, [user, lc]);

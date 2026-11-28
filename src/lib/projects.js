@@ -180,6 +180,12 @@ export function planProjects() {
 }
 export function getProjectById(id) { return toProject(getProperty(id)); }
 
+// Only an admin (Management, Master) sees every project; everyone else sees the first
+// PROJECTS_FOR_STAFF of the list as given (planProjects' order: those with floor plans first).
+export const PROJECTS_FOR_STAFF = 3;
+export const seesAllProjects = (user) => user?.role === 'MANAGEMENT' || user?.role === 'MASTER';
+export const projectsFor = (user, list) => (seesAllProjects(user) ? list : list.slice(0, PROJECTS_FOR_STAFF));
+
 // ── inventory summary (Projects list, its KPI strip, the page subtitle) ──────
 // Counted from the blocks (variants) and their units — what the catalog edits
 // and the project console sells from. The old flat fields (totalUnits,

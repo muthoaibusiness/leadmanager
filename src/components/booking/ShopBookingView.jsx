@@ -3,7 +3,7 @@ import { useApp } from '../../context/AppContext.jsx';
 import useNavState from '../../hooks/useNavState.js';
 import useLeadBook from '../../hooks/useLeadBook.js';
 import useMediaQuery from '../../hooks/useMediaQuery.js';
-import { planProjects, maskProject } from '../../lib/projects.js';
+import { planProjects, maskProject, projectsFor } from '../../lib/projects.js';
 import { canCustomers, canPrices } from '../../lib/constants.js';
 import { byCode } from '../../lib/floorPlan.js';
 import { textFloor, landmarks, floorCode } from '../../lib/floorText.js';
@@ -47,7 +47,7 @@ export default function ShopBookingView() {
   const [ptab, setPtab] = useNavState('booking.ptab', 'booking');
   // customers and prices the account may not see never reach the booking screens
   const access = { customers: canCustomers(user), prices: canPrices(user) };
-  const allProjects = planProjects().map(p => maskProject(p, access));
+  const allProjects = projectsFor(user, planProjects()).map(p => maskProject(p, access));
   const project = allProjects.find(p => p.id === bookProj) || null;
   if (!project) return <ProjectList projects={allProjects} onPick={(id) => setBookProj(id)} />;
   return (

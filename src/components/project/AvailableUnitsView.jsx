@@ -7,7 +7,7 @@ import { countLeads, getHoldRequests, getLead, ensureLead } from '../../lib/db.j
 import { seedNextPage, usePageOverlay } from '../../hooks/useNavHistory.js';
 import useIsPhone from '../../hooks/useIsPhone.js';
 import { hasColumn } from '../../lib/supabase.js';
-import { planProjects, findUnit, unitSize, unitPrice, placedUnitIds, deleteFloorPlan, projectKey } from '../../lib/projects.js';
+import { planProjects, projectsFor, findUnit, unitSize, unitPrice, placedUnitIds, deleteFloorPlan, projectKey } from '../../lib/projects.js';
 import { toPx, byCode, STATUS, taka, statusLook } from '../../lib/floorPlan.js';
 import { Menu, MenuItem, MenuSep } from '../ui/menu.jsx';
 import { Select, SelectTrigger, SelectPopover, SelectListBox, SelectItem } from '../ui/select.jsx';
@@ -92,7 +92,7 @@ export default function AvailableUnitsView() {
   const [openReq, setOpenReq] = useState(null); // the reservation request shown expanded
   const [peopleOpen, setPeopleOpen] = useState(false); // phones: the Customers sheet (from Manage)
 
-  const projects = planProjects();
+  const projects = projectsFor(user, planProjects());
   // Opens on Citizen Avenue Mall when it is in the list, else the first project with plans.
   const proj = projects.find(p => p.id === planSel.projectId) || projects.find(p => /citizen avenue/i.test(p.name || '')) || projects[0] || null;
   const plans = proj ? sortPlans(proj.floorPlans) : [];
