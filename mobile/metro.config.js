@@ -15,7 +15,13 @@ config.resolver.nodeModulesPaths = [path.resolve(projectRoot, 'node_modules')];
 // React must come from here whoever asks, so there is exactly one copy.
 const SINGLETONS = /^(react|react-dom|react-native|react-native-web)(\/|$)/;
 const anchor = path.join(projectRoot, 'index.js');
+// Browser-only libraries a shared file loads lazily, inside a function the phone never calls:
+// pdf.js and jsPDF (src/lib/floorPlan.js, shopDocs.js: the web's floor-plan editor and
+// "build floor plans from the brochure"). Metro resolves even a lazy import() when it
+// bundles, and `?url` is a Vite suffix it cannot read, so they resolve to an empty module.
+const WEB_ONLY = /^(pdfjs-dist|jspdf)(\/|$)/;
 config.resolver.resolveRequest = (context, moduleName, platform) => {
+  if (WEB_ONLY.test(moduleName)) return { type: 'empty' };
   if (SINGLETONS.test(moduleName) && !context.originModulePath.startsWith(projectRoot)) {
     return context.resolveRequest({ ...context, originModulePath: anchor }, moduleName, platform);
   }

@@ -15,6 +15,7 @@ How the sharing works (do not undo):
 - `metro.config.js` watches `../src` and `../supabase/functions/_shared`; React always resolves from `mobile/node_modules`.
 - `babel.config.js` rewrites `import.meta.env.VITE_X` to `process.env.EXPO_PUBLIC_X` (values in `mobile/.env`, same as the web's `.env` with the other prefix).
 - `src/shims/` gives the shared code a synchronous `localStorage` (expo-sqlite) on the phone. It must stay the first import in `index.js`.
+- `metro.config.js` resolves `pdfjs-dist` and `jspdf` to an empty module: shared files load them lazily for web-only work (floor-plan editor, brochure → PDF), and Metro would otherwise fail on the Vite `?url` import. So `floorPlan.js`, `floorText.js` and `shopDocs.js` are importable here; never call their pdf/canvas functions on the phone.
 - Shared files must not import React or anything from the DOM. `src/hooks/*` and `src/components/*` of the web app are **not** importable here.
 
 ## Layout
@@ -25,7 +26,8 @@ How the sharing works (do not undo):
 - `src/hooks.js` — `useLeadCounts(specs)`, `useLeadBook()`, `useActWindow()`, `useDebounced()`.
 - `src/theme.js` — `useTheme()` colours (light/dark by the phone setting), `space`, `radius`, `statusTone`, `toneColors`.
 - `src/ui/index.js` — every building block: `Screen`, `Card`, `Row`, `Section`, `T` (text), `Button`, `IconButton`, `Chip`, `ChipBar`, `Badge`, `StatusBadge`, `Avatar`, `Field`, `SearchField`, `Segmented`, `ListItem`, `Stat`, `Empty`, `Loading`, `Sheet` (bottom sheet), `Icon`, and `useUI()` → `{ toast(text, 'ok'|'warn'|'err'), confirm({ title, description, confirmLabel, danger, onConfirm }) }`. `src/ui/DateTimeField.js` is the date/time picker.
-- `src/nav/index.js` — tabs (Home, Leads, Alerts, Menu) under one native stack. `src/nav/modules.js` — the registry of every other page: menu entries (`MODULES`, gated by `canSee(user, feature)`) and detail routes (`DETAIL_ROUTES`).
+- `src/nav/index.js` — tabs (Home, Leads, Alerts, Menu) under one native stack. `src/nav/modules.js` — the registry of every other page: menu entries (`MODULES`, gated by `canSee(user, feature)`) and detail routes (`DETAIL_ROUTES`). The menu mirrors the web sidebar: same order and section labels, titles/icons from `NAV_META`, and pages in `HIDDEN_NAV` (both in `../src/lib/navMeta.js`) left out, though their routes stay registered for links. Hide or rename a page there and both apps follow.
+- `src/screens/booking/` — the web's Booking page (`src/components/booking/`): project list, a project's Overview / Booking / Documents tabs, the floor plan drawn in SVG (`FloorPlan.js`, `react-native-svg`, from `textFloor()`/`landmarks()`), the tower grid, and the unit sheet (book = hold request, documents sent on WhatsApp, history). Uploading kit files and building the floor-plan PDF stay on the web.
 - `src/screens/` — one file per screen; `lead/LeadsScreen.js`, `lead/LeadDetailScreen.js` and `lead/sheets.js` are the reference for lists, detail pages and forms.
 
 ## Conventions
@@ -53,7 +55,7 @@ This shows layout and logic; it is not a device test. Touch feel, keyboard behav
 
 ## Not built yet
 
-Web pages with no screen here: shop booking floor plan, Facebook leads, inventory/finance, AI trainer, Meta CAPI, WhatsApp relay settings, public project admin, CSV import, bookings and payments.
+Web pages with no screen here: Facebook leads, inventory/finance, AI trainer, Meta CAPI, WhatsApp relay settings, public project admin, CSV import, bookings and payments.
 
 ## Push
 

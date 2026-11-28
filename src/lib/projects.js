@@ -180,11 +180,20 @@ export function planProjects() {
 }
 export function getProjectById(id) { return toProject(getProperty(id)); }
 
-// Only an admin (Management, Master) sees every project; everyone else sees the first
-// PROJECTS_FOR_STAFF of the list as given (planProjects' order: those with floor plans first).
+// Which projects an account sees (Booking, Available Units, search). An admin (Management,
+// Master) sees every project. Anyone else sees the projects ticked under "Assigned projects"
+// on their account ('ALL' = every project); with none ticked, the first PROJECTS_FOR_STAFF of
+// the list as given (planProjects' order: those with floor plans first).
 export const PROJECTS_FOR_STAFF = 3;
-export const seesAllProjects = (user) => user?.role === 'MANAGEMENT' || user?.role === 'MASTER';
-export const projectsFor = (user, list) => (seesAllProjects(user) ? list : list.slice(0, PROJECTS_FOR_STAFF));
+export const seesAllProjects = (user) => user?.role === 'MANAGEMENT' || user?.role === 'MASTER' || user?.projects === 'ALL';
+export function projectsFor(user, list) {
+  if (seesAllProjects(user)) return list;
+  if (Array.isArray(user?.projects) && user.projects.length) {
+    const ids = new Set(user.projects);
+    return list.filter(p => ids.has(p.id));
+  }
+  return list.slice(0, PROJECTS_FOR_STAFF);
+}
 
 // ── inventory summary (Projects list, its KPI strip, the page subtitle) ──────
 // Counted from the blocks (variants) and their units — what the catalog edits
