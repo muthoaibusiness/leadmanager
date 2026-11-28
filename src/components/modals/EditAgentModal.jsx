@@ -6,10 +6,15 @@ import { getProperties, updateProfile } from '../../lib/db.js';
 import { setFeatures, setProjects, setProfile } from '../../lib/accessAdmin.js';
 import { rlabel } from '../../lib/helpers.js';
 import { ROLES, canManageUser, initialFeatures } from '../../lib/constants.js';
+import { planProjects, projectsFor } from '../../lib/projects.js';
 import FeatureEditor from '../FeatureEditor.jsx';
 import '../booking/ShopBooking.css';
 import '../project/AddPropertyWizard.css';
 import '../views/AccountsView.css';
+
+// The projects the account sees right now (its saved list, or the first-3 default), ticked
+// when the panel opens.
+const shownIds = (a) => projectsFor({ role: a.role, projects: a.projects }, planProjects()).map(p => p.id);
 
 // Edit an account, in the Booking page's look. A Team Lead edits an agent's projects. Admins
 // (Management/Master) additionally get a per-user Feature Access checklist that overrides the
@@ -22,7 +27,8 @@ export default function EditAgentModal() {
   // Same rule the access-admin function applies (access-rules.js).
   const isAdmin = !!a && canManageUser(user, a) && a.id !== user?.id;
   const [busy, setBusy] = useState(false);
-  const showProjects = a && (a.role === ROLES.AGENT || a.role === ROLES.MA);
+  // Which projects the account sees (projectsFor in lib/projects.js). Admins always see every project.
+  const showProjects = a && a.role !== ROLES.MGMT && a.role !== ROLES.MASTER;
 
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
@@ -36,7 +42,7 @@ export default function EditAgentModal() {
     setName(a.name || '');
     setPhone(a.phone || '');
     setAll(a.projects === 'ALL');
-    setSel(new Set(Array.isArray(a.projects) ? a.projects : []));
+    setSel(new Set(shownIds(a)));
     setFeat(initialFeatures(a));
   }
 
@@ -58,8 +64,12 @@ export default function EditAgentModal() {
       await run(a.id === user?.id ? updateProfile(a.id, { name: nm, phone: phone.trim() }) : setProfile(a.id, { name: nm, phone: phone.trim() }));
     }
     if (showProjects) {
+      // Saved only when changed from what the panel opened with, so opening and saving an
+      // account that runs on the first-3 default does not freeze that default into a list.
       const next = all ? 'ALL' : [...sel];
-      if (JSON.stringify(next) !== JSON.stringify(a.projects ?? [])) await run(setProjects(a.id, next));
+      const before = a.projects === 'ALL' ? 'ALL' : shownIds(a);
+      const same = next === before || (Array.isArray(next) && Array.isArray(before) && next.length === before.length && next.every(id => before.includes(id)));
+      if (!same) await run(setProjects(a.id, next));
     }
     if (isAdmin) {
       const before = initialFeatures(a);
@@ -95,7 +105,7 @@ export default function EditAgentModal() {
                 <button type="button" className="bk-chip" aria-pressed={all} onClick={() => setAll(v => !v)}><Mi>{all ? 'check_box' : 'check_box_outline_blank'}</Mi>All projects</button>
               </div>
               {all ? (
-                <span className="bk-hint">This agent can deal on all {projects.length} projects.</span>
+                <span className="bk-hint">Sees all {projects.length} projects.</span>
               ) : (
                 <>
                   <div className="acx-mates">

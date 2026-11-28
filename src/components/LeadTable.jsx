@@ -4,7 +4,7 @@ import Mi from './Mi.jsx';
 import Avatar from './Avatar.jsx';
 import './booking/ShopBooking.css';
 import { fmtDateTimeAP, fmtRel, leadDisplayStatus, rlabel, ini, avc } from '../lib/helpers.js';
-import { SRC_LABELS, ROLES } from '../lib/constants.js';
+import { SRC_LABELS, ROLES, effectiveRole } from '../lib/constants.js';
 import { useApp } from '../context/AppContext.jsx';
 import { bulkDeleteLeads, lastFollowupFor, getDB } from '../lib/db.js';
 import TransferLeadModal from './modals/TransferLeadModal.jsx';
@@ -104,6 +104,8 @@ function AgentCell({ lead }) {
 export default function LeadTable({ leads, total = null, page: pageProp, onPage, pageSize = PAGE_SIZE, loading = false, lastFu = {}, fuPending = false }) {
   const { setPanLead, setChatTarget, chatOk, user, refreshDB, showToast, sortBy } = useApp();
   const server = total != null;
+  // An agent's list holds only their own leads, so the Agent column only repeats them; Team Leads and Management keep it.
+  const showAgent = effectiveRole(user) !== ROLES.AGENT;
   const [ownPage, setOwnPage] = useState(0);
   const page = server ? (pageProp || 0) : ownPage;
   const setPage = server ? (onPage || (() => {})) : setOwnPage;
@@ -171,7 +173,7 @@ export default function LeadTable({ leads, total = null, page: pageProp, onPage,
           </button>
         </th>
       )}
-      {COLS.map((c, i) => <th key={c} className={`lt-h${i}`}>{c}</th>)}
+      {COLS.map((c, i) => (c === 'Agent' && !showAgent ? null : <th key={c} className={`lt-h${i}`}>{c}</th>))}
     </tr>
   );
   const first = leads.length ? page * pageSize + 1 : 0;
@@ -237,7 +239,7 @@ export default function LeadTable({ leads, total = null, page: pageProp, onPage,
                     <td className="lt-c-src"><span className="lt-src">{SRC_LABELS[l.source] || l.source || '—'}</span></td>
                     <td className="lt-c-prop" title={l.propertyInterest || undefined}>{l.propertyInterest || '—'}</td>
                     <td className="lt-c-status">{(() => { const ds = leadDisplayStatus(l); return <span className={`bdg lt-st ${ds.cls}`}><i className="bk-dot" />{ds.label}</span>; })()}</td>
-                    <td className="lt-c-agent"><AgentCell lead={l} /></td>
+                    {showAgent && <td className="lt-c-agent"><AgentCell lead={l} /></td>}
                     <td className="lt-c-act"><LastActivityCell lead={l} fromServer={lastFu[l.id]} pending={fuPending} /></td>
                     <td className="lt-c-next"><NextFollowCell lead={l} /></td>
                     <td className="lt-created">{fmtDateTimeAP(l.createdAt)}</td>

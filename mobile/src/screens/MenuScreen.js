@@ -7,6 +7,7 @@ import { Avatar, Card, ListItem, Row, Screen, Section, T, useUI } from '../ui';
 import { useApp } from '../store';
 import { MODULES } from '../nav/modules';
 import { canSee } from '../../../src/lib/constants.js';
+import { HIDDEN_NAV } from '../../../src/lib/navMeta.js';
 import { waCanChat, waLoadSettings } from '../../../src/lib/wa.js';
 import { rlabel } from '../../../src/lib/helpers.js';
 
@@ -20,7 +21,9 @@ export default function MenuScreen({ navigation }) {
     return () => { alive = false; };
   }, [user.id]);
 
-  const allowed = MODULES.filter((m) => (m.chat ? !!wa && waCanChat(user, wa) : canSee(user, m.feature)));
+  // HIDDEN_NAV: pages the web sidebar keeps out of its menu; same here.
+  const allowed = MODULES.filter((m) => !HIDDEN_NAV.includes(m.feature)
+    && (m.chat ? !!wa && waCanChat(user, wa) : canSee(user, m.feature)));
   const groups = [...new Set(allowed.map((m) => m.group))];
 
   return (
@@ -37,13 +40,13 @@ export default function MenuScreen({ navigation }) {
 
       {groups.map((g) => {
         const items = allowed.filter((m) => m.group === g);
-        return (
-          <Section key={g} title={g}>
-            <Card pad={false}>
-              {items.map((m, i) => <ListItem key={m.route} icon={m.icon} title={m.title} last={i === items.length - 1} onPress={() => navigation.navigate(m.route)} />)}
-            </Card>
-          </Section>
+        const card = (
+          <Card key={g ?? 'top'} pad={false}>
+            {items.map((m, i) => <ListItem key={m.route} icon={m.icon} title={m.title} last={i === items.length - 1} onPress={() => navigation.navigate(m.route)} />)}
+          </Card>
         );
+        // The web's top section has no label.
+        return g ? <Section key={g} title={g}>{card}</Section> : card;
       })}
 
       <Section title="Account">

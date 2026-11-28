@@ -11,9 +11,8 @@ export const UNIT_TONE = { available: 'brand', hold: 'warn', sold: 'danger' };
 const UNIT_LABEL = { available: 'Available', hold: 'On hold', sold: 'Sold' };
 
 // A unit's look: its custom status (the project's own unitStatuses, by the
-// unit's tag) or its base. Copied from statusLook() in src/lib/floorPlan.js:
-// that file also holds the floor-plan editor's canvas and pdf.js code, which
-// the phone bundle cannot take, so it is not imported here.
+// unit's tag) or its base. Copied from statusLook() in src/lib/floorPlan.js
+// (importable now that metro.config.js stubs pdf.js; this copy predates that).
 export function unitLook(statuses, unit) {
   const base = unit?.status || 'available';
   const c = unit?.tag ? (statuses || []).find((s) => s.id === unit.tag) : null;

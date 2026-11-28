@@ -43,10 +43,11 @@ export const NAV_SCOPES = {
   // Booking data grants (not pages). Customer data: buyers' and holders' names, phones and
   // dates. Pricing: list prices, offers and deal values. Unit status: changing a unit's
   // status directly (unhold, sell, landowner); a hold *request* from Booking needs none.
-  // Customers and prices are admin-only by default; an admin can still grant them to one account.
+  // Customers and prices are admin-only by default (an admin can still grant them to one account);
+  // every role changes a unit's status by default.
   data_customers: ['MANAGEMENT', 'MASTER'],
   data_prices: ['MANAGEMENT', 'MASTER'],
-  data_status: ['MANAGEMENT', 'MASTER'],
+  data_status: [...ALL_ROLES, 'MASTER'],
   profile: [...ALL_ROLES, 'MASTER'],
 };
 

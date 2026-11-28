@@ -24,24 +24,39 @@ import ConversationsScreen from '../screens/chat/ConversationsScreen';
 import ChatScreen from '../screens/chat/ChatScreen';
 import ForwardLeadScreen from '../screens/lead/ForwardLeadScreen';
 import TransferLeadScreen from '../screens/lead/TransferLeadScreen';
+import BookingScreen from '../screens/booking/BookingScreen';
+import BookingProjectScreen from '../screens/booking/BookingProjectScreen';
 
-// Shown in the menu (Menu tab).
+import { NAV_META } from '../../../src/lib/navMeta.js';
+
+// Every page with a stack route, in the web sidebar's order (SECTIONS in
+// src/components/Sidebar.jsx). `group` is the sidebar section label; null is
+// its unlabelled top section. Titles and icons come from NAV_META, the labels
+// the web sidebar uses, so both name a page the same way.
+// The Menu tab leaves out pages in HIDDEN_NAV (src/lib/navMeta.js), as the web
+// sidebar does; their routes stay registered so links and buttons still open them.
+const page = (feature, route, group, screen, extra) => ({
+  feature, route, group, screen, title: NAV_META[feature].lbl, icon: NAV_META[feature].ico, ...extra,
+});
+
 export const MODULES = [
-  { feature: 'pipeline', route: 'Pipeline', title: 'Pipeline', icon: 'view-kanban', group: 'Sales', screen: PipelineScreen },
-  { feature: 'calendar', route: 'Calendar', title: 'Calendar', icon: 'calendar-month', group: 'Sales', screen: CalendarScreen },
-  { feature: 'conversations', route: 'Conversations', title: 'Conversations', icon: 'forum', group: 'Sales', screen: ConversationsScreen, chat: true },
-  { feature: 'properties', route: 'Projects', title: 'Projects', icon: 'apartment', group: 'Sales', screen: ProjectsScreen },
-  { feature: 'team', route: 'Team', title: 'Team', icon: 'groups', group: 'People', screen: TeamScreen },
-  { feature: 'agentperf', route: 'Performance', title: 'Performance', icon: 'leaderboard', group: 'People', screen: PerformanceScreen },
-  { feature: 'reports', route: 'Reports', title: 'Reports', icon: 'bar-chart', group: 'People', screen: ReportsScreen },
-  { feature: 'requests', route: 'Requests', title: 'Hold requests', icon: 'pan-tool', group: 'Admin', screen: RequestsScreen },
-  { feature: 'accounts', route: 'Accounts', title: 'Users & accounts', icon: 'manage-accounts', group: 'Admin', screen: AccountsScreen },
-  { feature: 'companies', route: 'Companies', title: 'Companies', icon: 'corporate-fare', group: 'Admin', screen: CompaniesScreen },
+  page('companies', 'Companies', null, CompaniesScreen),
+  page('reports', 'Reports', null, ReportsScreen),
+  page('agentperf', 'Performance', null, PerformanceScreen),
+  page('requests', 'Requests', null, RequestsScreen),
+  page('conversations', 'Conversations', 'Sales Team', ConversationsScreen, { chat: true }),
+  page('calendar', 'Calendar', 'Sales Team', CalendarScreen),
+  page('properties', 'Projects', 'Sales Team', ProjectsScreen),
+  page('booking', 'Booking', 'Sales Team', BookingScreen),
+  page('pipeline', 'Pipeline', 'Sales Team', PipelineScreen),
+  page('team', 'Team', 'Admin', TeamScreen),
+  page('accounts', 'Accounts', 'Admin', AccountsScreen),
 ];
 
 // Reached from another screen, never from the menu.
 export const DETAIL_ROUTES = [
   { route: 'ProjectDetail', title: 'Project', screen: ProjectDetailScreen },
+  { route: 'BookingProject', title: 'Booking', screen: BookingProjectScreen },
   { route: 'AgentDetail', title: 'Agent', screen: AgentDetailScreen },
   { route: 'AccountForm', title: 'Account', screen: AccountFormScreen },
   { route: 'Chat', title: 'Chat', screen: ChatScreen },
